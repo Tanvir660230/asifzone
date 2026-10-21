@@ -68,16 +68,16 @@ export default function ProfitPage() {
           <Card className="p-5 sm:p-6">
             <h2 className="mb-3 text-[17px] font-semibold tracking-tight text-fg">From sales to profit</h2>
             <dl className="divide-y divide-line-subtle text-sm" data-testid="profit-bridge">
-              <Line label="Sales" value={r.totals.sales} strong />
-              <Line label="Cost of the goods" value={-r.totals.cogs} />
-              <Line label="Packaging" value={-r.totals.packaging} href="/admin/finance/packaging" />
-              <Line label="Courier charges" value={-r.totals.courier} href="/admin/finance/courier" />
-              <Line label="Payment gateway fees" value={-r.totals.gateway} />
-              <Line label="Ads" value={-r.totals.ads} href="/admin/finance/ads" />
-              <Line label="Left after each sale's costs" value={r.totals.contribution} strong />
-              {r.totals.outsideSales !== 0 && <Line label="Sales outside the website (sent straight through Steadfast)" value={r.totals.outsideSales} />}
-              <Line label="Running costs (rent, salaries, hosting …)" value={-r.totals.otherCosts} href="/admin/finance/expenses" />
-              <Line label="Net profit" value={r.totals.netProfit} strong />
+              <Line label="Sales" value={r.totals.sales} strong of={r.totals.sales} />
+              <Line label="Cost of the goods" value={-r.totals.cogs} of={r.totals.sales} />
+              <Line label="Packaging" value={-r.totals.packaging} href="/admin/finance/packaging" of={r.totals.sales} />
+              <Line label="Courier charges" value={-r.totals.courier} href="/admin/finance/courier" of={r.totals.sales} />
+              <Line label="Payment gateway fees" value={-r.totals.gateway} of={r.totals.sales} />
+              <Line label="Ads" value={-r.totals.ads} href="/admin/finance/ads" of={r.totals.sales} />
+              <Line label="Left after each sale's costs" value={r.totals.contribution} strong of={r.totals.sales} />
+              {r.totals.outsideSales !== 0 && <Line label="Sales outside the website (sent straight through Steadfast)" value={r.totals.outsideSales} of={r.totals.sales} />}
+              <Line label="Running costs (rent, salaries, hosting …)" value={-r.totals.otherCosts} href="/admin/finance/expenses" of={r.totals.sales} />
+              <Line label="Net profit" value={r.totals.netProfit} strong of={r.totals.sales} />
             </dl>
           </Card>
           <SegmentedControl aria-label="Show profit by" value={view} onChange={setView} options={[{ value: "products", label: "By product" }, { value: "orders", label: "By order" }] as const} />
@@ -146,11 +146,24 @@ export default function ProfitPage() {
   );
 }
 
-function Line({ label, value, strong, href }: { label: string; value: number; strong?: boolean; href?: string }) {
+/** One line of the bridge. With `of` (the sales total) a line also shows its share of sales — a thin bar and the percent —
+ * so the costs that matter stand out without reading every figure. */
+function Line({ label, value: raw, strong, href, of }: { label: string; value: number; strong?: boolean; href?: string; of?: number }) {
+  const value = raw === 0 ? 0 : raw; // −0 (a negated zero cost) reads as "−৳0"
+  // The sales line is the 100% every other line is measured against — no bar of its own.
+  const pct = of && of > 0 && value !== of ? (Math.abs(value) / of) * 100 : null;
   return (
-    <div className="flex items-baseline gap-3 py-2.5">
+    <div className="flex items-center gap-3 py-2.5">
       <dt className={cn("min-w-0 flex-1", strong ? "font-medium text-fg" : "text-fg-muted")}>{href ? <Link href={href} className="hover:text-accent hover:underline">{label}</Link> : label}</dt>
-      <dd className={cn("w-32 shrink-0 text-right tabular-nums", strong ? "font-semibold" : "", value < 0 && strong ? "text-danger-600" : "text-fg")}>{formatPrice(value === 0 ? 0 : value)}</dd>
+      {of !== undefined && (
+        <dd className="flex w-12 shrink-0 items-center justify-end gap-2 text-xs tabular-nums text-fg-subtle sm:w-40" aria-label={pct === null ? undefined : `${pct.toFixed(1)}% of sales`}>
+          <span className={cn("hidden h-1 flex-1 overflow-hidden rounded-full bg-ink-100", pct !== null && "sm:block")} aria-hidden>
+            {pct !== null && pct > 0 && <span className={cn("block h-full min-w-1 rounded-full", strong ? (value < 0 ? "bg-danger-500" : "bg-success-500") : "bg-ink-300")} style={{ width: `${Math.min(100, pct)}%` }} />}
+          </span>
+          <span className="w-10 text-right">{pct === null || pct === 0 ? "" : pct < 0.1 ? "<0.1%" : `${pct < 1 ? pct.toFixed(1) : Math.round(pct)}%`}</span>
+        </dd>
+      )}
+      <dd className={cn("w-28 shrink-0 text-right tabular-nums sm:w-32", strong ? "font-semibold" : "", value < 0 && strong ? "text-danger-600" : "text-fg")}>{value < 0 ? `−${formatPrice(-value)}` : formatPrice(value)}</dd>
     </div>
   );
 }

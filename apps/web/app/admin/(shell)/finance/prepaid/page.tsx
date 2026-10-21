@@ -56,32 +56,40 @@ export default function PrepaidPage() {
         <EmptyState icon={CalendarClock} title="Nothing prepaid yet" description="Add hosting, the domain or advance rent with the dates it covers." />
       ) : (
         <>
-          <p className="text-sm text-fg-muted">Still to be used: <span className="font-medium tabular-nums text-fg">{formatPrice(d.totals.remaining)}</span>{d.totals.endingSoon ? ` · ${d.totals.endingSoon} ending within 30 days` : ""}</p>
+          <p className="text-sm text-fg-muted">
+            Still to be used <span className="ml-1 text-[17px] font-semibold tabular-nums tracking-tight text-fg">{formatPrice(d.totals.remaining)}</span>
+            {d.totals.endingSoon ? <Badge variant="warning" className="ml-2 align-middle">{d.totals.endingSoon} ending within 30 days</Badge> : null}
+          </p>
           <div className="grid gap-3 lg:grid-cols-2">
             {d.prepaid.map((p) => {
               const usedPct = p.amount ? Math.min(100, Math.round((p.used / p.amount) * 100)) : 0;
               return (
-                <Card key={p.id} className="space-y-3 p-4 sm:p-5" data-testid="prepaid-card">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
+                <Card key={p.id} className="flex flex-col gap-4 p-4 sm:p-5" data-testid="prepaid-card">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-fg">{p.name}</p>
-                      <p className="text-xs text-fg-muted">{p.number} · {p.expenseAccount.name}{p.payee ? ` · ${p.payee}` : ""} · paid {formatBookDate(p.paidOn)}{p.paidFrom ? ` from ${p.paidFrom.name}` : ""}</p>
+                      <p className="font-semibold tracking-tight text-fg">{p.name}</p>
+                      <p className="mt-0.5 text-xs text-fg-muted">{p.number} · {p.expenseAccount.name}{p.payee ? ` · ${p.payee}` : ""} · paid {formatBookDate(p.paidOn)}{p.paidFrom ? ` from ${p.paidFrom.name}` : ""}</p>
                     </div>
-                    <Badge variant={STATUS[p.status].variant}>{STATUS[p.status].label}</Badge>
+                    <Badge variant={STATUS[p.status].variant} className="shrink-0">{STATUS[p.status].label}</Badge>
+                  </div>
+                  <div className="flex items-end justify-between gap-3">
+                    <p className="tabular-nums"><span className="text-[22px] font-semibold tracking-tight text-fg">{formatPrice(p.perMonth)}</span><span className="text-sm text-fg-muted"> a month</span></p>
+                    <p className="text-right text-sm tabular-nums text-fg-muted">{p.daysLeft ? `${p.daysLeft} days left` : STATUS[p.status].label}</p>
                   </div>
                   <div>
-                    <div className="h-2 overflow-hidden rounded-full bg-ink-100" role="progressbar" aria-valuenow={usedPct} aria-valuemin={0} aria-valuemax={100} aria-label={`${usedPct}% used`}>
-                      <div className="h-full rounded-full bg-accent" style={{ width: `${usedPct}%` }} />
+                    <div className="h-1.5 overflow-hidden rounded-full bg-ink-100" role="progressbar" aria-valuenow={usedPct} aria-valuemin={0} aria-valuemax={100} aria-label={`${usedPct}% used`}>
+                      <div className="h-full min-w-1.5 rounded-full bg-accent" style={{ width: `${usedPct}%` }} />
                     </div>
-                    <div className="mt-1.5 flex flex-wrap justify-between gap-2 text-xs text-fg-muted">
-                      <span>Used {formatPrice(p.used)} of {formatPrice(p.amount)}</span>
-                      <span>{formatBookDate(p.serviceStart)} → {formatBookDate(p.serviceEnd)}{p.daysLeft ? ` · ${p.daysLeft} days left` : ""}</span>
+                    <div className="mt-2 flex items-start justify-between gap-3 text-xs text-fg-muted">
+                      <span className="tabular-nums">{formatPrice(p.used)} used of {formatPrice(p.amount)}</span>
+                      <span className="text-right">{formatBookDate(p.serviceStart)} – {formatBookDate(p.serviceEnd)}</span>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <span className="text-fg-muted">About {formatPrice(p.perMonth)} a month</span>
-                    {can("finance.transact") && p.status !== "FINISHED" && <Button size="sm" variant="outline" onClick={() => setEnding(p)}>End early</Button>}
-                  </div>
+                  {can("finance.transact") && p.status !== "FINISHED" && (
+                    <div className="mt-auto flex justify-end border-t border-line-subtle pt-3">
+                      <Button size="sm" variant="ghost" className="-mr-2" onClick={() => setEnding(p)}>End early</Button>
+                    </div>
+                  )}
                 </Card>
               );
             })}

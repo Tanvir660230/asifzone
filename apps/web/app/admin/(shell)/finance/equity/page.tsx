@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Crown, Handshake, Plus, Sparkles } from "lucide-react";
@@ -130,7 +130,7 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
   return (
     <Card className="overflow-hidden p-0" data-testid="owner-card">
       <div className="space-y-5 p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent"><Crown className="h-5 w-5" /></span>
             <div className="min-w-0">
@@ -140,11 +140,11 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
           </div>
           <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
         </div>
-        <dl className="grid grid-cols-3 gap-2 sm:gap-3">
+        <Figures>
           <Figure label="Put in" value={t?.putIn} tone="in" loading={activity.isLoading} hint="Money and costs paid from his own pocket" />
           <Figure label="Taken out" value={t?.takenOut} loading={activity.isLoading} hint="Payouts kept and money withdrawn" />
           <Figure label="Net invested" value={t ? t.net : undefined} loading={activity.isLoading} strong hint="Put in − taken out" />
-        </dl>
+        </Figures>
         {canAct && (
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => setMoney("INVEST")} data-testid="owner-invest"><ArrowDownLeft className="h-4 w-4" /> Money put in</Button>
@@ -173,25 +173,45 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
         </div>
       )}
 
-      <Timeline items={activity.data?.items ?? []} loading={activity.isLoading} empty="Nothing put in or taken out yet." />
+      <Timeline items={activity.data?.items ?? []} loading={activity.isLoading} empty="Nothing put in or taken out yet." name={owner.name} />
       {money && <OwnerMoneyModal kind={money} ownerName={owner.name} onClose={() => setMoney(null)} />}
     </Card>
   );
 }
 
+/** Three figures as one grouped panel: side by side from `sm`, a label/value list on a phone so no amount is cut short. */
+function Figures({ children }: { children: ReactNode }) {
+  return <dl className="grid overflow-hidden rounded-xl border border-line-subtle max-sm:divide-y max-sm:divide-line-subtle sm:grid-cols-3 sm:divide-x sm:divide-line-subtle">{children}</dl>;
+}
+
 function Figure({ label, value, tone, strong, loading, hint }: { label: string; value: number | undefined; tone?: "in"; strong?: boolean; loading?: boolean; hint?: string }) {
   return (
-    <div className={cn("min-w-0 rounded-xl border border-line-subtle p-3 sm:p-4", strong && "bg-surface-muted")}>
-      <dt className="text-xs font-medium text-fg-muted sm:text-[13px]">{label}</dt>
-      <dd className={cn("mt-1 truncate text-[16px] font-semibold tabular-nums tracking-tight sm:text-[22px]", tone === "in" ? "text-success-700" : "text-fg")}>
-        {loading || value === undefined ? <Skeleton className="h-7 w-28" /> : `${value < 0 ? "−" : ""}${formatPrice(Math.abs(value))}`}
+    <div className={cn("flex min-w-0 items-center justify-between gap-3 px-4 py-3 sm:block sm:p-4", strong && "bg-surface-muted")}>
+      <dt className="text-sm font-medium text-fg-muted sm:text-[13px]">{label}</dt>
+      <dd className={cn("text-[17px] font-semibold tabular-nums tracking-tight sm:mt-1 sm:text-[22px]", tone === "in" ? "text-success-700" : "text-fg")}>
+        {loading || value === undefined ? <Skeleton className="h-6 w-24 sm:h-7 sm:w-28" /> : `${value < 0 ? "−" : ""}${formatPrice(Math.abs(value))}`}
       </dd>
       {hint && <dd className="mt-0.5 hidden text-xs text-fg-subtle sm:block">{hint}</dd>}
     </div>
   );
 }
 
-function Timeline({ items, loading, empty }: { items: PartnerActivityItem[]; loading: boolean; empty: string }) {
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** A history line repeats what its card already says ("Deposit: Money put in by <name> — VPS", "Printer, paid by <name>
+ * (owner's list …; exact day not recorded)"). Show what differs, and say plainly when the day is approximate. */
+function tidyLine(text: string, name: string): { text: string; approxDay: boolean } {
+  const approxDay = /exact day not recorded/i.test(text);
+  const who = escapeRegExp(name);
+  const t = text
+    .replace(/^(Deposit|Withdrawal):\s*Money (put in|taken out) by [^—]+—\s*/i, "")
+    .replace(/\s*\(owner's list[^)]*\)/i, "")
+    .replace(new RegExp(`,?\\s+(paid|bought) by ${who}\\b`, "i"), "")
+    .trim();
+  return { text: t ? t.charAt(0).toUpperCase() + t.slice(1) : text, approxDay };
+}
+
+function Timeline({ items, loading, empty, name }: { items: PartnerActivityItem[]; loading: boolean; empty: string; name: string }) {
   const [all, setAll] = useState(false);
   const groups = useMemo(() => {
     const m = new Map<string, PartnerActivityItem[]>();
@@ -207,21 +227,27 @@ function Timeline({ items, loading, empty }: { items: PartnerActivityItem[]; loa
             <div key={ym}>
               <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">{monthLabel(ym)}</p>
               <ul className="divide-y divide-line-subtle">
-                {rows.map((i) => (
-                  <li key={i.id} className="flex items-start justify-between gap-3 py-2.5 text-sm">
-                    <span className="flex min-w-0 items-start gap-2.5">
-                      <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full", i.amount >= 0 ? "bg-success-50 text-success-700" : "bg-surface-muted text-fg-muted")}>
-                        {i.amount >= 0 ? <ArrowDownLeft className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                {rows.map((i) => {
+                  const line = tidyLine(i.description, name);
+                  return (
+                    <li key={i.id} className="flex items-start justify-between gap-3 py-2.5 text-sm">
+                      <span className="flex min-w-0 items-start gap-2.5">
+                        <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full", i.amount >= 0 ? "bg-success-50 text-success-700" : "bg-surface-muted text-fg-muted")}>
+                          {i.amount >= 0 ? <ArrowDownLeft className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-fg" title={i.description}>{line.text}</span>
+                          <span className="text-xs text-fg-muted">{KIND_LABEL[i.kind]} · {line.approxDay ? `${monthLabel(i.date.slice(0, 7))}, day not recorded` : formatBookDate(i.date)}</span>
+                        </span>
                       </span>
-                      <span className="min-w-0"><span className="block text-fg">{i.description}</span><span className="text-xs text-fg-muted">{formatBookDate(i.date)} · {KIND_LABEL[i.kind]}</span></span>
-                    </span>
-                    <span className={cn("shrink-0 tabular-nums font-medium", i.amount >= 0 ? "text-success-700" : "text-fg")}>{i.amount >= 0 ? "+" : "−"}{formatPrice(Math.abs(i.amount))}</span>
-                  </li>
-                ))}
+                      <span className={cn("shrink-0 tabular-nums font-medium", i.amount >= 0 ? "text-success-700" : "text-fg")}>{i.amount >= 0 ? "+" : "−"}{formatPrice(Math.abs(i.amount))}</span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
-          {items.length > 12 && <Button size="sm" variant="ghost" onClick={() => setAll((v) => !v)}>{all ? "Show less" : `Show all ${items.length}`}</Button>}
+          {items.length > 12 && <Button size="sm" variant="ghost" className="-ml-3" onClick={() => setAll((v) => !v)}>{all ? "Show less" : `Show all ${items.length}`}</Button>}
         </div>
       )}
     </div>
@@ -244,27 +270,27 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
   return (
     <Card className="overflow-hidden p-0" data-testid="partner-card">
       <div className="space-y-5 p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-muted text-fg-muted"><Handshake className="h-5 w-5" /></span>
             <div className="min-w-0">
-              <p className="text-[17px] font-semibold tracking-tight text-fg">{partner.name}</p>
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-semibold tracking-tight text-fg">
+                {partner.name}
+                {partner.profitSharePct !== null && <Badge variant={partner.shareConfirmed ? "success" : "warning"}>{partner.profitSharePct}% of monthly profit</Badge>}
+              </p>
               <p className="text-sm text-fg-muted">{ROLE_LABEL[partner.role]} since {formatBookDate(partner.joinedOn)}{partner.phone ? ` · ${partner.phone}` : ""}{partner.email ? ` · ${partner.email}` : ""}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {partner.profitSharePct !== null && <Badge variant={partner.shareConfirmed ? "success" : "warning"}>{partner.profitSharePct}% of monthly profit</Badge>}
-            <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
-          </div>
+          <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
         </div>
         {partner.profitSharePct !== null && (
           <p className="text-sm text-fg-muted">Shares {partner.profitSharePct}% of each month&apos;s net profit, from {formatBookDate(partner.shareFrom ?? partner.joinedOn)}. A loss month shares nothing and the next month&apos;s whole profit is shared — {name} puts in no capital and bears no loss.</p>
         )}
-        <dl className="grid grid-cols-3 gap-2 sm:gap-3">
+        <Figures>
           <Figure label="Owed now" value={s?.totals.owed} strong loading={!s} hint={s && s.totals.owed > 0 ? "Pay at the month's end" : "Nothing waiting"} />
-          <Figure label="Earned so far" value={s?.totals.earned} tone="in" loading={!s} />
-          <Figure label="Paid so far" value={s?.totals.paid} loading={!s} />
-        </dl>
+          <Figure label="Earned so far" value={s?.totals.earned} tone="in" loading={!s} hint="Every month's share, added up" />
+          <Figure label="Paid so far" value={s?.totals.paid} loading={!s} hint={`What ${name} has received`} />
+        </Figures>
         {s?.runningMonth && (
           <div className="flex items-start gap-3 rounded-xl bg-surface-muted p-4 text-sm">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
@@ -274,12 +300,12 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
             </p>
           </div>
         )}
-        {canAct && (
+        {canAct && s && (s.waitingMonths.length > 0 || s.totals.owed > 0) && (
           <div className="flex flex-wrap gap-2">
-            {s && s.waitingMonths.length > 0 && (
+            {s.waitingMonths.length > 0 && (
               <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-shares">Share {s.waitingMonths.length === 1 ? monthLabel(s.waitingMonths[0]!) : `${s.waitingMonths.length} finished months`}</Button>
             )}
-            <Button size="sm" variant={s && s.waitingMonths.length ? "outline" : "primary"} disabled={!s || s.totals.owed <= 0} onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name}</Button>
+            {s.totals.owed > 0 && <Button size="sm" variant={s.waitingMonths.length ? "outline" : "primary"} onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.totals.owed)}</Button>}
           </div>
         )}
       </div>
@@ -303,7 +329,7 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
           </ul>
         </div>
       )}
-      <Timeline items={activity.data?.items ?? []} loading={activity.isLoading} empty="No shares or payments yet." />
+      <Timeline items={activity.data?.items ?? []} loading={activity.isLoading} empty="No shares or payments yet." name={partner.name} />
       {paying && s && <PayModal partner={partner} owed={s.totals.owed} onClose={() => setPaying(false)} />}
     </Card>
   );

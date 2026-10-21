@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, CircleCheck, ClipboardCheck, MessageSquareText, Plus, Scale, Split, Trash2, Wallet } from "lucide-react";
+import { CalendarClock, ChevronRight, CircleCheck, ClipboardCheck, MessageSquareText, Plus, Scale, Split, Trash2, Wallet } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { AwaitingExpense, EntryVerification, VerificationItem } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 type View = "summary" | "check" | "allocate" | "renewals" | "sms" | "settings";
 const VIEWS: Array<{ value: View; label: string }> = [
@@ -96,27 +97,50 @@ function Summary({ onView }: { onView: (v: View) => void }) {
         <StatTile label="Taken out" value={formatPrice(Math.round(d.owner.drawings))} icon={<Wallet />} href="/admin/finance/equity" />
         <StatTile label="Figures not yet confirmed" value={String(unsure)} icon={<ClipboardCheck />} tone={unsure ? "warning" : "default"} onClick={() => onView("check")} />
       </section>
-      <p className="text-xs text-fg-muted">
-        Put in = owner capital {formatPrice(d.owner.capital)} + what the books started with {formatPrice(d.owner.openingEquity)} + paid from your pocket {formatPrice(d.owner.ownerPaidNotRepaid)} − taken out {formatPrice(d.owner.drawings)}. From the ledger as of {formatBookDate(d.asOf)}.
-      </p>
-      <Card className="p-0">
-        <div className="border-b border-line px-4 py-3 sm:px-5"><h2 className="text-sm font-semibold text-fg">Missing or unsure</h2><p className="text-xs text-fg-muted">The books never guess these — each one says what is needed.</p></div>
-        {d.missing.length === 0 ? (
-          <div className="flex items-center gap-2 px-4 py-6 text-sm text-fg-muted sm:px-5"><CircleCheck className="h-4 w-4 text-success-600" aria-hidden /> Nothing missing — every figure is confirmed.</div>
-        ) : (
-          <ul className="divide-y divide-line">
-            {d.missing.map((m) => (
-              <li key={m.key} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5" data-testid="missing-item">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-fg">{m.title} <span className="tabular-nums text-fg-muted">· {m.count}</span></p>
-                  <p className="text-xs text-fg-muted">{m.detail}</p>
-                </div>
-                <Link href={m.href} className="text-sm text-accent hover:underline">Open</Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <Card className="p-5" data-testid="put-in-breakdown">
+          <h2 className="text-[15px] font-semibold tracking-tight text-fg">How “put in” adds up</h2>
+          <p className="text-xs text-fg-muted">From the ledger as of {formatBookDate(d.asOf)}.</p>
+          <dl className="mt-3 divide-y divide-line-subtle text-sm">
+            <SumLine label="Owner capital" value={d.owner.capital} />
+            <SumLine label="What the books started with" value={d.owner.openingEquity} />
+            <SumLine label="Paid from your pocket" value={d.owner.ownerPaidNotRepaid} />
+            <SumLine label="Taken out" value={-d.owner.drawings} />
+            <SumLine label="Put in (net)" value={d.owner.netInvested} strong />
+          </dl>
+        </Card>
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-line-subtle px-5 py-4"><h2 className="text-[15px] font-semibold tracking-tight text-fg">Missing or unsure</h2><p className="text-xs text-fg-muted">The books never guess these — each one says what is needed.</p></div>
+          {d.missing.length === 0 ? (
+            <div className="flex items-center gap-2 px-5 py-6 text-sm text-fg-muted"><CircleCheck className="h-4 w-4 text-success-600" aria-hidden /> Nothing missing — every figure is confirmed.</div>
+          ) : (
+            <ul className="divide-y divide-line-subtle">
+              {d.missing.map((m) => (
+                <li key={m.key} data-testid="missing-item">
+                  <Link href={m.href} className="group flex items-center gap-3 px-5 py-3.5 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.03]">
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-fg">{m.title} <span className="tabular-nums font-normal text-fg-muted">· {m.count}</span></span>
+                      <span className="block text-xs text-fg-muted">{m.detail}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-300 transition-transform duration-fast ease-smooth group-hover:translate-x-0.5 group-hover:text-fg-muted" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function SumLine({ label, value: raw, strong }: { label: string; value: number; strong?: boolean }) {
+  const value = raw === 0 ? 0 : raw; // −0 reads as "−৳0"
+  return (
+    <div className={cn("flex items-baseline justify-between gap-3 py-2", strong && "font-semibold text-fg")}>
+      <dt className={strong ? "text-fg" : "text-fg-muted"}>{label}</dt>
+      <dd className="tabular-nums text-fg">{value < 0 ? `−${formatPrice(-value)}` : formatPrice(value)}</dd>
     </div>
   );
 }
