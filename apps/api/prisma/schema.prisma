@@ -149,6 +149,13 @@ enum PaymentProvider {
   STORE_CREDIT
 }
 
+/// ORDER: money for the order. RETURN_CHARGE: what a customer who refused the parcel paid toward the courier's charge
+/// (docs/PAYMENT_LEDGER.md §5a) — courier cost recovered, never order money and never owed back.
+enum PaymentPurpose {
+  ORDER
+  RETURN_CHARGE
+}
+
 /// ACTIVE -> SUCCEEDED/FAILED (a definitive, re-verified gateway answer) or CANCELLED (customer
 /// backed out on the gateway's own page) or EXPIRED (set only by the reconciliation sweep — no
 /// gateway signal ever arrived within the session's window; see payment-reconciliation-cron.ts).
@@ -1238,6 +1245,12 @@ model Order {
   /// Message from the most recent failed sync attempt; cleared on the next successful one. Lets the
   /// admin UI show "sync failed" instead of silently displaying a possibly-stale courierStatus.
   courierSyncError        String?
+  /// What Steadfast reported the rider actually collected on a partial delivery (`cod_amount` of a `partial_delivered`
+  /// webhook, accepted only when Steadfast's own status API also says partial_delivered). A refused parcel whose
+  /// customer paid the delivery charge arrives this way. Courier evidence only — never order money by itself; see
+  /// settleCourierCollected (docs/PAYMENT_LEDGER.md §5b).
+  courierCollectedAmount  Decimal?  @db.Decimal(10, 2)
+  courierCollectedAt      DateTime?
 
   // ── Pricing snapshot (Phase 2, docs/PRICING_INVARIANTS.md §8). Immutable historical facts written once at order
   // creation by the canonical pricing pipeline; never recomputed from current products, promotions or settings.
@@ -1441,6 +1454,32 @@ model PaymentSession {
   @@index([paymentLinkId])
 }
 
+/// Every Steadfast webhook as it arrived (after the token check) — the courier's own record of what happened to a
+/// parcel, kept for audit and to read fields our status API can't give (what was collected, the delivery charge).
+/// Append-only. `idempotencyKey` = Steadfast's Idempotency-Key header (the same on every retry of one event).
+model CourierWebhookEvent {
+  id               String   @id @default(cuid())
+  provider         String   @default("STEADFAST")
+  idempotencyKey   String?  @unique
+  /// delivery_status (also when the body has none) | tracking_update | anything else Steadfast sends, as sent.
+  notificationType String
+  consignmentId    String?
+  /// The order the consignment belongs to, when one does (no FK: the log outlives a permanently deleted order).
+  orderId          String?
+  status           String?
+  codAmount        Decimal? @db.Decimal(10, 2)
+  deliveryCharge   Decimal? @db.Decimal(10, 2)
+  trackingMessage  String?
+  payload          Json
+  /// What we did with it: APPLIED, DUPLICATE, NO_ORDER, NO_CONSIGNMENT, FAILED.
+  outcome          String
+  receivedAt       DateTime @default(now())
+
+  @@index([consignmentId])
+  @@index([orderId])
+  @@index([receivedAt])
+}
+
 /// The settlement record for one PaymentSession — created only once the gateway has given a
 /// definitive, re-verified answer (see PaymentTxnStatus). At most one per session
 /// (`paymentSessionId` unique): a session settles exactly once. `verifiedAmount` always comes from
@@ -1459,6 +1498,8 @@ model Payment {
   paymentSession        PaymentSession?  @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
   provider              PaymentProvider
   status                PaymentTxnStatus
+  /// Staff may re-mark a COD / MANUAL row either way (reclassifyPayment); the order timeline keeps the trail.
+  purpose               PaymentPurpose   @default(ORDER)
   amount                Decimal          @db.Decimal(10, 2)
   verifiedAmount        Decimal?         @db.Decimal(10, 2)
   /// SSLCommerz bank_tran_id (falls back to val_id) / EPS EpsTransactionId.

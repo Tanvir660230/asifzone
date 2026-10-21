@@ -427,7 +427,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // = 347 on the 2026-10-09 production release + 234 (Financial Core / ERP / manufacturing)
     // +5: courier notes (4 Catalog → Courier notes routes + the order's courier-note view)
     // +6: Storefront Studio (homepage draft, save, discard, publish, revisions, restore)
-    expect(routes).toHaveLength(599);
+    // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
+    expect(routes).toHaveLength(600);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

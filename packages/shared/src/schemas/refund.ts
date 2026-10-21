@@ -23,15 +23,26 @@ export const completeRefundSchema = z.object({
 export type CompleteRefundInput = z.infer<typeof completeRefundSchema>;
 
 /** A payment staff record by hand (docs/PAYMENT_LEDGER.md §5): MANUAL = received out of band (bKash/bank/cash) before
- * dispatch; COD_COLLECTED = the cash the courier collected on a partially delivered COD order. */
+ * dispatch; COD_COLLECTED = the cash the courier collected on a partially delivered COD order; RETURN_CHARGE = what a
+ * customer who refused the parcel paid toward the courier's charge (§5a), through the rider (COURIER) or to the store
+ * (DIRECT). */
 export const recordPaymentSchema = z.object({
   amount: z.number().positive(),
-  kind: z.enum(["MANUAL", "COD_COLLECTED"]),
+  kind: z.enum(["MANUAL", "COD_COLLECTED", "RETURN_CHARGE"]),
+  via: z.enum(["COURIER", "DIRECT"]).optional(),
   method: z.string().max(100).optional(),
   note: z.string().max(500).optional(),
 });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+
+/** Re-marks a COD / MANUAL payment as the return charge (or back to order money) — §5a. */
+export const reclassifyPaymentSchema = z.object({
+  purpose: z.enum(["ORDER", "RETURN_CHARGE"]),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export type ReclassifyPaymentInput = z.infer<typeof reclassifyPaymentSchema>;
 
 /** Repair of the Order.paymentStatus projection from the ledger — a dry run unless `apply` is true. */
 export const paymentLedgerRepairSchema = z.object({
@@ -109,6 +120,8 @@ export interface PaymentTransactionRow {
   settledAt: string;
   provider: z.infer<typeof paymentProviderEnum>;
   status: "SUCCEEDED" | "FAILED";
+  /** RETURN_CHARGE: a refused parcel's return charge — courier cost recovered, not order money (PAYMENT_LEDGER §5a). */
+  purpose: "ORDER" | "RETURN_CHARGE";
   amount: number;
   providerTransactionId: string | null;
   note: string | null;

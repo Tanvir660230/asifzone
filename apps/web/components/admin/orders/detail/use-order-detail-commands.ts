@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   AdjustOrderPriceInput,
+  ReclassifyPaymentInput,
   ReconcilePartialDeliveryInput,
   RecordPaymentInput,
   RecordRefundInput,
@@ -95,15 +96,24 @@ export function useOrderDetailCommands(orderId: string) {
   });
   const payment = useMutation({
     mutationFn: (input: RecordPaymentInput) => paymentsAdminApi.recordPayment(orderId, input, idempotencyKeyFor(`payment:${orderId}`, input)),
-    onSuccess: () => {
+    onSuccess: (_data, input) => {
       settleIdempotencyKey(`payment:${orderId}`);
       refresh();
-      toast.success("Payment recorded");
+      toast.success(input.kind === "RETURN_CHARGE" ? "Return charge recorded" : "Payment recorded");
     },
     onError: fail("Failed to record the payment"),
   });
+  // A refused parcel's return charge is not owed back (docs/PAYMENT_LEDGER.md §5a) — re-marks a payment either way.
+  const remark = useMutation({
+    mutationFn: ({ paymentId, ...input }: ReclassifyPaymentInput & { paymentId: string }) => paymentsAdminApi.reclassifyPayment(orderId, paymentId, input),
+    onSuccess: (_data, input) => {
+      refresh();
+      toast.success(input.purpose === "RETURN_CHARGE" ? "Marked as the return charge" : "Marked as order money");
+    },
+    onError: fail("Failed to change the payment"),
+  });
 
-  return { details, hold, clearHold, price, reconcile, refund, completeRefund, payment, storeCredit };
+  return { details, hold, clearHold, price, reconcile, refund, completeRefund, payment, remark, storeCredit };
 }
 
 export type OrderDetailCommands = ReturnType<typeof useOrderDetailCommands>;

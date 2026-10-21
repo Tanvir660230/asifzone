@@ -99,3 +99,45 @@ describe("payment ledger engine — command checks", () => {
     expect(p.amountDue.amount).toBe(0);
   });
 });
+
+describe("payment ledger engine — return charge (docs/PAYMENT_LEDGER.md §5a)", () => {
+  it("a refused parcel's return charge is not order money: a returned order owes none of it back", () => {
+    const p = pos({ orderStatus: "RETURNED", returnCharges: [T(120)] });
+    expect(major(p.returnCharge)).toBe(120);
+    expect(major(p.paid)).toBe(0);
+    expect(major(p.refundDue)).toBe(0);
+    expect(major(p.refundable)).toBe(0);
+    expect(p.status).toBe("UNPAID");
+  });
+  it("order money next to it is still owed back in full", () => {
+    const p = pos({ orderStatus: "CANCELLED", paid: [500], returnCharges: [T(120)] });
+    expect(major(p.refundDue)).toBe(500);
+    expect(major(p.refundable)).toBe(500);
+    expect(major(p.returnCharge)).toBe(120);
+  });
+  it("never pays for an open order or counts as an overpayment", () => {
+    const p = pos({ orderStatus: "PARTIALLY_DELIVERED", paid: [1000], returnCharges: [T(120)] });
+    expect(p.status).toBe("PAID");
+    expect(major(p.overpaid)).toBe(0);
+    expect(major(pos({ returnCharges: [T(120)] }).amountDue)).toBe(1000);
+  });
+  it("absent → zero", () => {
+    expect(major(pos().returnCharge)).toBe(0);
+  });
+});
+
+describe("payment ledger engine — nothing more to collect", () => {
+  it("a closed order (cancelled / returned / refunded) owes nothing more, whatever it was charged", () => {
+    for (const orderStatus of ["CANCELLED", "RETURNED", "REFUNDED"]) {
+      expect(major(pos({ orderStatus }).amountDue)).toBe(0);
+      expect(major(pos({ orderStatus, paid: [300] }).amountDue)).toBe(0);
+    }
+  });
+  it("a partial delivery: the courier is done — it collects nothing more; what the customer kept is still due", () => {
+    const p = pos({ orderStatus: "PARTIALLY_DELIVERED", returned: [T(600)] });
+    expect(major(p.codToCollect)).toBe(0);
+    expect(major(p.amountDue)).toBe(400);
+    expect(major(pos({ orderStatus: "PARTIALLY_DELIVERED", returned: [T(600)], paid: [400] }).amountDue)).toBe(0);
+    expect(pos({ orderStatus: "PARTIALLY_DELIVERED", returned: [T(600)], paid: [400] }).status).toBe("PAID");
+  });
+});
