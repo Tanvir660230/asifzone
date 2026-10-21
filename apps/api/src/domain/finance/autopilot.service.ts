@@ -18,7 +18,7 @@ import { getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
 import { financeError, toMajorNumber, toMinor } from "./finance-values";
 import { booksStarted } from "./finance-facts";
-import { importCourierPayouts } from "./courier-payouts.service";
+import { importCourierPayouts, invoiceOf } from "./courier-payouts.service";
 import { getSettlement, markUnmatchedAsOutsideSales, postSettlement } from "./settlements.service";
 import { markPayoutsTaken, runProfitShares } from "./partner-profit.service";
 import { importMetaSpend } from "./ads.service";
@@ -74,7 +74,7 @@ const failed = (err: unknown): Step => ({ ok: false, error: err instanceof Error
 async function postable(id: string) {
   const s = await getSettlement(id);
   const open = s.lines.filter((l) => l.matchStatus === "UNMATCHED" && !l.outsideSale);
-  return { outside: open.filter((l) => !l.orderNumber).length, unknown: open.filter((l) => l.orderNumber).length };
+  return { outside: open.filter((l) => !invoiceOf(l.orderNumber)).length, unknown: open.filter((l) => invoiceOf(l.orderNumber)).length };
 }
 
 async function payoutStep(accountId: string | null, actor: FinanceActor): Promise<Step> {
