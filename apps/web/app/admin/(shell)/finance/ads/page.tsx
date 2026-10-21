@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Megaphone, Pencil, Plus, ShoppingBag, TrendingUp } from "lucide-react";
+import { Download, FileUp, Megaphone, Pencil, Plus, ShoppingBag, TrendingUp } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,8 @@ export default function AdSpendPage() {
   const adAccounts = (accounts.data?.financialAccounts ?? []).filter((a) => a.kind === "AD_PLATFORM" && a.isActive);
   const [editing, setEditing] = useState<AdCampaign | "new" | null>(null);
   const [spendFor, setSpendFor] = useState<AdCampaign | null>(null);
+  const [importing, setImporting] = useState(false);
+  const settings = useQuery({ queryKey: booksApi.centerKeys.settings(), queryFn: booksApi.getCenterSettings, enabled: allowed });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
   const meta = useMutation({
     mutationFn: () => booksApi.importMetaSpend({ days: 7 }),
@@ -66,6 +68,7 @@ export default function AdSpendPage() {
         action={can("finance.transact") && (
           <div className="flex flex-wrap gap-2" data-phone-row>
             {d?.meta.connected && <Button size="sm" variant="outline" loading={meta.isPending} onClick={() => meta.mutate()} data-testid="import-meta"><Download className="h-4 w-4" /> Bring in Meta spend</Button>}
+            <Button size="sm" variant="outline" onClick={() => setImporting(true)} disabled={!adAccounts.length} data-testid="import-ad-csv"><FileUp className="h-4 w-4" /> Import CSV</Button>
             <Button size="sm" onClick={() => setEditing("new")} disabled={!adAccounts.length} data-testid="new-campaign"><Plus className="h-4 w-4" /> Campaign</Button>
           </div>
         )}
@@ -122,6 +125,7 @@ export default function AdSpendPage() {
                       <TableCell align="right" className="tabular-nums">
                         {formatPrice(c.spend)}
                         {c.plannedSpend > 0 && <span className="block text-xs text-fg-muted">{formatPrice(c.plannedSpend)} from budget</span>}
+                        {c.foreignSpend?.map((f) => <span key={f.currency} className="block text-xs text-fg-muted">{f.currency} {f.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>)}
                       </TableCell>
                       <TableCell align="right" className="tabular-nums">{c.orders}</TableCell>
                       <TableCell align="right" className="tabular-nums">{c.costPerOrder === null ? "—" : formatPrice(c.costPerOrder)}</TableCell>
@@ -144,7 +148,8 @@ export default function AdSpendPage() {
         </>
       )}
       {editing && <CampaignModal campaign={editing === "new" ? null : editing} adAccounts={adAccounts} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} />}
-      {spendFor && <SpendModal campaign={spendFor} onClose={() => setSpendFor(null)} onDone={() => { setSpendFor(null); refresh(); }} />}
+      {spendFor && <SpendModal campaign={spendFor} defaultRate={settings.data?.defaultUsdRate ?? null} onClose={() => setSpendFor(null)} onDone={() => { setSpendFor(null); refresh(); }} />}
+      {importing && <CsvModal adAccounts={adAccounts} defaultRate={settings.data?.defaultUsdRate ?? null} onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />}
     </div>
   );
 }
@@ -159,9 +164,11 @@ function CampaignModal({ campaign, adAccounts, onClose, onDone }: { campaign: Ad
   const [externalId, setExternalId] = useState(campaign?.externalId ?? "");
   const [landing, setLanding] = useState(campaign?.landingPath ?? "");
   const [active, setActive] = useState(campaign?.isActive ?? true);
+  const [budgetFrom, setBudgetFrom] = useState(today());
+  const budgetChanged = Boolean(campaign) && ((budgetType || null) !== campaign!.budgetType || (budgetType ? Number(budget) : null) !== campaign!.budget);
   const body = {
     name: name.trim(), startDate: start, endDate: end || null, budgetType: budgetType || null, budget: budgetType ? Number(budget) : null,
-    externalId: externalId.trim() || null, landingPath: landing.trim() || null, isActive: active,
+    externalId: externalId.trim() || null, landingPath: landing.trim() || null, isActive: active, ...(budgetChanged ? { budgetFrom } : {}),
   };
   const valid = Boolean(name.trim() && start && (campaign || accountId)) && (!budgetType || Number(budget) > 0) && (budgetType !== "LIFETIME" || Boolean(end)) && (!end || end >= start);
   const save = useMutation({
@@ -189,6 +196,17 @@ function CampaignModal({ campaign, adAccounts, onClose, onDone }: { campaign: Ad
           </Select>
         </Field>
         {budgetType && <Field htmlFor="cp-budget" label={budgetType === "DAILY" ? "Amount a day" : "Total amount"} required><Input id="cp-budget" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} /></Field>}
+        {budgetChanged && (
+          <Field htmlFor="cp-bfrom" label="New budget from" hint="Days before keep the old budget" className="sm:col-span-2">
+            <Input id="cp-bfrom" type="date" value={budgetFrom} min={start} max={today()} onChange={(e) => setBudgetFrom(e.target.value)} />
+          </Field>
+        )}
+        {campaign?.budgetHistory && campaign.budgetHistory.length > 1 && (
+          <div className="sm:col-span-2 text-xs text-fg-muted">
+            <p className="font-medium text-fg">Budget history</p>
+            <ul className="mt-1 space-y-0.5">{campaign.budgetHistory.map((b) => <li key={b.from} className="tabular-nums">From {formatBookDate(b.from)}: {b.budget === null ? "no budget" : `${formatPrice(b.budget)}${b.budgetType === "DAILY" ? " a day" : " in all"}`}</li>)}</ul>
+          </div>
+        )}
         <Field htmlFor="cp-ext" label="Meta campaign id" hint="Links Meta's spend and utm_campaign to it"><Input id="cp-ext" value={externalId} onChange={(e) => setExternalId(e.target.value)} maxLength={64} /></Field>
         <Field htmlFor="cp-landing" label="Landing page" hint="e.g. /lp/cap — orders that land there count for it"><Input id="cp-landing" value={landing} onChange={(e) => setLanding(e.target.value)} maxLength={200} /></Field>
         {campaign && (
@@ -201,24 +219,111 @@ function CampaignModal({ campaign, adAccounts, onClose, onDone }: { campaign: Ad
   );
 }
 
-function SpendModal({ campaign, onClose, onDone }: { campaign: AdCampaign; onClose: () => void; onDone: () => void }) {
+function SpendModal({ campaign, defaultRate, onClose, onDone }: { campaign: AdCampaign; defaultRate: number | null; onClose: () => void; onDone: () => void }) {
   const [date, setDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
     return d.toLocaleDateString("en-CA");
   });
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"LOCAL" | "USD">("USD");
+  const [rate, setRate] = useState("");
+  const [charged, setCharged] = useState("");
+  const usd = currency === "USD";
+  const effectiveRate = rate ? Number(rate) : defaultRate;
+  const valid = amount !== "" && Number(amount) >= 0 && (!usd || charged !== "" || (effectiveRate ?? 0) > 0);
   const save = useMutation({
-    mutationFn: () => booksApi.recordDaySpend(campaign.id, { date, amount: Number(amount) }),
+    mutationFn: () =>
+      booksApi.recordDaySpend(campaign.id, usd
+        ? { date, originalAmount: Number(amount), currency: "USD", fxRate: rate ? Number(rate) : null, amount: charged ? Number(charged) : null }
+        : { date, amount: Number(amount) }),
     onSuccess: () => { toast.success("Spend saved — it replaces the budget for that day"); onDone(); },
     onError: (e) => toast.error(getErrorMessage(e, "The spend couldn't be saved")),
   });
   return (
     <Modal open onClose={onClose} title={`What ${campaign.name} spent`} description="From Ads Manager, for one day. It replaces that day's budget in the books." widthClassName="max-w-sm"
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={amount === "" || !(Number(amount) >= 0)} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-day-spend">Save</Button></>}>
-      <div className="grid gap-3">
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-day-spend">Save</Button></>}>
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field htmlFor="sp-date" label="Day"><Input id="sp-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
-        <Field htmlFor="sp-amount" label="Spent" required><Input id="sp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
+        <Field htmlFor="sp-cur" label="Currency">
+          <Select id="sp-cur" value={currency} onChange={(e) => setCurrency(e.target.value as "LOCAL" | "USD")}><option value="USD">USD (as Ads Manager shows)</option><option value="LOCAL">Taka</option></Select>
+        </Field>
+        <Field htmlFor="sp-amount" label={usd ? "Spent (USD)" : "Spent (taka)"} required className="sm:col-span-2"><Input id="sp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
+        {usd && (
+          <>
+            <Field htmlFor="sp-rate" label="Taka per USD" hint={defaultRate ? `Empty = default ${defaultRate} (marked an estimate)` : "Or set a default in Owner's summary › Settings"}>
+              <Input id="sp-rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder={defaultRate ? String(defaultRate) : ""} />
+            </Field>
+            <Field htmlFor="sp-charged" label="Taka charged on the card" hint="From the statement — exact, wins over the rate">
+              <Input id="sp-charged" inputMode="decimal" value={charged} onChange={(e) => setCharged(e.target.value)} />
+            </Field>
+            {amount !== "" && !charged && (effectiveRate ?? 0) > 0 && <p className="text-xs text-fg-muted sm:col-span-2">≈ {formatPrice(Math.round(Number(amount) * effectiveRate! * 100) / 100)} in the books{rate ? "" : " (estimate at the default rate)"}</p>}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function CsvModal({ adAccounts, defaultRate, onClose, onDone }: { adAccounts: financeApi.FinancialAccount[]; defaultRate: number | null; onClose: () => void; onDone: () => void }) {
+  const [accountId, setAccountId] = useState(adAccounts[0]?.id ?? "");
+  const [csv, setCsv] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [rate, setRate] = useState("");
+  const body = { financialAccountId: accountId, csv, currency: "USD", fxRate: rate ? Number(rate) : null };
+  const preview = useMutation({ mutationFn: () => booksApi.importAdCsv({ ...body, commit: false }), onError: (e) => toast.error(getErrorMessage(e, "The file couldn't be read")) });
+  const commit = useMutation({
+    mutationFn: () => booksApi.importAdCsv({ ...body, commit: true }),
+    onSuccess: (r) => { toast.success(`Imported: ${r.new} new day(s), ${r.replace} replaced, ${r.same} unchanged`); onDone(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Nothing was imported")),
+  });
+  const p = preview.data;
+  const reset = () => preview.reset();
+  return (
+    <Modal open onClose={onClose} title="Import ad spend (CSV)" description="Export from Ads Manager with Day, Campaign name, Campaign ID and Amount spent. Check the preview, then import — all rows or none." widthClassName="max-w-2xl"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button>{p ? <Button disabled={p.errors.length > 0 || p.rows === 0} loading={commit.isPending} onClick={() => commit.mutate()} data-testid="commit-ad-csv">Import {p.rows} row(s)</Button> : <Button disabled={!accountId || !csv} loading={preview.isPending} onClick={() => preview.mutate()} data-testid="preview-ad-csv">Preview</Button>}</>}>
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field htmlFor="csv-acc" label="Ad account" required>
+            <Select id="csv-acc" value={accountId} onChange={(e) => { setAccountId(e.target.value); reset(); }}>{adAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>
+          </Field>
+          <Field htmlFor="csv-rate" label="Taka per USD" hint={defaultRate ? `Empty = default ${defaultRate} (marked an estimate)` : "Needed for USD amounts"}>
+            <Input id="csv-rate" inputMode="decimal" value={rate} onChange={(e) => { setRate(e.target.value); reset(); }} placeholder={defaultRate ? String(defaultRate) : ""} />
+          </Field>
+          <Field htmlFor="csv-file" label="File" className="sm:col-span-2" hint={fileName || "A .csv file"}>
+            <Input id="csv-file" type="file" accept=".csv,text/csv" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); setCsv(await f.text()); reset(); }} />
+          </Field>
+        </div>
+        {p && (
+          <div className="space-y-3" data-testid="ad-csv-preview">
+            <p className="text-sm text-fg">
+              {p.rows} row(s) · <span className="tabular-nums">{formatPrice(p.total)}</span> · {p.new} new · {p.replace} replace · {p.same} unchanged
+              {p.newCampaigns.length > 0 && <> · new campaign(s): {p.newCampaigns.join(", ")}</>}
+              {p.estimated > 0 && <> · {p.estimated} at the default rate (estimate)</>}
+            </p>
+            {p.errors.length > 0 && (
+              <Alert variant="danger" title={`${p.errors.length} line(s) can't be read — fix the file, nothing is imported until then`}>
+                <ul className="list-disc pl-5">{p.errors.slice(0, 8).map((e) => <li key={e.line}>Line {e.line}: {e.error}</li>)}</ul>
+              </Alert>
+            )}
+            <div className="max-h-64 overflow-auto rounded-lg border border-line">
+              <Table>
+                <TableHead><tr><TableHeaderCell>Day</TableHeaderCell><TableHeaderCell>Campaign</TableHeaderCell><TableHeaderCell align="right">Spend</TableHeaderCell><TableHeaderCell align="right">Taka</TableHeaderCell><TableHeaderCell /></tr></TableHead>
+                <tbody>
+                  {p.lines.map((l) => (
+                    <TableRow key={l.line}>
+                      <TableCell className="whitespace-nowrap">{formatBookDate(l.date)}</TableCell>
+                      <TableCell>{l.campaign}</TableCell>
+                      <TableCell align="right" className="tabular-nums">{l.currency} {l.spend.toFixed(2)}</TableCell>
+                      <TableCell align="right" className="tabular-nums">{formatPrice(l.amount)}{l.previous !== null && l.action === "REPLACE" && <span className="block text-xs text-fg-muted">was {formatPrice(l.previous)}</span>}</TableCell>
+                      <TableCell><Badge variant={l.action === "NEW" ? "success" : l.action === "REPLACE" ? "warning" : "neutral"}>{l.action === "NEW" ? "new" : l.action === "REPLACE" ? "replace" : "same"}</Badge></TableCell>
+                    </TableRow>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

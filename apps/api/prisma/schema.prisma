@@ -705,6 +705,8 @@ model ProductVariant {
   purchaseReturnLines       PurchaseReturnLine[]
   /// Manufacturing — Restrict: a variant used in a BOM or a production order keeps its history.
   bomMaterialLines          BillOfMaterialsLine[]      @relation("BomMaterial")
+  stockCounts               StockCount[]
+  materialRolls             MaterialRoll[]
   bomFinishedLines          BillOfMaterialsLine[]      @relation("BomFinishedVariant")
   productionLines           ProductionOrderLine[]
   productionMaterialLines   ProductionMaterialLine[]
@@ -2937,6 +2939,11 @@ model FinanceBusiness {
   overReceiptTolerancePct     Decimal                   @default(0) @db.Decimal(5, 2)
   /// A supplier invoice's unit price may differ from the order's by this percentage before it needs purchasing.approve.
   invoicePriceTolerancePct    Decimal                   @default(0) @db.Decimal(5, 2)
+  /// Finance Center: the BDT per USD used when a foreign-currency cost (ad spend, hosting) has no rate of its own. Null =
+  /// none set (the amount is then asked for in BDT).
+  defaultUsdRate              Decimal?                  @db.Decimal(18, 6)
+  /// Finance Center: warn when the SMS balance falls to this (BDT). Null = no warning.
+  smsWarnAt                   Decimal?                  @db.Decimal(18, 2)
   createdAt                   DateTime                  @default(now())
   updatedAt                   DateTime                  @updatedAt
   brands                      FinanceBrand[]
@@ -2960,6 +2967,10 @@ model FinanceBusiness {
   gatewayFeeRates             GatewayFeeRate[]
   adCampaigns                 AdCampaign[]
   prepaidCosts                PrepaidCost[]
+  verifications               FinanceVerification[]
+  smsBalanceSnapshots         SmsBalanceSnapshot[]
+  stockCounts                 StockCount[]
+  materialRolls               MaterialRoll[]
   landedCosts                 LandedCost[]
   courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
@@ -3045,6 +3056,7 @@ model LedgerAccount {
   purchaseOrderLines       PurchaseOrderLine[]
   supplierInvoiceLines     SupplierInvoiceLine[] @relation("SupplierInvoiceExpense")
   expenses                 Expense[]             @relation("ExpenseAccount")
+  expenseAllocations       ExpenseAllocation[]   @relation("ExpenseAllocationAccount")
   recurringCommitments     RecurringCommitment[] @relation("CommitmentAccount")
   fixedAssets              FixedAsset[]          @relation("FixedAssetAccount")
   budgetLines              BudgetLine[]          @relation("BudgetAccount")
@@ -3199,6 +3211,7 @@ model AdCampaign {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   spendDays          AdSpendDay[]
+  budgetChanges      AdBudgetChange[]
 
   @@unique([financialAccountId, externalId])
   @@index([businessId, startDate])
@@ -3210,7 +3223,7 @@ model AdSpendDay {
   campaignId       String
   campaign         AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   date             DateTime   @db.Date
-  /// META_API or MANUAL.
+  /// META_API, MANUAL or CSV.
   source           String
   amount           Decimal    @db.Decimal(18, 2)
   originalAmount   Decimal?   @db.Decimal(18, 2)
@@ -3245,11 +3258,95 @@ model PrepaidCost {
   payee            String?
   reference        String?
   notes            String?
+  /// Finance Center (subscriptions): remind this many days before serviceEnd, and what the renewal is expected to cost.
+  remindDaysBefore Int              @default(30)
+  renewalAmount    Decimal?         @db.Decimal(18, 2)
   createdByAdminId String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
   @@unique([businessId, number])
+}
+
+/// Finance Center: how sure a record is. A record with no row here was entered normally (CONFIRMED by whoever entered it);
+/// historical and reported figures carry ESTIMATED / NEEDS_CHECK until someone checks them. The record itself is never
+/// changed by this — the status sits beside it, and every change is audited.
+enum EntryVerification {
+  CONFIRMED
+  ESTIMATED
+  NEEDS_CHECK
+  DISPUTED
+}
+
+model FinanceVerification {
+  id           String            @id @default(cuid())
+  businessId   String
+  business     FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// Expense, PrepaidCost, FixedAsset, OpeningBalanceLine, OpeningInventoryItem, LandedCost, TreasuryMovement, …
+  entityType   String
+  entityId     String
+  status       EntryVerification
+  /// Where the figure came from: "Owner's list 2026-10-21", "supplier invoice", "physical count", …
+  source       String?
+  note         String?
+  setByAdminId String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([businessId, entityType, entityId])
+  @@index([businessId, status])
+}
+
+/// Finance Center: one part of an expense that was paid into "Expenses awaiting allocation" (a van hired for several
+/// errands): posting moves the part from 6990 to its account, optionally naming the product it served. The parts never
+/// add up to more than the expense; what is not allocated stays visible as awaiting allocation.
+model ExpenseAllocation {
+  id               String        @id @default(cuid())
+  expenseId        String
+  expense          Expense       @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  lineNo           Int
+  accountId        String
+  account          LedgerAccount @relation("ExpenseAllocationAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  /// Plain id (reports only): the product this part of the cost served.
+  productId        String?
+  amount           Decimal       @db.Decimal(18, 2)
+  note             String?
+  createdByAdminId String?
+  createdAt        DateTime      @default(now())
+
+  @@unique([expenseId, lineNo])
+}
+
+/// Finance Center: a campaign's budget from a date on. Planned (not yet actual) spend of a day uses the budget in force
+/// that day, so changing a budget never rewrites the days before the change.
+model AdBudgetChange {
+  id               String        @id @default(cuid())
+  campaignId       String
+  campaign         AdCampaign    @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  effectiveDate    DateTime      @db.Date
+  budgetType       AdBudgetType?
+  budget           Decimal?      @db.Decimal(18, 2)
+  changedByAdminId String?
+  createdAt        DateTime      @default(now())
+
+  @@index([campaignId, effectiveDate])
+}
+
+/// Finance Center: the SMS account's balance at a moment — read from the provider or typed in. Usage between two
+/// readings = the drop in balance plus any recharge in between.
+model SmsBalanceSnapshot {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  takenAt          DateTime
+  balance          Decimal         @db.Decimal(18, 2)
+  /// PROVIDER or MANUAL.
+  source           String
+  note             String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@index([businessId, takenAt])
 }
 
 enum LandedCostMethod {
@@ -5132,6 +5229,8 @@ model Expense {
   periodKey        String?
   createdByAdminId String?
   createdAt        DateTime             @default(now())
+  /// Finance Center: an expense paid into "Expenses awaiting allocation" is split later into where it belongs.
+  allocations      ExpenseAllocation[]
 
   @@unique([businessId, number])
   @@index([businessId, expenseDate])
@@ -5637,4 +5736,43 @@ model WebVitalSample {
   createdAt DateTime @default(now())
 
   @@index([createdAt, metric])
+}
+
+/// A physical count of one variant (docs/FINANCE_CENTER.md §7). Recorded BESIDE the site's stock, never written into it:
+/// the stock check shows the difference, and any correction stays an ordinary, reasoned stock adjustment.
+model StockCount {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  variantId        String
+  variant          ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  countDate        DateTime        @db.Date
+  counted          Int
+  /// The site's stock when the count was recorded.
+  siteStock        Int
+  note             String?
+  countedByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@index([variantId, countDate])
+}
+
+/// A roll of a material used up over many parcels (bubble poly). Opened and finished on dates; the parcels booked with
+/// the courier in between are its yield, so a cost per parcel exists only once a real roll has been finished.
+model MaterialRoll {
+  id                String          @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  materialVariantId String
+  materialVariant   ProductVariant  @relation(fields: [materialVariantId], references: [id], onDelete: Restrict)
+  openedOn          DateTime        @db.Date
+  finishedOn        DateTime?       @db.Date
+  /// Typed when the parcels were counted; otherwise the courier bookings between the dates are used.
+  parcelsCounted    Int?
+  note              String?
+  createdByAdminId  String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([materialVariantId, openedOn])
 }

@@ -31,6 +31,8 @@ export interface SmsSender {
   readonly id: SmsProviderId;
   /** OTP, transactional and campaign SMS — one message to one number. */
   send(message: SmsInput): Promise<void>;
+  /** The account's balance (BDT) for Finance › SMS — never throws; not ok when it can't be read. */
+  balance(): Promise<{ ok: true; balance: number } | { ok: false; reason: string }>;
 }
 
 export interface EmailSender {

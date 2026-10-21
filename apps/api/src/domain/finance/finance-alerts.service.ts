@@ -3,6 +3,7 @@
  * every alert and checklist step is computed from what the books already know, names how many records it concerns and
  * links to the page where it is fixed — so it clears by itself once the cause is fixed. Read-only.
  */
+import { listAwaitingAllocation, listRenewals } from "./finance-center.service";
 import { prisma } from "../../config/prisma";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { businessDateOf, toMajorNumber, toMinor } from "./finance-values";
@@ -115,6 +116,18 @@ export async function financeAlerts() {
     const first = businessDateOf(periods[0]!.startDate).slice(0, 7);
     add({ key: "periods.open", severity: "info", title: "Months ended but not closed", detail: `From ${first}. Closing a month stops further postings into it.`, count: periods.length, href: `/admin/finance/attention?view=month-end&month=${first}`, action: "Month-end checklist" });
   }
+
+  // Finance Center: subscriptions to renew, the SMS balance running low, costs still to split (docs/FINANCE_CENTER.md)
+  const renewals = (await listRenewals()).filter((r) => r.status === "RENEW_SOON" || r.status === "EXPIRED");
+  add({ key: "subscriptions.renew", severity: renewals.some((r) => r.status === "EXPIRED") ? "warning" : "info", title: "Subscriptions to renew", detail: renewals.slice(0, 4).map((r) => `${r.name} ${r.status === "EXPIRED" ? "ended" : "ends"} ${r.serviceEnd}`).join(" · "), count: renewals.length, amount: renewals.reduce((s, r) => s + (r.renewalAmount ?? 0), 0) || null, href: "/admin/finance/center?view=renewals", action: "Plan renewals" });
+  const sms = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { smsWarnAt: true } });
+  const lastSms = sms.smsWarnAt ? await prisma.smsBalanceSnapshot.findFirst({ where: { businessId: business.id }, orderBy: { takenAt: "desc" } }) : null;
+  if (lastSms && sms.smsWarnAt && toMinor(lastSms.balance, cur) <= toMinor(sms.smsWarnAt, cur)) {
+    add({ key: "sms.low", severity: "warning", title: "SMS balance is low", detail: `${cur} ${major(toMinor(lastSms.balance, cur))} left (read ${businessDateOf(lastSms.takenAt)}).`, count: 1, href: "/admin/finance/center?view=sms", action: "Recharge SMS" });
+  }
+  const awaiting = await listAwaitingAllocation();
+  const toSplit = awaiting.expenses.filter((e) => e.paymentStatus === "POSTED" && e.status !== "ALLOCATED");
+  add({ key: "expenses.unallocated", severity: "info", title: "Expenses awaiting allocation", detail: toSplit.slice(0, 3).map((e) => `${e.number} ${e.description}`).join(" · "), count: toSplit.length, amount: awaiting.remaining, href: "/admin/finance/center?view=allocate", action: "Split them" });
 
   alerts.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
   const count = (s: AlertSeverity) => alerts.filter((a) => a.severity === s).length;

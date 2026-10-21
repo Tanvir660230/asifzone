@@ -770,6 +770,30 @@ export const NAV_NODES: readonly NavNode[] = [
 
   // Reports & books
   {
+    id: "finance.center",
+    label: "Owner's summary",
+    kind: "page",
+    parent: "finance.books",
+    domain: "manage",
+    route: "/admin/finance/center",
+    capability: "finance.view",
+    order: -2,
+    description: "What you have put in, figures still to confirm, costs to split, renewals and the SMS balance.",
+    keywords: ["investment", "invested", "owner", "estimate", "verify", "missing data", "allocate", "split cost", "vehicle", "renewal", "domain", "vps", "sms balance", "usd rate"],
+  },
+  {
+    id: "finance.stock-check",
+    label: "Stock check",
+    kind: "page",
+    parent: "finance.books",
+    domain: "manage",
+    route: "/admin/finance/stock-check",
+    capability: "finance.view",
+    order: -1.5,
+    description: "Where every piece went — sold, on the way, in stock — what the materials must have been, and your counts beside the site.",
+    keywords: ["stock", "reconcile", "count", "physical count", "tupi", "cap", "attar", "ml", "bottle", "box", "bubble poly", "roll", "how many bought", "direct steadfast"],
+  },
+  {
     id: "finance.profit",
     label: "Profit by order & product",
     kind: "page",

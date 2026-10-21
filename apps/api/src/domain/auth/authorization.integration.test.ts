@@ -303,6 +303,22 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/courier/claims/:id/settle",
   "POST /api/v1/finance/landed-costs/:id/cancel",
   "POST /api/v1/finance/settlements/:id/outside-sales",
+  "POST /api/v1/finance/ads/import-csv",
+  "GET /api/v1/finance/center/summary",
+  "GET /api/v1/finance/center/verifications",
+  "PUT /api/v1/finance/center/verifications",
+  "GET /api/v1/finance/center/allocations",
+  "PUT /api/v1/finance/center/allocations/:id",
+  "GET /api/v1/finance/center/renewals",
+  "GET /api/v1/finance/center/sms",
+  "POST /api/v1/finance/center/sms/balance",
+  "GET /api/v1/finance/center/settings",
+  "PATCH /api/v1/finance/center/settings",
+  "GET /api/v1/finance/center/stock-check",
+  "POST /api/v1/finance/center/stock-counts",
+  "GET /api/v1/finance/center/rolls",
+  "POST /api/v1/finance/center/rolls",
+  "POST /api/v1/finance/center/rolls/:id/finish",
   // Financial Core Phase 4D (docs/FINANCE_PHASE_4D.md): STAFF orders and receives, but approving, closing and reversing stay with approvers.
   "PATCH /api/v1/purchasing/settings",
   "POST /api/v1/purchasing/purchase-orders/:id/approve",
@@ -454,7 +470,7 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 640 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 656 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel; +5 −3: Inbox conversations replace the admin feedback routes; +1: payment attempts list (Admin V2); +1: store social-share image upload (Phase 7)
     // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
     // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md); +4: M2 custody; +5: M3 costs; +4: M4 receipts
@@ -464,7 +480,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +36: owner's books (docs/FINANCE_OWNER_BOOKS.md) — custody 9, rates & courier 7, ads 5, prepaid 3, packaging 4, landed 3, refills 2, profit 2, money map 1
     // +4: courier claims (list, open, settle) and cancelling a landed cost
     // +1: a payout's unmatched parcels counted as sales outside the website
-    expect(routes).toHaveLength(640);
+    // +11: Finance Center (docs/FINANCE_CENTER.md) — ad CSV import, summary, verifications 2, allocations 2, renewals, SMS 2, settings 2
+    expect(routes).toHaveLength(656);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

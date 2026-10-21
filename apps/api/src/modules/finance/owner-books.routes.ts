@@ -27,7 +27,20 @@ import {
   courierClaimCreateSchema,
   courierClaimSettleSchema,
   landedCostCancelSchema,
+  adCsvImportSchema,
+  verificationSetSchema,
+  verificationListQuerySchema,
+  expenseAllocationSchema,
+  smsBalanceSchema,
+  stockCountSchema,
+  materialRollOpenSchema,
+  materialRollFinishSchema,
+  financeCenterSettingsSchema,
 } from "@clothing-brand/shared";
+import * as center from "../../domain/finance/finance-center.service";
+import * as stockCheck from "../../domain/finance/stock-check.service";
+import { prisma } from "../../config/prisma";
+import { getFinanceContext } from "../../domain/finance/finance-context";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
 import { asyncHandler } from "../../lib/async-handler";
@@ -150,3 +163,27 @@ ownerBooksRouter.post("/courier/claims", requirePermission("finance.transact"), 
 ownerBooksRouter.post("/courier/claims/:id/settle", requirePermission("finance.transact"), validate(courierClaimSettleSchema), asyncHandler(async (req, res) => res.json(await claims.settleClaim(id(req), req.body, await actorOf(req), idempotencyKeyOf(req)))));
 ownerBooksRouter.post("/landed-costs/:id/cancel", requirePermission("finance.post"), validate(landedCostCancelSchema), asyncHandler(async (req, res) => res.json(await landed.cancelLandedCost(id(req), req.body.reason, await actorOf(req)))));
 ownerBooksRouter.post("/settlements/:id/outside-sales", requirePermission("finance.transact"), asyncHandler(async (req, res) => res.json(await markUnmatchedAsOutsideSales(id(req), await actorOf(req)))));
+
+// ── Finance Center (docs/FINANCE_CENTER.md) ───────────────────────────────────────────────────────────────────────────
+ownerBooksRouter.post("/ads/import-csv", requirePermission("finance.transact"), validate(adCsvImportSchema), asyncHandler(async (req, res) => res.json(await ads.importAdCsv(req.body, await actorOf(req)))));
+ownerBooksRouter.get("/center/summary", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await center.financeCenterSummary())));
+ownerBooksRouter.get("/center/verifications", requirePermission("finance.read"), validate(verificationListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await center.listVerifications(req.query as never))));
+ownerBooksRouter.put("/center/verifications", requirePermission("finance.post"), validate(verificationSetSchema), asyncHandler(async (req, res) => res.json(await center.setVerification(req.body, await actorOf(req)))));
+ownerBooksRouter.get("/center/allocations", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await center.listAwaitingAllocation())));
+ownerBooksRouter.put("/center/allocations/:id", requirePermission("finance.post"), validate(expenseAllocationSchema), asyncHandler(async (req, res) => res.json(await center.setExpenseAllocations(id(req), req.body.lines, await actorOf(req)))));
+ownerBooksRouter.get("/center/renewals", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json({ renewals: await center.listRenewals() })));
+ownerBooksRouter.get("/center/sms", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await center.smsStatus())));
+ownerBooksRouter.post("/center/sms/balance", requirePermission("finance.transact"), validate(smsBalanceSchema), asyncHandler(async (req, res) => res.status(201).json({ id: await center.recordSmsBalance(req.body, await actorOf(req)) })));
+ownerBooksRouter.get("/center/settings", requirePermission("finance.read"), asyncHandler(async (_req, res) => {
+  const { business } = await getFinanceContext();
+  const s = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true, smsWarnAt: true } });
+  res.json({ defaultUsdRate: s.defaultUsdRate ? Number(s.defaultUsdRate) : null, smsLowBalance: s.smsWarnAt ? Number(s.smsWarnAt) : null });
+}));
+ownerBooksRouter.patch("/center/settings", requirePermission("finance.configure"), validate(financeCenterSettingsSchema), asyncHandler(async (req, res) => res.json(await center.updateFinanceCenterSettings(req.body, await actorOf(req)))));
+
+// ── Stock check: counts and rolls (docs/FINANCE_CENTER.md §7) ─────────────────────────────────────────────────────────
+ownerBooksRouter.get("/center/stock-check", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await stockCheck.stockCheck())));
+ownerBooksRouter.post("/center/stock-counts", requirePermission("finance.transact"), validate(stockCountSchema), asyncHandler(async (req, res) => res.status(201).json(await stockCheck.recordStockCount(req.body, await actorOf(req)))));
+ownerBooksRouter.get("/center/rolls", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await stockCheck.listRolls())));
+ownerBooksRouter.post("/center/rolls", requirePermission("finance.transact"), validate(materialRollOpenSchema), asyncHandler(async (req, res) => res.status(201).json(await stockCheck.openRoll(req.body, await actorOf(req)))));
+ownerBooksRouter.post("/center/rolls/:id/finish", requirePermission("finance.transact"), validate(materialRollFinishSchema), asyncHandler(async (req, res) => res.json(await stockCheck.finishRoll(id(req), req.body, await actorOf(req)))));

@@ -119,8 +119,14 @@ const campaignFields = {
   notes: optionalText(500),
 };
 export const adCampaignCreateSchema = z.object({ financialAccountId: id, ...campaignFields });
-export const adCampaignUpdateSchema = z.object(campaignFields).partial();
-export const adSpendDaySchema = z.object({ date: businessDate, amount: financeAmountSchema });
+export const adCampaignUpdateSchema = z.object({ ...campaignFields, budgetFrom: businessDate.optional().nullable() }).partial();
+const currencyCode = z.string().trim().regex(/^[A-Za-z]{3}$/, "A 3-letter currency code").transform((v) => v.toUpperCase());
+const fxRate = z.number().positive().max(100000);
+/** A day's spend: in taka (amount), or in the platform's currency (originalAmount + currency) at a rate (fxRate, else the default). */
+export const adSpendDaySchema = z
+  .object({ date: businessDate, amount: financeAmountSchema.optional().nullable(), originalAmount: financeAmountSchema.optional().nullable(), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable() })
+  .refine((v) => (v.amount ?? null) !== null || ((v.originalAmount ?? null) !== null && !!v.currency), "Give the spend in taka, or in its currency");
+export const adCsvImportSchema = z.object({ financialAccountId: id, csv: z.string().min(1).max(2_000_000), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable(), commit: z.boolean() });
 export const adCampaignListQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional() });
 export const metaSpendImportSchema = z.object({ days: z.number().int().min(1).max(400).optional(), since: businessDate.optional() });
 
@@ -137,10 +143,12 @@ export const prepaidCreateSchema = z.object({
   payee: optionalText(200),
   reference: optionalText(120),
   notes: optionalText(500),
+  remindDaysBefore: z.number().int().min(0).max(365).optional(),
+  renewalAmount: positive.optional().nullable(),
 });
 export const prepaidUpdateSchema = z
-  .object({ name: z.string().trim().min(1).max(160).optional(), notes: optionalText(500), serviceEnd: businessDate.optional() })
-  .refine((v) => v.name !== undefined || v.notes !== undefined || v.serviceEnd !== undefined, "Nothing to change");
+  .object({ name: z.string().trim().min(1).max(160).optional(), notes: optionalText(500), serviceEnd: businessDate.optional(), remindDaysBefore: z.number().int().min(0).max(365).optional(), renewalAmount: positive.optional().nullable() })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to change");
 
 // ── packaging (§6.2) ──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -186,3 +194,23 @@ export const courierClaimSettleSchema = z
   .object({ kind: z.enum(["MONEY", "PAYOUT", "WRITE_OFF"]), amount: positive, date: businessDate.optional(), financialAccountId: id.optional().nullable(), note: optionalText(300) })
   .refine((v) => v.kind !== "MONEY" || Boolean(v.financialAccountId), { message: "Choose the account the money came into", path: ["financialAccountId"] });
 export const landedCostCancelSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
+// ── Finance Center (docs/FINANCE_CENTER.md) ────────────────────────────────────────────────────────────────────────────
+
+export const ENTRY_VERIFICATIONS = ["CONFIRMED", "ESTIMATED", "NEEDS_CHECK", "DISPUTED"] as const;
+export const VERIFIABLE_ENTITY_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay"] as const;
+export const verificationSetSchema = z.object({ entityType: z.enum(VERIFIABLE_ENTITY_TYPES), entityId: id, status: z.enum(ENTRY_VERIFICATIONS), source: optionalText(200), note: optionalText(1000) });
+export const verificationListQuerySchema = z.object({ status: z.enum(ENTRY_VERIFICATIONS).optional() });
+export const expenseAllocationSchema = z.object({
+  lines: z.array(z.object({ accountId: id, productId: id.optional().nullable(), amount: positive, note: optionalText(300) })).max(50),
+});
+export const smsBalanceSchema = z.object({ balance: financeAmountSchema, takenAt: z.string().datetime({ offset: true }).optional(), note: optionalText(300) });
+export const financeCenterSettingsSchema = z
+  .object({ defaultUsdRate: fxRate.nullable().optional(), smsLowBalance: financeAmountSchema.nullable().optional() })
+  .refine((v) => v.defaultUsdRate !== undefined || v.smsLowBalance !== undefined, "Nothing to change");
+
+// ── stock check: counts and rolls (docs/FINANCE_CENTER.md §7) ─────────────────────────────────────────────────────────
+
+export const stockCountSchema = z.object({ variantId: id, counted: z.number().int().min(0).max(10_000_000), countDate: businessDate.optional(), note: optionalText(300) });
+export const materialRollOpenSchema = z.object({ materialVariantId: id, openedOn: businessDate, note: optionalText(300) });
+export const materialRollFinishSchema = z.object({ finishedOn: businessDate, parcelsCounted: z.number().int().min(1).max(1_000_000).optional().nullable(), note: optionalText(300) });

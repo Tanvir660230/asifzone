@@ -167,3 +167,22 @@ registerPostingRule(COURIER_CLAIM_EVENTS.writtenOff, 1, {
     ],
   }),
 });
+
+// ── expense allocation: a cost paid into 6990 split to where it belongs (docs/FINANCE_CENTER.md) ──────────────────────
+
+export const EXPENSE_ALLOCATED_EVENT = "finance.expense.allocated";
+const allocationPayload = z.object({
+  ...{ semanticKey: z.string(), fp: z.string(), supersedes: z.string().nullable(), void: z.boolean() },
+  expenseId: z.string(),
+  number: z.string(),
+  description: z.string(),
+  lines: z.array(z.object({ accountId: z.string(), productId: z.string().nullable(), amount: minor, note: z.string().nullable() })),
+});
+registerPostingRule(EXPENSE_ALLOCATED_EVENT, 1, {
+  payload: allocationPayload,
+  build: (p) =>
+    voidOr(p, `${p.number} split — ${p.description}`, () => [
+      ...p.lines.map((l) => ({ account: { accountId: l.accountId }, debit: l.amount, credit: 0, memo: l.note, ...(l.productId ? { partyType: "Product", partyId: l.productId } : { partyType: "Expense", partyId: p.expenseId }) })),
+      { account: "expense.unallocated" as const, debit: 0, credit: p.lines.reduce((s, l) => s + l.amount, 0), partyType: "Expense", partyId: p.expenseId },
+    ], p.number),
+});

@@ -101,8 +101,8 @@ function buildPayments(enabledKeys: readonly PaymentGatewayKey[]): PaymentGatewa
 }
 
 function smsSender(id: ProviderSelection["sms"]): SmsSender {
-  if (id === "none") return { id, send: async () => Promise.reject(new ProviderNotConfiguredError("SMS", "SMS_PROVIDER")) };
-  return { id, send: (message) => bulksmsbd.sendSms(message) };
+  if (id === "none") return { id, send: async () => Promise.reject(new ProviderNotConfiguredError("SMS", "SMS_PROVIDER")), balance: async () => ({ ok: false, reason: "No SMS provider is chosen" }) };
+  return { id, send: (message) => bulksmsbd.sendSms(message), balance: () => bulksmsbd.readSmsBalance() };
 }
 
 function emailSender(id: ProviderSelection["email"]): EmailSender {

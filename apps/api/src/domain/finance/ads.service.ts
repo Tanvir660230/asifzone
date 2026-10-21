@@ -40,6 +40,36 @@ export function plannedSpend(c: { startDate: string; endDate: string | null; bud
   return out;
 }
 
+/**
+ * Planned spend when the budget changed over time: each day uses the budget in force that day (the latest change dated on
+ * or before it; days before the first change use the first). So raising a budget today never rewrites yesterday. Pure.
+ */
+export function plannedByVersions(c: { startDate: string; endDate: string | null }, versions: Array<{ from: string; budgetType: AdBudgetType | null; budget: number | null }>, through: string): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!versions.length) return out;
+  const sorted = [...versions].sort((a, b) => a.from.localeCompare(b.from));
+  const plans = sorted.map((v) => plannedSpend({ ...c, budgetType: v.budgetType, budget: v.budget }, through));
+  const last = c.endDate && c.endDate < through ? c.endDate : through;
+  for (let d = c.startDate; d <= last; d = addDays(d, 1)) {
+    let i = 0;
+    for (let k = 0; k < sorted.length; k++) if (sorted[k]!.from <= d) i = k;
+    const v = plans[i]!.get(d);
+    if (v !== undefined) out.set(d, v);
+  }
+  return out;
+}
+
+type BudgetedCampaign = { startDate: Date; endDate: Date | null; budgetType: AdBudgetType | null; budget: Prisma.Decimal | null; budgetChanges?: Array<{ effectiveDate: Date; budgetType: AdBudgetType | null; budget: Prisma.Decimal | null }> };
+
+/** A campaign's planned spend through `through`, by its budget history (a campaign from before the history: its budget). */
+function campaignPlanned(c: BudgetedCampaign, cur: string, through: string) {
+  const range = { startDate: businessDateOf(c.startDate), endDate: c.endDate ? businessDateOf(c.endDate) : null };
+  const versions = c.budgetChanges?.length
+    ? c.budgetChanges.map((v) => ({ from: businessDateOf(v.effectiveDate), budgetType: v.budgetType, budget: v.budget ? toMinor(v.budget, cur) : null }))
+    : [{ from: range.startDate, budgetType: c.budgetType, budget: c.budget ? toMinor(c.budget, cur) : null }];
+  return plannedByVersions(range, versions, through);
+}
+
 // ── campaigns ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export interface CampaignInput {
@@ -55,6 +85,8 @@ export interface CampaignInput {
   landingPath?: string | null;
   isActive?: boolean;
   notes?: string | null;
+  /** On an update that changes the budget: the first day the new budget applies (default today). */
+  budgetFrom?: string | null;
 }
 
 async function adAccount(businessId: string, id: string) {
@@ -83,6 +115,7 @@ export async function createCampaign(input: CampaignInput, actor: FinanceActor) 
         budget: input.budget ? toDecimal(toMinor(input.budget, cur), cur) : null, landingPath: input.landingPath ?? null, isActive: input.isActive ?? true, notes: input.notes ?? null, createdByAdminId: adminOf(actor),
       },
     });
+    await tx.adBudgetChange.create({ data: { campaignId: row.id, effectiveDate: row.startDate, budgetType: row.budgetType, budget: row.budget, changedByAdminId: adminOf(actor) } });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_campaign.create", entityType: "AdCampaign", entityId: row.id, after: row });
     return row;
   });
@@ -100,7 +133,19 @@ export async function updateCampaign(id: string, input: Partial<CampaignInput>, 
     budgetType: input.budgetType !== undefined ? input.budgetType : before.budgetType, budget: input.budget !== undefined ? input.budget : before.budget ? toMajorNumber(toMinor(before.budget, cur), cur) : null,
   };
   validate(merged);
+  const budgetChanged = merged.budgetType !== before.budgetType || (merged.budget ?? null) !== (before.budget ? toMajorNumber(toMinor(before.budget, cur), cur) : null);
+  const today = businessToday(business);
+  let budgetFrom = input.budgetFrom ?? today;
+  if (budgetFrom < merged.startDate) budgetFrom = merged.startDate;
+  if (budgetChanged && input.budgetFrom && input.budgetFrom > today) throw financeError(400, "BUDGET_FROM", "A budget change starts today or on a day that has passed");
   await financeTransaction(async (tx) => {
+    if (budgetChanged) {
+      if (!(await tx.adBudgetChange.count({ where: { campaignId: id } }))) {
+        // A campaign from before the history: its old budget held from its start.
+        await tx.adBudgetChange.create({ data: { campaignId: id, effectiveDate: before.startDate, budgetType: before.budgetType, budget: before.budget } });
+      }
+      await tx.adBudgetChange.create({ data: { campaignId: id, effectiveDate: dateColumn(budgetFrom), budgetType: merged.budgetType, budget: merged.budget ? toDecimal(toMinor(merged.budget, cur), cur) : null, changedByAdminId: adminOf(actor) } });
+    }
     const after = await tx.adCampaign.update({
       where: { id },
       data: {
@@ -115,22 +160,212 @@ export async function updateCampaign(id: string, input: Partial<CampaignInput>, 
 }
 
 /** Types in (or corrects) one day's actual spend. Zero is a real figure (the campaign was off that day). */
-export async function recordDaySpend(campaignId: string, input: { date: string; amount: number }, actor: FinanceActor) {
+export interface DaySpendInput {
+  date: string;
+  /** The taka cost. Optional when the spend is in another currency — then original × rate. */
+  amount?: number | null;
+  /** The platform's figure in its own currency (e.g. USD 4.72) and the taka per unit it was paid at. */
+  originalAmount?: number | null;
+  currency?: string | null;
+  fxRate?: number | null;
+}
+
+/**
+ * The taka figure of a day's spend (minor units) and whether it is an estimate: typed in taka → exact; in another
+ * currency → original × the rate given (exact) or the books' default rate (an ESTIMATE until the card statement's rate
+ * is known). Pure.
+ */
+export function daySpendAmount(input: DaySpendInput, cur: string, defaultRate: number | null): { amount: number; original: number | null; currency: string | null; rate: number | null; estimated: boolean } {
+  const foreign = input.currency && input.currency.toUpperCase() !== cur ? input.currency.toUpperCase() : null;
+  if (!foreign) {
+    if (input.amount === undefined || input.amount === null || !(input.amount >= 0)) throw financeError(400, "SPEND_AMOUNT", "Give the day's spend");
+    return { amount: toMinor(input.amount, cur), original: null, currency: null, rate: null, estimated: false };
+  }
+  if (input.originalAmount === undefined || input.originalAmount === null || !(input.originalAmount >= 0)) throw financeError(400, "SPEND_AMOUNT", `Give the day's spend in ${foreign}`);
+  const original = Math.round(input.originalAmount * 100);
+  if (input.amount !== undefined && input.amount !== null) {
+    if (!(input.amount >= 0)) throw financeError(400, "SPEND_AMOUNT", "The taka cost is zero or more");
+    const amount = toMinor(input.amount, cur);
+    return { amount, original, currency: foreign, rate: original ? Math.round((amount / original) * 1e6) / 1e6 : input.fxRate ?? defaultRate, estimated: false };
+  }
+  const rate = input.fxRate ?? defaultRate;
+  if (!(rate && rate > 0)) throw financeError(400, "SPEND_RATE", `Give the taka per ${foreign} (or set a default rate in Finance Center › Settings)`);
+  return { amount: Math.round(original * rate), original, currency: foreign, rate, estimated: !input.fxRate };
+}
+
+/** Types in (or corrects) one day's actual spend. Zero is a real figure (the campaign was off that day). */
+export async function recordDaySpend(campaignId: string, input: DaySpendInput, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const c = await prisma.adCampaign.findFirst({ where: { id: campaignId, businessId: business.id } });
   if (!c) throw financeError(404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
   if (input.date > businessToday(business)) throw financeError(400, "SPEND_IN_FUTURE", "Spend is recorded for days that happened");
+  const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true } });
+  const s = daySpendAmount(input, cur, biz.defaultUsdRate ? Number(biz.defaultUsdRate) : null);
   await financeTransaction(async (tx) => {
-    const amount = toDecimal(toMinor(input.amount, cur), cur);
-    const row = await tx.adSpendDay.upsert({
-      where: { campaignId_date: { campaignId, date: dateColumn(input.date) } },
-      create: { campaignId, date: dateColumn(input.date), source: "MANUAL", amount },
-      update: { source: "MANUAL", amount, originalAmount: null, originalCurrency: null, fxRate: null },
-    });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.record", entityType: "AdSpendDay", entityId: row.id, after: { campaignId, date: input.date, amount: input.amount } });
+    const row = await writeSpendDayInTx(tx, business.id, campaignId, input.date, "MANUAL", s, cur, actor);
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.record", entityType: "AdSpendDay", entityId: row.id, after: { campaignId, date: input.date, amount: toMajorNumber(s.amount, cur), original: s.original === null ? null : s.original / 100, currency: s.currency, rate: s.rate, estimated: s.estimated } });
   });
   await syncCampaignSpend(campaignId);
+}
+
+async function writeSpendDayInTx(tx: Prisma.TransactionClient, businessId: string, campaignId: string, date: string, source: string, s: ReturnType<typeof daySpendAmount>, cur: string, actor: FinanceActor, extra: { impressions?: number | null; clicks?: number | null; purchases?: number | null } = {}) {
+  const data = {
+    source, amount: toDecimal(s.amount, cur), originalAmount: s.original === null ? null : toDecimal(s.original, cur), originalCurrency: s.currency, fxRate: s.rate,
+    impressions: extra.impressions ?? null, clicks: extra.clicks ?? null, purchases: extra.purchases ?? null,
+  };
+  const row = await tx.adSpendDay.upsert({ where: { campaignId_date: { campaignId, date: dateColumn(date) } }, create: { campaignId, date: dateColumn(date), ...data }, update: data });
+  // The rate is the books' default, not the card's: the taka figure is an estimate until it is checked.
+  const key = { businessId_entityType_entityId: { businessId, entityType: "AdSpendDay", entityId: row.id } };
+  if (s.estimated) {
+    const v = { status: "ESTIMATED" as const, source: "Default USD rate", note: `${(s.original ?? 0) / 100} ${s.currency} at ${s.rate}`, setByAdminId: adminOf(actor) };
+    await tx.financeVerification.upsert({ where: key, create: { businessId, entityType: "AdSpendDay", entityId: row.id, ...v }, update: v });
+  } else {
+    await tx.financeVerification.deleteMany({ where: { businessId, entityType: "AdSpendDay", entityId: row.id, status: "ESTIMATED", source: "Default USD rate" } });
+  }
+  return row;
+}
+
+// ── CSV import (Meta Ads Manager export, or any sheet with day / campaign / amount columns) ─────────────────────────────
+
+/** Splits one CSV line (quotes, doubled quotes). Pure. */
+export function csvCells(line: string): string[] {
+  const out: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { out.push(cell); cell = ""; }
+    else cell += ch;
+  }
+  out.push(cell);
+  return out.map((c) => c.trim());
+}
+
+const pick = (headers: string[], ...names: RegExp[]) => {
+  for (const n of names) {
+    const i = headers.findIndex((h) => n.test(h));
+    if (i >= 0) return i;
+  }
+  return -1;
+};
+
+export interface AdCsvRow { line: number; date: string; campaignName: string; campaignId: string | null; spend: number; currency: string; impressions: number | null; clicks: number | null; purchases: number | null }
+
+/**
+ * Reads an ad-spend CSV: Meta's export ("Day" or "Reporting starts", "Campaign name", "Campaign ID", "Amount spent (USD)",
+ * "Impressions", "Link clicks", "Purchases"/"Results") or a plain sheet (date, campaign, amount). The currency is the one
+ * in the amount column's header, else `fallbackCurrency`. Rows that can't be read are returned as errors, never guessed;
+ * a campaign-day twice in the file is an error (which one is right?). Pure.
+ */
+export function parseAdCsv(text: string, fallbackCurrency: string): { rows: AdCsvRow[]; errors: Array<{ line: number; error: string }> } {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (!lines.length) return { rows: [], errors: [{ line: 0, error: "The file is empty" }] };
+  const headers = csvCells(lines[0]!).map((h) => h.toLowerCase());
+  const iDate = pick(headers, /^day$/, /^date$/, /reporting starts/, /^day\b/, /date/);
+  const iName = pick(headers, /^campaign name$/, /^campaign$/, /campaign name/);
+  const iId = pick(headers, /^campaign id$/, /campaign id/);
+  const iAmount = pick(headers, /^amount spent/, /^spend/, /^amount/, /cost/);
+  const iImpr = pick(headers, /^impressions$/);
+  const iClicks = pick(headers, /^link clicks$/, /^clicks/);
+  const iPurch = pick(headers, /^purchases$/, /^results$/);
+  const errors: Array<{ line: number; error: string }> = [];
+  if (iDate < 0 || iName < 0 || iAmount < 0) return { rows: [], errors: [{ line: 1, error: "Need columns for the day, the campaign name and the amount spent" }] };
+  const currency = (/\(([a-z]{3})\)/i.exec(headers[iAmount]!)?.[1] ?? fallbackCurrency).toUpperCase();
+  const rows: AdCsvRow[] = [];
+  const seen = new Map<string, number>();
+  const num = (v: string | undefined) => (v === undefined || v.trim() === "" ? null : Number(v.replace(/[,\s]/g, "")));
+  for (let n = 1; n < lines.length; n++) {
+    const c = csvCells(lines[n]!);
+    const line = n + 1;
+    const rawDate = c[iDate] ?? "";
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate) ?? null;
+    const dmy = !m ? /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(rawDate) : null;
+    const date = m ? `${m[1]}-${m[2]}-${m[3]}` : dmy ? `${dmy[3]}-${dmy[2]!.padStart(2, "0")}-${dmy[1]!.padStart(2, "0")}` : null;
+    if (!date || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) { errors.push({ line, error: `Unreadable day "${rawDate}" (use YYYY-MM-DD or DD/MM/YYYY)` }); continue; }
+    const name = c[iName] ?? "";
+    if (!name) { errors.push({ line, error: "No campaign name" }); continue; }
+    const spend = num(c[iAmount]);
+    if (spend === null || !Number.isFinite(spend) || spend < 0) { errors.push({ line, error: `Unreadable amount "${c[iAmount] ?? ""}"` }); continue; }
+    const campaignId = iId >= 0 && c[iId] ? c[iId]! : null;
+    const key = `${campaignId ?? name.toLowerCase()}|${date}`;
+    if (seen.has(key)) { errors.push({ line, error: `Same campaign and day as line ${seen.get(key)}` }); continue; }
+    seen.set(key, line);
+    const int = (i: number) => { const v = i >= 0 ? num(c[i]) : null; return v === null || !Number.isFinite(v) ? null : Math.round(v); };
+    rows.push({ line, date, campaignName: name, campaignId, spend, currency, impressions: int(iImpr), clicks: int(iClicks), purchases: int(iPurch) });
+  }
+  return { rows, errors };
+}
+
+/**
+ * Imports an ad-spend CSV into an ad account: previews first (`commit: false` — what would be created, replaced or is the
+ * same), then writes every row in ONE transaction (all or nothing). Campaigns are matched by their platform id, else by
+ * name; unknown ones are created. A day already recorded is replaced (the file is the newer figure); the same figure is
+ * left alone. Foreign-currency spend uses `fxRate`, else the books' default rate (marked an estimate).
+ */
+export async function importAdCsv(input: { financialAccountId: string; csv: string; currency?: string | null; fxRate?: number | null; commit: boolean }, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const fa = await adAccount(business.id, input.financialAccountId);
+  const parsed = parseAdCsv(input.csv, (input.currency ?? "USD").toUpperCase());
+  const today = businessToday(business);
+  const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true } });
+  const defaultRate = biz.defaultUsdRate ? Number(biz.defaultUsdRate) : null;
+  const errors = [...parsed.errors];
+  const campaigns = await prisma.adCampaign.findMany({ where: { businessId: business.id, financialAccountId: fa.id }, include: { spendDays: { select: { date: true, amount: true } } } });
+  const plan: Array<AdCsvRow & { campaign: string; campaignExists: boolean; amount: number; estimated: boolean; action: "NEW" | "REPLACE" | "SAME"; previous: number | null }> = [];
+  for (const r of parsed.rows) {
+    if (r.date > today) { errors.push({ line: r.line, error: "A day in the future" }); continue; }
+    let s: ReturnType<typeof daySpendAmount>;
+    try {
+      s = daySpendAmount({ date: r.date, originalAmount: r.currency === cur ? null : r.spend, amount: r.currency === cur ? r.spend : null, currency: r.currency, fxRate: input.fxRate ?? null }, cur, defaultRate);
+    } catch (err) {
+      errors.push({ line: r.line, error: err instanceof Error ? err.message : String(err) });
+      continue;
+    }
+    const c = campaigns.find((x) => (r.campaignId && x.externalId === r.campaignId) || x.name.toLowerCase() === r.campaignName.toLowerCase()) ?? null;
+    const prev = c?.spendDays.find((d) => businessDateOf(d.date) === r.date);
+    const previous = prev ? toMinor(prev.amount, cur) : null;
+    plan.push({ ...r, campaign: c?.name ?? r.campaignName, campaignExists: !!c, amount: s.amount, estimated: s.estimated, action: previous === null ? "NEW" : previous === s.amount ? "SAME" : "REPLACE", previous });
+  }
+  const summary = {
+    rows: plan.length, errors, newCampaigns: [...new Set(plan.filter((p) => !p.campaignExists).map((p) => p.campaignName))],
+    new: plan.filter((p) => p.action === "NEW").length, replace: plan.filter((p) => p.action === "REPLACE").length, same: plan.filter((p) => p.action === "SAME").length,
+    total: toMajorNumber(plan.reduce((s, p) => s + p.amount, 0), cur), estimated: plan.filter((p) => p.estimated).length,
+    lines: plan.map((p) => ({ line: p.line, date: p.date, campaign: p.campaign, spend: p.spend, currency: p.currency, amount: toMajorNumber(p.amount, cur), estimated: p.estimated, action: p.action, previous: p.previous === null ? null : toMajorNumber(p.previous, cur) })),
+  };
+  if (!input.commit) return { committed: false, ...summary };
+  if (errors.length) throw financeError(400, "AD_CSV_ERRORS", `Fix the ${errors.length} line(s) that can't be read first — nothing was imported`, { errors });
+  const touched = new Set<string>();
+  await financeTransaction(async (tx) => {
+    await ensureOwnerBooksSetupInTx(tx, business, actor);
+    const byKey = new Map<string, string>();
+    for (const p of plan) {
+      const key = p.campaignId ?? p.campaignName.toLowerCase();
+      let id = byKey.get(key) ?? campaigns.find((x) => (p.campaignId && x.externalId === p.campaignId) || x.name.toLowerCase() === p.campaignName.toLowerCase())?.id;
+      if (!id) {
+        const row = await tx.adCampaign.create({ data: { businessId: business.id, financialAccountId: fa.id, platform: fa.metadata && (fa.metadata as Record<string, unknown>).platform ? String((fa.metadata as Record<string, unknown>).platform) : "META", externalId: p.campaignId, name: p.campaignName, startDate: dateColumn(plan.filter((x) => (x.campaignId ?? x.campaignName.toLowerCase()) === key).map((x) => x.date).sort()[0]!), createdByAdminId: adminOf(actor) } });
+        await tx.adBudgetChange.create({ data: { campaignId: row.id, effectiveDate: row.startDate, budgetType: null, budget: null } });
+        await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_campaign.import", entityType: "AdCampaign", entityId: row.id, after: row });
+        id = row.id;
+      }
+      byKey.set(key, id);
+      touched.add(id);
+      if (p.action === "SAME") continue;
+      const c = await tx.adCampaign.findUniqueOrThrow({ where: { id } });
+      if (businessDateOf(c.startDate) > p.date) await tx.adCampaign.update({ where: { id }, data: { startDate: dateColumn(p.date) } });
+      const s = { amount: p.amount, original: p.currency === cur ? null : Math.round(p.spend * 100), currency: p.currency === cur ? null : p.currency, rate: p.currency === cur ? null : input.fxRate ?? defaultRate, estimated: p.estimated };
+      await writeSpendDayInTx(tx, business.id, id, p.date, "CSV", s, cur, actor, p);
+    }
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.csv_import", entityType: "FinancialAccount", entityId: fa.id, after: { rows: plan.length, new: summary.new, replace: summary.replace, same: summary.same, total: summary.total } });
+  });
+  for (const id of touched) await syncCampaignSpend(id);
+  return { committed: true, ...summary };
 }
 
 // ── into the books ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -138,12 +373,10 @@ export async function recordDaySpend(campaignId: string, input: { date: string; 
 async function desiredForCampaign(campaignId: string, today: string): Promise<FinanceFact[]> {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
-  const c = await prisma.adCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { adAccount: { select: { ledgerAccountId: true } }, spendDays: true } });
+  const c = await prisma.adCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { adAccount: { select: { ledgerAccountId: true } }, spendDays: true, budgetChanges: true } });
   const actual = new Map(c.spendDays.map((d) => [businessDateOf(d.date), toMinor(d.amount, cur)]));
   // A planned day is a day that has ended (yesterday and before); today's spend waits for its actual figure.
-  const planned = c.isActive
-    ? plannedSpend({ startDate: businessDateOf(c.startDate), endDate: c.endDate ? businessDateOf(c.endDate) : null, budgetType: c.budgetType, budget: c.budget ? toMinor(c.budget, cur) : null }, addDays(today, -1))
-    : new Map<string, number>();
+  const planned = c.isActive ? campaignPlanned(c, cur, addDays(today, -1)) : new Map<string, number>();
   const days = new Set([...actual.keys(), ...planned.keys()]);
   const facts: FinanceFact[] = [];
   for (const date of [...days].sort()) {
@@ -254,17 +487,23 @@ export async function listCampaigns(q: { from?: string; to?: string }) {
   const today = businessToday(business);
   const to = q.to ?? today;
   const from = q.from ?? `${to.slice(0, 7)}-01`;
-  const campaigns = await prisma.adCampaign.findMany({ where: { businessId: business.id }, include: { adAccount: { select: { id: true, name: true } }, spendDays: true }, orderBy: [{ isActive: "desc" }, { startDate: "desc" }] });
+  const campaigns = await prisma.adCampaign.findMany({ where: { businessId: business.id }, include: { adAccount: { select: { id: true, name: true } }, spendDays: true, budgetChanges: { orderBy: { effectiveDate: "asc" } } }, orderBy: [{ isActive: "desc" }, { startDate: "desc" }] });
   const out = [];
   for (const c of campaigns) {
     const actual = new Map(c.spendDays.map((d) => [businessDateOf(d.date), toMinor(d.amount, cur)]));
-    const planned = c.isActive ? plannedSpend({ startDate: businessDateOf(c.startDate), endDate: c.endDate ? businessDateOf(c.endDate) : null, budgetType: c.budgetType, budget: c.budget ? toMinor(c.budget, cur) : null }, addDays(today, -1)) : new Map<string, number>();
+    const planned = c.isActive ? campaignPlanned(c, cur, addDays(today, -1)) : new Map<string, number>();
     let actualMinor = 0;
     let plannedMinor = 0;
     for (const d of new Set([...actual.keys(), ...planned.keys()])) {
       if (d < from || d > to) continue;
       if (actual.has(d)) actualMinor += actual.get(d)!;
       else plannedMinor += planned.get(d)!;
+    }
+    const foreign: Record<string, number> = {};
+    for (const d of c.spendDays) {
+      const day = businessDateOf(d.date);
+      if (day < from || day > to || !d.originalCurrency || !d.originalAmount) continue;
+      foreign[d.originalCurrency] = (foreign[d.originalCurrency] ?? 0) + toMinor(d.originalAmount, cur);
     }
     const attributed = await attributedOrders(c, from, to, business.timezone);
     const spend = actualMinor + plannedMinor;
@@ -274,6 +513,8 @@ export async function listCampaigns(q: { from?: string; to?: string }) {
       startDate: businessDateOf(c.startDate), endDate: c.endDate ? businessDateOf(c.endDate) : null, budgetType: c.budgetType, budget: c.budget ? major(toMinor(c.budget, cur)) : null,
       landingPath: c.landingPath, notes: c.notes,
       period: { from, to }, spend: major(spend), actualSpend: major(actualMinor), plannedSpend: major(plannedMinor),
+      foreignSpend: Object.entries(foreign).map(([currency, amount]) => ({ currency, amount: amount / 100 })),
+      budgetHistory: c.budgetChanges.map((b) => ({ from: businessDateOf(b.effectiveDate), budgetType: b.budgetType, budget: b.budget ? major(toMinor(b.budget, cur)) : null })),
       orders: attributed.length, delivered: attributed.filter((o) => o.status === "DELIVERED").length, revenue: major(revenue),
       costPerOrder: attributed.length ? major(Math.round(spend / attributed.length)) : null,
       roas: spend > 0 ? Math.round((revenue / spend) * 100) / 100 : null,

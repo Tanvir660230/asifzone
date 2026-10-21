@@ -105,11 +105,12 @@ export interface AdCampaign {
   startDate: string; endDate: string | null; budgetType: "DAILY" | "LIFETIME" | null; budget: number | null; landingPath: string | null; notes: string | null;
   period: { from: string; to: string }; spend: number; actualSpend: number; plannedSpend: number; orders: number; delivered: number; revenue: number;
   costPerOrder: number | null; roas: number | null; lastActualDay: string | null;
+  foreignSpend?: Array<{ currency: string; amount: number }>; budgetHistory?: Array<{ from: string; budgetType: "DAILY" | "LIFETIME" | null; budget: number | null }>;
 }
 export const listCampaigns = (q: { from?: string; to?: string }) => apiFetch<{ period: { from: string; to: string }; campaigns: AdCampaign[]; totals: { spend: number; orders: number; revenue: number }; meta: { connected: boolean } }>(`${BASE}/ads/campaigns${qs(q)}`);
 export const createCampaign = (body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns`, { method: "POST", body });
 export const updateCampaign = (id: string, body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns/${id}`, { method: "PATCH", body });
-export const recordDaySpend = (id: string, body: { date: string; amount: number }) => apiFetch<{ ok: true }>(`${BASE}/ads/campaigns/${id}/spend`, { method: "PUT", body });
+export const recordDaySpend = (id: string, body: { date: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<{ ok: true }>(`${BASE}/ads/campaigns/${id}/spend`, { method: "PUT", body });
 export const importMetaSpend = (body: { days?: number; since?: string }) =>
   apiFetch<{ since: string; until: string; accounts: Array<{ adAccountId: string; financialAccount: string | null; days: number; campaigns: number; error: string | null }> }>(`${BASE}/ads/import-meta`, { method: "POST", body });
 
@@ -118,12 +119,13 @@ export const importMetaSpend = (body: { days?: number; since?: string }) =>
 export interface PrepaidCost {
   id: string; number: string; name: string; expenseAccount: { id: string; code: string; name: string }; amount: number; serviceStart: string; serviceEnd: string;
   payee: string | null; reference: string | null; notes: string | null; paidFrom: { id: string; name: string } | null; paidOn: string; paymentStatus: Movement["status"]; movementId: string;
+  remindDaysBefore?: number; renewalAmount?: number | null;
   used: number; remaining: number; daysLeft: number; perMonth: number; status: "AWAITING_PAYMENT" | "NOT_PAID" | "FINISHED" | "ENDING_SOON" | "RUNNING";
   schedule: Array<{ period: string; date: string; days: number; amount: number; booked: boolean }>;
 }
 export const listPrepaid = () => apiFetch<{ asOf: string; prepaid: PrepaidCost[]; totals: { remaining: number; endingSoon: number } }>(`${BASE}/prepaid`);
 export const createPrepaid = (body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ prepaid: PrepaidCost; replayed: boolean }>(`${BASE}/prepaid`, { method: "POST", body, idempotencyKey });
-export const updatePrepaid = (id: string, body: { name?: string; notes?: string | null; serviceEnd?: string }) => apiFetch<PrepaidCost>(`${BASE}/prepaid/${id}`, { method: "PATCH", body });
+export const updatePrepaid = (id: string, body: { name?: string; notes?: string | null; serviceEnd?: string; remindDaysBefore?: number; renewalAmount?: number | null }) => apiFetch<PrepaidCost>(`${BASE}/prepaid/${id}`, { method: "PATCH", body });
 
 // ── packaging ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -178,3 +180,87 @@ export const cancelLandedCost = (id: string, reason: string) => apiFetch<LandedC
 
 /** A draft payout's parcels that match no order on the site are counted as sales outside the website. */
 export const markOutsideSales = (settlementId: string) => apiFetch<{ id: string; unmatchedLines: number; outsideSaleLines: number }>(`${BASE}/settlements/${settlementId}/outside-sales`, { method: "POST", body: {} });
+
+// ── Finance Center (docs/FINANCE_CENTER.md) ───────────────────────────────────────────────────────────────────────────
+
+export type EntryVerification = "CONFIRMED" | "ESTIMATED" | "NEEDS_CHECK" | "DISPUTED";
+export type VerifiableType = "Expense" | "PrepaidCost" | "FixedAsset" | "OpeningBalanceLine" | "OpeningInventoryItem" | "LandedCost" | "TreasuryMovement" | "AdSpendDay";
+export const centerKeys = {
+  summary: () => ["finance", "center", "summary"] as const,
+  verifications: (status?: EntryVerification) => ["finance", "center", "verifications", status ?? "open"] as const,
+  allocations: () => ["finance", "center", "allocations"] as const,
+  renewals: () => ["finance", "center", "renewals"] as const,
+  sms: () => ["finance", "center", "sms"] as const,
+  settings: () => ["finance", "center", "settings"] as const,
+};
+export interface CenterSummary {
+  asOf: string;
+  owner: { capital: number; openingEquity: number; ownerPaidNotRepaid: number; drawings: number; netInvested: number };
+  verification: Partial<Record<EntryVerification, { count: number; amount: number }>>;
+  missing: Array<{ key: string; title: string; detail: string; count: number; href: string }>;
+}
+export interface VerificationItem { entityType: VerifiableType; entityId: string; status: EntryVerification; source: string | null; note: string | null; label: string; date: string | null; amount: number; updatedAt: string }
+export interface AwaitingExpense {
+  id: string; number: string; expenseDate: string; description: string; payee: string | null; paidFrom: { id: string; name: string } | null; paymentStatus: Movement["status"];
+  amount: number; allocated: number; remaining: number; status: "NOT_ALLOCATED" | "PARTLY_ALLOCATED" | "ALLOCATED";
+  lines: Array<{ lineNo: number; account: { id: string; code: string; name: string }; productId: string | null; productName: string | null; amount: number; note: string | null }>;
+}
+export interface Renewal {
+  id: string; name: string; payee: string | null; account: { code: string; name: string }; amount: number; serviceStart: string; serviceEnd: string; remindDaysBefore: number; renewalAmount: number | null;
+  verification: EntryVerification; renewed: boolean; remindOn: string; status: "ACTIVE" | "RENEW_SOON" | "EXPIRED" | "RENEWED"; daysToEnd: number;
+}
+export interface SmsStatus {
+  provider: { read: boolean; reason?: string }; balance: number | null; readAt: string | null; readSource: string | null; lowBalance: number | null; isLow: boolean;
+  usedPerDay: number | null; daysLeft: number | null; runsOutOn: string | null; monthlyUsage: Array<{ month: string; used: number }>;
+  recharges: Array<{ id: string; date: string; amount: number; payee: string | null; description: string }>; readings: Array<{ at: string; balance: number; source: string; note: string | null }>; smsAccountId: string | null;
+}
+export interface CenterSettings { defaultUsdRate: number | null; smsLowBalance: number | null }
+export const getCenterSummary = () => apiFetch<CenterSummary>(`${BASE}/center/summary`);
+export const listVerifications = (status?: EntryVerification) => apiFetch<{ items: VerificationItem[]; totals: CenterSummary["verification"] }>(`${BASE}/center/verifications${qs({ status })}`);
+export const setVerification = (body: { entityType: VerifiableType; entityId: string; status: EntryVerification; source?: string | null; note?: string | null }) => apiFetch<{ status: EntryVerification }>(`${BASE}/center/verifications`, { method: "PUT", body });
+export const listAwaitingAllocation = () => apiFetch<{ accountId: string | null; expenses: AwaitingExpense[]; remaining: number }>(`${BASE}/center/allocations`);
+export const setAllocations = (expenseId: string, lines: Array<{ accountId: string; productId?: string | null; amount: number; note?: string | null }>) => apiFetch<AwaitingExpense>(`${BASE}/center/allocations/${expenseId}`, { method: "PUT", body: { lines } });
+export const listRenewals = () => apiFetch<{ renewals: Renewal[] }>(`${BASE}/center/renewals`);
+export const getSmsStatus = () => apiFetch<SmsStatus>(`${BASE}/center/sms`);
+export const recordSmsBalance = (body: { balance: number; takenAt?: string; note?: string | null }) => apiFetch<{ id: string }>(`${BASE}/center/sms/balance`, { method: "POST", body });
+export const getCenterSettings = () => apiFetch<CenterSettings>(`${BASE}/center/settings`);
+export const updateCenterSettings = (body: Partial<CenterSettings>) => apiFetch<CenterSettings>(`${BASE}/center/settings`, { method: "PATCH", body });
+
+export interface AdCsvPreview {
+  committed: boolean; rows: number; errors: Array<{ line: number; error: string }>; newCampaigns: string[]; new: number; replace: number; same: number; total: number; estimated: number;
+  lines: Array<{ line: number; date: string; campaign: string; spend: number; currency: string; amount: number; estimated: boolean; action: "NEW" | "REPLACE" | "SAME"; previous: number | null }>;
+}
+export const importAdCsv = (body: { financialAccountId: string; csv: string; currency?: string | null; fxRate?: number | null; commit: boolean }) => apiFetch<AdCsvPreview>(`${BASE}/ads/import-csv`, { method: "POST", body });
+
+// ── Stock check: where every unit went, counts and rolls (docs/FINANCE_CENTER.md §7) ──────────────────────────────────
+
+export type StockBuckets = { delivered: number; partly: number; returned: number; onTheWay: number; waiting: number; cancelled: number; refunded: number };
+export type StockCountResult = { date: string; counted: number; siteStockThen: number; difference: number } | null;
+export interface StockCheckFinished {
+  variantId: string; productId: string; product: string; category: string | null; size: string; color: string; sku: string;
+  stock: number; out: StockBuckets; throughSite: number; cameInOnDocument: number; typedIn: number; editsWithoutReason: number; count: StockCountResult;
+}
+export interface StockCheckMaterial {
+  variantId: string; productId: string; product: string; size: string; color: string; sku: string; unit: string;
+  stock: number; cameInOnDocument: number; usedOnRecord: number; usedByRecipes: number | null; finishedUnits: number | null; boughtAtLeast: number | null; boughtBasis: "count" | "stock"; unitCost: number | null; count: StockCountResult;
+}
+export interface StockCheck {
+  asOf: string;
+  finished: StockCheckFinished[];
+  materials: StockCheckMaterial[];
+  directShipments: Array<{ reference: string; date: string; status: string; parcels: number; amount: number; outsideSale: number }>;
+  checks: { shippedWithoutCourier: number; partlyUnsettled: number; returnedNotRestocked: number; recipes: number };
+}
+export interface MaterialRollRow {
+  id: string; material: string; materialVariantId: string; openedOn: string; finishedOn: string | null; note: string | null;
+  parcelsBooked: number; parcelsCounted: number | null; parcels: number; rollCost: number | null; perParcel: number | null;
+}
+export const stockCheckKeys = {
+  report: () => ["finance", "center", "stock-check"] as const,
+  rolls: () => ["finance", "center", "rolls"] as const,
+};
+export const getStockCheck = () => apiFetch<StockCheck>(`${BASE}/center/stock-check`);
+export const recordStockCount = (body: { variantId: string; counted: number; countDate?: string; note?: string | null }) => apiFetch<{ id: string; difference: number }>(`${BASE}/center/stock-counts`, { method: "POST", body });
+export const listRolls = () => apiFetch<{ rolls: MaterialRollRow[]; averagePerParcel: number | null }>(`${BASE}/center/rolls`);
+export const openRoll = (body: { materialVariantId: string; openedOn: string; note?: string | null }) => apiFetch<{ id: string }>(`${BASE}/center/rolls`, { method: "POST", body });
+export const finishRoll = (id: string, body: { finishedOn: string; parcelsCounted?: number | null; note?: string | null }) => apiFetch<{ id: string }>(`${BASE}/center/rolls/${id}/finish`, { method: "POST", body });

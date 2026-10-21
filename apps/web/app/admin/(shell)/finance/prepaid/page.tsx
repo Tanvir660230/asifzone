@@ -106,7 +106,12 @@ function PrepaidModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const [end, setEnd] = useState("");
   const [fromId, setFromId] = useState("");
   const [payee, setPayee] = useState("");
-  const body = { name: name.trim(), expenseAccountId: accountId, amount: Number(amount), serviceStart: start, serviceEnd: end, fromFinancialAccountId: fromId, paidOn: today(), payee: payee.trim() || null };
+  const [remind, setRemind] = useState("30");
+  const [renewal, setRenewal] = useState("");
+  const body = {
+    name: name.trim(), expenseAccountId: accountId, amount: Number(amount), serviceStart: start, serviceEnd: end, fromFinancialAccountId: fromId, paidOn: today(), payee: payee.trim() || null,
+    remindDaysBefore: Number(remind) || 0, renewalAmount: Number(renewal) > 0 ? Number(renewal) : null,
+  };
   const valid = Boolean(name.trim() && accountId && fromId && start && end && end >= start) && Number(amount) > 0;
   const save = useMutation({
     mutationFn: () => booksApi.createPrepaid(body, idempotencyKeyFor("prepaid", body)),
@@ -128,6 +133,8 @@ function PrepaidModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <Field htmlFor="pp-start" label="Covers from" required><Input id="pp-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
         <Field htmlFor="pp-end" label="Until" required error={end && end < start ? "Before the start" : undefined}><Input id="pp-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
         <Field htmlFor="pp-payee" label="Paid to" className="sm:col-span-2"><Input id="pp-payee" value={payee} onChange={(e) => setPayee(e.target.value)} maxLength={200} /></Field>
+        <Field htmlFor="pp-remind" label="Remind me (days before the end)"><Input id="pp-remind" inputMode="numeric" value={remind} onChange={(e) => setRemind(e.target.value.replace(/\D/g, "").slice(0, 3))} /></Field>
+        <Field htmlFor="pp-renewal" label="Renewal expected to cost" hint="Optional"><Input id="pp-renewal" inputMode="decimal" value={renewal} onChange={(e) => setRenewal(e.target.value)} /></Field>
       </div>
     </Modal>
   );

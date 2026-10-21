@@ -54,6 +54,8 @@ export interface PrepaidInput {
   payee?: string | null;
   reference?: string | null;
   notes?: string | null;
+  remindDaysBefore?: number;
+  renewalAmount?: number | null;
 }
 
 const INCLUDE = {
@@ -75,7 +77,8 @@ function dto(p: Row, cur: string, today: string) {
     payee: p.payee, reference: p.reference, notes: p.notes, paidFrom: p.movement.fromAccount, paidOn: businessDateOf(p.movement.movementDate), paymentStatus: p.movement.status, movementId: p.movement.id,
     used: toMajorNumber(used, cur), remaining: toMajorNumber(paid ? amount - used : 0, cur), daysLeft,
     perMonth: toMajorNumber(Math.round((amount * 30) / days(start, end)), cur),
-    status: !paid ? (p.movement.status === "PENDING_APPROVAL" ? "AWAITING_PAYMENT" : "NOT_PAID") : end < today ? "FINISHED" : daysLeft <= 30 ? "ENDING_SOON" : "RUNNING",
+    status: !paid ? (p.movement.status === "PENDING_APPROVAL" ? "AWAITING_PAYMENT" : "NOT_PAID") : end < today ? "FINISHED" : daysLeft <= Math.max(p.remindDaysBefore, 1) ? "ENDING_SOON" : "RUNNING",
+    remindDaysBefore: p.remindDaysBefore, renewalAmount: p.renewalAmount ? toMajorNumber(toMinor(p.renewalAmount, cur), cur) : null,
     schedule: schedule.map((s) => ({ ...s, amount: toMajorNumber(s.amount, cur), booked: paid && s.date <= today })),
   };
 }
@@ -107,6 +110,7 @@ export async function createPrepaid(input: PrepaidInput, actor: FinanceActor, id
       data: {
         businessId: business.id, number: await nextFinanceSequence(tx, business.id, "prepaid"), name: input.name.trim(), expenseAccountId: account.id, amount: toDecimal(toMinor(input.amount, cur), cur),
         serviceStart: dateColumn(input.serviceStart), serviceEnd: dateColumn(input.serviceEnd), movementId: movement.id, payee: input.payee ?? null, reference: input.reference ?? null, notes: input.notes ?? null,
+        remindDaysBefore: input.remindDaysBefore ?? 30, renewalAmount: input.renewalAmount ? toDecimal(toMinor(input.renewalAmount, cur), cur) : null,
         createdByAdminId: adminOf(actor),
       },
       include: INCLUDE,
@@ -119,13 +123,17 @@ export async function createPrepaid(input: PrepaidInput, actor: FinanceActor, id
 }
 
 /** Changes the name, notes or the end of service (ending early books the rest in the ending month). */
-export async function updatePrepaid(id: string, input: { name?: string; notes?: string | null; serviceEnd?: string }, actor: FinanceActor) {
+export async function updatePrepaid(id: string, input: { name?: string; notes?: string | null; serviceEnd?: string; remindDaysBefore?: number; renewalAmount?: number | null }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
   const before = await prisma.prepaidCost.findFirst({ where: { id, businessId: business.id } });
   if (!before) throw financeError(404, "PREPAID_NOT_FOUND", "Prepaid cost not found");
   if (input.serviceEnd && input.serviceEnd < businessDateOf(before.serviceStart)) throw financeError(400, "PREPAID_DATES", "The service ends after it starts");
   await financeTransaction(async (tx) => {
-    const after = await tx.prepaidCost.update({ where: { id }, data: { name: input.name?.trim(), notes: input.notes, serviceEnd: input.serviceEnd ? dateColumn(input.serviceEnd) : undefined } });
+    const after = await tx.prepaidCost.update({ where: { id }, data: {
+      name: input.name?.trim(), notes: input.notes, serviceEnd: input.serviceEnd ? dateColumn(input.serviceEnd) : undefined, remindDaysBefore: input.remindDaysBefore,
+      renewalAmount: input.renewalAmount === undefined ? undefined : input.renewalAmount === null ? null : toDecimal(toMinor(input.renewalAmount, cur), cur),
+    } });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "prepaid.update", entityType: "PrepaidCost", entityId: id, before, after });
   });
   await syncPrepaid(id);

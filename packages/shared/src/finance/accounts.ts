@@ -103,6 +103,8 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.cash_over_short",
   "liability.owner_reimbursable",
   "revenue.outside_sales",
+  "expense.unallocated",
+  "expense.sms",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -167,7 +169,7 @@ export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.sa
  * estimates, ad spend, prepaid costs, packaging used and landed costs. */
 export const OWNER_BOOKS_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "group.ad_platform", "asset.prepaid", "asset.courier_claims", "liability.courier_charges_accrued", "liability.gateway_fees_accrued",
-  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "revenue.outside_sales", "expense.courier_fees",
+  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "revenue.outside_sales", "expense.unallocated", "expense.sms", "expense.courier_fees",
   "expense.gateway_fees", "asset.inventory", "cogs.cost_adjustments", "cogs.inventory_shrinkage",
 ];
 
@@ -281,6 +283,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "6210", name: "Employer payroll contributions", type: "EXPENSE", parent: "6000", sensitive: true, mapping: "expense.employer_contributions" },
   { code: "6300", name: "Utilities", type: "EXPENSE", parent: "6000" },
   { code: "6400", name: "Internet, software & hosting", type: "EXPENSE", parent: "6000" },
+  { code: "6410", name: "SMS", type: "EXPENSE", parent: "6000", mapping: "expense.sms" },
   { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000", mapping: "expense.advertising" },
   { code: "6600", name: "Delivery & courier", type: "EXPENSE", parent: "6000", mapping: "expense.courier_fees" },
   { code: "6650", name: "Freight-in & purchase charges", type: "EXPENSE", parent: "6000", mapping: "expense.freight_in" },
@@ -291,6 +294,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "6950", name: "Settlement adjustments", type: "EXPENSE", parent: "6000", mapping: "expense.settlement_adjustments" },
   { code: "6960", name: "Non-recoverable purchase tax", type: "EXPENSE", parent: "6000", mapping: "expense.non_recoverable_tax" },
   { code: "6970", name: "Cash over / short", type: "EXPENSE", parent: "6000", mapping: "expense.cash_over_short" },
+  { code: "6990", name: "Expenses awaiting allocation", type: "EXPENSE", parent: "6000", mapping: "expense.unallocated" },
 
   { code: "7000", name: "Other income", type: "OTHER_INCOME", group: true },
   { code: "7100", name: "Interest income", type: "OTHER_INCOME", parent: "7000" },
