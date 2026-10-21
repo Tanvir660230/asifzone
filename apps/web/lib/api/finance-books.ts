@@ -111,6 +111,9 @@ export const listCampaigns = (q: { from?: string; to?: string }) => apiFetch<{ p
 export const createCampaign = (body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns`, { method: "POST", body });
 export const updateCampaign = (id: string, body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns/${id}`, { method: "PATCH", body });
 export const recordDaySpend = (id: string, body: { date: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<{ ok: true }>(`${BASE}/ads/campaigns/${id}/spend`, { method: "PUT", body });
+export interface PeriodSpendResult { from: string; to: string; total: number; original: number | null; currency: string | null; rate: number | null; estimated: boolean; ownDays: number; ownTotal: number; sharedDays: number; shared: number }
+/** A total for a stretch of days, shared over the days that have no figure of their own. */
+export const recordPeriodSpend = (id: string, body: { from: string; to: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<PeriodSpendResult>(`${BASE}/ads/campaigns/${id}/period-spend`, { method: "PUT", body });
 export const importMetaSpend = (body: { days?: number; since?: string }) =>
   apiFetch<{ since: string; until: string; accounts: Array<{ adAccountId: string; financialAccount: string | null; days: number; campaigns: number; error: string | null }> }>(`${BASE}/ads/import-meta`, { method: "POST", body });
 
@@ -192,6 +195,7 @@ export const centerKeys = {
   renewals: () => ["finance", "center", "renewals"] as const,
   sms: () => ["finance", "center", "sms"] as const,
   settings: () => ["finance", "center", "settings"] as const,
+  autopilot: () => ["finance", "center", "autopilot"] as const,
 };
 export interface CenterSummary {
   asOf: string;
@@ -225,6 +229,14 @@ export const getSmsStatus = () => apiFetch<SmsStatus>(`${BASE}/center/sms`);
 export const recordSmsBalance = (body: { balance: number; takenAt?: string; note?: string | null }) => apiFetch<{ id: string }>(`${BASE}/center/sms/balance`, { method: "POST", body });
 export const getCenterSettings = () => apiFetch<CenterSettings>(`${BASE}/center/settings`);
 export const updateCenterSettings = (body: Partial<CenterSettings>) => apiFetch<CenterSettings>(`${BASE}/center/settings`, { method: "PATCH", body });
+
+/** Autopilot (docs/FINANCE_OWNER_BOOKS.md §15): what runs by itself every morning and evening. */
+export interface AutopilotStep { ok: boolean; skipped?: string; error?: string; imported?: number; posted?: string[]; waiting?: Array<{ reference: string; parcels: number }>; problems?: Array<{ payoutId: string; message: string }>; taken?: number; amount?: number; days?: number; shared?: Array<{ partner: string; period: string; amount: number }> }
+export interface AutopilotRun { at: string; payouts: AutopilotStep; ownerDrawings: AutopilotStep; adSpend: AutopilotStep; profitShares: AutopilotStep }
+export interface AutopilotSettings { payoutAccount: { id: string; name: string; kind: string } | null; payoutsToOwner: boolean; profitShares: boolean; metaConnected: boolean; lastRun: AutopilotRun | null }
+export const getAutopilot = () => apiFetch<AutopilotSettings>(`${BASE}/center/autopilot`);
+export const updateAutopilot = (body: { payoutAccountId?: string | null; payoutsToOwner?: boolean; profitShares?: boolean }) => apiFetch<AutopilotSettings>(`${BASE}/center/autopilot`, { method: "PATCH", body });
+export const runAutopilot = () => apiFetch<AutopilotRun>(`${BASE}/center/autopilot/run`, { method: "POST" });
 
 export interface AdCsvPreview {
   committed: boolean; rows: number; errors: Array<{ line: number; error: string }>; newCampaigns: string[]; new: number; replace: number; same: number; total: number; estimated: number;

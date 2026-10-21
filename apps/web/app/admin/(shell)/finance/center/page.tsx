@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
@@ -64,7 +65,12 @@ export default function FinanceCenterPage() {
       {view === "allocate" && <Allocate canSplit={can("finance.post")} />}
       {view === "renewals" && <Renewals />}
       {view === "sms" && <Sms canRecord={can("finance.transact")} />}
-      {view === "settings" && <Settings canEdit={can("finance.configure")} />}
+      {view === "settings" && (
+        <div className="space-y-6">
+          <Autopilot canEdit={can("finance.sensitive")} />
+          <Settings canEdit={can("finance.configure")} />
+        </div>
+      )}
     </div>
   );
 }
@@ -360,6 +366,108 @@ function SmsBalanceModal({ onClose, onDone }: { onClose: () => void; onDone: () 
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={balance === "" || !(Number(balance) >= 0)} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-sms-balance">Save</Button></>}>
       <Field htmlFor="sms-bal" label="Balance (taka)" required><Input id="sms-bal" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} autoFocus /></Field>
     </Modal>
+  );
+}
+
+// ── autopilot ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const SKIPPED: Record<string, string> = {
+  OFF: "Off",
+  LIVE_PROVIDERS_OFF: "Not on this copy (live connections are off)",
+  META_NOT_CONNECTED: "Meta isn't connected",
+  BOOKS_NOT_STARTED: "Waits until the books are started",
+};
+
+function stepLine(step: booksApi.AutopilotStep, done: (s: booksApi.AutopilotStep) => string) {
+  if (step.skipped) return { tone: "muted" as const, text: SKIPPED[step.skipped] ?? step.skipped };
+  if (!step.ok) return { tone: "danger" as const, text: step.error ?? "Failed" };
+  return { tone: "ok" as const, text: done(step) };
+}
+
+/** Owner's books §15: payouts in, the owner's drawings, Meta's spend and partners' shares — twice a day, by itself. */
+function Autopilot({ canEdit }: { canEdit: boolean }) {
+  const queryClient = useQueryClient();
+  const q = useQuery({ queryKey: booksApi.centerKeys.autopilot(), queryFn: booksApi.getAutopilot });
+  const accounts = useQuery({ queryKey: financeApi.financeKeys.accounts(), queryFn: financeApi.listFinancialAccounts });
+  const payInto = (accounts.data?.financialAccounts ?? []).filter((a) => ["BANK", "MOBILE_WALLET", "CASH"].includes(a.kind) && a.isActive);
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
+  const update = useMutation({
+    mutationFn: booksApi.updateAutopilot,
+    onSuccess: () => { toast.success("Autopilot saved"); refresh(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Autopilot couldn't be saved")),
+  });
+  const run = useMutation({
+    mutationFn: booksApi.runAutopilot,
+    onSuccess: () => { toast.success("Autopilot ran"); refresh(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Autopilot couldn't run")),
+  });
+  if (q.isLoading) return <Skeleton className="h-48 w-full max-w-xl" />;
+  if (q.isError) return <LoadError what="Autopilot" error={q.error} retry={() => q.refetch()} />;
+  const d = q.data!;
+  const busy = update.isPending || !canEdit;
+  const last = d.lastRun;
+  const lines = last
+    ? [
+        { label: "Steadfast payouts", ...stepLine(last.payouts, (s) => `${s.imported ?? 0} new, ${s.posted?.length ?? 0} posted${s.waiting?.length ? ` · ${s.waiting.length} waiting for a look` : ""}`) },
+        { label: "Owner's withdrawals", ...stepLine(last.ownerDrawings, (s) => (s.taken ? `${s.taken} payout(s), ${formatPrice(s.amount ?? 0)}` : "Nothing new")) },
+        { label: "Meta ad spend", ...stepLine(last.adSpend, (s) => `${s.days ?? 0} campaign-day(s) read`) },
+        { label: "Partners' shares", ...stepLine(last.profitShares, (s) => (s.shared?.length ? s.shared.map((x) => `${x.partner} ${x.period}: ${formatPrice(x.amount)}`).join(" · ") : "Nothing new")) },
+      ]
+    : [];
+  return (
+    <Card className="max-w-xl space-y-5 p-4 sm:p-5" data-testid="autopilot">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold text-fg">Autopilot</h2>
+        <p className="text-sm text-fg-muted">Runs by itself every morning and evening (6:00 and 18:00). Everything it books shows up like any other entry and can be reversed.</p>
+      </div>
+      <div className="divide-y divide-line-subtle">
+        <div className="space-y-2 pb-4">
+          <Field htmlFor="ap-account" label="Bring in Steadfast payouts" hint="Posted when every parcel is matched to its order or was booked straight on Steadfast. Anything else waits in Steadfast check.">
+            <Select id="ap-account" value={d.payoutAccount?.id ?? ""} disabled={busy} onChange={(e) => update.mutate({ payoutAccountId: e.target.value || null })}>
+              <option value="">Off</option>
+              {payInto.map((a) => <option key={a.id} value={a.id}>Paid into {a.name}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <label className="flex items-start justify-between gap-4 py-4">
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium text-fg">The owner keeps the payouts</span>
+            <span className="block text-xs text-fg-muted">Each payout into that account is booked as the owner&apos;s withdrawal, on the payout&apos;s own day.</span>
+          </span>
+          <Switch checked={d.payoutsToOwner} disabled={busy || !d.payoutAccount} onChange={(v) => update.mutate({ payoutsToOwner: v })} aria-label="The owner keeps the payouts" />
+        </label>
+        <label className="flex items-start justify-between gap-4 py-4">
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium text-fg">Share each month&apos;s profit with partners</span>
+            <span className="block text-xs text-fg-muted">When a month ends, each partner&apos;s share is booked as owed to them. Pay it from Owner &amp; partners.</span>
+          </span>
+          <Switch checked={d.profitShares} disabled={busy} onChange={(v) => update.mutate({ profitShares: v })} aria-label="Share each month's profit with partners" />
+        </label>
+        <div className="flex items-start justify-between gap-4 pt-4">
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium text-fg">Meta ad spend</span>
+            <span className="block text-xs text-fg-muted">{d.metaConnected ? "Read every run for the last 7 days." : "Connect Meta in Settings › Integrations, or add the spend by hand in Ad spend."}</span>
+          </span>
+          <Badge variant={d.metaConnected ? "success" : "neutral"}>{d.metaConnected ? "Connected" : "Not connected"}</Badge>
+        </div>
+      </div>
+      <div className="space-y-3 rounded-lg bg-surface-muted p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium text-fg">{last ? `Last run ${new Date(last.at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : "Hasn't run yet"}</p>
+          {canEdit && <Button size="sm" variant="outline" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-autopilot">Run now</Button>}
+        </div>
+        {lines.length > 0 && (
+          <dl className="space-y-1.5 text-sm">
+            {lines.map((l) => (
+              <div key={l.label} className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                <dt className="text-fg-muted">{l.label}</dt>
+                <dd className={l.tone === "danger" ? "text-danger" : l.tone === "muted" ? "text-fg-muted" : "text-fg"}>{l.text}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+    </Card>
   );
 }
 

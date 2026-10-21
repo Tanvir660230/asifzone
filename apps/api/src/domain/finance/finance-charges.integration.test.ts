@@ -22,6 +22,9 @@ vi.mock("../../providers/courier/steadfast", async (orig) => ({
   getSteadfastBalance: async () => payouts.balance,
 }));
 
+// Autopilot asks whether live providers are on before calling Steadfast; the calls themselves are mocked above.
+vi.mock("../../lib/provider-guard", async (orig) => ({ ...(await orig<typeof import("../../lib/provider-guard")>()), liveProvidersEnabled: () => true }));
+
 const CSRF = "vitest-csrf";
 let admin: string;
 const owner = () => {
@@ -34,6 +37,7 @@ const owner = () => {
       return (key ? r.set("Idempotency-Key", key) : r).send(body);
     },
     put: (url: string, body: object = {}) => auth(request(app).put(`/api/v1/finance${url}`)).send(body),
+    patch: (url: string, body: object = {}) => auth(request(app).patch(`/api/v1/finance${url}`)).send(body),
   };
 };
 let seq = 0;
@@ -261,5 +265,46 @@ describe("parcels booked straight on Steadfast (never orders on the site)", () =
     const profit = (await owner().get("/profit?from=2026-01-01&to=2099-12-31")).body;
     expect(profit.totals.outsideSales).toBe(500);
     expect(Math.round((profit.totals.contribution + profit.totals.outsideSales - profit.totals.otherCosts) * 100) / 100).toBe(profit.totals.netProfit);
+  });
+});
+
+describe("autopilot (§15): payouts in, posted when every parcel is accounted for, kept by the owner", () => {
+  it("is off until switched on; then a run brings payouts in, posts the clean ones and books them as the owner's drawings — once", async () => {
+    const off = (await owner().post("/center/autopilot/run")).body;
+    expect(off).toMatchObject({ payouts: { ok: true, skipped: "OFF" }, ownerDrawings: { ok: true, skipped: "OFF" }, profitShares: { ok: true, skipped: "OFF" } });
+    const o = await owner().post("/equity/partners", { name: `Owner ${RUN}`, joinedOn: "2026-01-01", role: "OWNER" });
+    expect(o.status, JSON.stringify(o.body)).toBe(201);
+    const wallet = await owner().post("/financial-accounts", { kind: "MOBILE_WALLET", name: `Owner bKash ${RUN}` });
+    expect((await owner().patch("/center/autopilot", { payoutAccountId: cod })).body.details?.code).toBe("PAYOUT_DESTINATION");
+    const set = await owner().patch("/center/autopilot", { payoutAccountId: wallet.body.id, payoutsToOwner: true });
+    expect(set.body).toMatchObject({ payoutAccount: { id: wallet.body.id }, payoutsToOwner: true, profitShares: false });
+
+    const site = await deliveredParcel(`CN-${RUN}-AP1`);
+    const mixed = await deliveredParcel(`CN-${RUN}-AP2`);
+    const pay = (id: string, amount: number, day: string) => ({ payment_id: id, amount, due_bills: 0, charges: 0, total: amount, method: "Bkash", status_label: "paid", created_at: `${day} 10:00:00`, paid_at: `${day} 16:00:00` });
+    const a = pay("SFC-9101", Number(site.total), "2026-10-19");
+    const b = pay("SFC-9102", Number(mixed.total) + 300, "2026-10-20");
+    const c = pay("SFC-9103", 450, "2026-10-20");
+    payouts.list = [a, b, c];
+    payouts.detail["SFC-9101"] = { status: 200, payment: { ...a, consignments: [{ consignment_id: `CN-${RUN}-AP1`, invoice: site.orderNumber, cod_amount: Number(site.total), status: "delivered" }] } };
+    payouts.detail["SFC-9102"] = { status: 200, payment: { ...b, consignments: [
+      { consignment_id: `CN-${RUN}-AP2`, invoice: mixed.orderNumber, cod_amount: Number(mixed.total), status: "delivered" },
+      { consignment_id: `CN-${RUN}-AP2D`, invoice: "", cod_amount: 300, status: "delivered" },
+    ] } };
+    // Our invoice number on a parcel that matches no order: a person looks first.
+    payouts.detail["SFC-9103"] = { status: 200, payment: { ...c, consignments: [{ consignment_id: `CN-${RUN}-AP3`, invoice: "ORD-NOT-HERE", cod_amount: 450, status: "delivered" }] } };
+
+    const run = (await owner().post("/center/autopilot/run")).body;
+    expect(run.payouts).toMatchObject({ ok: true, imported: 3, posted: ["steadfast:SFC-9101", "steadfast:SFC-9102"], waiting: [{ reference: "steadfast:SFC-9103", parcels: 1 }] });
+    expect(run.ownerDrawings).toMatchObject({ ok: true, taken: 2, amount: Number(site.total) + Number(mixed.total) + 300 });
+    expect(await net("revenue.outside_sales")).toBe(-800); // 500 from the earlier payout + 300 here
+    const taken = (await owner().get("/equity/owner/payouts")).body.payouts.filter((p: { reference: string }) => ["steadfast:SFC-9101", "steadfast:SFC-9102"].includes(p.reference));
+    expect(taken.map((p: { date: string; taken: string }) => [p.date, p.taken]).sort()).toEqual([["2026-10-19", "POSTED"], ["2026-10-20", "POSTED"]]);
+    expect((await owner().get(`/financial-accounts/${wallet.body.id}`)).body.currentBalance).toBe(0);
+
+    const again = (await owner().post("/center/autopilot/run")).body;
+    expect(again.payouts).toMatchObject({ ok: true, imported: 0, posted: [], waiting: [{ reference: "steadfast:SFC-9103", parcels: 1 }] });
+    expect(again.ownerDrawings).toMatchObject({ ok: true, taken: 0 });
+    expect((await owner().get("/center/autopilot")).body.lastRun.ownerDrawings).toMatchObject({ taken: 0 });
   });
 });

@@ -134,6 +134,11 @@ unique per (campaign, date, basis).
   via a system-user token stored in Settings › Integrations). Pulled daily for the last 7 days (Meta revises recent
   days), backfilled once for history. TikTok later, same shape. Manual entry for anything else.
 - Actual supersedes planned per day.
+- **A period total** (`PUT /ads/campaigns/:id/period-spend`, source PERIOD, added 2026-10-21): what Ads Manager or the
+  card statement shows for a stretch of days, in taka or in USD at a rate (the owner uses ৳130/USD, the dollar costs
+  more than the bank rate; empty = the default rate, marked an estimate; "taka charged" wins over the rate). Days that
+  already have their own figure keep it and are subtracted; the rest is shared evenly over the other days. Entering
+  the period again replaces only its shared days, so a month typed exactly later narrows the shared total.
 
 ### 5.3 Postings
 | Moment | Journal |
@@ -290,3 +295,21 @@ API 1640+ tests (new: custody 11, charges 10, ads/prepaid/packaging 7, landed/re
 - **Cancelling a landed cost (§7.1):** one transaction — payment reversed (`treasury.reverseMovementInTx`), value taken back off the goods (negative revaluation), posting reversed (`finance.landed_cost.reversed`). Once only (database guard).
 - **Approvals list:** a handover waiting for its receiver shows that, not an Approve button.
 - **Sales outside the website:** parcels booked straight on Steadfast's panel (no invoice, never an order on the site — the first sales before the website) show as unmatched. **Outside sales** on a draft payout marks them `outsideSale`; posting credits 4150 *Sales outside the website* (`revenue.outside_sales`) instead of an order's clearing, their exceptions are acknowledged, the clearing check no longer counts them, and the profit report shows them as their own line. Found in the real payouts: Aug 11 parcels ৳9,169, Sep 6 ৳2,601, Oct 18 ৳3,370.
+
+## 15. Autopilot (2026-10-21)
+
+The owner asked for everything that can run by itself to run by itself. `autopilot.service.ts`, cron
+`finance-autopilot` at 06:00 and 18:00 server time; settings and "Run now" in Finance › Owner's summary › Settings
+(owner only, `finance.sensitive`). Each step is idempotent and runs on its own; the last run is kept
+(`FinanceBusiness.autopilotLastRun`, audited as `finance_autopilot.run`).
+
+| Step | Switch | What it does |
+|---|---|---|
+| Steadfast payouts | the account Steadfast pays into (`autoPayoutAccountId`) | Imports new payouts (§3.2). A draft is posted when every parcel is matched to its order, or has no invoice number (booked straight on Steadfast → marked a sale outside the website). A parcel carrying our invoice number that matches no order keeps the payout in draft for a person (Steadfast check). |
+| Owner's withdrawals | `autoPayoutsToOwner` | Every posted payout into that account becomes the owner's drawing on the payout's day (`markPayoutsTaken`, once per payout). |
+| Meta ad spend | Meta connected in Settings › Integrations | Reads the last 7 days (§5.2). |
+| Partners' shares | `autoProfitShares` | `runProfitShares` once the books have started: each finished month is shared once (§8 of FINANCE_EQUITY.md). |
+
+Live calls are made only when live providers are on (`LIVE_PROVIDERS`); on a copy the payout and Meta steps say so.
+Migration `20261123100200_finance_autopilot`; routes `GET/PATCH /center/autopilot`, `POST /center/autopilot/run`
+(authorization matrix 667); test: `finance-charges.integration.test.ts` › autopilot.

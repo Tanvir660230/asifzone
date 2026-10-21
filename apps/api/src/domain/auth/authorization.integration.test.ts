@@ -292,6 +292,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/ads/campaigns",
   "PATCH /api/v1/finance/ads/campaigns/:id",
   "PUT /api/v1/finance/ads/campaigns/:id/spend",
+  "PUT /api/v1/finance/ads/campaigns/:id/period-spend",
   "POST /api/v1/finance/ads/import-meta",
   "GET /api/v1/finance/prepaid",
   "POST /api/v1/finance/prepaid",
@@ -321,6 +322,9 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/center/sms/balance",
   "GET /api/v1/finance/center/settings",
   "PATCH /api/v1/finance/center/settings",
+  "GET /api/v1/finance/center/autopilot",
+  "PATCH /api/v1/finance/center/autopilot",
+  "POST /api/v1/finance/center/autopilot/run",
   "GET /api/v1/finance/center/stock-check",
   "POST /api/v1/finance/center/stock-counts",
   "GET /api/v1/finance/center/rolls",
@@ -488,7 +492,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +4: courier claims (list, open, settle) and cancelling a landed cost
     // +1: a payout's unmatched parcels counted as sales outside the website
     // +11: Finance Center (docs/FINANCE_CENTER.md) — ad CSV import, summary, verifications 2, allocations 2, renewals, SMS 2, settings 2
-    expect(routes).toHaveLength(663);
+    expect(routes).toHaveLength(667);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

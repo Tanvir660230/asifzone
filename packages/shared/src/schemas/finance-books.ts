@@ -126,6 +126,11 @@ const fxRate = z.number().positive().max(100000);
 export const adSpendDaySchema = z
   .object({ date: businessDate, amount: financeAmountSchema.optional().nullable(), originalAmount: financeAmountSchema.optional().nullable(), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable() })
   .refine((v) => (v.amount ?? null) !== null || ((v.originalAmount ?? null) !== null && !!v.currency), "Give the spend in taka, or in its currency");
+/** A total for a stretch of days, shared over the days that have no figure of their own. */
+export const adPeriodSpendSchema = z
+  .object({ from: businessDate, to: businessDate, amount: financeAmountSchema.optional().nullable(), originalAmount: financeAmountSchema.optional().nullable(), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable() })
+  .refine((v) => v.from <= v.to, "The period ends after it starts")
+  .refine((v) => (v.amount ?? null) !== null || ((v.originalAmount ?? null) !== null && !!v.currency), "Give the total in taka, or in its currency");
 export const adCsvImportSchema = z.object({ financialAccountId: id, csv: z.string().min(1).max(2_000_000), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable(), commit: z.boolean() });
 export const adCampaignListQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional() });
 export const metaSpendImportSchema = z.object({ days: z.number().int().min(1).max(400).optional(), since: businessDate.optional() });
@@ -208,6 +213,11 @@ export const smsBalanceSchema = z.object({ balance: financeAmountSchema, takenAt
 export const financeCenterSettingsSchema = z
   .object({ defaultUsdRate: fxRate.nullable().optional(), smsLowBalance: financeAmountSchema.nullable().optional() })
   .refine((v) => v.defaultUsdRate !== undefined || v.smsLowBalance !== undefined, "Nothing to change");
+
+/** Autopilot (docs/FINANCE_OWNER_BOOKS.md §15). */
+export const financeAutopilotSchema = z
+  .object({ payoutAccountId: id.nullable().optional(), payoutsToOwner: z.boolean().optional(), profitShares: z.boolean().optional() })
+  .refine((v) => Object.keys(v).length > 0, "Nothing to change");
 
 // ── stock check: counts and rolls (docs/FINANCE_CENTER.md §7) ─────────────────────────────────────────────────────────
 

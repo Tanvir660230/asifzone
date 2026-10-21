@@ -209,6 +209,64 @@ export async function recordDaySpend(campaignId: string, input: DaySpendInput, a
   await syncCampaignSpend(campaignId);
 }
 
+/** A total shared evenly over the days given (minor units), the odd paisa on the first days. Pure. */
+export function spreadOverDays(totalMinor: number, days: string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!days.length) return out;
+  const base = Math.floor(totalMinor / days.length);
+  const extra = totalMinor - base * days.length;
+  days.forEach((d, i) => out.set(d, base + (i < extra ? 1 : 0)));
+  return out;
+}
+
+/** A total for a stretch of days — what Ads Manager or the card statement shows for a month, say — in taka, or in the
+ * platform's currency at a rate. Days that already have their own figure (typed, imported, Meta) keep it; the rest of
+ * the total is shared evenly over the other days. Entering the period again replaces only its shared days. */
+export interface PeriodSpendInput {
+  from: string;
+  to: string;
+  /** The taka total. In another currency: optional — the taka charged, which wins over the rate. */
+  amount?: number | null;
+  originalAmount?: number | null;
+  currency?: string | null;
+  fxRate?: number | null;
+}
+
+export async function recordPeriodSpend(campaignId: string, input: PeriodSpendInput, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const c = await prisma.adCampaign.findFirst({ where: { id: campaignId, businessId: business.id } });
+  if (!c) throw financeError(404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+  if (input.to < input.from) throw financeError(400, "PERIOD_RANGE", "The period ends after it starts");
+  if (input.to > businessToday(business)) throw financeError(400, "SPEND_IN_FUTURE", "Spend is recorded for days that happened");
+  const start = businessDateOf(c.startDate);
+  const end = c.endDate ? businessDateOf(c.endDate) : null;
+  if (input.from < start || (end && input.to > end)) throw financeError(400, "PERIOD_OUTSIDE_CAMPAIGN", `The campaign runs ${start} → ${end ?? "now"}`);
+  const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true } });
+  const total = daySpendAmount({ date: input.from, ...input }, cur, biz.defaultUsdRate ? Number(biz.defaultUsdRate) : null);
+  const days: string[] = [];
+  for (let d = input.from; d <= input.to; d = addDays(d, 1)) days.push(d);
+  const result = await financeTransaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`finance-ads:${campaignId}`}))`;
+    const own = await tx.adSpendDay.findMany({ where: { campaignId, source: { not: "PERIOD" }, date: { gte: dateColumn(input.from), lte: dateColumn(input.to) } } });
+    const ownDays = new Set(own.map((r) => businessDateOf(r.date)));
+    const free = days.filter((d) => !ownDays.has(d));
+    if (!free.length) throw financeError(409, "PERIOD_ALL_DAYS_RECORDED", "Every day of the period already has its own figure");
+    const ownTaka = own.reduce((s, r) => s + toMinor(r.amount, cur), 0);
+    const left = total.amount - ownTaka;
+    if (left < 0) throw financeError(409, "PERIOD_LESS_THAN_DAYS", `The days already recorded add up to ${toMajorNumber(ownTaka, cur)} — more than this total`, { recorded: toMajorNumber(ownTaka, cur) });
+    const ownOriginal = total.currency ? own.filter((r) => r.originalCurrency === total.currency).reduce((s, r) => s + toMinor(r.originalAmount ?? 0, cur), 0) : 0;
+    const taka = spreadOverDays(left, free);
+    const original = total.original === null ? null : spreadOverDays(Math.max(0, total.original - ownOriginal), free);
+    for (const d of free) await writeSpendDayInTx(tx, business.id, campaignId, d, "PERIOD", { ...total, amount: taka.get(d)!, original: original?.get(d) ?? null }, cur, actor);
+    const summary = { from: input.from, to: input.to, total: toMajorNumber(total.amount, cur), original: total.original === null ? null : total.original / 100, currency: total.currency, rate: total.rate, estimated: total.estimated, ownDays: own.length, ownTotal: toMajorNumber(ownTaka, cur), sharedDays: free.length, shared: toMajorNumber(left, cur) };
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.record_period", entityType: "AdCampaign", entityId: campaignId, after: summary });
+    return summary;
+  });
+  await syncCampaignSpend(campaignId);
+  return result;
+}
+
 async function writeSpendDayInTx(tx: Prisma.TransactionClient, businessId: string, campaignId: string, date: string, source: string, s: ReturnType<typeof daySpendAmount>, cur: string, actor: FinanceActor, extra: { impressions?: number | null; clicks?: number | null; purchases?: number | null } = {}) {
   const data = {
     source, amount: toDecimal(s.amount, cur), originalAmount: s.original === null ? null : toDecimal(s.original, cur), originalCurrency: s.currency, fxRate: s.rate,

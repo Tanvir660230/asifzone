@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { plannedSpend } from "./ads.service";
+import { plannedSpend, spreadOverDays } from "./ads.service";
 import { prepaidSchedule } from "./prepaid.service";
 import { packagingFor } from "./packaging.service";
 
@@ -52,5 +52,17 @@ describe("packaging per parcel", () => {
   it("a product or variant rule only for parcels that hold it; quantities add up per material", () => {
     expect([...packagingFor(lines, [rule({ scope: "PRODUCT", scopeId: "shirt", materialVariantId: "hanger" })])]).toEqual([]);
     expect([...packagingFor(lines, [rule({ scope: "VARIANT", scopeId: "attar-6", materialVariantId: "bubble", quantity: 2 }), rule({ materialVariantId: "bubble" })])]).toEqual([["bubble", 3]]);
+  });
+});
+
+describe("a period's total ad spend", () => {
+  it("is shared evenly over the days given, the odd paisa on the first days, and adds up exactly", () => {
+    const s = spreadOverDays(1000, ["2026-10-01", "2026-10-02", "2026-10-03"]);
+    expect([...s]).toEqual([["2026-10-01", 334], ["2026-10-02", 333], ["2026-10-03", 333]]);
+    expect([...spreadOverDays(7241000, Array.from({ length: 72 }, (_, i) => `d${i}`)).values()].reduce((a, b) => a + b, 0)).toBe(7241000);
+  });
+  it("nothing to share leaves every day at zero; no days, no shares", () => {
+    expect([...spreadOverDays(0, ["2026-10-01", "2026-10-02"]).values()]).toEqual([0, 0]);
+    expect(spreadOverDays(500, []).size).toBe(0);
   });
 });

@@ -133,7 +133,7 @@ export default function AdSpendPage() {
                       <TableCell align="right">
                         {can("finance.transact") && (
                           <span className="flex justify-end gap-1">
-                            <Button size="sm" variant="outline" onClick={() => setSpendFor(c)}>Day’s spend</Button>
+                            <Button size="sm" variant="outline" onClick={() => setSpendFor(c)}>Add spend</Button>
                             <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil className="h-4 w-4" /></Button>
                           </span>
                         )}
@@ -225,30 +225,51 @@ function SpendModal({ campaign, defaultRate, onClose, onDone }: { campaign: AdCa
     d.setDate(d.getDate() - 1);
     return d.toLocaleDateString("en-CA");
   });
+  const [mode, setMode] = useState<"DAY" | "PERIOD">("DAY");
+  const [from, setFrom] = useState(campaign.startDate);
+  const [to, setTo] = useState(today());
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"LOCAL" | "USD">("USD");
   const [rate, setRate] = useState("");
   const [charged, setCharged] = useState("");
   const usd = currency === "USD";
+  const period = mode === "PERIOD";
   const effectiveRate = rate ? Number(rate) : defaultRate;
-  const valid = amount !== "" && Number(amount) >= 0 && (!usd || charged !== "" || (effectiveRate ?? 0) > 0);
+  const valid = amount !== "" && Number(amount) >= 0 && (!usd || charged !== "" || (effectiveRate ?? 0) > 0) && (!period || (from !== "" && to !== "" && from <= to));
+  const money = usd ? { originalAmount: Number(amount), currency: "USD", fxRate: rate ? Number(rate) : null, amount: charged ? Number(charged) : null } : { amount: Number(amount) };
   const save = useMutation({
-    mutationFn: () =>
-      booksApi.recordDaySpend(campaign.id, usd
-        ? { date, originalAmount: Number(amount), currency: "USD", fxRate: rate ? Number(rate) : null, amount: charged ? Number(charged) : null }
-        : { date, amount: Number(amount) }),
-    onSuccess: () => { toast.success("Spend saved — it replaces the budget for that day"); onDone(); },
+    mutationFn: async () => {
+      if (!period) {
+        await booksApi.recordDaySpend(campaign.id, { date, ...money });
+        return "Spend saved — it replaces the budget for that day";
+      }
+      const r = await booksApi.recordPeriodSpend(campaign.id, { from, to, ...money });
+      return `${formatPrice(r.shared)} shared over ${r.sharedDays} day(s)${r.ownDays ? `; ${r.ownDays} day(s) kept their own figure` : ""}`;
+    },
+    onSuccess: (message) => { toast.success(message); onDone(); },
     onError: (e) => toast.error(getErrorMessage(e, "The spend couldn't be saved")),
   });
   return (
-    <Modal open onClose={onClose} title={`What ${campaign.name} spent`} description="From Ads Manager, for one day. It replaces that day's budget in the books." widthClassName="max-w-sm"
+    <Modal open onClose={onClose} title={`What ${campaign.name} spent`}
+      description={period ? "A total from Ads Manager or the card statement. Days that already have their own figure keep it; the rest is shared evenly over the other days." : "From Ads Manager, for one day. It replaces that day's budget in the books."}
+      widthClassName="max-w-sm"
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-day-spend">Save</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field htmlFor="sp-date" label="Day"><Input id="sp-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
-        <Field htmlFor="sp-cur" label="Currency">
+        <Field htmlFor="sp-mode" label="For" className="sm:col-span-2">
+          <Select id="sp-mode" value={mode} onChange={(e) => setMode(e.target.value as "DAY" | "PERIOD")}><option value="DAY">One day</option><option value="PERIOD">A period (total)</option></Select>
+        </Field>
+        {period ? (
+          <>
+            <Field htmlFor="sp-from" label="From"><Input id="sp-from" type="date" value={from} min={campaign.startDate} max={to || today()} onChange={(e) => setFrom(e.target.value)} /></Field>
+            <Field htmlFor="sp-to" label="To"><Input id="sp-to" type="date" value={to} min={from} max={campaign.endDate && campaign.endDate < today() ? campaign.endDate : today()} onChange={(e) => setTo(e.target.value)} /></Field>
+          </>
+        ) : (
+          <Field htmlFor="sp-date" label="Day"><Input id="sp-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
+        )}
+        <Field htmlFor="sp-cur" label="Currency" className={period ? "sm:col-span-2" : undefined}>
           <Select id="sp-cur" value={currency} onChange={(e) => setCurrency(e.target.value as "LOCAL" | "USD")}><option value="USD">USD (as Ads Manager shows)</option><option value="LOCAL">Taka</option></Select>
         </Field>
-        <Field htmlFor="sp-amount" label={usd ? "Spent (USD)" : "Spent (taka)"} required className="sm:col-span-2"><Input id="sp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
+        <Field htmlFor="sp-amount" label={`${period ? "Total spent" : "Spent"} (${usd ? "USD" : "taka"})`} required className="sm:col-span-2"><Input id="sp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
         {usd && (
           <>
             <Field htmlFor="sp-rate" label="Taka per USD" hint={defaultRate ? `Empty = default ${defaultRate} (marked an estimate)` : "Or set a default in Owner's summary › Settings"}>

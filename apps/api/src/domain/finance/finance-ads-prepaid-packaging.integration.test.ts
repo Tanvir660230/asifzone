@@ -141,6 +141,25 @@ describe("ad spend", () => {
     await api().post("/ads/import-meta", { since: "2026-10-01" });
     expect(await balanceOf("expense.advertising")).toBe(2450 + 1300);
   });
+
+  it("a period total (USD at a rate, or taka) is shared over the days without their own figure; entering it again replaces only those", async () => {
+    const before = await balanceOf("expense.advertising");
+    const c = await api().post("/ads/campaigns", { financialAccountId: adAccount, name: "Before tracking", startDate: "2026-10-01", endDate: "2026-10-04" });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect((await api().put(`/ads/campaigns/${c.body.id}/spend`, { date: "2026-10-02", originalAmount: 2, currency: "USD", fxRate: 130 })).status).toBe(200);
+    const r = await api().put(`/ads/campaigns/${c.body.id}/period-spend`, { from: "2026-10-01", to: "2026-10-04", originalAmount: 10, currency: "USD", fxRate: 130 });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ total: 1300, original: 10, currency: "USD", rate: 130, ownDays: 1, ownTotal: 260, sharedDays: 3, shared: 1040 });
+    const days = await prisma.adSpendDay.findMany({ where: { campaignId: c.body.id }, orderBy: { date: "asc" } });
+    expect(days.map((d) => [d.source, Number(d.amount), Number(d.originalAmount)])).toEqual([["PERIOD", 346.67, 2.67], ["MANUAL", 260, 2], ["PERIOD", 346.67, 2.67], ["PERIOD", 346.66, 2.66]]);
+    expect(await balanceOf("expense.advertising")).toBe(before + 1300);
+    // In taka this time: the typed day stays, the shared days are replaced
+    expect((await api().put(`/ads/campaigns/${c.body.id}/period-spend`, { from: "2026-10-01", to: "2026-10-04", amount: 1500 })).body).toMatchObject({ total: 1500, shared: 1240, sharedDays: 3 });
+    expect(await balanceOf("expense.advertising")).toBe(before + 1500);
+    expect((await api().put(`/ads/campaigns/${c.body.id}/period-spend`, { from: "2026-10-01", to: "2026-10-04", amount: 100 })).body.details?.code).toBe("PERIOD_LESS_THAN_DAYS");
+    expect((await api().put(`/ads/campaigns/${c.body.id}/period-spend`, { from: "2026-09-30", to: "2026-10-04", amount: 1500 })).body.details?.code).toBe("PERIOD_OUTSIDE_CAMPAIGN");
+    expect(await balanceOf("expense.advertising")).toBe(before + 1500);
+  });
 });
 
 describe("prepaid costs", () => {

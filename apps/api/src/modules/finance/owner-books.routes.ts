@@ -16,6 +16,7 @@ import {
   adCampaignListQuerySchema,
   adCampaignUpdateSchema,
   adSpendDaySchema,
+  adPeriodSpendSchema,
   metaSpendImportSchema,
   prepaidCreateSchema,
   prepaidUpdateSchema,
@@ -36,8 +37,10 @@ import {
   materialRollOpenSchema,
   materialRollFinishSchema,
   financeCenterSettingsSchema,
+  financeAutopilotSchema,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
+import * as autopilot from "../../domain/finance/autopilot.service";
 import * as stockCheck from "../../domain/finance/stock-check.service";
 import { prisma } from "../../config/prisma";
 import { getFinanceContext } from "../../domain/finance/finance-context";
@@ -122,6 +125,7 @@ ownerBooksRouter.put("/ads/campaigns/:id/spend", requirePermission("finance.tran
   await ads.recordDaySpend(id(req), req.body, await actorOf(req));
   res.json({ ok: true });
 }));
+ownerBooksRouter.put("/ads/campaigns/:id/period-spend", requirePermission("finance.transact"), validate(adPeriodSpendSchema), asyncHandler(async (req, res) => res.json(await ads.recordPeriodSpend(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.post("/ads/import-meta", requirePermission("finance.transact"), validate(metaSpendImportSchema), asyncHandler(async (req, res) => res.json(await ads.importMetaSpend(req.body, await actorOf(req)))));
 
 // ── prepaid costs (§6.1) ────────────────────────────────────────────────────────────────────────────────────────────
@@ -180,6 +184,11 @@ ownerBooksRouter.get("/center/settings", requirePermission("finance.read"), asyn
   res.json({ defaultUsdRate: s.defaultUsdRate ? Number(s.defaultUsdRate) : null, smsLowBalance: s.smsWarnAt ? Number(s.smsWarnAt) : null });
 }));
 ownerBooksRouter.patch("/center/settings", requirePermission("finance.configure"), validate(financeCenterSettingsSchema), asyncHandler(async (req, res) => res.json(await center.updateFinanceCenterSettings(req.body, await actorOf(req)))));
+
+// ── autopilot (§15): payouts, owner drawings, Meta spend and profit shares, every morning and evening ──────────────────
+ownerBooksRouter.get("/center/autopilot", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await autopilot.getAutopilotSettings())));
+ownerBooksRouter.patch("/center/autopilot", requirePermission("finance.sensitive"), validate(financeAutopilotSchema), asyncHandler(async (req, res) => res.json(await autopilot.updateAutopilotSettings(req.body, await actorOf(req)))));
+ownerBooksRouter.post("/center/autopilot/run", requirePermission("finance.sensitive"), asyncHandler(async (req, res) => res.json(await autopilot.runAutopilot(await actorOf(req)))));
 
 // ── Stock check: counts and rolls (docs/FINANCE_CENTER.md §7) ─────────────────────────────────────────────────────────
 ownerBooksRouter.get("/center/stock-check", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await stockCheck.stockCheck())));
