@@ -125,6 +125,76 @@ The total the customer paid against is frozen, so `PAID` keeps meaning "this tot
 after payment go through refunds. The owner can overrule this recorded interpretation (BUSINESS_DECISIONS, Phase 4
 notes, P4-1).
 
+### 5a. Return charge — a refused parcel (owner decision, 2026-10-21)
+
+When a customer refuses the parcel, some pay the rider the delivery charge, some don't. That money is **courier cost
+recovered**: not sales, not order money, never owed back. Before this, it could only be recorded as order money, and on a
+free-delivery order that came back (or any order then marked Returned / Cancelled) the ledger asked staff to refund it.
+
+- `Payment.purpose` = `ORDER` (default) | `RETURN_CHARGE`. A return charge row is kept out of every order figure (`paid`,
+  `refundable`, `refundDue`, `overpaid`, status) and reported apart as `returnCharge` in the position and the summary.
+- `recordManualPayment(kind: RETURN_CHARGE, via: COURIER | DIRECT)` — order `PARTIALLY_DELIVERED`, `RETURNED` or
+  `CANCELLED` (`RETURN_CHARGE_ORDER_STATUSES`); any positive amount (it is not bounded by the balance due). `COURIER`
+  (the default, the rider collected it) is a `COD` row; `DIRECT` (bKash, cash…) a `MANUAL` row.
+- `reclassifyPayment(orderId, paymentId, {purpose, reason})` — `PATCH /orders/:id/payments/:paymentId`, `refunds.manage`
+  (it decides whether money is owed back). Only `COD` / `MANUAL` rows. To `RETURN_CHARGE`: only on a refused parcel and only
+  while `amount ≤ refundable` (a refund or credit already taken from it keeps its payment). Back to `ORDER`: always. Both
+  write an order-timeline note (who, why) and refresh the projection; a repeat is a no-op.
+- Metrics: the fact loader keeps return charges out of `OrderFact.payments` (no sales, cash or payment metric counts them)
+  and hands them to the books as `OrderFact.returnCharges`.
+- Books: `commerce.return_charge.received` — Dr the provider's clearing, Cr `expense.courier_fees` (6600 Delivery &
+  courier). The receivable is untouched. Re-marking withdraws one event and adds the other (different semantic keys).
+- Admin › order › Payments & refunds: **Record return charge** on a refused parcel; **This was the return charge** on a
+  payment that the refund-due alert would otherwise ask to refund; **Count as order money** to undo.
+
+### 5b. Return charge from Steadfast, automatically (2026-10-21)
+
+Steadfast's status API (`status_by_cid`) gives only a status. Its webhook body also carries `cod_amount` and, on panel
+accounts, `notification_type`, `delivery_charge` and `tracking_message`. Steadfast's own Laravel package requires
+consignment_id, invoice, status, cod_amount and updated_at. For `partial_delivered`, `cod_amount` is what the rider
+actually collected, which is how a refused parcel shows up when the customer paid the delivery charge. Community SDKs
+document this; Steadfast has published no official schema. The first real webhooks are logged (below) so this can be
+checked against what Steadfast actually sends.
+
+- **Every webhook is logged** in `CourierWebhookEvent`: the whole body, type, consignment, order, status, amounts,
+  outcome (`APPLIED`, `NO_ORDER`, `NO_CONSIGNMENT`, `FAILED`). Steadfast's `Idempotency-Key` header (the same on every
+  retry) is unique: a retry is answered and not processed again (`DUPLICATE`).
+- **Auth**: the shared token in the query string (`?token=`, as before) or Steadfast's panel "Auth token", which arrives
+  as `Authorization: Bearer <token>`. Both are compared in constant time.
+- **The amount is trusted only when two sources agree**: the body says `partial_delivered` and Steadfast's own status API
+  says `partial_delivered`. Then `Order.courierCollectedAmount` / `courierCollectedAt` are stored, and a line goes on
+  the timeline (staff-only). A `cancelled` push's `cod_amount` is the booked COD, not money collected, so it is ignored.
+- **`settleCourierCollected(orderId)`** (payment ledger) records it as the return charge (a `COD` row, purpose
+  `RETURN_CHARGE`, idempotencyKey `courier-collected:<orderId>`, one per order). This happens only once the customer
+  **kept nothing**: the order is `RETURNED`, or its partial delivery was reconciled with every unit back. It runs after
+  the webhook, after reconciliation, and after a move to `RETURNED`, so the order those happen in doesn't matter. It is
+  skipped when staff already recorded courier cash on the order by hand, so money is never counted twice. When the
+  customer kept something, the collection pays for what they kept: the order page shows Steadfast's figure, and the
+  "courier-collected cash" form is prefilled with it.
+- Missed webhooks: the 15-minute status sweep still catches the status, but no amount. That parcel's charge is entered
+  by hand, or later corroborated from the payout (docs/COURIER_COSTS.md §5).
+
+### 5c. What a partial delivery and a closed order still owe (2026-10-21)
+
+Before this, a reconciled partial delivery kept charging the whole order. Its return record had no value, so `returned`
+stayed 0. The courier was shown as still collecting the full amount, a payment link offered it, and the dashboard's
+outstanding-COD figure counted every partially delivered order in full. A returned or cancelled order also showed its
+whole total as "Still due".
+
+- **Reconciliation values what came back** exactly like an item-level return (`valueItemReturn`, the order's own
+  allocated pricing). The values go in the auto-approved return record's `lines` (`restocked` = all, `writtenOff` = 0,
+  so the books see no write-off). The position then charges only what the customer kept.
+- **The customer kept nothing → the order moves to `RETURNED`** right after reconciliation (T7: the stock is already
+  back, so none moves; loyalty points reverse; no customer SMS). That move also settles Steadfast's reported
+  collection as the return charge (§5b).
+- **Engine:** a closed order (`CANCELLED`, `RETURNED`, `REFUNDED`) has `amountDue` 0. What it received is settled
+  through `refundDue`. `PARTIALLY_DELIVERED` has `codToCollect` 0, since the courier is done.
+- **Dashboard** (`positionTotals`): position facts carry `returnedValue` (approved returns' line values), the same
+  `returned` the ledger uses. Outstanding COD and amount due now agree with the order pages.
+- **Old orders:** `pnpm --filter api partial-returns:backfill` (dry run) / `--apply` values the return records
+  reconciled before this release, then refreshes their payment projection. Orders whose customer kept nothing but are
+  still Partly delivered are listed for staff to mark Returned.
+
 ## 6. The order state machine
 
 | Transition | Before Phase 4 | Phase 4 |

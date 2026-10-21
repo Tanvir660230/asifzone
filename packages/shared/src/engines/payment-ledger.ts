@@ -10,6 +10,9 @@
  *   Refund   money actually sent back
  *   Credit   money owed back that was moved to the customer's store balance (CustomerCreditEntry) instead of refunded
  * Credited money can no longer be refunded (`refundable` excludes it), so the same amount is never compensated twice.
+ *
+ * A return charge (docs/PAYMENT_LEDGER.md §5a) — what a customer who refused the parcel paid toward the courier's charge —
+ * is not order money: it never pays for the order, is never owed back, and is reported apart (`returnCharge`).
  */
 import { add, clampNonNegative, subtract, sum, zero, type Money } from "./money";
 
@@ -17,8 +20,10 @@ export type LedgerPaymentStatus = "UNPAID" | "PARTIALLY_PAID" | "PAID" | "FAILED
 
 /** Order statuses whose goods never reached, or came back from, the customer — everything received is owed back. */
 const REFUND_ALL_STATUSES = new Set(["CANCELLED", "RETURNED"]);
-/** Closed orders: nothing is collected at the door any more. */
+/** Closed orders: the customer owes nothing more, and nothing is collected at the door. */
 const CLOSED_STATUSES = new Set(["CANCELLED", "RETURNED", "REFUNDED"]);
+/** The courier has finished with the parcel: whatever it collected is recorded, it collects nothing more. */
+const COURIER_DONE_STATUSES = new Set(["PARTIALLY_DELIVERED"]);
 
 export interface PaymentLedgerInput {
   currency: string;
@@ -40,6 +45,8 @@ export interface PaymentLedgerInput {
   /** Allocated value of merchandise that came back through item-level returns on a delivered order (ReturnRequest.lines)
    * — the order total itself is never rewritten; the position treats `total − returned` as what the order now charges. */
   returned?: Money[];
+  /** Amounts of SUCCEEDED return-charge Payment rows (§5a). Absent = none. Kept out of every other figure. */
+  returnCharges?: Money[];
 }
 
 export interface PaymentPosition {
@@ -52,11 +59,12 @@ export interface PaymentPosition {
   credited: Money;
   /** paid − refunded − credited, floored at 0: what the store still holds for this order. */
   netPaid: Money;
-  /** What the customer still owes: total − (paid − credited) for an open order, total − paid for a closed one; floored at
-   * 0. A refund never creates a new debt; on an open order, money moved to store credit no longer pays for it (a
-   * modification that later raises the total collects it again). */
+  /** What the customer still owes on an open order: total (net of returns) − (paid − credited), floored at 0. A refund
+   * never creates a new debt; money moved to store credit no longer pays for it (a modification that later raises the
+   * total collects it again). A closed order (cancelled / returned / refunded) owes nothing: 0. */
   amountDue: Money;
-  /** Cash the courier collects on delivery: the balance due of an open COD order, else 0. */
+  /** Cash the courier collects on delivery: the balance due of a COD order the courier still has, else 0 (closed, or a
+   * partial delivery — the courier is done; what the customer kept is recorded by staff). */
   codToCollect: Money;
   /** The most a new refund (or credit) may be: paid − refunded − requested − credited, floored at 0. */
   refundable: Money;
@@ -65,6 +73,8 @@ export interface PaymentPosition {
   /** netPaid − total (net of item-level returns), floored at 0 (a duplicate gateway payment, a lowered total, items
    * returned from a delivered order). */
   overpaid: Money;
+  /** Σ return charges received (§5a) — courier cost recovered, not order money. */
+  returnCharge: Money;
 }
 
 export function derivePaymentPosition(input: PaymentLedgerInput): PaymentPosition {
@@ -78,11 +88,12 @@ export function derivePaymentPosition(input: PaymentLedgerInput): PaymentPositio
   const effectiveTotal = clampNonNegative(subtract(input.total, sum(input.returned ?? [], cur)));
   const netPaid = clampNonNegative(subtract(subtract(paid, refunded), credited));
   // Money moved to store credit no longer pays for an OPEN order (a change that raises the total again collects it). A
-  // closed order (cancelled / returned / refunded) owes nothing more because of a credit: there, as before, only what was
-  // paid counts.
-  const amountDue = clampNonNegative(subtract(effectiveTotal, CLOSED_STATUSES.has(input.orderStatus) ? paid : subtract(paid, credited)));
+  // closed order (cancelled / returned / refunded) owes nothing more: its goods never reached, or came back from, the
+  // customer, or it was refunded — what was received is settled through refundDue instead.
+  const closed = CLOSED_STATUSES.has(input.orderStatus);
+  const amountDue = closed ? zero(cur) : clampNonNegative(subtract(effectiveTotal, subtract(paid, credited)));
   const overpaid = clampNonNegative(subtract(netPaid, effectiveTotal));
-  const codToCollect = input.paymentMethod === "COD" && !CLOSED_STATUSES.has(input.orderStatus) ? amountDue : zero(cur);
+  const codToCollect = input.paymentMethod === "COD" && !closed && !COURIER_DONE_STATUSES.has(input.orderStatus) ? amountDue : zero(cur);
   const refundable = clampNonNegative(subtract(subtract(subtract(paid, refunded), refundPending), credited));
   const refundDue = clampNonNegative(subtract(REFUND_ALL_STATUSES.has(input.orderStatus) ? netPaid : overpaid, refundPending));
   const compensated = add(refunded, credited);
@@ -97,7 +108,8 @@ export function derivePaymentPosition(input: PaymentLedgerInput): PaymentPositio
   else if (!settled && input.failedAttempts > 0) status = "FAILED";
   else status = "UNPAID";
 
-  return { status, settled, paid, refunded, refundPending, credited, netPaid, amountDue, codToCollect, refundable, refundDue, overpaid };
+  const returnCharge = sum(input.returnCharges ?? [], cur);
+  return { status, settled, paid, refunded, refundPending, credited, netPaid, amountDue, codToCollect, refundable, refundDue, overpaid, returnCharge };
 }
 
 export type RefundCheck = { ok: true } | { ok: false; code: "NOT_POSITIVE" | "EXCEEDS_REFUNDABLE"; refundable: Money };
@@ -132,6 +144,9 @@ export function checkCreditIssue(position: PaymentPosition, amount: Money): Cred
   if (amount.amount > position.refundDue.amount) return { ok: false, code: "EXCEEDS_REFUND_DUE", refundDue: position.refundDue };
   return { ok: true };
 }
+
+/** A parcel the customer refused, in whole or in part — where a return charge (§5a) can arise. */
+export const RETURN_CHARGE_ORDER_STATUSES: readonly string[] = ["PARTIALLY_DELIVERED", "RETURNED", "CANCELLED"];
 
 /** Statuses meaning "money was received and is at least partly still held" — the refund queue for cancelled orders. */
 export const MONEY_HELD_PAYMENT_STATUSES: readonly LedgerPaymentStatus[] = ["PAID", "PARTIALLY_PAID", "PARTIALLY_REFUNDED"];

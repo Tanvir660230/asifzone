@@ -203,6 +203,11 @@ describe("aggregation (§4)", () => {
     expect(t.outstandingCod).toBe(T(1060));
     expect(t.refundDue).toBe(T(1060));
   });
+  it("point-in-time totals: a reconciled partial delivery owes only what was kept; the courier collects nothing more", () => {
+    const t = positionTotals([order({ id: "pd", status: "PARTIALLY_DELIVERED", returnedValue: T(600) })], "BDT");
+    expect(t.outstandingCod).toBe(0);
+    expect(t.amountDue).toBe(T(460));
+  });
   it("inventory: per-variant low stock (D5), physical stock and value", () => {
     const t = inventoryTotals([
       { variantId: "a", productId: "p", stock: 2, trackInventory: true, lowStockThreshold: 5, held: true, purchasable: true, currentUnitCost: T(100) },

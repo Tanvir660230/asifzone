@@ -52,7 +52,7 @@ export async function metricsConsistency(range: RangeInput | BusinessRange): Pro
 
   const window = { gte: new Date(totals.range.startUtc), lt: new Date(totals.range.endUtc) };
   const [paid, refunded, sessionGroups] = await Promise.all([
-    prisma.payment.aggregate({ where: { status: "SUCCEEDED", settledAt: window }, _sum: { amount: true } }),
+    prisma.payment.aggregate({ where: { status: "SUCCEEDED", purpose: "ORDER", settledAt: window }, _sum: { amount: true } }),
     prisma.refund.aggregate({ where: { status: "COMPLETED", completedAt: window }, _sum: { amount: true } }),
     // Counted a second way (ORM group-by, not the engine's raw COUNT DISTINCT) — the sessions denominator of D25.
     prisma.pageView.groupBy({ by: ["sessionId"], where: { createdAt: window } }),

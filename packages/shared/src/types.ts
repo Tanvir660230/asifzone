@@ -483,10 +483,14 @@ export interface OrderPaymentSummary {
   /** Money owed back to the customer (cancelled/returned: everything received; otherwise an overpayment). */
   refundDue: number;
   overpaid: number;
+  /** Σ return charges received (docs/PAYMENT_LEDGER.md §5a) — courier cost recovered, outside every figure above. */
+  returnCharge: number;
   payments: Array<{
     id: string;
     provider: "SSLCOMMERZ" | "EPS_PG" | "COD" | "MANUAL" | "STORE_CREDIT";
     status: "SUCCEEDED" | "FAILED";
+    /** RETURN_CHARGE: a refused parcel's return charge, not order money (§5a). */
+    purpose: "ORDER" | "RETURN_CHARGE";
     amount: number;
     note: string | null;
     backfilled: boolean;
@@ -656,6 +660,9 @@ export interface Order {
   courierBookedAt: string | null;
   courierStatusSyncedAt: string | null;
   courierSyncError: string | null;
+  /** Admin reads only: what Steadfast reported the rider collected on a partial delivery (PAYMENT_LEDGER §5b). */
+  courierCollectedAmount?: string | null;
+  courierCollectedAt?: string | null;
   partialDeliveryReconciledAt: string | null;
   followUpAt: string | null;
   callAttempts: number;

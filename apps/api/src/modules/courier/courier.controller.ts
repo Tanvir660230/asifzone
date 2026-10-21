@@ -6,27 +6,26 @@ import { handleSteadfastWebhook } from "./courier.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
 
-interface SteadfastWebhookBody {
-  consignment_id?: number | string;
-}
-
 export const balance = asyncHandler(async (_req: Request, res: Response) => {
   res.json({ balance: await getProviders().courier.balance() });
 });
 
-/** Steadfast's Notify URL callback. No signature — authenticated only by a shared secret of our
- * own choosing in the query string (see env.steadfast.webhookToken / .env.example). Always
- * responds 200 once the token check passes: Steadfast doesn't retry on a non-2xx, and there is
- * nothing the caller can usefully do with a failure response anyway (see handleSteadfastWebhook's
- * own re-verification step for how the actual trust decision is made). */
+/** Steadfast's webhook (Notify / Callback URL). Authenticated by a shared secret of our own choosing
+ * (env.steadfast.webhookToken / .env.example): in the query string (`?token=`, the original setup) or as the panel's
+ * "Auth token", which Steadfast sends as `Authorization: Bearer <token>`. Always responds 200 once the token check
+ * passes — there is nothing the caller can usefully do with a failure response (see handleSteadfastWebhook's own
+ * re-verification step for how the actual trust decision is made). */
 export const webhook = asyncHandler(async (req: Request, res: Response) => {
-  const token = typeof req.query.token === "string" ? req.query.token : "";
-  if (!env.steadfast.webhookToken || !constantTimeEqual(token, env.steadfast.webhookToken)) {
+  const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  const header = req.get("authorization") ?? "";
+  const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  const expected = env.steadfast.webhookToken;
+  if (!expected || !(constantTimeEqual(queryToken, expected) || constantTimeEqual(bearer, expected))) {
     return res.status(401).json({ error: "Invalid webhook token" });
   }
 
   try {
-    await handleSteadfastWebhook(req.body as SteadfastWebhookBody);
+    await handleSteadfastWebhook(req.body, { idempotencyKey: req.get("idempotency-key") ?? null });
   } catch (err) {
     // Steadfast doesn't retry non-2xx responses, so letting this throw would drop the status push
     // outright — log and still 200 as documented above; syncPendingCourierStatuses' 15-min sweep

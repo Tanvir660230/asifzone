@@ -13,6 +13,7 @@ import {
   recordRefundSchema,
   completeRefundSchema,
   recordPaymentSchema,
+  reclassifyPaymentSchema,
   bulkOrderIdsSchema,
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
@@ -105,6 +106,8 @@ orderRouter.post("/:id/refunds/:refundId/complete", requireAdmin, requirePermiss
 // Payment ledger (docs/PAYMENT_LEDGER.md §8): the order's payment position, and payments staff record by hand.
 orderRouter.get("/:id/payment", requireAdmin, requirePermission("orders.read"), orderController.getPayment);
 orderRouter.post("/:id/payments", requireAdmin, requirePermission("payments.record"), validate(recordPaymentSchema), orderController.recordPayment);
+// §5a: re-mark a payment as a refused parcel's return charge (or back). It decides whether money is owed back → refunds.manage.
+orderRouter.patch("/:id/payments/:paymentId", requireAdmin, requirePermission("refunds.manage"), validate(reclassifyPaymentSchema), orderController.reclassifyPayment);
 // Order adjustments (docs/ORDER_ADJUSTMENTS.md): modifications, item returns, store credit, payment links.
 orderRouter.post("/:id/modifications/preview", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminPreviewModification);
 orderRouter.post("/:id/modifications", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminApplyModification);

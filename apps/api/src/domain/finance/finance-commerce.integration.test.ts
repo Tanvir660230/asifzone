@@ -10,7 +10,7 @@ import { checkout, cleanupFixtures, createStockedProduct, ownerId, markOpeningPo
 import { createOrder, updateOrderStatus } from "../../modules/orders/order.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
-import { recordManualPayment, recordRefund } from "../../domain/payments/payment-ledger.service";
+import { reclassifyPayment, recordManualPayment, recordRefund } from "../../domain/payments/payment-ledger.service";
 import { loadOrderFacts } from "../metrics/facts.repository";
 import { financeTransaction } from "./finance-tx";
 import { getFinanceContext } from "./finance-context";
@@ -210,6 +210,33 @@ describe("payments, refunds, returns", () => {
     expect(await ledger(o.id, "clearing.cod", -1)).toBe(Number(o.total) - 500);
     expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
     await agrees(o.id);
+  });
+
+  it("a refused parcel's return charge recovers courier cost, never touches the receivable, and moves when re-marked (§5a)", async () => {
+    const v = await costedVariant(200);
+    const o = await placeOrder([{ variantId: v.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    const { payment } = await recordManualPayment(o.id, { amount: 120, kind: "COD_COLLECTED" }, admin);
+    await updateOrderStatus(o.id, { status: "RETURNED" }, admin);
+    await projectOrder(o.id);
+    // As order money: in COD clearing against the receivable (the customer is owed it back).
+    expect(await ledger(o.id, "clearing.cod", -1)).toBe(120);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(0);
+    const receivableBefore = await ledger(o.id, "asset.receivable_trade");
+
+    await reclassifyPayment(o.id, payment!.id, { purpose: "RETURN_CHARGE" }, admin);
+    await projectOrder(o.id);
+    expect(await ledger(o.id, "clearing.cod", -1)).toBe(120);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(-120);
+    expect(await ledger(o.id, "asset.receivable_trade")).toBe(Math.round((receivableBefore - 120) * 100) / 100 || 0);
+    await agrees(o.id);
+
+    // Back to order money: the recovery is withdrawn.
+    await reclassifyPayment(o.id, payment!.id, { purpose: "ORDER" }, admin);
+    await projectOrder(o.id);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(0);
+    expect(await ledger(o.id, "asset.receivable_trade")).toBe(receivableBefore);
   });
 
   it("partial, multiple and repeated refunds reduce revenue exactly as the dashboard does; a repeat records one refund", async () => {
