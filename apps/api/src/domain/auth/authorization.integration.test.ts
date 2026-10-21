@@ -278,6 +278,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/inventory-cutover/post",
   // Owner's books (docs/FINANCE_OWNER_BOOKS.md): the books' new pages stay with the owner; STAFF keeps only their own cash
   // (finance.custody), the goods receipts a landed cost picks from (purchasing.read) and the list of quick refills.
+  "GET /api/v1/finance/owner-home",
   "GET /api/v1/finance/money-map",
   "PUT /api/v1/finance/financial-accounts/:id/custodian",
   "POST /api/v1/finance/expenses/owner-paid",
@@ -493,8 +494,9 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: a payout's unmatched parcels counted as sales outside the website
     // +11: Finance Center (docs/FINANCE_CENTER.md) — ad CSV import, summary, verifications 2, allocations 2, renewals, SMS 2, settings 2
     // +7: owner & partners with monthly profit shares (docs/FINANCE_EQUITY.md §8); +1: ad spend for a period; +3: autopilot (§15)
+    // +1: the owner's home (docs/FINANCE_OWNER_HOME.md)
     // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
-    expect(routes).toHaveLength(668);
+    expect(routes).toHaveLength(669);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

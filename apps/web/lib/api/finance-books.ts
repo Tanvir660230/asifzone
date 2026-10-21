@@ -276,3 +276,30 @@ export const recordStockCount = (body: { variantId: string; counted: number; cou
 export const listRolls = () => apiFetch<{ rolls: MaterialRollRow[]; averagePerParcel: number | null }>(`${BASE}/center/rolls`);
 export const openRoll = (body: { materialVariantId: string; openedOn: string; note?: string | null }) => apiFetch<{ id: string }>(`${BASE}/center/rolls`, { method: "POST", body });
 export const finishRoll = (id: string, body: { finishedOn: string; parcelsCounted?: number | null; note?: string | null }) => apiFetch<{ id: string }>(`${BASE}/center/rolls/${id}/finish`, { method: "POST", body });
+
+// ── the owner's home (docs/FINANCE_OWNER_HOME.md) ─────────────────────────────────────────────────────────────────────
+
+/** A month in the owner's words: sales, and where it went. Costs are positive; profit can be negative. */
+export interface OwnerMonth { month: string; from: string; to: string; sales: number; goods: number; delivery: number; ads: number; other: number; profit: number }
+export type OwnerTodoKind = "BOOKS_NOT_STARTED" | "PAYOUT_WAITING" | "PAY_PARTNER" | "RENEW_SOON" | "EXPIRED" | "APPROVE_MONEY";
+export interface OwnerHome {
+  currency: string;
+  today: string;
+  booksStarted: boolean;
+  month: OwnerMonth;
+  lastMonth: OwnerMonth;
+  money: {
+    withUs: { cash: number; bank: number; wallets: number; total: number };
+    owedToUs: { courier: number; gateways: number; customers: number };
+    inBusiness: { stock: number; prepaid: number; adAccounts: number };
+    weOwe: { suppliers: number; owner: number; loans: number; storeCredit: number };
+  };
+  /** Only for the owner. */
+  people: null | {
+    owner: { name: string; putIn: number; takenOut: number; inBusiness: number } | null;
+    partners: Array<{ id: string; name: string; sharePct: number | null; owed: number; earned: number; paid: number; runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null }>;
+  };
+  todo: Array<{ kind: OwnerTodoKind; count?: number; amount?: number; name?: string; date?: string; partnerId?: string; href: string }>;
+}
+export const ownerHomeKey = (month?: string) => ["finance", "owner-home", month ?? "now"] as const;
+export const getOwnerHome = (month?: string) => apiFetch<OwnerHome>(`${BASE}/owner-home${month ? `?month=${month}` : ""}`);
