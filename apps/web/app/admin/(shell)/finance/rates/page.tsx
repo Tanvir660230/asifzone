@@ -205,7 +205,7 @@ function FeeModal({ onClose, onDone }: { onClose: () => void; onDone: () => void
       <div className="grid gap-3 sm:grid-cols-2">
         <Field htmlFor="fr-p" label="Gateway"><Select id="fr-p" value={provider} onChange={(e) => setProvider(e.target.value as "EPS_PG" | "SSLCOMMERZ")}><option value="EPS_PG">EPS</option><option value="SSLCOMMERZ">SSLCommerz</option></Select></Field>
         <Field htmlFor="fr-from" label="In force from"><Input id="fr-from" type="date" value={effectiveFrom} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field htmlFor="fr-pct" label="Percent" required><Input id="fr-pct" inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="2.5" /></Field>
+        <Field htmlFor="fr-pct" label="Percent" required><Input id="fr-pct" inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="2" /></Field>
         <Field htmlFor="fr-fixed" label="Plus a fixed amount"><Input id="fr-fixed" inputMode="decimal" value={fixed} onChange={(e) => setFixed(e.target.value)} /></Field>
       </div>
     </Modal>
