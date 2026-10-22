@@ -859,3 +859,78 @@ export function downloadRevenueCsvUrl(days = 365) {
 export function downloadInventoryTurnoverCsvUrl() {
   return `${publicApiUrl()}/api/analytics/export/inventory-turnover.csv`;
 }
+
+// ─── Daily pulse (docs/METRICS_REGISTRY.md §4.5) ─────────────────────────────────────────────────────────────────────
+
+export const OPS_COUNT_KEYS = [
+  "placed",
+  "placed_web",
+  "placed_landing",
+  "placed_phone",
+  "confirmed",
+  "cancelled",
+  "booked",
+  "booked_cod_value",
+  "shipped",
+  "delivered",
+  "partially_delivered",
+  "returned",
+] as const;
+export type OpsCountKey = (typeof OPS_COUNT_KEYS)[number];
+export type OpsCounts = Record<OpsCountKey, number>;
+
+export interface OpsQueues {
+  awaitingConfirmation: number;
+  onHold: number;
+  holdsDue: number;
+  readyToBook: number;
+  withCourier: number;
+  withCourierCod: number;
+  stuckWithCourier: number;
+  partialToReconcile: number;
+}
+
+export interface OpsStaffRow {
+  adminId: string;
+  name: string;
+  confirmed: number;
+  cancelled: number;
+  packed: number;
+  shipped: number;
+  other: number;
+  total: number;
+}
+
+export interface OpsPulse {
+  date: string;
+  timezone: string;
+  currency: string;
+  partialDay: boolean;
+  asOf: string | null;
+  day: OpsCounts;
+  yesterday: OpsCounts;
+  lastWeek: OpsCounts;
+  typical: OpsCounts;
+  comparisonDates: { yesterday: string; lastWeek: string; typical: string[] };
+  hourly: Array<{ hour: number; day: number; typical: number }>;
+  cohort: { placed: number; waiting: number; onHold: number; confirmed: number; withCourier: number; delivered: number; returned: number; cancelled: number };
+  staff: OpsStaffRow[];
+  queues: OpsQueues;
+}
+
+export interface OpsDailyRow extends OpsCounts {
+  date: string;
+  realised_net_sales: number;
+  orders_realised: number;
+  payments_received: number;
+}
+
+/** One business day's operations against yesterday, the same weekday last week and the usual for that weekday. */
+export function getOpsPulse(date?: string) {
+  return apiFetch<OpsPulse>(`/api/analytics/ops-pulse${date ? `?date=${date}` : ""}`);
+}
+
+/** A row per business day in [from, to] (inclusive, YYYY-MM-DD). */
+export function getOpsDaily(from: string, to: string) {
+  return apiFetch<{ timezone: string; currency: string; days: OpsDailyRow[]; totals: OpsDailyRow }>(`/api/analytics/ops-daily?from=${from}&to=${to}`);
+}

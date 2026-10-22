@@ -216,6 +216,31 @@ exceeded PostgreSQL's 32,767 bind-variable limit past ~32k orders.
 | `out_of_stock_variants` | sellable tracked variants with `variantStockState = OUT_OF_STOCK` |
 | `inventory_value` | Σ `max(stock, 0) × current cost` over the `stock_on_hand` set: TARGET §11 "Stock value"; the only valuation policy that exists (current cost), labelled *estimated* |
 
+### 4.5 Operations by day — the daily pulse (Smart Analytics phase A, 2026-10-22)
+
+Counts of what happened to orders on a business date (`modules/analytics/ops-pulse.ts` + `ops-pulse.service.ts`,
+`GET /api/analytics/ops-pulse?date=` and `GET /api/analytics/ops-daily?from=&to=`). Population: **operational orders**
+(§2: not trashed, not exchange replacements). Each order counts **once per step, on the day it first got there** (its first
+history entry of that kind). These are operations counts, not sales: money sales on the day table come from §4.1
+(`realised_net_sales`, `orders_realised`, `payments_received`, grouped by day).
+
+| Key | Definition | Time |
+|---|---|---|
+| `placed` | operational orders placed; split `placed_web` / `placed_landing` / `placed_phone` (the order's first history entry was made by an admin = phone; else its storefront session visited `/lp/…` = landing; else any session = web; else "other") | `Order.createdAt` |
+| `confirmed` | first time the order moved forward from PENDING: its first entry of CONFIRMED, PROCESSING, PACKED, SHIPPED, DELIVERED or PARTIALLY_DELIVERED (most COD orders go PENDING → PACKED at booking, with no CONFIRMED entry) | that entry |
+| `booked` / `booked_cod_value` | parcels booked with the courier; COD value = `total` − SUCCEEDED non-COD ORDER payments settled by the booking (what the rider is asked to collect; prepaid = 0) | `courierBookedAt` |
+| `shipped` | first SHIPPED entry (rare with Steadfast, which goes PACKED → DELIVERED; kept for couriers that report pickup) | that entry |
+| `delivered` / `partially_delivered` | first DELIVERED / PARTIALLY_DELIVERED entry | that entry |
+| `returned` | **refused or returned**: the first RETURNED entry, or a CANCELLED entry made after the parcel was booked (Steadfast "cancelled" = brought back); once per order | that entry |
+| `cancelled` | first CANCELLED entry made before any booking | that entry |
+| delivery success | `delivered ÷ (delivered + partially_delivered + returned)` of the day (UI-derived) | — |
+
+Comparisons: yesterday, the same weekday last week, and the **usual** = mean of the same weekday over the previous four
+weeks. For today (a day in progress) every comparison day is cut at the same local time of day ("by this time").
+Point-in-time queues: awaiting confirmation, on hold / call-backs due, confirmed not booked, **with the courier** (booked,
+status CONFIRMED…SHIPPED, plus its COD still to collect = Σ `codToCollect`), stuck with the courier (booked > 5 days ago),
+part deliveries to reconcile. Staff: every status-history entry an admin made that day (work done, not firsts).
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

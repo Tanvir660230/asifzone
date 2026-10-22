@@ -3,15 +3,17 @@
 import { lazy } from "react";
 import { AnalyticsTab } from "@/components/admin/analytics/analytics-tab";
 
+const PulseView = lazy(() => import("@/components/admin/analytics/views/pulse-view"));
 const OperationsView = lazy(() => import("@/components/admin/analytics/views/operations-view"));
 
 export default function AnalyticsOperationsPage() {
   return (
     <AnalyticsTab
       title="Operations"
-      description="Fulfilment speed and courier outcomes."
+      description="Each day's orders, parcels and deliveries against other days, and how fast orders move."
       views={[
-        { value: "operations", label: "Operations", Component: OperationsView },
+        { value: "pulse", label: "Daily pulse", Component: PulseView },
+        { value: "operations", label: "Speed & staff", Component: OperationsView },
       ]}
     />
   );

@@ -8,7 +8,9 @@ import type {
 } from "@clothing-brand/shared";
 import { asyncHandler } from "../../lib/async-handler";
 import { csvCell } from "../../lib/csv";
+import { AppError } from "../../lib/app-error";
 import * as analyticsService from "./analytics.service";
+import { getOpsDaily, getOpsPulse } from "./ops-pulse.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
 // any handler below runs — coerced to numbers and bounded (days: 1-365, limit: 1-100) — so this
@@ -464,4 +466,14 @@ export const exportInventoryTurnoverCsv = asyncHandler(async (_req: Request, res
     rows.map((r) => [r.name, r.slug, r.cogsSold, r.inventoryValue, r.turnoverRatio.toFixed(2)]),
   );
   sendCsv(res, "inventory-turnover", csv);
+});
+
+export const opsPulse = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getOpsPulse(query(req).date));
+});
+
+export const opsDaily = asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = query(req);
+  if (!from || !to) throw AppError.badRequest("from and to are required (YYYY-MM-DD)", { code: "INVALID_RANGE" });
+  res.json(await getOpsDaily(from, to));
 });

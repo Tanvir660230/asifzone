@@ -131,6 +131,9 @@ analyticsRouter.get("/dead-stock", requirePermission("analytics.read"), analytic
 analyticsRouter.get("/stock-movement-summary", requirePermission("analytics.read"), analyticsController.stockMovementSummary);
 
 // Section 11 — Operational Analytics
+// Daily pulse (docs/METRICS_REGISTRY.md §4.5): one day's operations against other days, and a day-by-day table.
+analyticsRouter.get("/ops-pulse", requirePermission("analytics.read"), analyticsController.opsPulse);
+analyticsRouter.get("/ops-daily", requirePermission("analytics.read"), analyticsController.opsDaily);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 
