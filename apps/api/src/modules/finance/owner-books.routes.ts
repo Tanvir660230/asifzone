@@ -162,6 +162,7 @@ ownerBooksRouter.post("/quick-refills", requirePermission("manufacturing.approve
 
 // ── profit (§8) and the launch weeks before the books (§9) ──────────────────────────────────────────────────────────
 ownerBooksRouter.get("/profit", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitReport(req.query as never, viewerOf(req)))));
+ownerBooksRouter.get("/profit/daily", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitByDay(req.query as never))));
 ownerBooksRouter.get("/profit/launch", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.launchReport(req.query as never))));
 
 // ── courier claims for lost parcels (§3.5); cancelling a landed cost (§7.1) ─────────────────────────────────────────

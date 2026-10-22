@@ -8,11 +8,11 @@
  * The launch report (§9) covers the weeks BEFORE the books started: an estimate from the orders, the catalog's cost
  * prices, the courier rate card and the recorded ad spend — clearly labelled, never posted.
  */
-import { Prisma } from "@prisma/client";
+import { Prisma, type LedgerAccountType } from "@prisma/client";
 import { addDays, businessDate } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { businessToday, getFinanceContext } from "./finance-context";
-import { financeError, toMajorNumber, toMinor, type FinanceViewer } from "./finance-values";
+import { dateColumn, financeError, toMajorNumber, toMinor, type FinanceViewer } from "./finance-values";
 import { incomeStatement } from "./statements.service";
 import { courierChargeEstimate, courierOutcome } from "./charge-estimates";
 import { loadRateCards } from "./charge-projection";
@@ -138,6 +138,88 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
     },
     orders: lines.sort((a, b) => a.contribution - b.contribution).map((l) => ({ ...l, sales: m(l.sales), cogs: m(l.cogs), packaging: m(l.packaging), courier: m(l.courier), gateway: m(l.gateway), ads: m(l.ads), contribution: m(l.contribution) })),
     products: [...products.values()].sort((a, b) => b.contribution - a.contribution).map((p) => ({ ...p, sales: m(p.sales), costs: m(p.costs), contribution: m(p.contribution), marginPct: p.sales ? Math.round((p.contribution / p.sales) * 10_000) / 100 : null })),
+  };
+}
+
+/** The longest range profit by day answers — a year and a day. */
+const MAX_DAYS = 366;
+
+type DayFigures = { orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number };
+const emptyDay = (): DayFigures => ({ orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0 });
+
+/**
+ * Profit by day (docs/FINANCE_PROFIT_DASHBOARD.md): each business day's posted income-statement lines folded into the
+ * owner's words — sales, then what the goods, packaging, delivery, payment fees, ads and running costs (rent, salaries,
+ * hosting, other income and expenses) took. Every P&L account lands in exactly one bucket, so the days add up to the
+ * income statement's net profit for the range. The prior period (same length, just before) comes alongside as totals.
+ */
+export async function profitByDay(q: { from?: string; to?: string }) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const today = businessToday(business);
+  const to = q.to ?? today;
+  const from = q.from ?? addDays(to, -29);
+  if (from > to) throw financeError(400, "PERIOD_RANGE", "The period starts before it ends");
+  const len = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+  if (len + 1 > MAX_DAYS) throw financeError(400, "PERIOD_TOO_LONG", `Profit by day covers at most ${MAX_DAYS} days`);
+  const priorTo = addDays(from, -1);
+  const priorFrom = addDays(priorTo, -len);
+
+  const maps = await prisma.accountMapping.findMany({ where: { businessId: business.id }, select: { key: true, accountId: true } });
+  const keyOf = new Map(maps.map((x) => [x.accountId, x.key]));
+  const merchandise = maps.find((x) => x.key === "revenue.merchandise")?.accountId ?? "-";
+  const range = Prisma.sql`e."businessId" = ${business.id} AND e.status = 'POSTED' AND e."entryDate" >= ${dateColumn(priorFrom)}::date AND e."entryDate" <= ${dateColumn(to)}::date`;
+  const [rows, sold] = await Promise.all([
+    prisma.$queryRaw<Array<{ day: string; accountId: string; type: LedgerAccountType; debit: Prisma.Decimal; credit: Prisma.Decimal }>>`
+      SELECT to_char(e."entryDate", 'YYYY-MM-DD') AS day, l."accountId", a.type, SUM(l.debit) AS debit, SUM(l.credit) AS credit
+      FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId" JOIN "LedgerAccount" a ON a.id = l."accountId"
+      WHERE ${range} AND a.type IN ('REVENUE', 'COGS', 'EXPENSE', 'OTHER_INCOME', 'OTHER_EXPENSE')
+      GROUP BY 1, 2, 3`,
+    // Orders whose sale the books took that day (delivered, or paid in full) — not orders placed.
+    prisma.$queryRaw<Array<{ day: string; orders: bigint }>>`
+      SELECT to_char(e."entryDate", 'YYYY-MM-DD') AS day, COUNT(DISTINCT l."partyId") AS orders
+      FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+      WHERE ${range} AND l."accountId" = ${merchandise} AND l."partyType" = 'Order' AND l.credit > 0
+      GROUP BY 1`,
+  ]);
+
+  const days = new Map<string, DayFigures>();
+  const dayOf = (d: string) => days.get(d) ?? days.set(d, emptyDay()).get(d)!;
+  for (const r of rows) {
+    const d = dayOf(r.day);
+    const cost = toMinor(r.debit, cur) - toMinor(r.credit, cur); // debit nature; revenue and other income are negative costs
+    const key = keyOf.get(r.accountId);
+    if (r.type === "REVENUE") d.sales -= cost;
+    else if (r.type === "COGS" && key === "cogs.packaging") d.packaging += cost;
+    else if (r.type === "COGS") d.goods += cost;
+    else if (key === "expense.courier_fees" || key === "expense.freight_in") d.delivery += cost;
+    else if (key === "expense.gateway_fees") d.paymentFees += cost;
+    else if (key === "expense.advertising") d.ads += cost;
+    else d.running += cost; // every other expense, other expenses, and other income (as a negative cost)
+  }
+  for (const r of sold) dayOf(r.day).orders = Number(r.orders);
+
+  const profitOf = (f: DayFigures) => f.sales - f.goods - f.packaging - f.delivery - f.paymentFees - f.ads - f.running;
+  const m = (v: number) => toMajorNumber(v, cur);
+  const major = (f: DayFigures) => ({ orders: f.orders, sales: m(f.sales), goods: m(f.goods), packaging: m(f.packaging), delivery: m(f.delivery), paymentFees: m(f.paymentFees), ads: m(f.ads), running: m(f.running), profit: m(profitOf(f)) });
+  const total = (start: string, end: string) => {
+    const t = emptyDay();
+    for (const [d, f] of days) if (d >= start && d <= end) for (const k of Object.keys(t) as Array<keyof DayFigures>) t[k] += f[k];
+    const profit = profitOf(t);
+    return { ...major(t), marginPct: t.sales > 0 ? Math.round((profit / t.sales) * 1000) / 10 : null, salesPerAdTaka: t.ads > 0 ? Math.round((t.sales / t.ads) * 100) / 100 : null };
+  };
+  const series = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) series.push({ date: d, ...major(days.get(d) ?? emptyDay()) });
+
+  return {
+    currency: cur,
+    today,
+    booksStartedOn: business.openingDate,
+    period: { from, to },
+    prior: { from: priorFrom, to: priorTo },
+    days: series,
+    totals: total(from, to),
+    priorTotals: total(priorFrom, priorTo),
   };
 }
 
