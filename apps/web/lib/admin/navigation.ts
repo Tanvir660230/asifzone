@@ -818,15 +818,15 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.profit",
-    label: "Profit by order & product",
+    label: "Profit",
     kind: "page",
     parent: "finance.books",
     domain: "manage",
     route: "/admin/finance/profit",
     capability: "finance.view",
     order: -1,
-    description: "What each order and product really earned after goods, packaging, courier, fees and ads.",
-    keywords: ["profit", "margin", "contribution", "per order", "per product", "launch", "loss"],
+    description: "Daily profit, sales and ad spend for any period, with a chart — and what each order and product earned.",
+    keywords: ["profit", "daily profit", "today", "margin", "ad spend", "roas", "chart", "contribution", "per order", "per product", "launch", "loss", "lav", "labh"],
   },
   {
     id: "finance.statements",

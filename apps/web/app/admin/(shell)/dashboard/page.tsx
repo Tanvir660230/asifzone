@@ -9,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { PermissionGate } from "@/components/admin/permission-gate";
 import { MetricCard, MetricCardSkeleton, MetricStrip } from "@/components/admin/metric-card";
 import { RevenueChartCard, type RevenueRangeDays } from "@/components/admin/revenue-chart-card";
+import { ProfitGlance } from "@/components/admin/dashboard/profit-glance";
 import { LowStockTable } from "@/components/admin/low-stock-table";
 import { DemandForecastTable } from "@/components/admin/demand-forecast-table";
 import { ActionCenter } from "@/components/admin/dashboard/action-center";
@@ -235,6 +236,13 @@ export default function DashboardPage() {
           ]}
         />
       </section>
+
+      {can("finance.view") && (
+        <section aria-label="Profit">
+          <SectionHeader title="Profit" action={<SectionLink href="/admin/finance/profit">Any period</SectionLink>} />
+          <ProfitGlance />
+        </section>
+      )}
 
       {/* 3 — What just happened */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">

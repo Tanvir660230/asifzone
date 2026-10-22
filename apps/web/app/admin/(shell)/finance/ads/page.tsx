@@ -144,7 +144,7 @@ export default function AdSpendPage() {
               </Table>
             </Card>
           )}
-          <p className="text-xs text-fg-muted">Orders count when the shopper arrived through the campaign (utm_campaign = its id or name) or landed on its page. Profit after ads per order is in <Link href="/admin/finance/profit" className="text-accent hover:underline">Profit by order & product</Link>.</p>
+          <p className="text-xs text-fg-muted">Orders count when the shopper arrived through the campaign (utm_campaign = its id or name) or landed on its page. Profit after ads, by day and per order, is in <Link href="/admin/finance/profit" className="text-accent hover:underline">Profit</Link>.</p>
         </>
       )}
       {editing && <CampaignModal campaign={editing === "new" ? null : editing} adAccounts={adAccounts} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} />}

@@ -312,6 +312,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/landed-costs",
   "POST /api/v1/finance/quick-refills",
   "GET /api/v1/finance/profit",
+  "GET /api/v1/finance/profit/daily",
   "GET /api/v1/finance/profit/launch",
   "GET /api/v1/finance/courier/claims",
   "POST /api/v1/finance/courier/claims",
@@ -504,7 +505,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
     // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
     // +9: courier costs (docs/COURIER_COSTS.md) — shipments, legs, cost events, rider contributions, verify, report
-    expect(routes).toHaveLength(686);
+    // +1: profit by day (docs/FINANCE_PROFIT_DASHBOARD.md)
+    expect(routes).toHaveLength(687);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

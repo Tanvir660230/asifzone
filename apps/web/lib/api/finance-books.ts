@@ -27,6 +27,7 @@ export const booksKeys = {
   refills: () => ["finance", "books", "refills"] as const,
   profit: (q: { from?: string; to?: string }) => ["finance", "books", "profit", q] as const,
   launch: (q: { from?: string; to?: string }) => ["finance", "books", "launch", q] as const,
+  profitDaily: (q: { from?: string; to?: string }) => ["finance", "books", "profit-daily", q] as const,
 };
 
 // ── money map & custody ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -167,6 +168,11 @@ export interface ProfitReport {
 export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitReport>(`${BASE}/profit${qs(q)}`);
 export interface LaunchReport { period: { from: string; to: string }; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
+/** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts. */
+export interface ProfitDay { date: string; orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; profit: number }
+export type ProfitTotals = Omit<ProfitDay, "date"> & { marginPct: number | null; salesPerAdTaka: number | null };
+export interface ProfitByDay { currency: string; today: string; booksStartedOn: string | null; period: { from: string; to: string }; prior: { from: string; to: string }; days: ProfitDay[]; totals: ProfitTotals; priorTotals: ProfitTotals }
+export const getProfitByDay = (q: { from?: string; to?: string }) => apiFetch<ProfitByDay>(`${BASE}/profit/daily${qs(q)}`);
 
 // ── courier claims; cancelling a landed cost ──────────────────────────────────────────────────────────────────────────
 

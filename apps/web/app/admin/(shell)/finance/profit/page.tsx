@@ -3,40 +3,52 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Landmark, ShoppingBag, TrendingUp } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
-import { StatTile } from "@/components/admin/stat-tile";
+import { ProfitDashboard, type ProfitPeriod } from "@/components/admin/finance/profit-dashboard";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useUrlState } from "@/hooks/use-url-state";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice } from "@/lib/format";
+import { GRAINS, presetRange, PROFIT_PRESETS } from "@/lib/profit-period";
+import { urlParam } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
 
 const today = () => new Date().toLocaleDateString("en-CA");
+const PERIOD_URL = { view: urlParam.enum(PROFIT_PRESETS, "30d"), from: urlParam.date(), to: urlParam.date(), gran: urlParam.optionalEnum(GRAINS) };
 
-/** Owner's books §8–§9: what each order and product really earned — sales less goods, packaging, courier, gateway fees
- * and its share of the ads — down to the books' net profit; and an estimate of the weeks before the books started. */
+/** Owner's books §8–§9 and the Profit dashboard (docs/FINANCE_PROFIT_DASHBOARD.md): how much the business kept for any
+ * period — by day, week or month, with the sales, ads and costs behind it — then what each order and product really earned,
+ * and an estimate of the weeks before the books started. The period lives in the URL, so a view can be bookmarked. */
 export default function ProfitPage() {
   const { can, ready } = useCapabilities();
   const allowed = can("finance.view");
   const t = today();
-  const [from, setFrom] = useState(`${t.slice(0, 7)}-01`);
-  const [to, setTo] = useState(t);
+  const [url, setUrl] = useUrlState(PERIOD_URL);
+  const preset = url.view;
+  const fallback = presetRange("30d", t);
+  const range = preset === "custom" ? { from: url.from || fallback.from, to: url.to || fallback.to } : presetRange(preset, t);
+  const period: ProfitPeriod = { preset, ...range, grain: url.gran };
+  const { from, to } = range;
+  const onPeriod = (patch: Partial<ProfitPeriod>) => {
+    // A preset clears custom dates and the grouping; Custom starts from the range on screen; editing a date makes it custom.
+    if (patch.grain !== undefined) setUrl({ gran: patch.grain });
+    else if (patch.preset && patch.preset !== "custom") setUrl({ view: patch.preset, from: "", to: "", gran: "" });
+    else setUrl({ view: "custom", from: patch.from ?? from, to: patch.to ?? to });
+  };
   const [view, setView] = useState<"orders" | "products">("products");
-  const period = { from: from || undefined, to: to || undefined };
-  const bad = Boolean(from && to && from > to);
-  const report = useQuery({ queryKey: booksApi.booksKeys.profit(period), queryFn: () => booksApi.getProfit(period), enabled: allowed && !bad });
+  const bad = from > to;
+  const report = useQuery({ queryKey: booksApi.booksKeys.profit({ from, to }), queryFn: () => booksApi.getProfit({ from, to }), enabled: allowed && !bad });
   const business = useQuery({ queryKey: financeApi.businessKeys.settings(), queryFn: financeApi.getBusiness, enabled: allowed });
   const opening = business.data?.business.openingDate ?? null;
   const launch = useQuery({ queryKey: booksApi.booksKeys.launch({}), queryFn: () => booksApi.getLaunchReport({}), enabled: allowed && Boolean(opening) });
@@ -46,46 +58,18 @@ export default function ProfitPage() {
   return (
     <div className="space-y-6">
       <ModuleTabs />
-      <PageHeader title="Profit by order & product" description="What each sale really earned after the goods, packaging, courier, payment fees and its share of the ads — ending at the same net profit as the books." />
-      <div className="flex flex-wrap items-end gap-3">
-        <Field htmlFor="pf-from" label="From" className="w-40"><Input id="pf-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field htmlFor="pf-to" label="To" className="w-40" error={bad ? "Before From" : undefined}><Input id="pf-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
-      </div>
+      <PageHeader title="Profit" description="What the business kept — today, this week, this month or any days you pick — and the sales, ads and costs behind it." />
+      {ready && <ProfitDashboard period={period} onChange={onPeriod} />}
+      <h2 className="pt-4 text-[20px] font-semibold tracking-tight text-fg">By product and order</h2>
       {report.isLoading && <Skeleton className="h-48 w-full" />}
       {report.isError && <Alert variant="danger" title="Profit couldn't be worked out" action={<Button size="sm" variant="outline" onClick={() => report.refetch()}>Retry</Button>}>{getErrorMessage(report.error, "")}</Alert>}
       {r && (
         <>
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Totals">
-            <StatTile label={`Sales · ${r.totals.orders} orders`} value={formatPrice(Math.round(r.totals.sales))} icon={<ShoppingBag />} />
-            <StatTile label={`Left after costs${r.totals.contributionPct === null ? "" : ` · ${Math.round(r.totals.contributionPct)}%`}`} value={formatPrice(Math.round(r.totals.contribution))} tone="accent" icon={<TrendingUp />} />
-            <StatTile label="Net profit" value={formatPrice(Math.round(r.totals.netProfit))} href="/admin/finance/statements" icon={<Landmark />} />
-          </section>
-          {r.totals.sales > 0 && r.totals.cogs === 0 && (
-            <Alert variant="warning" title="The cost of the goods isn't known yet">
-              Profit here is too high until each product has its cost — confirm your stock&apos;s value in <Link href="/admin/finance/inventory-cutover" className="text-accent hover:underline">Valuation cutover</Link> (it asks the cost per item once).
-            </Alert>
-          )}
           {r.totals.outsideSales > 0 && r.totals.outsideSaleCostPct === null && (
             <Alert variant="warning" title="Sales outside the website have no cost of goods">
               Parcels sent straight through Steadfast took goods with them, but no order says which. Set their cost as a share of the cash in <Link href="/admin/finance/center" className="text-accent hover:underline">Finance Center › Settings</Link> — until then profit is too high by their cost.
             </Alert>
           )}
-          <Card className="p-5 sm:p-6">
-            <h2 className="mb-3 text-[17px] font-semibold tracking-tight text-fg">From sales to profit</h2>
-            <dl className="divide-y divide-line-subtle text-sm" data-testid="profit-bridge">
-              <Line label="Sales" value={r.totals.sales} strong of={r.totals.sales} />
-              <Line label="Cost of the goods" value={-r.totals.cogs} of={r.totals.sales} />
-              <Line label="Packaging" value={-r.totals.packaging} href="/admin/finance/packaging" of={r.totals.sales} />
-              <Line label="Courier charges" value={-r.totals.courier} href="/admin/finance/courier" of={r.totals.sales} />
-              <Line label="Payment gateway fees" value={-r.totals.gateway} of={r.totals.sales} />
-              <Line label="Ads" value={-r.totals.ads} href="/admin/finance/ads" of={r.totals.sales} />
-              <Line label="Left after each sale's costs" value={r.totals.contribution} strong of={r.totals.sales} />
-              {r.totals.outsideSales !== 0 && <Line label="Sales outside the website (sent straight through Steadfast)" value={r.totals.outsideSales} of={r.totals.sales} />}
-              {r.totals.outsideSalesCost !== 0 && <Line label={`Their goods (estimated at ${r.totals.outsideSaleCostPct ?? 0}% of the cash)`} value={-r.totals.outsideSalesCost} href="/admin/finance/center" of={r.totals.sales} />}
-              <Line label="Running costs (rent, salaries, hosting …)" value={-r.totals.otherCosts} href="/admin/finance/expenses" of={r.totals.sales} />
-              <Line label="Net profit" value={r.totals.netProfit} strong of={r.totals.sales} />
-            </dl>
-          </Card>
           <SegmentedControl aria-label="Show profit by" value={view} onChange={setView} options={[{ value: "products", label: "By product" }, { value: "orders", label: "By order" }] as const} />
           {view === "products" ? (
             r.products.length === 0 ? <p className="text-sm text-fg-muted">No sales in this period.</p> : (
@@ -155,7 +139,7 @@ export default function ProfitPage() {
 /** One line of the bridge. With `of` (the sales total) a line also shows its share of sales — a thin bar and the percent —
  * so the costs that matter stand out without reading every figure. */
 function Line({ label, value: raw, strong, href, of }: { label: string; value: number; strong?: boolean; href?: string; of?: number }) {
-  const value = raw === 0 ? 0 : raw; // −0 (a negated zero cost) reads as "−৳0"
+  const value = raw === 0 ? 0 : raw; // −0 (a negated zero cost) would read as minus zero
   // The sales line is the 100% every other line is measured against — no bar of its own.
   const pct = of && of > 0 && value !== of ? (Math.abs(value) / of) * 100 : null;
   return (
