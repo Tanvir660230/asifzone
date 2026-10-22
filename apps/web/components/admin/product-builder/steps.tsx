@@ -408,7 +408,24 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
                 <Input id={`simple-sku-${i}`} placeholder={initial ? "SKU-001" : "Generated automatically"} {...form.register(`variants.${i}.sku`)} />
               </Field>
               <Field htmlFor={`simple-stock-${i}`} label={variantRows.length > 1 ? `Stock (${i + 1})` : "Stock"}>
-                <Input id={`simple-stock-${i}`} type="number" inputMode="numeric" min={0} {...form.register(`variants.${i}.stock`, { valueAsNumber: true })} />
+                {state.stockLocked ? (
+                  <>
+                    <Input
+                      id={`simple-stock-${i}`}
+                      type="number"
+                      readOnly
+                      tabIndex={-1}
+                      aria-describedby={`simple-stock-hub-${i}`}
+                      className="bg-surface-muted text-fg-muted"
+                      {...form.register(`variants.${i}.stock`, { valueAsNumber: true })}
+                    />
+                    <Link id={`simple-stock-hub-${i}`} href="/admin/stock" className="mt-1 inline-block text-xs font-medium text-accent hover:underline">
+                      Change on the Stock page
+                    </Link>
+                  </>
+                ) : (
+                  <Input id={`simple-stock-${i}`} type="number" inputMode="numeric" min={0} {...form.register(`variants.${i}.stock`, { valueAsNumber: true })} />
+                )}
               </Field>
             </div>
           ))}
@@ -435,6 +452,7 @@ export function VariantsStep({ state }: StepProps) {
         typeName={selectedConfig?.name}
         typeId={selectedConfig?.typeId}
         productImages={initial?.images ?? []}
+        stockLocked={state.stockLocked}
         skuPrefix={(initial?.slug ?? watch("name") ?? "SKU").toString()}
       />
       {errors.variants && <FieldError>{(errors.variants.message as string) ?? "Check the variants above"}</FieldError>}

@@ -51,6 +51,19 @@ interface CartLine {
   quantity: number;
 }
 
+/** What a variant can be sold up to: a fill-to-order variant (attar) sells its filled bottles plus what can still be made,
+ * which the admin product list sends as `sellable`; every other variant sells its stock. The server floors the order the same way. */
+function sellableStock(v: ProductVariant): number {
+  return v.sellable ?? v.stock;
+}
+
+function stockNote(trackInventory: boolean, v: ProductVariant, available: boolean): string {
+  if (!trackInventory) return "not stock-tracked";
+  if (v.sellable === undefined) return available ? `${v.stock} in stock` : "out of stock";
+  if (!available) return "can't be made now";
+  return v.stock > 0 ? `${v.stock} filled · can sell ${v.sellable}` : `can make ${v.sellable}`;
+}
+
 export default function NewOrderPage() {
   const router = useRouter();
   const perms = useOrderPermissions();
@@ -154,8 +167,9 @@ export default function NewOrderPage() {
   }
 
   function addVariant(product: Product, variant: ProductVariant) {
-    if (!isAvailable(product.trackInventory, variant.stock)) return;
-    const maxQuantity = maxSellableQuantity(product.trackInventory, variant.stock);
+    const forSale = sellableStock(variant);
+    if (!isAvailable(product.trackInventory, forSale)) return;
+    const maxQuantity = maxSellableQuantity(product.trackInventory, forSale);
     setItems((prev) => {
       const existing = prev.find((i) => i.variantId === variant.id);
       if (existing) {
@@ -423,7 +437,7 @@ export default function NewOrderPage() {
                         <div className="space-y-1 bg-ink-50/60 px-3 py-2">
                           {p.variants.map((v) => {
                             const price = variantDisplayPrice(p, v.id).price;
-                            const sellable = isAvailable(p.trackInventory, v.stock);
+                            const sellable = isAvailable(p.trackInventory, sellableStock(v));
                             return (
                               <button
                                 key={v.id}
@@ -438,7 +452,7 @@ export default function NewOrderPage() {
                                 <span>
                                   {formatVariantLabel(v.sizeLabel ?? v.size, v.color)}{" "}
                                   <span className="text-ink-400">
-                                    — {!p.trackInventory ? "not stock-tracked" : sellable ? `${v.stock} in stock` : "out of stock"}
+                                    — {stockNote(p.trackInventory, v, sellable)}
                                   </span>
                                 </span>
                                 <span className="font-medium">{formatPrice(price)}</span>

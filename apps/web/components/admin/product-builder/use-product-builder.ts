@@ -8,6 +8,8 @@ import { useProductFormState } from "@/components/admin/product-form-state";
 import type { StagedImage } from "@/components/admin/image-uploader";
 import * as productsApi from "@/lib/api/products";
 import * as catalogApi from "@/lib/api/catalog";
+import * as purchasingApi from "@/lib/api/purchasing";
+import { useCapabilities } from "@/hooks/use-capability";
 import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { resolvePreviewProduct } from "@/lib/wizard/resolve-preview";
@@ -99,7 +101,25 @@ export function useProductBuilder({ categories, initial }: UseProductBuilderOpti
 
   const formState = useProductFormState({ initial, stagedImages });
   const { form, selectedConfig, resolvedSections, completeness, withPrunedAttributes, withStockExpectations, acknowledgeSavedStock } = formState;
-  const state: WizardState = { ...formState, stagedImages, onStagedChange: setStagedImages };
+  // Once stock costing is live, a tracked product's stock changes only as Bought, Filled or Counted on the Stock page —
+  // the API refuses a form edit (409 STOCK_VIA_HUB), so the form shows stock read-only and leaves it out of the payload.
+  const { can } = useCapabilities();
+  const costing = useQuery({ queryKey: purchasingApi.purchasingKeys.status(), queryFn: purchasingApi.purchasingOverview, enabled: can("purchasing.view"), staleTime: 60_000 });
+  const stockLocked = Boolean(costing.data?.costingActive) && form.watch("trackInventory") !== false;
+  const state: WizardState = { ...formState, stagedImages, onStagedChange: setStagedImages, stockLocked };
+
+  /** With stock locked: existing variants send no stock (nothing to change), new ones start at 0. */
+  function withoutStock(values: CreateProductInput): CreateProductInput {
+    if (!stockLocked || !values.variants) return values;
+    return {
+      ...values,
+      variants: values.variants.map((v) => {
+        const { stock: _stock, expectedStock: _expected, ...rest } = v as typeof v & { expectedStock?: number };
+        void _stock; void _expected;
+        return (v.id ? rest : { ...rest, stock: 0 }) as typeof v;
+      }),
+    };
+  }
 
   /* ── steps ─────────────────────────────────────────────────────────────────────────────── */
 
@@ -220,7 +240,7 @@ export function useProductBuilder({ categories, initial }: UseProductBuilderOpti
   /** A live product's URL changes only through the explicit "Change URL" confirmation in SEO — never through
    * autosave (which would publish every half-typed slug and leave a redirect for each). */
   function forSave(values: CreateProductInput): CreateProductInput {
-    const pruned = withStockExpectations(withPrunedAttributes(values));
+    const pruned = withoutStock(withStockExpectations(withPrunedAttributes(values)));
     if (initial?.status !== "PUBLISHED") return pruned;
     const { slug: _slug, ...rest } = pruned;
     void _slug;
@@ -388,7 +408,7 @@ export function useProductBuilder({ categories, initial }: UseProductBuilderOpti
         setCreating(false);
         return;
       }
-      const values = withPrunedAttributes(form.getValues());
+      const values = withoutStock(withPrunedAttributes(form.getValues()));
       const { product } = await productsApi.createProduct({ ...values, status: "DRAFT" });
       createdRef.current = true;
       clearLocalDraft();

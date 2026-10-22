@@ -315,6 +315,17 @@ describe("fill to order beyond the checkout", () => {
     expect(states.get(none.product.id)).toBe("OUT_OF_STOCK");
   });
 
+  it("the admin product list gives each fill-to-order variant what it can sell, uncapped (the phone-order picker)", async () => {
+    const p = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    const plain = await createStockedProduct({ stocks: [3] });
+    const items = (await listProducts(productListQuerySchema.parse({ page: 1, pageSize: 100, search: `Vitest P1 ${RUN}` }))).items;
+    const variantOf = (id: string) => items.find((i) => i.id === id)!.variants[0]! as { stock: number; sellable?: number };
+    const expected = await sells(p.variant);
+    expect(expected).toBeGreaterThan(0);
+    expect(variantOf(p.id)).toMatchObject({ stock: 0, sellable: expected });
+    expect(variantOf(plain.product.id).sellable).toBeUndefined(); // an ordinary product sells its stock
+  });
+
   it("one cart, two fragrances short of a shared bottle together: a specific 409", async () => {
     await buy(bottle12, 2, 52); // 3 bottles, 1 reserved by the unfilled 12 ml order above → each fragrance reads 2
     expect(await shown(royal.slug)).toBe(2);
@@ -409,13 +420,12 @@ describe("fill to order — costing and edges", () => {
     await assertInventoryInvariants(amber.variant);
   });
 
-  it("a CSV stock count on a fill-to-order variant refreshes the products sharing its materials", async () => {
+  it("a CSV stock count on a fill-to-order variant is refused once costing is live: bottles are Filled or Counted on the Stock page", async () => {
     const a = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
-    const b = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
-    await stockMovedSettled();
-    const t0 = await computedAt(b.id);
-    await updateProduct(a.id, { variants: [{ id: a.variant, stock: 1 }] } as never, admin, undefined, { stockMode: "count" });
-    expect(await stockOf(a.variant)).toBe(1);
-    expect(await refreshedSince(b.id, t0)).toBe(true);
+    await expect(updateProduct(a.id, { variants: [{ id: a.variant, stock: 1 }] } as never, admin, undefined, { stockMode: "count" })).rejects.toMatchObject({
+      statusCode: 409,
+      details: { code: "STOCK_VIA_HUB" },
+    });
+    expect(await stockOf(a.variant)).toBe(0);
   });
 });

@@ -118,6 +118,9 @@ export interface ProductVariant {
   compareAtPrice?: string | null;
   costPrice: string | null;
   stock: number;
+  /** Admin product list only, fill-to-order products: what the variant can sell — filled bottles plus what can still be
+   * made (docs/STOCK_HUB.md §3), uncapped. Absent for every other product, which sells `stock`. */
+  sellable?: number;
   weight: string | null;
   isActive?: boolean;
   /** Ships free, overriding the product's freeDelivery for this variant. null/absent = follow the product. */

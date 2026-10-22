@@ -29,6 +29,7 @@ import {
   type ResolvedAttributeField,
   type ResolvedTypeConfig,
   variantStockState,
+  sellable,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
@@ -50,6 +51,7 @@ import {
 } from "../../domain/storefront/read-model.service";
 import { notifyReplenished, notifyStockMoved, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
+import { activeCostingInTx } from "../../domain/finance/costing.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
@@ -299,6 +301,19 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
     sortOrder,
     attributeValues: { create: attributeValueIds.map((attributeValueId) => ({ attributeValueId })) },
   };
+}
+
+/** Once inventory costing is active, a tracked variant's stock changes only as Bought, Filled or Counted on the Stock page
+ * (docs/STOCK_HUB.md) — never from the product form or a CSV import; a product or variant is still created, at stock 0.
+ * Before go-live both work as they always did. */
+function stockViaHubError() {
+  return new AppError(409, "Stock can't be changed here once stock costing is live. Record it as Bought, Filled or Counted on the Stock page.", { code: "STOCK_VIA_HUB" });
+}
+
+/** Whether this save may not move stock: a tracked product once costing is active, read in the save's transaction (the same
+ * switch inventory.service values movements by). Materials are tracked products, so the same rule holds for them. */
+async function stockOnlyViaHub(tx: Prisma.TransactionClient, trackInventory: boolean): Promise<boolean> {
+  return trackInventory && (await activeCostingInTx(tx)) !== null;
 }
 
 /** Every storefront product read is presented by the Storefront Read Model (docs/STOREFRONT_READ_MODEL.md): canonical
@@ -575,9 +590,13 @@ export async function listProducts(query: ProductListQuery) {
     const own = productStockState(p);
     return made && p.fillToOrder && p.trackInventory ? { ...own, stockState: productStockState({ ...p, variants: applyCapacity(made, p.variants) }).stockState } : own;
   };
+  // Each fill-to-order variant also carries what it can sell (filled bottles + what can still be made), uncapped — the
+  // phone-order picker offers it like the shop does, without the shop's per-line cap. `stock` stays the filled bottles.
+  const withSellable = (p: (typeof result.items)[number]) =>
+    made && p.fillToOrder && p.trackInventory ? p.variants.map((v) => ({ ...v, sellable: sellable(v.stock, made.get(v.id) ?? 0) })) : p.variants;
   return {
     ...result,
-    items: result.items.map((p) => ({ ...p, ...stockState(p), completeness: completeness.get(p.id) ?? null })),
+    items: result.items.map((p) => ({ ...p, variants: withSellable(p), ...stockState(p), completeness: completeness.get(p.id) ?? null })),
   };
 }
 
@@ -1619,6 +1638,7 @@ export async function createProduct(
       // Opening stock: each variant was created at 0; its initial quantity lands through the inventory service as an
       // opening RESTOCK (or IMPORT from a CSV) movement, so the ledger accounts for stock from the moment it exists.
       const stockBySku = new Map(variants.map((v) => [v.sku, v.stock ?? 0]));
+      if (variants.some((v) => (v.stock ?? 0) !== 0) && (await stockOnlyViaHub(tx, created.trackInventory))) throw stockViaHubError();
       for (const v of created.variants) {
         await recordInitialStock(tx, v.id, stockBySku.get(v.sku) ?? 0, options.stockReason ?? "RESTOCK", {
           adminId,
@@ -1815,6 +1835,9 @@ export async function updateProduct(
       }
 
       if (input.variants) {
+        // Decided once per save, on the product as it will be saved (the same payload may switch tracking on).
+        let viaHub: boolean | null = null;
+        const hubOnly = async () => (viaHub ??= await stockOnlyViaHub(tx, input.trackInventory ?? existing.trackInventory));
         const incomingIds = new Set(input.variants.filter((v) => v.id).map((v) => v.id!));
         const toDelete = existing.variants.filter((v) => !incomingIds.has(v.id));
 
@@ -1866,7 +1889,13 @@ export async function updateProduct(
             }
             // Stock is never overwritten here: a form edit is a compare-and-set against what the editor last saw, a
             // CSV import is a declared count — both applied by the inventory service under a row lock, ledger-complete.
-            if (desiredStock !== undefined) {
+            if (desiredStock !== undefined && (await hubOnly())) {
+              // Nothing moves here after go-live: a save that would leave stock as it is (sent unchanged, or a stale form
+              // whose stock the editor didn't touch) goes through; one that would change it is refused.
+              const current = (await tx.productVariant.findUniqueOrThrow({ where: { id: variantId }, select: { stock: true } })).stock;
+              const untouched = desiredStock === current || (options.stockMode !== "count" && expectedStock !== undefined && desiredStock === expectedStock);
+              if (!untouched) throw stockViaHubError();
+            } else if (desiredStock !== undefined) {
               const actor = { adminId, note: options.stockNote ?? (options.stockMode === "count" ? "Changed by CSV import" : "Manual edit via product form") };
               const delta =
                 options.stockMode === "count"
@@ -1876,6 +1905,7 @@ export async function updateProduct(
               if (delta !== 0) stockMoved.push(variantId);
             }
           } else {
+            if ((variant.stock ?? 0) !== 0 && (await hubOnly())) throw stockViaHubError();
             const created = await tx.productVariant.create({
               data: { ...toVariantCreateData({ ...variant, sku: variant.sku!, stock: variant.stock ?? 0, attributeValueIds: variant.attributeValueIds ?? [] }, index), productId: id },
             });
