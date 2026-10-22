@@ -3024,7 +3024,8 @@ model FinanceBusiness {
   smsBalanceSnapshots         SmsBalanceSnapshot[]
   stockCounts                 StockCount[]
   materialRolls               MaterialRoll[]
-  landedCosts                 LandedCost[]
+  stockHubEntries             StockHubEntry[]
+  landedCosts                LandedCost[]
   courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
   suppliers                   Supplier[]
@@ -5839,6 +5840,37 @@ model MaterialRoll {
   updatedAt         DateTime        @updatedAt
 
   @@index([materialVariantId, openedOn])
+}
+
+enum StockHubEntryKind {
+  PURCHASE
+  COUNT
+}
+
+/// Stock hub (docs/STOCK_HUB.md): one Bought or Counted entry made on /admin/stock, keyed by its Idempotency-Key. Each
+/// entry composes existing documents (receipt, bill, payment, landed cost; counts and adjustments); `steps` records what
+/// each step made, so a retry after a mid-way failure resumes where it stopped and a replay writes nothing. `leaseUntil`:
+/// only one request works on an entry at a time (a double tap can't write twice).
+model StockHubEntry {
+  id               String            @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  kind             StockHubEntryKind
+  /// `purchase:<key>` / `count:<key>`.
+  idempotencyKey   String
+  /// The request it was made for: the same key with a different request is refused.
+  fingerprint      String
+  entryDate        DateTime          @db.Date
+  /// The request and what each step made (ids, amounts, who paid) — the hub's history reads it.
+  steps            Json              @default("{}")
+  completedAt      DateTime?
+  leaseUntil       DateTime?
+  createdByAdminId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, kind, createdAt])
 }
 
 enum PartnerRole {

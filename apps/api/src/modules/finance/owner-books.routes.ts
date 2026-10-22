@@ -39,6 +39,8 @@ import {
   financeCenterSettingsSchema,
   financeAutopilotSchema,
   ownerHomeQuerySchema,
+  stockPurchaseSchema,
+  stockPurchaseListQuerySchema,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
 import * as autopilot from "../../domain/finance/autopilot.service";
@@ -64,6 +66,7 @@ import * as refill from "../../domain/manufacturing/quick-refill.service";
 import * as profit from "../../domain/finance/profit.service";
 import * as claims from "../../domain/finance/courier-claims.service";
 import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
+import * as stockPurchases from "../../domain/stock/purchase.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -199,3 +202,12 @@ ownerBooksRouter.post("/center/stock-counts", requirePermission("finance.transac
 ownerBooksRouter.get("/center/rolls", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await stockCheck.listRolls())));
 ownerBooksRouter.post("/center/rolls", requirePermission("finance.transact"), validate(materialRollOpenSchema), asyncHandler(async (req, res) => res.status(201).json(await stockCheck.openRoll(req.body, await actorOf(req)))));
 ownerBooksRouter.post("/center/rolls/:id/finish", requirePermission("finance.transact"), validate(materialRollFinishSchema), asyncHandler(async (req, res) => res.json(await stockCheck.finishRoll(id(req), req.body, await actorOf(req)))));
+
+// ── Stock hub (docs/STOCK_HUB.md): Bought · Counted · the overview ─────────────────────────────────────────────────────
+// Bought posts a receipt (purchasing.receive — the service also asks for purchasing.approve, ap.manage and
+// finance.transact, which the composition needs); retries with the same Idempotency-Key resume or replay.
+ownerBooksRouter.get("/stock/purchases", requirePermission("purchasing.read"), validate(stockPurchaseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await stockPurchases.listPurchases(req.query as never))));
+ownerBooksRouter.post("/stock/purchases", requirePermission("purchasing.receive"), validate(stockPurchaseSchema), asyncHandler(async (req, res) => {
+  const r = await stockPurchases.recordPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
