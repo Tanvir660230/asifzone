@@ -65,6 +65,11 @@ export default function ProfitPage() {
               Profit here is too high until each product has its cost — confirm your stock&apos;s value in <Link href="/admin/finance/inventory-cutover" className="text-accent hover:underline">Valuation cutover</Link> (it asks the cost per item once).
             </Alert>
           )}
+          {r.totals.outsideSales > 0 && r.totals.outsideSaleCostPct === null && (
+            <Alert variant="warning" title="Sales outside the website have no cost of goods">
+              Parcels sent straight through Steadfast took goods with them, but no order says which. Set their cost as a share of the cash in <Link href="/admin/finance/center" className="text-accent hover:underline">Finance Center › Settings</Link> — until then profit is too high by their cost.
+            </Alert>
+          )}
           <Card className="p-5 sm:p-6">
             <h2 className="mb-3 text-[17px] font-semibold tracking-tight text-fg">From sales to profit</h2>
             <dl className="divide-y divide-line-subtle text-sm" data-testid="profit-bridge">
@@ -76,6 +81,7 @@ export default function ProfitPage() {
               <Line label="Ads" value={-r.totals.ads} href="/admin/finance/ads" of={r.totals.sales} />
               <Line label="Left after each sale's costs" value={r.totals.contribution} strong of={r.totals.sales} />
               {r.totals.outsideSales !== 0 && <Line label="Sales outside the website (sent straight through Steadfast)" value={r.totals.outsideSales} of={r.totals.sales} />}
+              {r.totals.outsideSalesCost !== 0 && <Line label={`Their goods (estimated at ${r.totals.outsideSaleCostPct ?? 0}% of the cash)`} value={-r.totals.outsideSalesCost} href="/admin/finance/center" of={r.totals.sales} />}
               <Line label="Running costs (rent, salaries, hosting …)" value={-r.totals.otherCosts} href="/admin/finance/expenses" of={r.totals.sales} />
               <Line label="Net profit" value={r.totals.netProfit} strong of={r.totals.sales} />
             </dl>

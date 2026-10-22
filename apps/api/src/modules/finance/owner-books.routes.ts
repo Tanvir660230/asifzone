@@ -180,8 +180,7 @@ ownerBooksRouter.get("/center/sms", requirePermission("finance.read"), asyncHand
 ownerBooksRouter.post("/center/sms/balance", requirePermission("finance.transact"), validate(smsBalanceSchema), asyncHandler(async (req, res) => res.status(201).json({ id: await center.recordSmsBalance(req.body, await actorOf(req)) })));
 ownerBooksRouter.get("/center/settings", requirePermission("finance.read"), asyncHandler(async (_req, res) => {
   const { business } = await getFinanceContext();
-  const s = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true, smsWarnAt: true } });
-  res.json({ defaultUsdRate: s.defaultUsdRate ? Number(s.defaultUsdRate) : null, smsLowBalance: s.smsWarnAt ? Number(s.smsWarnAt) : null });
+  res.json(center.centerSettingsDto(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: center.CENTER_SETTINGS_SELECT })));
 }));
 ownerBooksRouter.patch("/center/settings", requirePermission("finance.configure"), validate(financeCenterSettingsSchema), asyncHandler(async (req, res) => res.json(await center.updateFinanceCenterSettings(req.body, await actorOf(req)))));
 

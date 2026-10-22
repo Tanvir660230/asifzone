@@ -171,6 +171,29 @@ describe("ad spend", () => {
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(await balanceOf("expense.advertising")).toBe(before + 250);
   });
+
+  it("switching a campaign off keeps the spend of the days it ran; switching it back on changes nothing behind it", async () => {
+    const before = await balanceOf("expense.advertising");
+    const c = await api().post("/ads/campaigns", { financialAccountId: adAccount, name: `Ran then stopped ${RUN}`, startDate: addDays(today, -5), budgetType: "DAILY", budget: 100 });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(await balanceOf("expense.advertising")).toBe(before + 500);
+    const off = await api().patch(`/ads/campaigns/${c.body.id}`, { isActive: false });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    expect(await balanceOf("expense.advertising")).toBe(before + 500);
+    expect((await api().patch(`/ads/campaigns/${c.body.id}`, { isActive: true })).status).toBe(200);
+    expect(await balanceOf("expense.advertising")).toBe(before + 500);
+  });
+
+  it("a Meta campaign with a budget: a finished day Meta didn't report spent nothing — its budget isn't booked for it", async () => {
+    const before = await balanceOf("expense.advertising");
+    const c = await api().post("/ads/campaigns", { financialAccountId: adAccount, name: `Paused on Meta ${RUN}`, externalId: "cmp-11", startDate: addDays(today, -3), budgetType: "DAILY", budget: 300 });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(await balanceOf("expense.advertising")).toBe(before + 900); // budget until Meta's figures are known
+    meta.rows = [{ campaignId: "cmp-11", campaignName: "Paused on Meta", date: addDays(today, -2), spend: 120, currency: "BDT", impressions: 1, clicks: 1, purchases: 0 }];
+    const r = await api().post("/ads/import-meta", { since: addDays(today, -3) });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(await balanceOf("expense.advertising")).toBe(before + 120);
+  });
 });
 
 describe("prepaid costs", () => {

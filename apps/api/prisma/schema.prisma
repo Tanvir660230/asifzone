@@ -2985,6 +2985,9 @@ model FinanceBusiness {
   defaultUsdRate              Decimal?                  @db.Decimal(18, 6)
   /// Finance Center: warn when the SMS balance falls to this (BDT). Null = no warning.
   smsWarnAt                   Decimal?                  @db.Decimal(18, 2)
+  /// Finance Center: the cost of goods, as a percent of the cash collected, booked (ESTIMATED) for a parcel sold outside
+  /// the website (a courier-panel parcel with no order). Null = not set (no cost is booked; the profit page says so).
+  outsideSaleCostPct          Decimal?                  @db.Decimal(5, 2)
   /// Autopilot (docs/FINANCE_OWNER_BOOKS.md §15): the money account Steadfast pays into — set = new payouts are brought
   /// in every night (and posted when every parcel is accounted for); null = off.
   autoPayoutAccountId         String?

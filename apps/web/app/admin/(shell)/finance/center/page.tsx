@@ -504,12 +504,14 @@ function Settings({ canEdit }: { canEdit: boolean }) {
   const q = useQuery({ queryKey: booksApi.centerKeys.settings(), queryFn: booksApi.getCenterSettings });
   const [rate, setRate] = useState<string | null>(null);
   const [low, setLow] = useState<string | null>(null);
+  const [outside, setOutside] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () => booksApi.updateCenterSettings({
       ...(rate !== null ? { defaultUsdRate: rate === "" ? null : Number(rate) } : {}),
       ...(low !== null ? { smsLowBalance: low === "" ? null : Number(low) } : {}),
+      ...(outside !== null ? { outsideSaleCostPct: outside === "" ? null : Number(outside) } : {}),
     }),
-    onSuccess: () => { toast.success("Settings saved"); setRate(null); setLow(null); void queryClient.invalidateQueries({ queryKey: ["finance"] }); },
+    onSuccess: () => { toast.success("Settings saved"); setRate(null); setLow(null); setOutside(null); void queryClient.invalidateQueries({ queryKey: ["finance"] }); },
     onError: (e) => toast.error(getErrorMessage(e, "Settings couldn't be saved")),
   });
   if (q.isLoading) return <Skeleton className="h-32 w-full" />;
@@ -517,7 +519,9 @@ function Settings({ canEdit }: { canEdit: boolean }) {
   const d = q.data!;
   const rateValue = rate ?? (d.defaultUsdRate === null ? "" : String(d.defaultUsdRate));
   const lowValue = low ?? (d.smsLowBalance === null ? "" : String(d.smsLowBalance));
-  const valid = (rateValue === "" || Number(rateValue) > 0) && (lowValue === "" || Number(lowValue) >= 0);
+  const outsideValue = outside ?? (d.outsideSaleCostPct === null ? "" : String(d.outsideSaleCostPct));
+  const outsideValid = outsideValue === "" || (Number(outsideValue) >= 0 && Number(outsideValue) <= 100);
+  const valid = (rateValue === "" || Number(rateValue) > 0) && (lowValue === "" || Number(lowValue) >= 0) && outsideValid;
   return (
     <Card className="max-w-xl space-y-4 p-4 sm:p-5">
       <Field htmlFor="set-rate" label="Default taka per USD" hint="Used when a USD cost has no rate of its own — such figures are marked estimates until the card's rate is entered.">
@@ -526,7 +530,15 @@ function Settings({ canEdit }: { canEdit: boolean }) {
       <Field htmlFor="set-low" label="Warn when the SMS balance is at or below (taka)">
         <Input id="set-low" inputMode="decimal" value={lowValue} onChange={(e) => setLow(e.target.value)} disabled={!canEdit} placeholder="300" />
       </Field>
-      {canEdit && <Button disabled={!valid || (rate === null && low === null)} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-center-settings">Save</Button>}
+      <Field
+        htmlFor="set-outside"
+        label="Cost of goods for sales outside the website (% of cash collected)"
+        hint="Parcels booked straight on the courier's panel have no order, so their goods have no recorded cost. Each payout books this share of their cash as an estimated cost. Leave empty to book none."
+        error={outsideValid ? undefined : "Enter a percent from 0 to 100"}
+      >
+        <Input id="set-outside" inputMode="decimal" value={outsideValue} onChange={(e) => setOutside(e.target.value)} disabled={!canEdit} placeholder="45" />
+      </Field>
+      {canEdit && <Button disabled={!valid || (rate === null && low === null && outside === null)} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-center-settings">Save</Button>}
     </Card>
   );
 }

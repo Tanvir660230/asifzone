@@ -128,6 +128,44 @@ describe("refund allocation (C3 goods first, capped · C4 overpayment first)", (
   });
 });
 
+describe("item returns no longer charged (PAYMENT_LEDGER §5c — total − returned is what the order charges)", () => {
+  const ret = (value: number, at: Date) => ({ value, at });
+
+  it("a partial delivery: what came back is not a sale, though no money went back (COD collected only what was kept)", () => {
+    const o = deliveredCod(d12, {
+      status: "PARTIALLY_DELIVERED",
+      lines: [line({ unitPrice: T(600) }), line({ unitPrice: T(400) })],
+      payments: [{ amount: T(660), status: "SUCCEEDED", provider: "COD", settledAt: d12 }],
+      itemReturns: [ret(T(400), d14)],
+    });
+    expect(rns([o])).toBe(T(600));
+    expect(rns([o], range("2026-09-14"))).toBe(-T(400)); // in the return's period; the sale's day is untouched
+    expect(sum("merchandise_returns", [o])).toBe(T(400));
+  });
+
+  it("a prepaid return then its refund: one reduction, not two — the refund pays back money no longer charged", () => {
+    const o = paidOnline(d12, { itemReturns: [ret(T(400), d14)], refunds: [refund(T(400), d20)] });
+    expect(rns([o])).toBe(T(600));
+    expect(sum("merchandise_refunds", [o])).toBe(0);
+    expect(refundAllocations(o)).toEqual([{ at: d20, amount: T(400), overpayment: T(400), merchandise: 0, merchandiseExVat: 0, other: 0 }]);
+  });
+
+  it("a refund recorded before the return: the return finds the goods already refunded and reduces nothing more", () => {
+    const o = paidOnline(d12, { refunds: [refund(T(400), d13)], itemReturns: [ret(T(400), d14)] });
+    expect(rns([o])).toBe(T(600));
+    expect(sum("merchandise_returns", [o])).toBe(0);
+  });
+
+  it("VAT-inclusive goods come back at their VAT-exclusive value; a return before realisation or after a cancellation is not counted", () => {
+    const inclusive = deliveredCod(d12, { lines: [line({ unitPrice: T(1150) })], taxMode: "INCLUSIVE", taxAmount: T(159), shippingTaxAmount: T(9), itemReturns: [ret(T(575), d14)] });
+    expect(rns([inclusive])).toBe(T(500));
+    const before = deliveredCod(d14, { itemReturns: [ret(T(400), d12)] });
+    expect(rns([before])).toBe(T(1000));
+    const cancelled = paidOnline(d12, { status: "CANCELLED", cancelledAt: d13, itemReturns: [ret(T(400), d14)] });
+    expect(rns([cancelled])).toBe(0);
+  });
+});
+
 describe("exchanges (P5-3, D6)", () => {
   const exchanged = (over: Partial<OrderFact> = {}) =>
     deliveredCod(d12, {

@@ -40,7 +40,10 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
   const to = q.to ?? businessToday(business);
   const from = q.from ?? `${to.slice(0, 7)}-01`;
   if (from > to) throw financeError(400, "PERIOD_RANGE", "The period starts before it ends");
-  const keys = ["revenue.merchandise", "revenue.shipping", "revenue.price_adjustments", "revenue.returns_refunds", "revenue.other_refunds", "cogs.goods", "expense.courier_fees", "expense.gateway_fees", "expense.advertising", "cogs.packaging"];
+  // Every revenue reduction an order can carry (refunds, returns, returns settled in store credit) and every cost booked
+  // against it — goods, damaged returns written off (net of courier claims), packaging, courier, gateway.
+  const SALES_KEYS = ["revenue.merchandise", "revenue.shipping", "revenue.price_adjustments", "revenue.returns_refunds", "revenue.other_refunds", "revenue.store_credit_returns"];
+  const keys = [...SALES_KEYS, "cogs.goods", "cogs.inventory_shrinkage", "expense.courier_fees", "expense.gateway_fees", "expense.advertising", "cogs.packaging"];
   const maps = await prisma.accountMapping.findMany({ where: { businessId: business.id, key: { in: keys } } });
   const accountKey = new Map(maps.map((m) => [m.accountId, m.key]));
   // Order-party lines of the period on the accounts above (Σ credit − debit for revenue, debit − credit for costs).
@@ -89,12 +92,22 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
   const adSpend = adsAccount ? await sumAccount(business.id, adsAccount.accountId, from, to, cur) : 0;
   const outsideMap = await prisma.accountMapping.findFirst({ where: { businessId: business.id, key: "revenue.outside_sales" } });
   const outsideSales = outsideMap ? -(await sumAccount(business.id, outsideMap.accountId, from, to, cur)) : 0;
+  // Their goods, at the owner's cost percent (booked with each payout; a reversed payout takes it back).
+  const sentOutside = await prisma.accountMapping.findFirst({ where: { businessId: business.id, key: "asset.inventory_sent_outside" } });
+  const [outsideCostRow] = sentOutside
+    ? await prisma.$queryRaw<Array<{ net: Prisma.Decimal }>>`
+        SELECT COALESCE(SUM(l.credit - l.debit), 0) AS net FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId" LEFT JOIN "JournalEntry" o ON o.id = e."reversesEntryId"
+        WHERE e."businessId" = ${business.id} AND e.status = 'POSTED' AND l."accountId" = ${sentOutside.accountId} AND COALESCE(o."sourceType", e."sourceType") = 'ClearingSettlement'
+          AND e."entryDate" >= ${new Date(`${from}T00:00:00Z`)}::date AND e."entryDate" <= ${new Date(`${to}T00:00:00Z`)}::date`
+    : [];
+  const outsideSalesCost = signed(outsideCostRow?.net ?? null, cur);
+  const { outsideSaleCostPct } = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { outsideSaleCostPct: true } });
   const lines: OrderRow[] = [];
   for (const [orderId, a] of byOrder) {
     const o = ordersById.get(orderId);
     if (!o) continue;
-    const sales = -((a["revenue.merchandise"] ?? 0) + (a["revenue.shipping"] ?? 0) + (a["revenue.price_adjustments"] ?? 0) + (a["revenue.returns_refunds"] ?? 0) + (a["revenue.other_refunds"] ?? 0));
-    lines.push({ orderId, orderNumber: o.orderNumber, date: businessDate(o.createdAt, business.timezone), sales, cogs: a["cogs.goods"] ?? 0, packaging: a["cogs.packaging"] ?? 0, courier: a["expense.courier_fees"] ?? 0, gateway: a["expense.gateway_fees"] ?? 0, ads: 0, contribution: 0 });
+    const sales = -SALES_KEYS.reduce((s, k) => s + (a[k] ?? 0), 0);
+    lines.push({ orderId, orderNumber: o.orderNumber, date: businessDate(o.createdAt, business.timezone), sales, cogs: (a["cogs.goods"] ?? 0) + (a["cogs.inventory_shrinkage"] ?? 0), packaging: a["cogs.packaging"] ?? 0, courier: a["expense.courier_fees"] ?? 0, gateway: a["expense.gateway_fees"] ?? 0, ads: 0, contribution: 0 });
   }
   const totalSales = lines.reduce((s, l) => s + Math.max(0, l.sales), 0);
   let given = 0;
@@ -132,8 +145,11 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
       contribution: m(contribution), contributionPct: sum("sales") ? Math.round((contribution / sum("sales")) * 10_000) / 100 : null,
       /** Parcels sold straight through the courier, never orders on the site. */
       outsideSales: m(outsideSales),
-      /** Everything else the books carry for the period (rent, salaries, hosting, cash over/short, …) — so contribution + outside sales − this = net profit. */
-      otherCosts: Math.round((m(contribution + outsideSales) - net) * 100) / 100,
+      /** Their estimated cost of goods (Finance Center › Settings percent); null percent = not set, so none was booked. */
+      outsideSalesCost: m(outsideSalesCost),
+      outsideSaleCostPct: outsideSaleCostPct === null ? null : Number(outsideSaleCostPct),
+      /** Everything else the books carry for the period (rent, salaries, hosting, cash over/short, …) — so contribution + outside sales − their cost − this = net profit. */
+      otherCosts: Math.round((m(contribution + outsideSales - outsideSalesCost) - net) * 100) / 100,
       netProfit: net,
     },
     orders: lines.sort((a, b) => a.contribution - b.contribution).map((l) => ({ ...l, sales: m(l.sales), cogs: m(l.cogs), packaging: m(l.packaging), courier: m(l.courier), gateway: m(l.gateway), ads: m(l.ads), contribution: m(l.contribution) })),

@@ -315,23 +315,36 @@ export async function smsStatus() {
 
 // ── settings ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export async function updateFinanceCenterSettings(input: { defaultUsdRate?: number | null; smsLowBalance?: number | null }, actor: FinanceActor) {
+export const CENTER_SETTINGS_SELECT = { defaultUsdRate: true, smsWarnAt: true, outsideSaleCostPct: true } as const;
+export function centerSettingsDto(s: { defaultUsdRate: Prisma.Decimal | null; smsWarnAt: Prisma.Decimal | null; outsideSaleCostPct: Prisma.Decimal | null }) {
+  return {
+    defaultUsdRate: s.defaultUsdRate ? Number(s.defaultUsdRate) : null,
+    smsLowBalance: s.smsWarnAt ? Number(s.smsWarnAt) : null,
+    outsideSaleCostPct: s.outsideSaleCostPct === null ? null : Number(s.outsideSaleCostPct),
+  };
+}
+
+export async function updateFinanceCenterSettings(input: { defaultUsdRate?: number | null; smsLowBalance?: number | null; outsideSaleCostPct?: number | null }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   if (input.defaultUsdRate !== undefined && input.defaultUsdRate !== null && !(input.defaultUsdRate > 0)) throw financeError(400, "USD_RATE", "The rate is more than zero");
   if (input.smsLowBalance !== undefined && input.smsLowBalance !== null && !(input.smsLowBalance >= 0)) throw financeError(400, "SMS_LOW", "The warning level is zero or more");
+  if (input.outsideSaleCostPct !== undefined && input.outsideSaleCostPct !== null && !(input.outsideSaleCostPct >= 0 && input.outsideSaleCostPct <= 100)) {
+    throw financeError(400, "OUTSIDE_COST_PCT", "The cost is a percent from 0 to 100");
+  }
   return financeTransaction(async (tx) => {
-    const before = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true, smsWarnAt: true } });
+    const before = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: CENTER_SETTINGS_SELECT });
     const after = await tx.financeBusiness.update({
       where: { id: business.id },
       data: {
         ...(input.defaultUsdRate !== undefined ? { defaultUsdRate: input.defaultUsdRate } : {}),
         ...(input.smsLowBalance !== undefined ? { smsWarnAt: input.smsLowBalance === null ? null : toDecimal(toMinor(input.smsLowBalance, cur), cur) } : {}),
+        ...(input.outsideSaleCostPct !== undefined ? { outsideSaleCostPct: input.outsideSaleCostPct === null ? null : input.outsideSaleCostPct.toFixed(2) } : {}),
       },
-      select: { defaultUsdRate: true, smsWarnAt: true },
+      select: CENTER_SETTINGS_SELECT,
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "finance_center.settings", entityType: "FinanceBusiness", entityId: business.id, before, after });
-    return { defaultUsdRate: after.defaultUsdRate ? Number(after.defaultUsdRate) : null, smsLowBalance: after.smsWarnAt ? Number(after.smsWarnAt) : null };
+    return centerSettingsDto(after);
   });
 }
 
