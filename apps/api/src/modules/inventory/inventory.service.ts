@@ -7,7 +7,7 @@ import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { randomUUID } from "node:crypto";
 import { refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
-import { fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
+import { fillCapacityChanged, fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
 import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
@@ -78,11 +78,23 @@ export function notifyReplenished(variantIds: string[]): void {
   }
 }
 
-/** Fire-and-forget after commit: these variants' stock moved, so every fill-to-order product whose recipe uses one of
- * them (a material) — or that owns one — is refreshed for the storefront (docs/STOCK_HUB.md §3). One query otherwise. */
+const refreshing = new Set<Promise<void>>();
+
+/** Fire-and-forget after commit: these variants' stock moved, so the shop's memoised fill capacity is dropped (this
+ * process; others within its TTL) and every fill-to-order product whose recipe uses one of them (a material) — or that
+ * owns one — is refreshed for the storefront (docs/STOCK_HUB.md §3). One query otherwise. */
 export function notifyStockMoved(variantIds: string[]): void {
   if (!variantIds.length) return;
-  refreshProductsUsingMaterials(variantIds).catch((err) => captureError(err, { msg: "[read-model] fill-to-order refresh failed:" }));
+  fillCapacityChanged();
+  const run: Promise<void> = refreshProductsUsingMaterials(variantIds)
+    .catch((err) => captureError(err, { msg: "[read-model] fill-to-order refresh failed:" }))
+    .finally(() => refreshing.delete(run));
+  refreshing.add(run);
+}
+
+/** Resolves once every refresh `notifyStockMoved` started so far has finished (tests; a graceful shutdown). */
+export async function stockMovedSettled(): Promise<void> {
+  while (refreshing.size) await Promise.allSettled([...refreshing]);
 }
 
 // --- order-driven movements ---------------------------------------------------------------------
@@ -115,6 +127,10 @@ export async function recordSale(
   // Whether costing is active needs no lock: read it before the decrement, so the row lock covers only the stock change and
   // the cost determination that depends on it.
   let scope = await activeCostingInTx(tx);
+  // One global lock order: the variants are decremented in id order (as the cutover and fillToOrderFloors lock them), so
+  // two carts — or a cart and the cutover — can't deadlock. Each item keeps its own order lines, so the cost movements
+  // go to the same lines whatever the order.
+  items = [...items].sort((a, b) => (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0));
   const oversold: string[] = [];
   const stockAfter = new Map<string, number>();
   // Distinct variant rows are independent — run the guarded decrements concurrently (checkout latency).
@@ -180,7 +196,12 @@ export async function releaseOrderLines(
   kind: "release" | "return",
   opts: Actor & { lines?: Array<{ orderItemId: string; quantity: number }> } = {},
 ): Promise<{ released: ReleasedLine[]; replenished: string[] }> {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true } });
+  // Variant id order — the lock order every stock writer uses.
+  const items = await tx.orderItem.findMany({
+    where: { orderId },
+    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true },
+    orderBy: [{ variantId: "asc" }, { id: "asc" }],
+  });
   const requested = opts.lines ? new Map(opts.lines.map((l) => [l.orderItemId, l.quantity])) : null;
   const released: ReleasedLine[] = [];
   const replenished: string[] = [];
@@ -227,7 +248,7 @@ export async function releaseModifiedUnits(
   actor: Actor = {},
 ): Promise<string[]> {
   const replenished: string[] = [];
-  for (const u of units) {
+  for (const u of [...units].sort((a, b) => (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0))) {
     if (u.quantity <= 0) continue;
     const after = await applyDelta(tx, u.variantId, u.quantity, false);
     if (after === null) continue; // the variant was hard-deleted since: nothing to put back
@@ -276,7 +297,11 @@ export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; 
  * below zero by what can still be made, exactly as at checkout (docs/STOCK_HUB.md §3). Returns the variants it moved, for
  * `notifyStockMoved` after commit (fill-to-order lines and their materials; empty for any other order). */
 export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<string[]> {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true } });
+  const items = await tx.orderItem.findMany({
+    where: { orderId },
+    select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true },
+    orderBy: [{ variantId: "asc" }, { id: "asc" }], // the lock order every stock writer uses
+  });
   const fill = await fillToOrderFloorsFor(
     tx,
     items.map((item) => ({ variantId: item.variantId, quantity: item.restockedQuantity - item.returnedQuantity })).filter((l) => l.quantity > 0),

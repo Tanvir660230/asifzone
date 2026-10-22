@@ -433,7 +433,12 @@ export async function previewOrderModification(orderId: string, input: OrderModi
 
 /** Units of `plan.reserve` that can be sold beyond filled stock: their floors, under the materials' locks (null: none). */
 const reserveFloors = (tx: Tx, plan: ModificationPlan) =>
-  fillToOrderFloorsFor(tx, plan.reserve.filter((r) => !plan.untrackedVariantIds.includes(r.variantId)));
+  fillToOrderFloorsFor(
+    tx,
+    plan.reserve.filter((r) => !plan.untrackedVariantIds.includes(r.variantId)),
+    // Every variant the change moves is locked with the materials: one id order for the whole transaction.
+    [...plan.reserve, ...plan.release].map((r) => r.variantId),
+  );
 
 /** Writes a priced plan onto the order (stock, lines, totals, coupon usage, address, revision), closes stale payment
  * requests and settles the money difference. The caller holds the order row lock and owns the transaction. Returns the

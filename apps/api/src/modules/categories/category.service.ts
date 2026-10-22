@@ -13,7 +13,7 @@ import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
-import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
+import { applyCapacity, fillCapacity, fillToOrderInStock } from "../../domain/stock/fill-capacity.service";
 import { deleteSiteImageFile } from "../uploads/upload.service";
 import { sanitizeCourierNoteRuleIds } from "../courier/courier-note-rules.service";
 
@@ -136,12 +136,16 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
  * "In stock" is the shared availability rule (engines/availability.ts `isAvailable`, over active variants only): an
  * untracked product with an active variant is always available, a tracked one needs an active variant with stock — or, fill
  * to order (docs/STOCK_HUB.md §3), one that can still be made (counted in code, only for those the SQL test misses).
- * Public, so it deliberately carries no unit quantities (P0-04) — those stay on the admin-only stock-map. */
-async function getCategoryAvailabilityStat(categoryId: string): Promise<CategoryAvailabilityStat> {
+ * Public, so it deliberately carries no unit quantities (P0-04) — those stay on the admin-only stock-map.
+ * `canMake`: the fill-to-order products of the whole page's scope that can still be made, read once per page
+ * (getCategoryStockOverview) — never once per subcategory. */
+async function getCategoryAvailabilityStat(categoryId: string, canMake: Array<{ id: string; categoryIds: string[] }>): Promise<CategoryAvailabilityStat> {
   const descendantIds = await getCategoryDescendantIds(categoryId);
   const where = { ...inCategoriesWhere(descendantIds), isActive: true, deletedAt: null };
+  const scope = new Set(descendantIds);
+  const madeToOrder = canMake.filter((p) => p.categoryIds.some((id) => scope.has(id)));
 
-  const [totalProducts, inStockProducts, madeToOrder] = await Promise.all([
+  const [totalProducts, inStockProducts] = await Promise.all([
     prisma.product.count({ where }),
     prisma.product.count({
       where: {
@@ -153,7 +157,6 @@ async function getCategoryAvailabilityStat(categoryId: string): Promise<Category
         ],
       },
     }),
-    fillToOrderInStockIds(prisma, where, { storefront: true }),
   ]);
 
   return { totalProducts, inStockProducts: inStockProducts + madeToOrder.length };
@@ -171,9 +174,12 @@ export async function getCategoryStockOverview(categoryId: string): Promise<Cate
     select: { id: true, name: true, slug: true },
   });
 
+  // Fill to order: one read for the whole page (the parent's scope holds every subcategory's); nothing on an installation
+  // without fill-to-order products beyond that one query.
+  const canMake = await fillToOrderInStock(prisma, { ...inCategoriesWhere(await getCategoryDescendantIds(categoryId)), isActive: true, deletedAt: null }, { storefront: true });
   const [total, subStats] = await Promise.all([
-    getCategoryAvailabilityStat(categoryId),
-    Promise.all(children.map((child) => getCategoryAvailabilityStat(child.id))),
+    getCategoryAvailabilityStat(categoryId, canMake),
+    Promise.all(children.map((child) => getCategoryAvailabilityStat(child.id, canMake))),
   ]);
 
   return {

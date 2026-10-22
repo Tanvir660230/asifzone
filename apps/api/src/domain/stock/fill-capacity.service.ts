@@ -16,7 +16,7 @@
  * `fillToOrder = false` (every product of an installation without attar) never reach a capacity query here.
  */
 import { Prisma } from "@prisma/client";
-import { makeableUnits, sellable, type RecipeLine } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, makeableUnits, sellable, type RecipeLine } from "@clothing-brand/shared";
 import type { Db } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 
@@ -84,13 +84,50 @@ async function loadInputs(db: Db, lock: (recipes: RecipeLine[]) => string[]): Pr
 
 const materialsOf = (recipes: RecipeLine[], variantIds: Set<string>) => recipes.filter((r) => variantIds.has(r.finishedVariantId)).map((r) => r.materialVariantId);
 
+// ── public readers' memo ──────────────────────────────────────────────────────────────────────────────────────────
+//
+// Shop pages read capacity on every product view, listing and category page. Those reads (`cached: true`) share one
+// computation per process for at most FILL_MEMO_TTL_MS: `fillCapacityChanged` (inventory.service notifyStockMoved, after
+// every committed stock move) drops it at once in this process; other API processes see the move within the TTL. Never
+// used by a sale — the checkout, modifications, exchanges and restores read live under the materials' locks.
+
+/** How old a memoised capacity may be when it is served (cross-process staleness bound). */
+export const FILL_MEMO_TTL_MS = 3_000;
+let memoVersion = 0;
+let memo: { version: number; at: number; made: Promise<Map<string, number>> } | null = null;
+
+/** Stock moved (committed): the next public read recomputes capacity. */
+export function fillCapacityChanged(): void {
+  memoVersion++;
+  memo = null;
+}
+
+function memoisedCapacity(db: Db): Promise<Map<string, number>> {
+  if (memo && memo.version === memoVersion && Date.now() - memo.at < FILL_MEMO_TTL_MS) return memo.made;
+  const made = loadInputs(db, () => []).then(makeableUnits);
+  const entry = { version: memoVersion, at: Date.now(), made };
+  memo = entry;
+  // A failed read is never served again.
+  made.catch(() => {
+    if (memo === entry) memo = null;
+  });
+  return made;
+}
+
 /**
  * Makeable units per fill-to-order variant (≥ 0; a variant without an approved recipe → 0, never unlimited). `variantIds`
  * limits the answer (the free material still accounts for every fill-to-order variant's unfilled orders). `lockMaterials`
  * takes FOR UPDATE on the material rows of those variants, in id order — call it inside the transaction that sells.
+ * `cached`: a shop page's read, served from the short-lived memo above (a variant the memo doesn't know — made
+ * fill-to-order since — is read live). Ignored with `lockMaterials`.
  */
-export async function fillCapacity(db: Db, opts: { variantIds?: string[]; lockMaterials?: boolean } = {}): Promise<Map<string, number>> {
+export async function fillCapacity(db: Db, opts: { variantIds?: string[]; lockMaterials?: boolean; cached?: boolean } = {}): Promise<Map<string, number>> {
   const wanted = opts.variantIds ? new Set(opts.variantIds) : null;
+  if (opts.cached && !opts.lockMaterials) {
+    const all = await memoisedCapacity(db);
+    if (!wanted) return all;
+    if ([...wanted].every((id) => all.has(id))) return new Map([...wanted].map((id) => [id, all.get(id)!]));
+  }
   const inputs = await loadInputs(db, (recipes) => (opts.lockMaterials ? materialsOf(recipes, wanted ?? new Set(recipes.map((r) => r.finishedVariantId))) : []));
   const made = makeableUnits(inputs);
   if (!wanted) return made;
@@ -114,6 +151,12 @@ export async function withFillToOrder<V extends { id: string; stock: number }>(d
  * One query, returning nothing, on an installation without fill-to-order products.
  */
 export async function fillToOrderInStockIds(db: Db, where: Prisma.ProductWhereInput, opts: { storefront: boolean }): Promise<string[]> {
+  return (await fillToOrderInStock(db, where, opts)).map((p) => p.id);
+}
+
+/** `fillToOrderInStockIds` with each product's categories (home + also listed in), so one read serves a whole category
+ * tree (getCategoryStockOverview). The storefront reads capacity through the memo. */
+export async function fillToOrderInStock(db: Db, where: Prisma.ProductWhereInput, opts: { storefront: boolean }): Promise<Array<{ id: string; categoryIds: string[] }>> {
   const variantWhere = opts.storefront ? { isActive: true, markedSoldOut: false } : { isActive: true };
   const rows = await db.product.findMany({
     where: {
@@ -122,12 +165,14 @@ export async function fillToOrderInStockIds(db: Db, where: Prisma.ProductWhereIn
         { fillToOrder: true, trackInventory: true, ...(opts.storefront ? { markedSoldOut: false } : {}), variants: { none: { ...variantWhere, stock: { gt: 0 } } } },
       ],
     },
-    select: { id: true, variants: { where: variantWhere, select: { id: true, stock: true } } },
+    select: { id: true, categoryId: true, alsoListedIn: { select: { categoryId: true } }, variants: { where: variantWhere, select: { id: true, stock: true } } },
   });
   const variantIds = rows.flatMap((r) => r.variants.map((v) => v.id));
   if (!variantIds.length) return [];
-  const made = await fillCapacity(db, { variantIds });
-  return rows.filter((r) => r.variants.some((v) => sellable(v.stock, made.get(v.id) ?? 0) > 0)).map((r) => r.id);
+  const made = await fillCapacity(db, { variantIds, cached: opts.storefront });
+  return rows
+    .filter((r) => r.variants.some((v) => sellable(v.stock, made.get(v.id) ?? 0) > 0))
+    .map((r) => ({ id: r.id, categoryIds: [r.categoryId, ...r.alsoListedIn.map((l) => l.categoryId)] }));
 }
 
 /** Pure: replaces each variant's stock by what it sells, given capacities already computed (batch readers). */
@@ -145,13 +190,16 @@ export function applyCapacity<V extends { id: string; stock: number }>(made: Map
  * fragrances in one cart can't both take the last shared bottle). A variant that appears twice is summed by the caller.
  * Returns the materials it locked too, so the caller can refresh the products that share them after commit, and what each
  * line could take at its turn (`available` = max(0, s) + m) for a specific refusal.
+ * `lockAlso`: every other variant the sale will move (the cart's ordinary lines, a released original) — locked in the
+ * same statement, so the whole transaction takes its variant locks in one global id order (as the cutover does) and two
+ * sales can't deadlock.
  */
-export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string; quantity: number }>): Promise<FillFloors> {
+export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string; quantity: number }>, lockAlso: string[] = []): Promise<FillFloors> {
   const wanted = new Set(lines.map((l) => l.variantId));
   let materialIds: string[] = [];
   const inputs = await loadInputs(tx, (recipes) => {
     materialIds = [...new Set(materialsOf(recipes, wanted))];
-    return [...materialIds, ...wanted];
+    return [...materialIds, ...wanted, ...lockAlso];
   });
   const filled = new Map(inputs.filled);
   const floors = new Map<string, number>();
@@ -172,9 +220,10 @@ export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string
  * `fillToOrderFloors` for a sale that doesn't already know its products (order modification, paid modification, restore
  * from Trash): one lookup picks the lines of tracked fill-to-order products; none → null, and nothing is locked (every
  * product of an installation without attar). Lines of one variant are summed. Call it inside the selling transaction,
- * before the decrement, like the checkout.
+ * before the decrement, like the checkout. Every line's variant is locked with the materials (one id order); `lockAlso`
+ * adds the other variants the sale moves (as for fillToOrderFloors).
  */
-export async function fillToOrderFloorsFor(tx: Db, lines: Array<{ variantId: string; quantity: number }>): Promise<FillFloors | null> {
+export async function fillToOrderFloorsFor(tx: Db, lines: Array<{ variantId: string; quantity: number }>, lockAlso: string[] = []): Promise<FillFloors | null> {
   const ids = [...new Set(lines.map((l) => l.variantId))];
   if (!ids.length) return null;
   const filling = await tx.productVariant.findMany({ where: { id: { in: ids }, product: { fillToOrder: true, trackInventory: true } }, select: { id: true } });
@@ -182,7 +231,7 @@ export async function fillToOrderFloorsFor(tx: Db, lines: Array<{ variantId: str
   const wanted = new Set(filling.map((v) => v.id));
   const summed = new Map<string, number>();
   for (const l of lines) if (wanted.has(l.variantId)) summed.set(l.variantId, (summed.get(l.variantId) ?? 0) + l.quantity);
-  return fillToOrderFloors(tx, [...summed].map(([variantId, quantity]) => ({ variantId, quantity })));
+  return fillToOrderFloors(tx, [...summed].map(([variantId, quantity]) => ({ variantId, quantity })), [...ids, ...lockAlso]);
 }
 
 /** The variants a fill-to-order sale moved — its own lines and the materials it locked — for `notifyStockMoved` after commit. */
@@ -190,14 +239,18 @@ export const fillMoved = (fill: FillFloors | null | undefined): string[] => (fil
 
 /**
  * The checkout's specific refusal for a fill-to-order line its floor can't cover (several lines sharing a material, or a
- * stale quote): how many more can be made, never why. Null when every line fits. Same 409 shape as recordSale's.
+ * stale quote): how many more can be made, never why — and the number only below MAX_LINE_QUANTITY (the most the shop ever
+ * shows), so the reply never reveals material counts. Null when every line fits. Same 409 shape as recordSale's.
  */
 export function fillShortfall(fill: FillFloors | null | undefined, lines: Array<{ variantId: string; quantity: number; label: string }>): AppError | null {
   if (!fill) return null;
   for (const line of lines) {
     const n = fill.available.get(line.variantId);
     if (n === undefined || line.quantity <= n) continue;
-    return AppError.conflict(n > 0 ? `Only ${n} more ${line.label} can be made right now — please update the quantity` : `${line.label} has just sold out — please review your cart`);
+    if (n <= 0) return AppError.conflict(`${line.label} has just sold out — please review your cart`);
+    return AppError.conflict(
+      n < MAX_LINE_QUANTITY ? `Only ${n} more ${line.label} can be made right now — please update the quantity` : `Not that many ${line.label} can be made right now — please update the quantity`,
+    );
   }
   return null;
 }

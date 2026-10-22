@@ -17,14 +17,14 @@
  * same guard, and a full rebuild + drift report exist for reconciliation.
  */
 import { Prisma } from "@prisma/client";
-import { PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
 import { getCurrency } from "../config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
 import { applyCapacity, fillCapacity } from "../stock/fill-capacity.service";
-import { invalidateProductCache, triggerStorefrontRevalidation } from "../../modules/products/product.cache";
+import { invalidateProductDetailCache, triggerStorefrontRevalidation } from "../../modules/products/product.cache";
 
 type Db = AppDb;
 
@@ -144,6 +144,7 @@ export async function refreshProductsUsingMaterials(materialVariantIds: string[]
       },
       select: {
         id: true,
+        slug: true,
         billsOfMaterials: { where: { status: "APPROVED" }, orderBy: { version: "desc" }, take: 1, select: { lines: { where: { suppliedBy: "BUSINESS" }, select: { materialVariantId: true } } } },
       },
     });
@@ -151,8 +152,11 @@ export async function refreshProductsUsingMaterials(materialVariantIds: string[]
   if (!rows.length) return;
   const seen = new Set(ids);
   const shared = [...new Set(rows.flatMap((r) => r.billsOfMaterials[0]?.lines.map((l) => l.materialVariantId) ?? []))].filter((id) => !seen.has(id));
-  const productIds = [...new Set([...rows, ...(shared.length ? await usingOrOwning(shared) : [])].map((r) => r.id))];
-  await invalidateProductCache();
+  const affected = new Map([...rows, ...(shared.length ? await usingOrOwning(shared) : [])].map((r) => [r.id, r.slug]));
+  const productIds = [...affected.keys()];
+  // Only these products' cached detail (never the whole product cache — this runs on every attar stock move). The detail
+  // read overlays live stock and capacity anyway; dropping the entry just keeps it in step with a product save.
+  await invalidateProductDetailCache([...affected.values()]);
   await refreshReadModels(productIds, new Date(), db);
   void triggerStorefrontRevalidation({ productIds }).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
 }
@@ -244,13 +248,17 @@ export async function presentStorefrontProducts<T extends StorefrontPresentable>
   const pricing = await priceProductsForDisplay(products, now);
   // Fill to order: one capacity read for the whole batch, and only when it holds a fill-to-order product.
   const filling = products.filter((p) => p.fillToOrder === true && p.trackInventory);
-  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)), cached: true }) : null;
   return products.map((raw) => {
     const p = pricing.get(raw.id)!;
-    // A fill-to-order variant sells its filled bottles plus what can still be made; then a product or variant the shop
-    // marked sold out reaches every shopper-facing reader with no stock to sell (marked wins) — its real stock stays in
-    // the database and in the admin.
-    const variants = made && raw.fillToOrder === true && raw.trackInventory ? applyCapacity(made, raw.variants) : raw.variants;
+    // A fill-to-order variant sells its filled bottles plus what can still be made — shown at most MAX_LINE_QUANTITY (the
+    // most one line may hold), so the page never tells a shopper how much oil or how many bottles are left; the quote and
+    // checkout keep the exact limit. Then a product or variant the shop marked sold out reaches every shopper-facing
+    // reader with no stock to sell (marked wins) — its real stock stays in the database and in the admin.
+    const variants =
+      made && raw.fillToOrder === true && raw.trackInventory
+        ? applyCapacity(made, raw.variants).map((v) => (v.stock > MAX_LINE_QUANTITY ? { ...v, stock: MAX_LINE_QUANTITY } : v))
+        : raw.variants;
     const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, variants);
     const product = forSale.variants === raw.variants ? raw : { ...raw, trackInventory: forSale.trackInventory, variants: forSale.variants };
     return {

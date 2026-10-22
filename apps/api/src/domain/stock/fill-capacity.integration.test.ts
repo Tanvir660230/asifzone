@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { PERMISSIONS } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, PERMISSIONS } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, ownerId, purgeFinanceTables, RUN } from "../../test-fixtures";
 import { recordInitialStock } from "../../modules/inventory/inventory.service";
@@ -9,7 +9,7 @@ import { ensurePurchasingAccounting } from "../finance/purchasing-setup.service"
 import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.service";
 import { createMaterial } from "../manufacturing/materials.service";
 import { approveBom, createBom } from "../manufacturing/boms.service";
-import { fillCapacity, fillToOrderFloors, withFillToOrder } from "./fill-capacity.service";
+import { FILL_MEMO_TTL_MS, fillCapacity, fillCapacityChanged, fillShortfall, fillToOrderFloors, withFillToOrder } from "./fill-capacity.service";
 
 // Stock hub Task 3 (docs/STOCK_HUB.md §3): makeable units from the latest approved recipe and the materials' stock.
 
@@ -121,5 +121,45 @@ describe("fill capacity", () => {
     expect(floors.get(a.variants[0]!.id)).toBe(1);
     expect(floors.get(b.variants[0]!.id)).toBe(0);
     expect(new Set(materialIds)).toEqual(new Set([oil, shared, sticker]));
+  });
+
+  it("wastage counts in the floors: 66 ml at 6 ml + 10 % makes exactly 10", async () => {
+    const a = await attar([0]);
+    const lean = await material("Lean oil", "ml", 66);
+    await approvedBom(a.product.id, [{ materialVariantId: lean, qtyPerUnit: "6", wastagePct: "10" }]);
+    const v = a.variants[0]!.id;
+    expect((await fillCapacity(prisma, { variantIds: [v] })).get(v)).toBe(10);
+    const { floors, available } = await prisma.$transaction((tx) => fillToOrderFloors(tx, [{ variantId: v, quantity: 11 }]));
+    expect(floors.get(v)).toBe(10);
+    expect(available.get(v)).toBe(10);
+  });
+
+  it("public reads share a short-lived memo; a stock move in this process drops it, and an unknown variant is read live", async () => {
+    const a = await attar([0]);
+    const drops = await material("Memo oil", "ml", 12);
+    await approvedBom(a.product.id, [{ materialVariantId: drops, qtyPerUnit: "6", wastagePct: "0" }]);
+    const v = a.variants[0]!.id;
+    expect((await fillCapacity(prisma, { variantIds: [v], cached: true })).get(v)).toBe(2); // not in the memo yet: live
+    await prisma.$transaction((tx) => recordInitialStock(tx, drops, 12, "RESTOCK", { note: "no notify" }));
+    expect((await fillCapacity(prisma, { variantIds: [v], cached: true })).get(v)).toBe(2); // the memo (≤ FILL_MEMO_TTL_MS old)
+    expect((await fillCapacity(prisma, { variantIds: [v] })).get(v)).toBe(4); // uncached callers always read live
+    fillCapacityChanged();
+    expect((await fillCapacity(prisma, { variantIds: [v], cached: true })).get(v)).toBe(4);
+    expect(FILL_MEMO_TTL_MS).toBeLessThanOrEqual(5_000);
+    // A variant that became fill-to-order after the memo was taken is not answered from it.
+    const b = await attar([0]);
+    await approvedBom(b.product.id, [{ materialVariantId: drops, qtyPerUnit: "12", wastagePct: "0" }]);
+    expect((await fillCapacity(prisma, { variantIds: [b.variants[0]!.id], cached: true })).get(b.variants[0]!.id)).toBe(2);
+  });
+});
+
+describe("fill shortfall message", () => {
+  const fill = (n: number) => ({ floors: new Map([["v", n]]), materialIds: [], available: new Map([["v", n]]) });
+  it("names how many more can be made only below the line maximum", () => {
+    expect(fillShortfall(fill(3), [{ variantId: "v", quantity: 5, label: "Azhaar 6 ml" }])?.message).toBe("Only 3 more Azhaar 6 ml can be made right now — please update the quantity");
+    const big = fillShortfall(fill(MAX_LINE_QUANTITY), [{ variantId: "v", quantity: MAX_LINE_QUANTITY + 5, label: "Azhaar 6 ml" }]);
+    expect(big?.statusCode).toBe(409);
+    expect(big?.message).toBe("Not that many Azhaar 6 ml can be made right now — please update the quantity"); // no count
+    expect(fillShortfall(fill(0), [{ variantId: "v", quantity: 1, label: "Azhaar 6 ml" }])?.message).toBe("Azhaar 6 ml has just sold out — please review your cart");
   });
 });

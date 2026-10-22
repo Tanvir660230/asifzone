@@ -48,7 +48,7 @@ import {
   sellingPriceOrderBy,
   sellingPriceWhere,
 } from "../../domain/storefront/read-model.service";
-import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
@@ -67,7 +67,7 @@ import { recordAudit } from "../../lib/audit";
 import { SALE_ORDER_WHERE } from "../../domain/metrics/sale-order";
 import { resolveLegacyWindow, utcInstant } from "../../domain/metrics/store-time";
 import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, type SectionRow } from "../catalog/sections.service";
-import { PRODUCT_CACHE_PREFIX, invalidateProductCache, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
+import { PRODUCT_CACHE_PREFIX, invalidateProductCache, productDetailCacheKey, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
 import { captureError } from "../../lib/observability/error-capture";
@@ -589,7 +589,7 @@ export async function getProductById(id: string) {
 
 /** Public lookup: only returns active products, matching what the storefront should link to. */
 export async function getProductBySlug(slug: string) {
-  const cacheKey = `${CACHE_PREFIX}slug:${slug}`;
+  const cacheKey = productDetailCacheKey(slug);
   let product = await cacheGet<Presented<Prisma.ProductGetPayload<{ select: typeof PUBLIC_DETAIL_SELECT }>>>(cacheKey);
 
   if (!product) {
@@ -1663,6 +1663,8 @@ export async function updateProduct(
   options: { stockNote?: string; stockMode?: "form" | "count" } = {},
 ) {
   const replenished: string[] = [];
+  // Variants whose stock this save moved (notifyStockMoved after commit).
+  const stockMoved: string[] = [];
   const existing = await getProductById(id);
   // Same rule as create, checked up front: otherwise two rows sharing a SKU only fail at the DB unique index, as a
   // generic conflict that doesn't say which rows clash. A row listed by id without a SKU keeps its stored one.
@@ -1831,6 +1833,7 @@ export async function updateProduct(
           // instead: it drops out of checkout the same as a delete would, without destroying history.
           if (mustKeep.length) {
             await zeroVariantStock(tx, mustKeep, { adminId, note: "Variant removed from product — had order history, stock zeroed instead of deleted" });
+            stockMoved.push(...mustKeep);
           }
         }
 
@@ -1870,6 +1873,7 @@ export async function updateProduct(
                   ? await setVariantStockCount(tx, variantId, desiredStock, "IMPORT", actor)
                   : await setVariantStockFromForm(tx, variantId, desiredStock, expectedStock, actor);
               if (delta > 0 && desiredStock - delta <= 0) replenished.push(variantId);
+              if (delta !== 0) stockMoved.push(variantId);
             }
           } else {
             const created = await tx.productVariant.create({
@@ -1916,6 +1920,9 @@ export async function updateProduct(
   // Fire-and-forget: real stock/price changes trigger real customer notifications — never
   // allowed to block or fail the admin's product save.
   notifyReplenished(replenished);
+  // A stock edit (form or CSV count) of a material or a fill-to-order variant changes what the products sharing those
+  // materials can make (docs/STOCK_HUB.md §3).
+  notifyStockMoved(stockMoved);
   if (input.basePrice !== undefined && input.basePrice < Number(existing.basePrice)) {
     notifyPriceDrop(id, input.basePrice).catch((err) => captureError(err, { msg: "[price-drop] notify failed:" }));
   }

@@ -375,7 +375,7 @@ async function createExchangeOrder(
   const replacementLines = await tx.orderItem.findMany({ where: { orderId: exchangeOrder.id }, select: { id: true } });
   const fill =
     requestedVariant.product.fillToOrder && requestedVariant.product.trackInventory
-      ? await fillToOrderFloors(tx, [{ variantId: requestedVariant.id, quantity: originalItem.quantity }])
+      ? await fillToOrderFloors(tx, [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], [originalItem.variantId]) // + the original coming back: one id order
       : null;
   try {
     await recordSale(tx, exchangeOrder.id, [{ variantId: requestedVariant.id, quantity: originalItem.quantity, orderItemIds: replacementLines.map((l) => l.id) }], {

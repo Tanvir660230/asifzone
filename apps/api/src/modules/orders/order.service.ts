@@ -419,7 +419,8 @@ export async function insertOrderRecord(
       const row = pricing.rows?.get(variantId);
       return row?.product.fillToOrder && !untracked.has(variantId);
     });
-    const fill = filling.length ? await fillToOrderFloors(tx, filling.map(([variantId, quantity]) => ({ variantId, quantity }))) : null;
+    // The cart's other variants are locked in the same statement: one id order for every lock this order takes.
+    const fill = filling.length ? await fillToOrderFloors(tx, filling.map(([variantId, quantity]) => ({ variantId, quantity })), [...perVariant.keys()]) : null;
     if (fill) fillMoved = [...fill.materialIds, ...fill.floors.keys()];
     // Lines that together need more of a shared material than is left (each passed the quote on its own): say how many
     // more can be made instead of the generic "stock changed" — same 409, so the cart shows it like any other.
@@ -700,7 +701,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
   });
   // Fill to order: such a variant sells its filled bottles plus what can still be made (one read, only when present).
   const filling = variants.filter((v) => v.product.fillToOrder && v.product.trackInventory);
-  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.map((v) => v.id) }) : null;
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.map((v) => v.id), cached: true }) : null;
   const variantById = new Map(variants.map((v) => [v.id, made && v.product.fillToOrder ? applyCapacity(made, [v])[0]! : v]));
   // The reorder price is the current server-resolved selling price (flash included) — a display cache for the cart,
   // re-quoted at checkout like any other cart line (PRICING_INVARIANTS §7).

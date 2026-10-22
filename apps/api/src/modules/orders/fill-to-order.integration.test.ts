@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { PERMISSIONS, productListQuerySchema } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, PERMISSIONS, productListQuerySchema, sellable } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { cacheDelByPrefix } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
-import { assertInventoryInvariants, cleanupFixtures, createStockedProduct, ownerId, placeOrder, purgeFinanceTables, RUN, stockOf, trackOrder } from "../../test-fixtures";
+import { assertInventoryInvariants, checkout, cleanupFixtures, createStockedProduct, ownerId, placeOrder, purgeFinanceTables, RUN, stockOf, trackOrder } from "../../test-fixtures";
 import type { FinanceActor } from "../../domain/finance/finance-audit";
 import { getFinanceContext } from "../../domain/finance/finance-context";
 import { ensureCommerceAccounting } from "../../domain/finance/commerce-setup.service";
@@ -16,14 +17,17 @@ import { createSupplier } from "../../domain/finance/suppliers.service";
 import { ensureManufacturingSetup } from "../../domain/manufacturing/manufacturing-setup.service";
 import { createMaterial } from "../../domain/manufacturing/materials.service";
 import { approveBom, createBom } from "../../domain/manufacturing/boms.service";
-import { fillToOrderFloors, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
-import { recordSale, stockShortfalls } from "../inventory/inventory.service";
-import { getProductBySlug, listProducts } from "../products/product.service";
+import { fillCapacity, fillToOrderFloors, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
+import { recordSale, stockMovedSettled, stockShortfalls } from "../inventory/inventory.service";
+import { getProductBySlug, listProducts, updateProduct } from "../products/product.service";
 import { getCategoryStockMap, getCategoryStockOverview } from "../categories/category.service";
 import { createReturnRequest, previewExchange, reviewReturnRequest } from "../return-requests/return-request.service";
 import { applyOrderModification } from "./order-modification.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
-import { deleteOrder, restoreOrder, updateOrderStatus } from "./order.service";
+import { deleteOrder, deriveOrderPricing, insertOrderRecord, restoreOrder, updateOrderStatus } from "./order.service";
+import { quickRefill } from "../../domain/manufacturing/quick-refill.service";
+import { processFinancialEvent } from "../../domain/finance/events.service";
+import { runReconciliation } from "../../domain/finance/reconciliation.service";
 
 // Stock hub Task 4 (docs/STOCK_HUB.md §3): a fill-to-order variant sells max(0, stock) + makeable on the website, in the
 // quote and at checkout; its stock goes negative for unfilled orders (the costing deficit), and the checkout locks the
@@ -39,6 +43,7 @@ let azhaar: { id: string; slug: string; variant: string };
 let royal: { id: string; slug: string; variant: string };
 let sweet: { id: string; slug: string; variant: string };
 let categoryId = "";
+let subCategoryId = "";
 
 async function buy(variantId: string, qty: number, unitPrice: number) {
   const po = await createPurchaseOrder({ supplierId, lines: [{ lineType: "STOCK", variantId, qtyOrdered: qty, unitPrice }] } as never, OWNER);
@@ -49,25 +54,24 @@ async function buy(variantId: string, qty: number, unitPrice: number) {
 }
 const material = async (name: string, unit: string) =>
   (await createMaterial({ name: `Vitest ${name} ${RUN}`, stockUnit: unit, variants: [{ sku: `FTO-${name.replace(/\W/g, "")}-${RUN}`, spec: name }] }, OWNER, { canSeeCost: true })).variants[0]!.id;
-async function attar(lines: Array<{ material: () => string; qty: string }>) {
+async function attar(lines: Array<{ material: () => string; qty: string; wastagePct?: string }>) {
   const p = await createStockedProduct({ stocks: [0], basePrice: 350 });
   await prisma.product.update({ where: { id: p.product.id }, data: { fillToOrder: true } });
-  const bom = await createBom({ productId: p.product.id, lines: lines.map((l) => ({ materialVariantId: l.material(), qtyPerUnit: l.qty, wastagePct: "0" })) } as never, OWNER);
+  const bom = await createBom({ productId: p.product.id, lines: lines.map((l) => ({ materialVariantId: l.material(), qtyPerUnit: l.qty, wastagePct: l.wastagePct ?? "0" })) } as never, OWNER);
   await approveBom(bom.id, OWNER);
   return { id: p.product.id, slug: p.product.slug, variant: p.variants[0]!.id };
 }
 /** What the website shows for a product's first variant. */
 const shown = async (slug: string) => (await getProductBySlug(slug))!.variants[0]!.stock;
 const computedAt = async (productId: string) => (await prisma.productReadModel.findUnique({ where: { productId }, select: { computedAt: true } }))?.computedAt;
-/** Waits for a fire-and-forget refresh: true once the product's projection row was recomputed after `before`. */
+/** After the fire-and-forget refreshes in flight have settled: was the product's projection row recomputed after `before`? */
 async function refreshedSince(productId: string, before: Date | undefined) {
-  let at = before;
-  for (let i = 0; i < 50 && at?.getTime() === before?.getTime(); i++) {
-    await new Promise((r) => setTimeout(r, 100));
-    at = await computedAt(productId);
-  }
+  await stockMovedSettled();
+  const at = await computedAt(productId);
   return at !== undefined && at.getTime() !== before?.getTime();
 }
+/** What the shop can sell of a fill-to-order variant right now, exactly (the website shows it capped at MAX_LINE_QUANTITY). */
+const sells = async (variantId: string) => sellable(await stockOf(variantId), (await fillCapacity(prisma, { variantIds: [variantId] })).get(variantId) ?? 0);
 const status = async (run: Promise<unknown>) => {
   try {
     await run;
@@ -116,6 +120,7 @@ afterAll(async () => {
     await tx.$executeRawUnsafe(`DELETE FROM "Product" WHERE kind = 'MATERIAL' AND name LIKE 'Vitest %'`);
   });
   await cleanupFixtures();
+  if (subCategoryId) await prisma.category.delete({ where: { id: subCategoryId } });
   if (categoryId) await prisma.category.delete({ where: { id: categoryId } });
 });
 
@@ -123,7 +128,8 @@ describe("fill to order", () => {
   let firstOrder = "";
 
   it("orders beyond filled stock within capacity: 0 filled, 108 makeable → order of 2 → stock −2, costing deficit 2", async () => {
-    expect(await shown(azhaar.slug)).toBe(108); // 650 ml / 6
+    expect(await sells(azhaar.variant)).toBe(108); // 650 ml / 6
+    expect(await shown(azhaar.slug)).toBe(MAX_LINE_QUANTITY); // the website never shows more than one line may hold (no material counts leak)
     const quote = await quoteCart({ items: [{ variantId: azhaar.variant, quantity: 2 }] });
     expect(quote.quote.warnings.filter((w) => w.code === "INSUFFICIENT_STOCK")).toEqual([]);
     const order = await placeOrder([{ variantId: azhaar.variant, quantity: 2 }]);
@@ -133,7 +139,7 @@ describe("fill to order", () => {
     expect(state.deficitQty).toBe(2); // the costing deficit, settled when the bottles are filled
     const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id }, select: { costMovementId: true, unitCostSource: true } });
     expect(line).toMatchObject({ costMovementId: expect.any(String), unitCostSource: "NONE" }); // costed like any exit (no average yet → no unit cost)
-    expect(await shown(azhaar.slug)).toBe(106); // 12 ml of oil reserved: 638 / 6
+    expect(await sells(azhaar.variant)).toBe(106); // 12 ml of oil reserved: 638 / 6
     await assertInventoryInvariants(azhaar.variant);
   });
 
@@ -157,7 +163,10 @@ describe("fill to order", () => {
   it("cancel restores capacity", async () => {
     await updateOrderStatus(firstOrder, { status: "CANCELLED" }, admin);
     expect(await stockOf(azhaar.variant)).toBe(0);
-    expect(await shown(azhaar.slug)).toBe(108);
+    expect(await sells(azhaar.variant)).toBe(108);
+    // Sold with no cost known and cancelled: the units come back against the no-cost deficit — nothing unvalued, no
+    // phantom deficit for the next fill to "cover".
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: azhaar.variant } })).toMatchObject({ deficitQty: 0, unvaluedQty: 0, valuedQty: 0 });
     await assertInventoryInvariants(azhaar.variant);
   });
 
@@ -179,15 +188,12 @@ describe("fill to order", () => {
   it("read model follows materials: a receipt of oil raises what the product sells and refreshes its read model", async () => {
     const before = await prisma.productReadModel.findUnique({ where: { productId: azhaar.id }, select: { computedAt: true } });
     // 12 ml of oil is reserved by the unfilled 12 ml order above: (650 − 12) / 6 = 106.
-    expect(await shown(azhaar.slug)).toBe(106);
+    expect(await sells(azhaar.variant)).toBe(106);
     await buy(oil, 600, 38);
-    expect(await shown(azhaar.slug)).toBe(166); // (1,250 − 12) / 6 = 206, but only 166 bottles of 6 ml
-    // The refresh after the movement is fire-and-forget: wait for the product's projection row to be recomputed.
-    let after = before;
-    for (let i = 0; i < 50 && after?.computedAt.getTime() === before?.computedAt.getTime(); i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      after = await prisma.productReadModel.findUnique({ where: { productId: azhaar.id }, select: { computedAt: true } });
-    }
+    expect(await sells(azhaar.variant)).toBe(166); // (1,250 − 12) / 6 = 206, but only 166 bottles of 6 ml
+    // The refresh after the movement is fire-and-forget: await the ones in flight, then the row must be recomputed.
+    await stockMovedSettled();
+    const after = await prisma.productReadModel.findUnique({ where: { productId: azhaar.id }, select: { computedAt: true } });
     expect(after).not.toBeNull();
     expect(after!.computedAt.getTime()).not.toBe(before?.computedAt.getTime());
   });
@@ -294,6 +300,14 @@ describe("fill to order beyond the checkout", () => {
     expect(await stockOf(makeable.variant)).toBe(0);
     expect((await getCategoryStockOverview(categoryId)).total).toEqual({ totalProducts: 2, inStockProducts: 1 });
     expect((await getCategoryStockMap())[categoryId]).toMatchObject({ totalProducts: 2, inStockProducts: 1 });
+    // A subcategory counts its own: the page reads fill-to-order capacity once for the parent scope, not once per child.
+    subCategoryId = (await prisma.category.create({ data: { name: `Vitest FTO sub ${RUN}`, slug: `vitest-fto-sub-${RUN}`, parentId: categoryId } })).id;
+    await cacheDelByPrefix("categories:"); // created directly: drop the cached category tree
+    await prisma.product.update({ where: { id: makeable.id }, data: { categoryId: subCategoryId } });
+    const overview = await getCategoryStockOverview(categoryId);
+    expect(overview.total).toEqual({ totalProducts: 2, inStockProducts: 1 });
+    expect(overview.subcategories).toEqual([expect.objectContaining({ id: subCategoryId, totalProducts: 1, inStockProducts: 1 })]);
+    await prisma.product.update({ where: { id: makeable.id }, data: { categoryId } });
     const q = (extra: Record<string, unknown>) => productListQuerySchema.parse({ page: 1, pageSize: 100, categoryId, ...extra });
     expect((await listProducts(q({ stock: "out" }))).items.map((p) => p.id)).toEqual([none.product.id]);
     const states = new Map((await listProducts(q({}))).items.map((p) => [p.id, p.stockState]));
@@ -310,5 +324,98 @@ describe("fill to order beyond the checkout", () => {
     expect((err as AppError).statusCode).toBe(409);
     expect((err as AppError).message).toMatch(/^Only 1 more .+ can be made right now — please update the quantity$/);
     expect((err as AppError).details).toBeUndefined(); // same shape as the generic stock 409 the cart already shows
+  });
+});
+
+// Review follow-ups: costing of unfilled sales (a cancel nets the no-cost deficit; a fill covers a real one and the books
+// agree), a cart mixing ordinary and fill-to-order lines, wastage and a paid oversell through the floors, and stock edits
+// from a CSV import refreshing the products that share materials.
+describe("fill to order — costing and edges", () => {
+  let key = 0;
+  const refill = (variantId: string, quantity: number) => quickRefill({ variantId, quantity }, OWNER, `fto-refill-${RUN}-${++key}`);
+  const receiptEntry = (variantId: string) =>
+    prisma.inventoryValuationEntry.findFirstOrThrow({ where: { variantId, kind: "INFLOW", stockMovement: { reason: "PRODUCTION_RECEIPT" } }, orderBy: { createdAt: "desc" } });
+  async function postPending() {
+    for (let round = 0; round < 10; round++) {
+      const waiting = await prisma.financialEvent.findMany({ where: { status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true } });
+      if (!waiting.length) return;
+      for (const e of waiting) await processFinancialEvent(e.id);
+    }
+  }
+
+  it("cancel an unfilled order, then fill N: no unvalued units, the fill is valued in full with no adjustment", async () => {
+    const rose = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    const order = await placeOrder([{ variantId: rose.variant, quantity: 2 }], { customerPhone: "01712000021" });
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: rose.variant } })).toMatchObject({ deficitQty: 2, unvaluedQty: 0 });
+    await updateOrderStatus(order.id, { status: "CANCELLED" }, admin);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: rose.variant } })).toMatchObject({ deficitQty: 0, unvaluedQty: 0, valuedQty: 0 });
+    await refill(rose.variant, 3);
+    expect(await stockOf(rose.variant)).toBe(3);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: rose.variant } })).toMatchObject({ valuedQty: 3, deficitQty: 0, unvaluedQty: 0 });
+    const entry = await receiptEntry(rose.variant);
+    expect(entry).toMatchObject({ qtyChange: 3, coveredQty: 0 });
+    expect(Number(entry.costAdjustment)).toBe(0);
+    await assertInventoryInvariants(rose.variant);
+  });
+
+  it("an order filled later: the fill covers the deficit, the sale's cost reaches the books, and the finance checks match", async () => {
+    const musk = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await placeOrder([{ variantId: musk.variant, quantity: 2 }], { customerPhone: "01712000022" });
+    await refill(musk.variant, 2);
+    expect(await stockOf(musk.variant)).toBe(0);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: musk.variant } })).toMatchObject({ valuedQty: 0, deficitQty: 0, unvaluedQty: 0 });
+    const entry = await receiptEntry(musk.variant);
+    expect(entry.coveredQty).toBe(2);
+    // The bottles' cost (6 ml × 38 + a 50 bottle each) never enters stock — the units are gone — so it is the sale's cost,
+    // recognised through 5150 Inventory cost adjustments.
+    expect(Number(entry.costAdjustment)).toBe(-2 * (6 * 38 + 50));
+    await postPending();
+    const r = await runReconciliation({ checks: ["inventory.valuation_vs_ledger", "inventory.quantity_vs_valuation", "inventory.valuation_postings", "manufacturing.wip", "ledger.integrity", "events.unposted"] }, OWNER);
+    expect(Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]))).toEqual({
+      "inventory.valuation_vs_ledger": "MATCHED", "inventory.quantity_vs_valuation": "MATCHED", "inventory.valuation_postings": "MATCHED", "manufacturing.wip": "MATCHED",
+      "ledger.integrity": "MATCHED", "events.unposted": "MATCHED",
+    });
+  });
+
+  it("one cart, an ordinary product and a fill-to-order one: both lines sold and costed", async () => {
+    const shirt = await createStockedProduct({ stocks: [3], basePrice: 500 });
+    const start = await stockOf(azhaar.variant);
+    const order = await placeOrder([{ variantId: shirt.variants[0]!.id, quantity: 1 }, { variantId: azhaar.variant, quantity: 2 }], { customerPhone: "01712000023" });
+    expect(await stockOf(shirt.variants[0]!.id)).toBe(2);
+    expect(await stockOf(azhaar.variant)).toBe(start - 2);
+    const lines = await prisma.orderItem.findMany({ where: { orderId: order.id }, select: { costMovementId: true } });
+    expect(lines).toHaveLength(2);
+    expect(lines.every((l) => l.costMovementId)).toBe(true);
+    await assertInventoryInvariants(shirt.variants[0]!.id);
+    await assertInventoryInvariants(azhaar.variant);
+  });
+
+  it("wastage in the floors, and a paid oversell beyond them still settles (stock below the floor)", async () => {
+    const lean = await material("Lean oil", "ml");
+    await buy(lean, 66, 40);
+    const amber = await attar([{ material: () => lean, qty: "6", wastagePct: "10" }]);
+    expect(await sells(amber.variant)).toBe(10); // 66 ml at 6.6 ml a bottle
+    await expect(placeOrder([{ variantId: amber.variant, quantity: 11 }], { customerPhone: "01712000024" })).rejects.toMatchObject({ statusCode: 409 });
+    // Paid against a quote of 6 while 10 could be made; then 5 more sold on the website before the payment settled.
+    const input = checkout([{ variantId: amber.variant, quantity: 6 }], { customerPhone: "01712000025" });
+    const pricing = await deriveOrderPricing(input, null);
+    await placeOrder([{ variantId: amber.variant, quantity: 5 }], { customerPhone: "01712000026" });
+    expect(await sells(amber.variant)).toBe(5);
+    const paid = await insertOrderRecord(input, { ...pricing, customerId: null }, { status: "CONFIRMED" }, { allowOversell: true });
+    trackOrder(paid.id);
+    expect(await stockOf(amber.variant)).toBe(-11);
+    expect(await sells(amber.variant)).toBe(0);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: amber.variant } })).toMatchObject({ deficitQty: 11 });
+    await assertInventoryInvariants(amber.variant);
+  });
+
+  it("a CSV stock count on a fill-to-order variant refreshes the products sharing its materials", async () => {
+    const a = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    const b = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await stockMovedSettled();
+    const t0 = await computedAt(b.id);
+    await updateProduct(a.id, { variants: [{ id: a.variant, stock: 1 }] } as never, admin, undefined, { stockMode: "count" });
+    expect(await stockOf(a.variant)).toBe(1);
+    expect(await refreshedSince(b.id, t0)).toBe(true);
   });
 });
