@@ -6,11 +6,12 @@ import {
   attributeSearchSessionSchema,
   analyticsQuerySchema,
   bulkSendSmsSchema,
+  metaBrowserEventSchema,
 } from "@clothing-brand/shared";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { validate } from "../../middlewares/validate";
-import { trackingRateLimit } from "../../middlewares/rate-limit";
+import { metaEventRateLimit, trackingRateLimit } from "../../middlewares/rate-limit";
 import * as analyticsController from "./analytics.controller";
 
 export const analyticsRouter = Router();
@@ -43,6 +44,15 @@ analyticsRouter.post(
   trackingRateLimit,
   validate(attributeSearchSessionSchema),
   analyticsController.attributeSearchSession,
+);
+// Server copy of a browser Pixel event for Meta's Conversions API (lib/meta/browser-event.ts). Its own budget: every
+// page view sends one, and shoppers behind one carrier NAT share an IP.
+analyticsRouter.post(
+  "/meta-event",
+  metaEventRateLimit,
+  attachCustomerIfPresent,
+  validate(metaBrowserEventSchema),
+  analyticsController.relayMetaEvent,
 );
 
 analyticsRouter.use(requireAdmin, validate(analyticsQuerySchema, "query"));

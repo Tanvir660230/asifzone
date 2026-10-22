@@ -40,25 +40,66 @@ export function purchaseEventId(orderNumber: string): string {
   return metaPurchaseEventId(orderNumber);
 }
 
-let customer: PixelCustomer | null = null;
+// The shopper's identity outlives the page load (in this browser only, and only while ad tracking is consented to):
+// held in memory alone, every page after the one they identified on — the next visit's InitiateCheckout, a WhatsApp
+// tap on a product page — went to Meta anonymous. Same 90 days as the Pixel's own _fbp/_fbc cookies.
+const IDENTITY_KEY = "az_pixel_customer_v1";
+const IDENTITY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** undefined = not read from storage yet (read lazily: consent is only known in the browser). */
+let customer: PixelCustomer | null | undefined;
+
+function storedCustomer(): PixelCustomer | null {
+  try {
+    if (typeof window === "undefined" || !hasAdTrackingConsent()) return null;
+    const raw = window.localStorage.getItem(IDENTITY_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as { customer?: PixelCustomer; savedAt?: number };
+    if (!saved.customer || typeof saved.savedAt !== "number" || Date.now() - saved.savedAt > IDENTITY_MAX_AGE_MS) return null;
+    return saved.customer;
+  } catch {
+    return null;
+  }
+}
+
+function currentCustomer(): PixelCustomer | null {
+  if (customer === undefined) customer = storedCustomer();
+  return customer;
+}
 
 /** Unknown on either side counts as a match — only two different known values mean a different person. */
 const consistent = (a: string | null | undefined, b: string | null | undefined, normalize: (v: string) => string) =>
   !a || !b || normalize(a) === normalize(b);
 
-/** Tells the ad platforms who the shopper is (Meta advanced matching), from what they typed into checkout or keep on
- * their own account. Held in memory for this page load only — never written to storage — and only ever sent along with
- * an event, so the consent and admin-path gates in emit() apply to it too. A later call fills in what earlier ones
- * didn't know (account email + checkout district); a different email or phone means a different person, and replaces
- * it outright. */
+/** Tells the ad platforms who the shopper is (Meta advanced matching), from what they typed into checkout or a contact
+ * form, or keep on their own account. Remembered in this browser (see IDENTITY_KEY) only while the shopper has
+ * consented to ad tracking, and only ever sent along with an event, so the consent and admin-path gates in emit() apply
+ * to it too. A later call fills in what earlier ones didn't know (account email + checkout district); a different email
+ * or phone means a different person, and replaces it outright. */
 export function pixelIdentify(next: PixelCustomer): void {
   const known = Object.fromEntries(Object.entries(next).filter(([, v]) => typeof v === "string" && v.trim())) as PixelCustomer;
   if (Object.keys(known).length === 0) return;
+  const current = currentCustomer();
   const samePerson =
-    customer !== null &&
-    consistent(customer.email, known.email, normalizeMetaEmail) &&
-    consistent(customer.phone, known.phone, normalizeBdPhone);
-  customer = samePerson ? { ...customer, ...known } : known;
+    current !== null &&
+    consistent(current.email, known.email, normalizeMetaEmail) &&
+    consistent(current.phone, known.phone, normalizeBdPhone);
+  customer = samePerson ? { ...current, ...known } : known;
+  try {
+    if (hasAdTrackingConsent()) window.localStorage.setItem(IDENTITY_KEY, JSON.stringify({ customer, savedAt: Date.now() }));
+  } catch {
+    // storage blocked: still known for this page load
+  }
+}
+
+/** The shopper signed out, or withdrew ad-tracking consent: forget who they were, here and in storage. */
+export function pixelForget(): void {
+  customer = null;
+  try {
+    window.localStorage.removeItem(IDENTITY_KEY);
+  } catch {
+    // nothing stored, or storage blocked
+  }
 }
 
 interface EmitOptions {
@@ -92,7 +133,7 @@ function emit(event: PixelEvent, options: EmitOptions = {}): void {
       get currency() {
         return getStoreConfig().currency;
       },
-      customer,
+      customer: currentCustomer(),
     };
     const enabled = PROVIDERS.filter((p) => p.enabled);
     pixelDebug(`${event.name} → ${enabled.map((p) => p.name).join(", ") || "(no pixel ids configured)"}`, { ...event, eventId: ctx.eventId });

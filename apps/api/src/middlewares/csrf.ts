@@ -36,6 +36,10 @@ const CSRF_EXEMPT_PATHS = new Set([
   // forged call can only add a row any visitor could add.
   "/api/v1/client-errors",
   "/api/v1/vitals",
+  // Pixel server copy: changes nothing on our side, only forwards an event to Meta — the same thing any page can
+  // already do with the browser Pixel. Sent with credentials (it needs the _fbp/_fbc cookies), so a signed-in
+  // shopper's session cookie rides along and would otherwise demand the CSRF pairing.
+  "/api/analytics/meta-event",
 ]);
 
 /** Same trust model as CSRF_EXEMPT_PREFIX below: a public, rate-limited, fire-and-forget beacon

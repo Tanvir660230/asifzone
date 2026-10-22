@@ -7,6 +7,7 @@ import type { Order } from "@clothing-brand/shared";
 
 vi.mock("../runtime-config", () => ({
   publicRuntimeConfig: () => ({ metaPixelId: "1606825430933398", tiktokPixelId: "", clarityId: "" }),
+  apiBaseUrl: () => "https://shop.test",
 }));
 vi.mock("../store-config", () => ({ getStoreConfig: () => ({ currency: "BDT" }) }));
 
@@ -18,15 +19,21 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 let calls: Call[];
+let serverCopies: { url: string; body: Record<string, unknown> }[];
 
 /** A fresh page load: new module state, consent given, and an fbq that records what the storefront asked of it. */
-async function loadPage(path = "/checkout") {
+async function loadPage(path = "/checkout", localStorage = memoryStorage({ az_tracking_consent_v1: "granted" })) {
   vi.resetModules();
   calls = [];
+  serverCopies = [];
+  vi.stubGlobal("fetch", (url: string, init: { body: string }) => {
+    serverCopies.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
+    return Promise.resolve(new Response(null, { status: 204 }));
+  });
   const fbq = Object.assign((...args: unknown[]) => void calls.push(args), { queue: [] });
   vi.stubGlobal("window", {
-    location: { pathname: path },
-    localStorage: memoryStorage({ az_tracking_consent_v1: "granted" }),
+    location: { pathname: path, href: `https://shop.test${path}` },
+    localStorage,
     sessionStorage: memoryStorage(),
     fbq,
   });
@@ -139,5 +146,64 @@ describe("Meta advanced matching", () => {
     next.pixelIdentify({ email: "c@d.com" });
     next.pixelPageView("/checkout");
     expect(inits()[0]![2]).toEqual({ em: "c@d.com", country: "bd" });
+  });
+});
+
+describe("the shopper's identity across page loads", () => {
+  const consented = () => memoryStorage({ az_tracking_consent_v1: "granted" });
+
+  it("is remembered with consent, so the next page's events carry it", async () => {
+    const storage = consented();
+    const first = await loadPage("/checkout", storage);
+    first.pixelIdentify({ phone: "01712345678", fullName: "Rahim" });
+
+    const next = await loadPage("/products/panjabi", storage);
+    next.pixelContact("whatsapp");
+    expect(inits()).toEqual([["init", "1606825430933398", { ph: "8801712345678", fn: "rahim", country: "bd" }]]);
+  });
+
+  it("is never stored without consent", async () => {
+    const storage = memoryStorage();
+    const first = await loadPage("/checkout", storage);
+    first.pixelIdentify({ phone: "01712345678" });
+    storage.setItem("az_tracking_consent_v1", "granted");
+
+    const next = await loadPage("/", storage);
+    next.pixelPageView("/");
+    expect(inits()).toEqual([["init", "1606825430933398"]]);
+  });
+
+  it("is forgotten on sign-out or withdrawn consent", async () => {
+    const storage = consented();
+    const first = await loadPage("/checkout", storage);
+    first.pixelIdentify({ phone: "01712345678" });
+    first.pixelForget();
+
+    const next = await loadPage("/", storage);
+    next.pixelPageView("/");
+    expect(inits()).toEqual([["init", "1606825430933398"]]);
+  });
+});
+
+describe("Conversions API server copy", () => {
+  it("posts every event except Purchase under the browser event's id, with the shopper's identity", async () => {
+    const pixels = await loadPage();
+    pixels.pixelIdentify({ phone: "01712345678" });
+    pixels.pixelAddToCart({ id: "v1", name: "Panjabi", quantity: 1, price: 1500 });
+
+    const eventId = (calls.find((c) => c[1] === "AddToCart")![3] as { eventID: string }).eventID;
+    expect(serverCopies).toHaveLength(1);
+    expect(serverCopies[0]!.url).toBe("https://shop.test/api/analytics/meta-event");
+    expect(serverCopies[0]!.body).toMatchObject({
+      eventName: "AddToCart",
+      eventId,
+      eventSourceUrl: "https://shop.test/checkout",
+      customData: { content_ids: ["v1"], value: 1500, currency: "BDT" },
+      customer: { phone: "01712345678" },
+    });
+
+    const confirmation = await loadPage("/order-confirmation/AZ-1001");
+    confirmation.pixelPurchase(order);
+    expect(serverCopies).toEqual([]);
   });
 });

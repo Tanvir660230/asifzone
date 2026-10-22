@@ -1,10 +1,11 @@
 import { metaMatchKeys, type MetaMatchKeys } from "@clothing-brand/shared";
 import type { PixelCustomer, PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
-import { publicRuntimeConfig } from "../runtime-config";
+import { apiBaseUrl, publicRuntimeConfig } from "../runtime-config";
 
 /** The one module that talks to the Meta Pixel — it only translates the neutral events lib/pixels/index.ts dispatches
  * into `fbq` calls; when an event fires (and whether it's a repeat) is decided there, once, for every platform.
- * Server-side counterpart (Conversions API, Purchase only): apps/api/src/lib/meta/. Anything both sides must agree on
+ * Server-side counterpart (Conversions API): apps/api/src/lib/meta/ — Purchase from the stored order, every other event
+ * as the server copy sendServerCopy posts. Anything both sides must agree on
  * (currency, the Purchase event_id) comes from @clothing-brand/shared's meta.ts.
  *
  * Content ids: the product VARIANT id for every cart/checkout/purchase event (the exact size/colour bought — and the
@@ -143,5 +144,25 @@ export const metaPixel: PixelProvider = {
     if (!ensureInitialized(ctx.customer)) return;
     const [name, params] = toMeta(event, ctx);
     window.fbq!("track", name, params, { eventID: ctx.eventId });
+    if (event.name !== "Purchase") sendServerCopy(name, params, ctx);
   },
 };
+
+/** The same event, same eventID, to our API, which forwards it to the Conversions API with what only the request
+ * carries (IP, user agent, the _fbp/_fbc cookies) — Meta keeps one of the pair, so an ad blocker or a closed tab no
+ * longer loses it. Purchase is left out: the API already sends that one from the order itself. Best-effort like every
+ * pixel call: never awaited, never throws. */
+function sendServerCopy(name: string, params: Record<string, unknown>, ctx: PixelEventContext): void {
+  try {
+    fetch(`${apiBaseUrl()}/api/analytics/meta-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // The Pixel's cookies have to reach the API (a different origin in development).
+      credentials: "include",
+      keepalive: true,
+      body: JSON.stringify({ eventName: name, eventId: ctx.eventId, eventSourceUrl: window.location.href, customData: params, customer: ctx.customer }),
+    }).catch(() => {});
+  } catch {
+    // fetch unavailable — the browser copy still went
+  }
+}
