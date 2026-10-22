@@ -1,0 +1,25 @@
+{
+  "countedOn": "2026-10-22",
+  "notes": "EXAMPLE — the owner's figures of 2026-10-22 (chat). Replace every number with a fresh count on go-live day and set countedOn to that day; the script refuses a count more than a day old. Rates are taka: oil per ml; bottles, boxes, stickers (2,270 for 4,500 = 0.50), black poly per piece; bubble poly per roll; caps per cap (575 + 12 packet). Boxes: 553 counted 2026-10-21 less attar bottles booked since; stickers: 4,500 bought less one per bottle filled (1,500 boxes bought − 553 left = 947). Caps and filled bottles: everything on the shelf, including what is bagged for orders not yet booked with the courier.",
+  "oil": {
+    "AZHAAR": { "ml": 650, "rate": 38 },
+    "ROYAL": { "ml": 1352, "rate": 16 },
+    "SWEET": { "ml": 250, "rate": 21 },
+    "ZAYAN": { "ml": 1000, "rate": 24 }
+  },
+  "emptyBottles": {
+    "6ml": { "count": 166, "rate": 50 },
+    "12ml": { "count": 209, "rate": 52 }
+  },
+  "boxes": { "count": 553, "rate": 50 },
+  "stickers": { "count": 3553, "rate": 0.5 },
+  "blackPoly": { "count": 210, "rate": 1.6 },
+  "bubblePolyRolls": { "count": 1, "rate": 2000 },
+  "caps": { "count": 43, "rate": 587 },
+  "filledBottles": {
+    "AZHAAR": { "6ml": 0, "12ml": 0 },
+    "ROYAL": { "6ml": 0, "12ml": 0 },
+    "SWEET": { "6ml": 0, "12ml": 0 },
+    "ZAYAN": { "6ml": 0, "12ml": 0 }
+  }
+}
