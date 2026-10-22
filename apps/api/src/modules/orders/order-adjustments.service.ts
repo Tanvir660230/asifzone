@@ -21,7 +21,7 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { issueStoreCreditFromOrder, lockedPosition, projectedPosition, requestRefund } from "../../domain/payments/payment-ledger.service";
-import { notifyReplenished, releaseOrderLines, writeOffReturnedUnits } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, releaseOrderLines, writeOffReturnedUnits } from "../inventory/inventory.service";
 import { closeOpenPaymentRequests } from "../payments/payment-requests";
 import { loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
 import { cancelAwaitingModifications } from "./order-modification.service";
@@ -105,6 +105,7 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
   const currency = await getCurrency();
   const m = (v: unknown) => fromMajor(String(v ?? 0), currency);
   let replenished: string[] = [];
+  let moved: string[] = [];
   let transition: OrderTransitionOutcome | null = null;
   try {
     const request = await prisma.$transaction(async (tx) => {
@@ -131,6 +132,7 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
         if (got !== l.quantity) throw AppError.conflict("These items were returned by another request just now — reload the order");
       }
       replenished = released.replenished;
+      moved = released.released.map((r) => r.variantId);
       const recordedCost = new Map((await tx.orderItem.findMany({ where: { orderId }, select: { id: true, unitCostSnapshot: true } })).map((i) => [i.id, i.unitCostSnapshot]));
       const writeOffs = lines
         .filter((l) => l.writtenOff > 0)
@@ -202,6 +204,7 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
     });
     if (transition) await runTransitionSideEffects(transition);
     notifyReplenished(replenished);
+    notifyStockMoved(moved);
     return request;
   } catch (err) {
     if (idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {

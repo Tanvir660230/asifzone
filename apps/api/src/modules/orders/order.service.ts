@@ -63,7 +63,7 @@ import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
 import { notifyReplenished, notifyStockMoved, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
-import { applyCapacity, fillCapacity, fillToOrderFloors } from "../../domain/stock/fill-capacity.service";
+import { applyCapacity, fillCapacity, fillShortfall, fillToOrderFloors } from "../../domain/stock/fill-capacity.service";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import {
   REFUND_QUEUE_WHERE,
@@ -421,6 +421,18 @@ export async function insertOrderRecord(
     });
     const fill = filling.length ? await fillToOrderFloors(tx, filling.map(([variantId, quantity]) => ({ variantId, quantity }))) : null;
     if (fill) fillMoved = [...fill.materialIds, ...fill.floors.keys()];
+    // Lines that together need more of a shared material than is left (each passed the quote on its own): say how many
+    // more can be made instead of the generic "stock changed" — same 409, so the cart shows it like any other.
+    if (fill && !opts.allowOversell) {
+      const short = fillShortfall(
+        fill,
+        filling.map(([variantId, quantity]) => {
+          const s = snapshots.find((x) => x.variantId === variantId);
+          return { variantId, quantity, label: s ? `${s.productNameSnapshot}${formatVariantSuffix(s.sizeSnapshot, s.colorSnapshot)}` : "of this item" };
+        }),
+      );
+      if (short) throw short;
+    }
     const sale = await recordSale(
       tx,
       created.id,
@@ -1196,6 +1208,8 @@ export interface OrderTransitionOutcome {
   changed: boolean;
   /** Variants whose stock went from 0 to positive (back-in-stock emails). */
   replenished: string[];
+  /** Variants whose stock the transition moved (notifyStockMoved: fill-to-order products sharing them refresh). */
+  stockMoved: string[];
 }
 
 /** The order state machine (docs/ORDER_STATE_MACHINE.md) — the ONLY code that changes Order.status after an order
@@ -1251,7 +1265,7 @@ export async function applyOrderTransition(
           include,
         })
       : await tx.order.findUniqueOrThrow({ where: { id: orderId }, include });
-    return { ...base, order, changed: false, replenished: [] };
+    return { ...base, order, changed: false, replenished: [], stockMoved: [] };
   }
 
   if (rule.requiresRecordedRefund && locked.paymentStatus !== "REFUNDED") {
@@ -1259,10 +1273,12 @@ export async function applyOrderTransition(
   }
 
   let replenished: string[] = [];
+  let stockMoved: string[] = [];
   if (rule.stock !== "none") {
     const note = rule.stock === "return" ? `Stock restored — order returned` : `Stock released — order cancelled`;
     const result = await releaseOrderLines(tx, orderId, rule.stock, { adminId: actor.adminId, note });
     replenished = result.replenished;
+    stockMoved = result.released.map((r) => r.variantId);
   }
 
   if (rule.courierLoss && locked.courierConsignmentId) {
@@ -1312,7 +1328,7 @@ export async function applyOrderTransition(
       },
     ]);
   }
-  return { ...base, order, changed: true, replenished };
+  return { ...base, order, changed: true, replenished, stockMoved };
 }
 
 /** Best-effort post-commit effects of a transition: admin alerts and back-in-stock emails. The customer SMS and loyalty
@@ -1333,6 +1349,7 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome) 
   }
 
   notifyReplenished(outcome.replenished);
+  notifyStockMoved(outcome.stockMoved);
 }
 
 /** settleCourierCollected after the change it follows has committed — a failure is logged, never undoes that change. */
@@ -1545,22 +1562,25 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
  * (shipped/delivered/closed) changes no stock — trashing is record-keeping, not a return. Idempotent per line
  * (inventory.service releaseOrderLines), so an already-cancelled or already-returned order puts nothing back. */
 export async function deleteOrder(orderId: string, adminId: string) {
-  const { order, replenished } = await prisma.$transaction(async (tx) => {
+  const { order, replenished, moved } = await prisma.$transaction(async (tx) => {
     const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
       SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
     `;
     if (!locked) throw AppError.notFound("Order not found");
-    if (locked.deletedAt) return { order: await tx.order.findUniqueOrThrow({ where: { id: orderId }, include }), replenished: [] as string[] };
+    if (locked.deletedAt) return { order: await tx.order.findUniqueOrThrow({ where: { id: orderId }, include }), replenished: [] as string[], moved: [] as string[] };
 
     let released: string[] = [];
+    let moved: string[] = [];
     if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
       const result = await releaseOrderLines(tx, orderId, "release", { adminId, note: "Stock released — order moved to Trash" });
       released = result.replenished;
+      moved = result.released.map((r) => r.variantId);
     }
     const updated = await tx.order.update({ where: { id: orderId }, data: { deletedAt: new Date(), deletedByAdminId: adminId }, include });
-    return { order: updated, replenished: released };
+    return { order: updated, replenished: released, moved };
   });
   notifyReplenished(replenished);
+  notifyStockMoved(moved);
   return order;
 }
 
@@ -1605,7 +1625,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   const returnedByItem = new Map(returnedEntries.map((e) => [e.orderItemId, e.returnedQuantity]));
   const keptNothing = existing.items.every((item) => (returnedByItem.get(item.id) ?? 0) >= item.quantity);
 
-  const { order, replenished } = await prisma.$transaction(async (tx) => {
+  const { order, replenished, moved } = await prisma.$transaction(async (tx) => {
     // Row lock + re-check: two admins reconciling at once must not both restock.
     const [locked] = await tx.$queryRaw<Array<{ partialDeliveryReconciledAt: Date | null }>>`
       SELECT "partialDeliveryReconciledAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
@@ -1618,7 +1638,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
           note: "Stock restored — partial delivery reconciliation",
           lines: returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })),
         })
-      : { released: [], replenished: [] };
+      : { released: [] as Array<{ variantId: string }>, replenished: [] as string[] };
 
     if (courierLossFee !== null) {
       await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
@@ -1662,9 +1682,10 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
       },
       include,
     });
-    return { order: updated, replenished: result.replenished };
+    return { order: updated, replenished: result.replenished, moved: result.released.map((r) => r.variantId) };
   });
   notifyReplenished(replenished);
+  notifyStockMoved(moved);
   // The customer kept nothing: the order is returned (T7 — the stock is already back, so it moves none; points reverse).
   // The Returned move also settles what Steadfast reported the rider collected as the return charge (§5b).
   if (keptNothing) {
@@ -1721,7 +1742,8 @@ export async function backfillPartialDeliveryReturns(opts: { apply?: boolean } =
  * come back active without the stock it needs). Closed or shipped orders changed no stock when trashed, so
  * restoring them is purely a record correction. */
 export async function restoreOrder(orderId: string, adminId?: string) {
-  return prisma.$transaction(async (tx) => {
+  let moved: string[] = [];
+  const order = await prisma.$transaction(async (tx) => {
     const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
       SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
     `;
@@ -1729,10 +1751,12 @@ export async function restoreOrder(orderId: string, adminId?: string) {
     if (!locked.deletedAt) return tx.order.findUniqueOrThrow({ where: { id: orderId }, include });
 
     if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
-      await reReserveOrderLines(tx, orderId, { adminId, note: "Stock re-reserved — order restored from Trash" });
+      moved = await reReserveOrderLines(tx, orderId, { adminId, note: "Stock re-reserved — order restored from Trash" });
     }
     return tx.order.update({ where: { id: orderId }, data: { deletedAt: null, deletedByAdminId: null }, include });
   });
+  notifyStockMoved(moved);
+  return order;
 }
 
 /** Irreversible — only meaningful for an order already in Trash (mirrors permanentlyDeleteCategory).

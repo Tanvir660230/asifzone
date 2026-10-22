@@ -7,6 +7,7 @@ import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { randomUUID } from "node:crypto";
 import { refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
+import { fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
 import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
@@ -99,7 +100,9 @@ export interface SaleResult {
  * balance, for reporting) but never rejected, and never reported as oversold.
  * Fill to order (docs/STOCK_HUB.md §3): a variant in `floors` may go down to `-floor` (ordered, not yet filled) — the
  * caller computes the floors under the materials' locks (fill-capacity.service `fillToOrderFloors`). Its exit is costed
- * like any other: units beyond what is valued become the costing deficit, settled when the bottles are filled. */
+ * like any other: units beyond what is valued become the costing deficit, settled when the bottles are filled. Every caller
+ * that can sell such a variant passes them: checkout (insertOrderRecord), order modification (applyPlan, also behind a paid
+ * settlement) and exchange (createExchangeOrder); reReserveOrderLines (restore from Trash) does the same for its decrement. */
 export async function recordSale(
   tx: Tx,
   orderId: string,
@@ -256,25 +259,33 @@ export async function writeOffReturnedUnits(
 }
 
 /** Locks the variants' rows and reports which can't supply `quantity` units right now (tracked products only — D5). Lets a
- * paid settlement decide BEFORE writing anything whether a waiting modification can still be fulfilled (§14). */
-export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; quantity: number }>, untracked: Set<string>): Promise<string[]> {
+ * paid settlement decide BEFORE writing anything whether a waiting modification can still be fulfilled (§14). `floors`:
+ * fill-to-order variants may go that far below zero, as in recordSale (fill-capacity.service `fillToOrderFloorsFor`). */
+export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; quantity: number }>, untracked: Set<string>, floors?: Map<string, number>): Promise<string[]> {
   const short: string[] = [];
   for (const u of [...units].sort((a, b) => (a.variantId < b.variantId ? -1 : 1))) {
     if (untracked.has(u.variantId)) continue;
     const stock = await lockStock(tx, u.variantId);
-    if (stock === null || stock < u.quantity) short.push(u.variantId);
+    if (stock === null || stock + (floors?.get(u.variantId) ?? 0) < u.quantity) short.push(u.variantId);
   }
   return short;
 }
 
 /** Restoring a pre-shipment order from Trash takes back the units released when it was trashed. All-or-nothing:
- * if any line's stock has since been sold, nothing changes and a 409 explains why. */
-export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<void> {
+ * if any line's stock has since been sold, nothing changes and a 409 explains why. A fill-to-order line may take its stock
+ * below zero by what can still be made, exactly as at checkout (docs/STOCK_HUB.md §3). Returns the variants it moved, for
+ * `notifyStockMoved` after commit (fill-to-order lines and their materials; empty for any other order). */
+export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<string[]> {
   const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true } });
+  const fill = await fillToOrderFloorsFor(
+    tx,
+    items.map((item) => ({ variantId: item.variantId, quantity: item.restockedQuantity - item.returnedQuantity })).filter((l) => l.quantity > 0),
+  );
   for (const item of items) {
     const amount = item.restockedQuantity - item.returnedQuantity;
     if (amount <= 0) continue;
-    const after = await applyDelta(tx, item.variantId, -amount, true);
+    // Several lines of one variant share its floor: each takes from the stock the previous one left, so the floor holds.
+    const after = await applyDelta(tx, item.variantId, -amount, true, fill?.floors.get(item.variantId) ?? 0);
     if (after === null) {
       throw AppError.conflict("Not enough stock to restore this order — its items have been sold since it was trashed. Adjust stock first.");
     }
@@ -284,6 +295,7 @@ export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor 
     // entry), so the line's recorded cost stays the cost of every one of its units.
     await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: item.unitCostSnapshot }, ledger: "ORDER" }]);
   }
+  return fillMoved(fill);
 }
 
 // --- document-driven movements (Phase 4D+: purchasing, later manufacturing) ----------------------

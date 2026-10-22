@@ -49,6 +49,7 @@ import {
   sellingPriceWhere,
 } from "../../domain/storefront/read-model.service";
 import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
+import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
@@ -531,9 +532,11 @@ async function completenessForPage(ids: string[]) {
 }
 
 export async function listProducts(query: ProductListQuery) {
+  // "Out": no active variant with stock — except a fill-to-order product that can still make one (docs/STOCK_HUB.md §3).
+  const canMake = query.stock === "out" ? await fillToOrderInStockIds(prisma, {}, { storefront: false }) : [];
   const stockWhere: Prisma.ProductWhereInput =
     query.stock === "out"
-      ? { trackInventory: true, variants: { none: { isActive: true, stock: { gt: 0 } } } }
+      ? { trackInventory: true, variants: { none: { isActive: true, stock: { gt: 0 } } }, ...(canMake.length ? { id: { notIn: canMake } } : {}) }
       : query.stock === "low"
         ? { id: { in: await lowStockProductIds() } }
         : {};
@@ -564,9 +567,17 @@ export async function listProducts(query: ProductListQuery) {
     () => prisma.product.count({ where }),
   );
   const completeness = await completenessForPage(result.items.map((p) => p.id));
+  // Fill to order: the state follows what the product sells (filled bottles + what can still be made); the total stays the
+  // filled bottles on the shelf.
+  const filling = result.items.filter((p) => p.fillToOrder && p.trackInventory);
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
+  const stockState = (p: (typeof result.items)[number]) => {
+    const own = productStockState(p);
+    return made && p.fillToOrder && p.trackInventory ? { ...own, stockState: productStockState({ ...p, variants: applyCapacity(made, p.variants) }).stockState } : own;
+  };
   return {
     ...result,
-    items: result.items.map((p) => ({ ...p, ...productStockState(p), completeness: completeness.get(p.id) ?? null })),
+    items: result.items.map((p) => ({ ...p, ...stockState(p), completeness: completeness.get(p.id) ?? null })),
   };
 }
 

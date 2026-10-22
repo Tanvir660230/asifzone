@@ -13,6 +13,7 @@ import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
+import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
 import { deleteSiteImageFile } from "../uploads/upload.service";
 import { sanitizeCourierNoteRuleIds } from "../courier/courier-note-rules.service";
 
@@ -133,13 +134,14 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
 /** Live (isActive, non-deleted) product availability counts for one category scope — self plus every descendant, same
  * rollup listStorefrontProducts uses so these numbers match what a shopper actually sees when browsing that category.
  * "In stock" is the shared availability rule (engines/availability.ts `isAvailable`, over active variants only): an
- * untracked product with an active variant is always available, a tracked one needs an active variant with stock.
+ * untracked product with an active variant is always available, a tracked one needs an active variant with stock — or, fill
+ * to order (docs/STOCK_HUB.md §3), one that can still be made (counted in code, only for those the SQL test misses).
  * Public, so it deliberately carries no unit quantities (P0-04) — those stay on the admin-only stock-map. */
 async function getCategoryAvailabilityStat(categoryId: string): Promise<CategoryAvailabilityStat> {
   const descendantIds = await getCategoryDescendantIds(categoryId);
   const where = { ...inCategoriesWhere(descendantIds), isActive: true, deletedAt: null };
 
-  const [totalProducts, inStockProducts] = await Promise.all([
+  const [totalProducts, inStockProducts, madeToOrder] = await Promise.all([
     prisma.product.count({ where }),
     prisma.product.count({
       where: {
@@ -151,9 +153,10 @@ async function getCategoryAvailabilityStat(categoryId: string): Promise<Category
         ],
       },
     }),
+    fillToOrderInStockIds(prisma, where, { storefront: true }),
   ]);
 
-  return { totalProducts, inStockProducts };
+  return { totalProducts, inStockProducts: inStockProducts + madeToOrder.length };
 }
 
 /** Powers the category page's "N of M in stock" summary and its subcategory breakdown — the parent's
@@ -190,9 +193,13 @@ export async function getCategoryStockMap(): Promise<Record<string, CategoryStoc
     prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, parentId: true } }),
     prisma.product.findMany({
       where: { isActive: true, deletedAt: null },
-      select: { categoryId: true, variants: { select: { stock: true } } },
+      select: { categoryId: true, fillToOrder: true, trackInventory: true, variants: { select: { id: true, stock: true, isActive: true } } },
     }),
   ]);
+  // Fill to order: a product without filled bottles is in stock while an active variant can still be made.
+  const filling = products.filter((p) => p.fillToOrder && p.trackInventory);
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
+  const canMake = (p: (typeof products)[number]) => made !== null && p.fillToOrder && p.trackInventory && applyCapacity(made, p.variants.filter((v) => v.isActive)).some((v) => v.stock > 0);
 
   const own = new Map<string, CategoryStockStat>();
   for (const cat of categories) own.set(cat.id, { totalProducts: 0, inStockProducts: 0, totalStock: 0 });
@@ -202,7 +209,7 @@ export async function getCategoryStockMap(): Promise<Record<string, CategoryStoc
     stat.totalProducts += 1;
     const stock = product.variants.reduce((sum, v) => sum + v.stock, 0);
     stat.totalStock += stock;
-    if (product.variants.some((v) => v.stock > 0)) stat.inStockProducts += 1;
+    if (product.variants.some((v) => v.stock > 0) || canMake(product)) stat.inStockProducts += 1;
   }
 
   const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));

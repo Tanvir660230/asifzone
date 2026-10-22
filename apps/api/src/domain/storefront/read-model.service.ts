@@ -126,23 +126,32 @@ export async function ensureFreshReadModels(now: Date = new Date(), db: Db = pri
 /** Stock hub (docs/STOCK_HUB.md §3): what a fill-to-order product sells follows its materials' stock, so after a stock
  * movement (receipt, issue, count, packaging, an order) every fill-to-order product whose approved recipe uses one of
  * these variants — or that owns one — gets the refresh a product save gives (API cache, projection row, storefront tags).
- * Call after commit, fire-and-forget (inventory.service `notifyStockMoved`). One query when nothing is fill-to-order. */
+ * A fill-to-order variant's own stock reserves (or, cancelled, frees) its recipe's materials, so the products sharing those
+ * materials are refreshed too. Call after commit, fire-and-forget (inventory.service `notifyStockMoved`). One query when
+ * nothing is fill-to-order. */
 export async function refreshProductsUsingMaterials(materialVariantIds: string[], db: Db = prisma): Promise<void> {
   const ids = [...new Set(materialVariantIds)];
   if (!ids.length) return;
-  const rows = await db.product.findMany({
-    where: {
-      fillToOrder: true,
-      deletedAt: null,
-      OR: [
-        { variants: { some: { id: { in: ids } } } },
-        { billsOfMaterials: { some: { status: "APPROVED", lines: { some: { suppliedBy: "BUSINESS", materialVariantId: { in: ids } } } } } },
-      ],
-    },
-    select: { id: true },
-  });
+  const usingOrOwning = (variantIds: string[]) =>
+    db.product.findMany({
+      where: {
+        fillToOrder: true,
+        deletedAt: null,
+        OR: [
+          { variants: { some: { id: { in: variantIds } } } },
+          { billsOfMaterials: { some: { status: "APPROVED", lines: { some: { suppliedBy: "BUSINESS", materialVariantId: { in: variantIds } } } } } },
+        ],
+      },
+      select: {
+        id: true,
+        billsOfMaterials: { where: { status: "APPROVED" }, orderBy: { version: "desc" }, take: 1, select: { lines: { where: { suppliedBy: "BUSINESS" }, select: { materialVariantId: true } } } },
+      },
+    });
+  const rows = await usingOrOwning(ids);
   if (!rows.length) return;
-  const productIds = rows.map((r) => r.id);
+  const seen = new Set(ids);
+  const shared = [...new Set(rows.flatMap((r) => r.billsOfMaterials[0]?.lines.map((l) => l.materialVariantId) ?? []))].filter((id) => !seen.has(id));
+  const productIds = [...new Set([...rows, ...(shared.length ? await usingOrOwning(shared) : [])].map((r) => r.id))];
   await invalidateProductCache();
   await refreshReadModels(productIds, new Date(), db);
   void triggerStorefrontRevalidation({ productIds }).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));

@@ -9,13 +9,25 @@
  *   filled        = the fill-to-order variants' stock (every fill-to-order variant, so other fragrances' unfilled orders
  *                   reserve a shared bottle too)
  *
- * Readers (storefront, quote, reorder) call `withFillToOrder`; the checkout calls `fillToOrderFloors` inside its order
- * transaction, which locks the materials first so two orders racing for the last shared bottle serialize. Products with
- * `fillToOrder = false` (every product of an installation without attar) never reach a query here.
+ * Readers (storefront, quote, reorder, exchange preview) call `withFillToOrder`; in-stock counts and filters add
+ * `fillToOrderInStockIds`. Every sale of a fill-to-order unit takes floors inside its transaction, which locks the materials
+ * first so two sales racing for the last shared bottle serialize: the checkout and an exchange call `fillToOrderFloors`
+ * (they know the product), an order modification and a restore from Trash call `fillToOrderFloorsFor`. Products with
+ * `fillToOrder = false` (every product of an installation without attar) never reach a capacity query here.
  */
 import { Prisma } from "@prisma/client";
 import { makeableUnits, sellable, type RecipeLine } from "@clothing-brand/shared";
 import type { Db } from "../../config/prisma";
+import { AppError } from "../../lib/app-error";
+
+export interface FillFloors {
+  /** Per fill-to-order variant: how far below zero its stock may go (recordSale `floors`). */
+  floors: Map<string, number>;
+  /** The recipe materials locked. */
+  materialIds: string[];
+  /** Per variant: what its line could take at its turn. */
+  available: Map<string, number>;
+}
 
 interface CapacityInputs {
   recipes: RecipeLine[];
@@ -94,6 +106,30 @@ export async function withFillToOrder<V extends { id: string; stock: number }>(d
   return applyCapacity(made, variants);
 }
 
+/**
+ * In-stock counts and filters: the products matching `where` that a "has an active variant with stock > 0" SQL test misses
+ * but that are in stock all the same — fill-to-order, no filled bottle on such a variant, and able to make at least one.
+ * Callers keep their SQL fast path for every other product and add these ids. `storefront`: as the shop sells (a product
+ * or variant marked sold out is not in stock); otherwise the admin's stock view (active variants, marks ignored).
+ * One query, returning nothing, on an installation without fill-to-order products.
+ */
+export async function fillToOrderInStockIds(db: Db, where: Prisma.ProductWhereInput, opts: { storefront: boolean }): Promise<string[]> {
+  const variantWhere = opts.storefront ? { isActive: true, markedSoldOut: false } : { isActive: true };
+  const rows = await db.product.findMany({
+    where: {
+      AND: [
+        where,
+        { fillToOrder: true, trackInventory: true, ...(opts.storefront ? { markedSoldOut: false } : {}), variants: { none: { ...variantWhere, stock: { gt: 0 } } } },
+      ],
+    },
+    select: { id: true, variants: { where: variantWhere, select: { id: true, stock: true } } },
+  });
+  const variantIds = rows.flatMap((r) => r.variants.map((v) => v.id));
+  if (!variantIds.length) return [];
+  const made = await fillCapacity(db, { variantIds });
+  return rows.filter((r) => r.variants.some((v) => sellable(v.stock, made.get(v.id) ?? 0) > 0)).map((r) => r.id);
+}
+
 /** Pure: replaces each variant's stock by what it sells, given capacities already computed (batch readers). */
 export function applyCapacity<V extends { id: string; stock: number }>(made: Map<string, number>, variants: V[]): V[] {
   return variants.map((v) => ({ ...v, stock: sellable(v.stock, made.get(v.id) ?? 0) }));
@@ -107,9 +143,10 @@ export function applyCapacity<V extends { id: string; stock: number }>(made: Map
  * Exact: a line of q units is allowed iff q ≤ sellable(s, m) = max(0, s) + m, i.e. s − q ≥ min(s, 0) − m, so
  * floor = m + max(0, −s). Lines are taken one after another, each seeing the material the earlier ones claimed (two
  * fragrances in one cart can't both take the last shared bottle). A variant that appears twice is summed by the caller.
- * Returns the materials it locked too, so the caller can refresh the products that share them after commit.
+ * Returns the materials it locked too, so the caller can refresh the products that share them after commit, and what each
+ * line could take at its turn (`available` = max(0, s) + m) for a specific refusal.
  */
-export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string; quantity: number }>): Promise<{ floors: Map<string, number>; materialIds: string[] }> {
+export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string; quantity: number }>): Promise<FillFloors> {
   const wanted = new Set(lines.map((l) => l.variantId));
   let materialIds: string[] = [];
   const inputs = await loadInputs(tx, (recipes) => {
@@ -118,13 +155,49 @@ export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string
   });
   const filled = new Map(inputs.filled);
   const floors = new Map<string, number>();
+  const available = new Map<string, number>();
   for (const line of lines) {
     const s = filled.get(line.variantId);
     if (s === undefined) continue; // not a fill-to-order variant
     const m = makeableUnits({ ...inputs, filled }).get(line.variantId) ?? 0;
     floors.set(line.variantId, m + Math.max(0, -s));
+    available.set(line.variantId, sellable(s, m));
     // What this line will claim, so the next line sees the material it leaves (never more than it may take).
     filled.set(line.variantId, Math.max(s - line.quantity, Math.min(s, 0) - m));
   }
-  return { floors, materialIds };
+  return { floors, materialIds, available };
+}
+
+/**
+ * `fillToOrderFloors` for a sale that doesn't already know its products (order modification, paid modification, restore
+ * from Trash): one lookup picks the lines of tracked fill-to-order products; none → null, and nothing is locked (every
+ * product of an installation without attar). Lines of one variant are summed. Call it inside the selling transaction,
+ * before the decrement, like the checkout.
+ */
+export async function fillToOrderFloorsFor(tx: Db, lines: Array<{ variantId: string; quantity: number }>): Promise<FillFloors | null> {
+  const ids = [...new Set(lines.map((l) => l.variantId))];
+  if (!ids.length) return null;
+  const filling = await tx.productVariant.findMany({ where: { id: { in: ids }, product: { fillToOrder: true, trackInventory: true } }, select: { id: true } });
+  if (!filling.length) return null;
+  const wanted = new Set(filling.map((v) => v.id));
+  const summed = new Map<string, number>();
+  for (const l of lines) if (wanted.has(l.variantId)) summed.set(l.variantId, (summed.get(l.variantId) ?? 0) + l.quantity);
+  return fillToOrderFloors(tx, [...summed].map(([variantId, quantity]) => ({ variantId, quantity })));
+}
+
+/** The variants a fill-to-order sale moved — its own lines and the materials it locked — for `notifyStockMoved` after commit. */
+export const fillMoved = (fill: FillFloors | null | undefined): string[] => (fill ? [...fill.materialIds, ...fill.floors.keys()] : []);
+
+/**
+ * The checkout's specific refusal for a fill-to-order line its floor can't cover (several lines sharing a material, or a
+ * stale quote): how many more can be made, never why. Null when every line fits. Same 409 shape as recordSale's.
+ */
+export function fillShortfall(fill: FillFloors | null | undefined, lines: Array<{ variantId: string; quantity: number; label: string }>): AppError | null {
+  if (!fill) return null;
+  for (const line of lines) {
+    const n = fill.available.get(line.variantId);
+    if (n === undefined || line.quantity <= n) continue;
+    return AppError.conflict(n > 0 ? `Only ${n} more ${line.label} can be made right now — please update the quantity` : `${line.label} has just sold out — please review your cart`);
+  }
+  return null;
 }

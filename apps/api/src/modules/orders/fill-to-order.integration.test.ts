@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { PERMISSIONS } from "@clothing-brand/shared";
+import { PERMISSIONS, productListQuerySchema } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
-import { assertInventoryInvariants, cleanupFixtures, createStockedProduct, ownerId, placeOrder, purgeFinanceTables, RUN, stockOf } from "../../test-fixtures";
+import { assertInventoryInvariants, cleanupFixtures, createStockedProduct, ownerId, placeOrder, purgeFinanceTables, RUN, stockOf, trackOrder } from "../../test-fixtures";
 import type { FinanceActor } from "../../domain/finance/finance-audit";
 import { getFinanceContext } from "../../domain/finance/finance-context";
 import { ensureCommerceAccounting } from "../../domain/finance/commerce-setup.service";
@@ -16,11 +16,14 @@ import { createSupplier } from "../../domain/finance/suppliers.service";
 import { ensureManufacturingSetup } from "../../domain/manufacturing/manufacturing-setup.service";
 import { createMaterial } from "../../domain/manufacturing/materials.service";
 import { approveBom, createBom } from "../../domain/manufacturing/boms.service";
-import { fillToOrderFloors } from "../../domain/stock/fill-capacity.service";
-import { recordSale } from "../inventory/inventory.service";
-import { getProductBySlug } from "../products/product.service";
+import { fillToOrderFloors, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
+import { recordSale, stockShortfalls } from "../inventory/inventory.service";
+import { getProductBySlug, listProducts } from "../products/product.service";
+import { getCategoryStockMap, getCategoryStockOverview } from "../categories/category.service";
+import { createReturnRequest, previewExchange, reviewReturnRequest } from "../return-requests/return-request.service";
+import { applyOrderModification } from "./order-modification.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
-import { updateOrderStatus } from "./order.service";
+import { deleteOrder, restoreOrder, updateOrderStatus } from "./order.service";
 
 // Stock hub Task 4 (docs/STOCK_HUB.md §3): a fill-to-order variant sells max(0, stock) + makeable on the website, in the
 // quote and at checkout; its stock goes negative for unfilled orders (the costing deficit), and the checkout locks the
@@ -35,6 +38,7 @@ let bottle12 = "";
 let azhaar: { id: string; slug: string; variant: string };
 let royal: { id: string; slug: string; variant: string };
 let sweet: { id: string; slug: string; variant: string };
+let categoryId = "";
 
 async function buy(variantId: string, qty: number, unitPrice: number) {
   const po = await createPurchaseOrder({ supplierId, lines: [{ lineType: "STOCK", variantId, qtyOrdered: qty, unitPrice }] } as never, OWNER);
@@ -54,6 +58,16 @@ async function attar(lines: Array<{ material: () => string; qty: string }>) {
 }
 /** What the website shows for a product's first variant. */
 const shown = async (slug: string) => (await getProductBySlug(slug))!.variants[0]!.stock;
+const computedAt = async (productId: string) => (await prisma.productReadModel.findUnique({ where: { productId }, select: { computedAt: true } }))?.computedAt;
+/** Waits for a fire-and-forget refresh: true once the product's projection row was recomputed after `before`. */
+async function refreshedSince(productId: string, before: Date | undefined) {
+  let at = before;
+  for (let i = 0; i < 50 && at?.getTime() === before?.getTime(); i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    at = await computedAt(productId);
+  }
+  return at !== undefined && at.getTime() !== before?.getTime();
+}
 const status = async (run: Promise<unknown>) => {
   try {
     await run;
@@ -102,6 +116,7 @@ afterAll(async () => {
     await tx.$executeRawUnsafe(`DELETE FROM "Product" WHERE kind = 'MATERIAL' AND name LIKE 'Vitest %'`);
   });
   await cleanupFixtures();
+  if (categoryId) await prisma.category.delete({ where: { id: categoryId } });
 });
 
 describe("fill to order", () => {
@@ -189,5 +204,111 @@ describe("fill to order", () => {
     expect(await shown(p.product.slug)).toBe(0);
     // Its read model row is never touched by a material movement.
     await assertInventoryInvariants(v);
+  });
+});
+
+// Stock hub follow-ups: every other way a fill-to-order unit is sold (modification, paid modification, exchange) uses the
+// checkout's floors; stock moves of such orders refresh the products sharing the materials; in-stock counts and filters
+// count what can be made; a cart whose lines together exceed a shared material gets a specific 409.
+describe("fill to order beyond the checkout", () => {
+  const staff = () => ({ type: "ADMIN" as const, adminId: admin });
+
+  it("an order modification adds fill-to-order units beyond filled stock, within capacity", async () => {
+    const start = await stockOf(azhaar.variant);
+    expect(start).toBeLessThanOrEqual(0);
+    const order = await placeOrder([{ variantId: azhaar.variant, quantity: 1 }], { customerPhone: "01712000011" });
+    await applyOrderModification(order.id, { items: [{ variantId: azhaar.variant, quantity: 3 }] }, staff());
+    expect(await stockOf(azhaar.variant)).toBe(start - 3);
+    // Beyond what can be made (the last 12 ml bottle is reserved): refused, nothing changes.
+    expect(await shown(royal.slug)).toBe(0);
+    const royalBefore = await stockOf(royal.variant);
+    await expect(
+      applyOrderModification(order.id, { items: [{ variantId: azhaar.variant, quantity: 3 }, { variantId: royal.variant, quantity: 1 }] }, staff()),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(await stockOf(azhaar.variant)).toBe(start - 3);
+    expect(await stockOf(royal.variant)).toBe(royalBefore);
+    await updateOrderStatus(order.id, { status: "CANCELLED" }, admin);
+    expect(await stockOf(azhaar.variant)).toBe(start);
+    await assertInventoryInvariants(azhaar.variant);
+  });
+
+  it("a paid change's stock check counts what can still be made", async () => {
+    expect(await stockOf(azhaar.variant)).toBeLessThanOrEqual(0);
+    await prisma.$transaction(async (tx) => {
+      const units = [{ variantId: azhaar.variant, quantity: 2 }];
+      expect(await stockShortfalls(tx, units, new Set())).toEqual([azhaar.variant]); // filled bottles alone: none
+      const fill = await fillToOrderFloorsFor(tx, units);
+      expect(fill?.floors.get(azhaar.variant)).toBeGreaterThan(2);
+      expect(await stockShortfalls(tx, units, new Set(), fill?.floors)).toEqual([]);
+      expect(await stockShortfalls(tx, [{ variantId: azhaar.variant, quantity: 100_000 }], new Set(), fill?.floors)).toEqual([azhaar.variant]);
+    });
+    // An ordinary variant gets no floor (one lookup, no capacity query).
+    const plain = await createStockedProduct({ stocks: [1] });
+    expect(await prisma.$transaction((tx) => fillToOrderFloorsFor(tx, [{ variantId: plain.variants[0]!.id, quantity: 1 }]))).toBeNull();
+  });
+
+  it("an exchange to a fill-to-order variant ships from capacity", async () => {
+    const shirt = await createStockedProduct({ stocks: [3], basePrice: 350 });
+    const order = await placeOrder([{ variantId: shirt.variants[0]!.id, quantity: 1 }], { customerPhone: "01712000012" });
+    await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
+    const placed = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, select: { customerId: true, items: { select: { id: true } } } });
+    const req = await createReturnRequest(placed.customerId!, { orderId: order.id, type: "EXCHANGE", reason: "Changed mind", note: null, orderItemId: placed.items[0]!.id, requestedVariantId: azhaar.variant });
+    const start = await stockOf(azhaar.variant);
+    expect(start).toBeLessThanOrEqual(0);
+    expect((await previewExchange(req.id)).replacement.inStock).toBe(true);
+    await reviewReturnRequest(req.id, { status: "APPROVED", adminNote: null }, admin);
+    const rr = await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } });
+    trackOrder(rr.exchangeOrderId!);
+    expect(await stockOf(azhaar.variant)).toBe(start - 1);
+    await assertInventoryInvariants(azhaar.variant);
+  });
+
+  it("restoring a trashed fill-to-order order takes its units back below zero, within capacity", async () => {
+    const start = await stockOf(azhaar.variant);
+    expect(start).toBeLessThanOrEqual(0);
+    const order = await placeOrder([{ variantId: azhaar.variant, quantity: 2 }], { customerPhone: "01712000015" });
+    await deleteOrder(order.id, admin);
+    expect(await stockOf(azhaar.variant)).toBe(start);
+    await restoreOrder(order.id, admin);
+    expect(await stockOf(azhaar.variant)).toBe(start - 2);
+    await assertInventoryInvariants(azhaar.variant);
+    await updateOrderStatus(order.id, { status: "CANCELLED" }, admin);
+  });
+
+  it("a cancellation refreshes every product that shares the freed material", async () => {
+    const zayan = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    const t0 = await computedAt(zayan.id);
+    const order = await placeOrder([{ variantId: azhaar.variant, quantity: 1 }], { customerPhone: "01712000013" });
+    expect(await refreshedSince(zayan.id, t0)).toBe(true); // the checkout's own refresh (it reserved shared oil + bottle)
+    const t1 = await computedAt(zayan.id);
+    await updateOrderStatus(order.id, { status: "CANCELLED" }, admin);
+    expect(await refreshedSince(zayan.id, t1)).toBe(true);
+  });
+
+  it("in-stock counts and filters: fill-to-order at stock 0 counts when it can be made, not otherwise", async () => {
+    categoryId = (await prisma.category.create({ data: { name: `Vitest FTO ${RUN}`, slug: `vitest-fto-${RUN}` } })).id;
+    const makeable = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    const none = await createStockedProduct({ stocks: [0] });
+    await prisma.product.update({ where: { id: none.product.id }, data: { fillToOrder: true } }); // no recipe: nothing can be made
+    await prisma.product.updateMany({ where: { id: { in: [makeable.id, none.product.id] } }, data: { categoryId } });
+    expect(await stockOf(makeable.variant)).toBe(0);
+    expect((await getCategoryStockOverview(categoryId)).total).toEqual({ totalProducts: 2, inStockProducts: 1 });
+    expect((await getCategoryStockMap())[categoryId]).toMatchObject({ totalProducts: 2, inStockProducts: 1 });
+    const q = (extra: Record<string, unknown>) => productListQuerySchema.parse({ page: 1, pageSize: 100, categoryId, ...extra });
+    expect((await listProducts(q({ stock: "out" }))).items.map((p) => p.id)).toEqual([none.product.id]);
+    const states = new Map((await listProducts(q({}))).items.map((p) => [p.id, p.stockState]));
+    expect(states.get(makeable.id)).not.toBe("OUT_OF_STOCK");
+    expect(states.get(none.product.id)).toBe("OUT_OF_STOCK");
+  });
+
+  it("one cart, two fragrances short of a shared bottle together: a specific 409", async () => {
+    await buy(bottle12, 2, 52); // 3 bottles, 1 reserved by the unfilled 12 ml order above → each fragrance reads 2
+    expect(await shown(royal.slug)).toBe(2);
+    expect(await shown(sweet.slug)).toBe(2);
+    const err = await placeOrder([{ variantId: royal.variant, quantity: 1 }, { variantId: sweet.variant, quantity: 2 }], { customerPhone: "01712000014" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).statusCode).toBe(409);
+    expect((err as AppError).message).toMatch(/^Only 1 more .+ can be made right now — please update the quantity$/);
+    expect((err as AppError).details).toBeUndefined(); // same shape as the generic stock 409 the cart already shows
   });
 });
