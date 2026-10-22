@@ -30,7 +30,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   channel / product / district.
 - [x] **H. Ad spend + ROAS.** Meta Ads daily spend import (needs owner token with ads_read) → spend, CPA, ROAS, profit
   per campaign.
-- [ ] **I. Drill-down + compare everywhere.** Every pulse number links to the matching order list; prior-period deltas.
+- [x] **I. Drill-down + compare everywhere.** Every pulse number links to the matching order list; prior-period deltas.
 
 ## Resume notes
 (update after each phase: what's done, what's next, how to verify)
@@ -67,5 +67,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   spend: real ROAS, profit after ads, cost per delivered order; unmatched spend flagged. Finance spend is injected
   (`financeCampaignSpend`) and only read when Finance has campaigns. Demo has no Finance campaigns: the owner needs to
   add them (Meta campaign id) or connect Meta in Finance › Ads.
-- Next: **I. Drill-down + compare everywhere** (pulse numbers → order lists filtered by event day; orders list
-  "risky" filter).
+- **I done**: orders list filter "What happened · on day" (opsEvent/opsDate, resolved by the pulse's own
+  opsEventOrderIds so lists match the counts); every pulse tile and day-table count links to it. Prior-period
+  comparisons already exist across the new views (pulse, deliveries, why-changed).
+- **All phases A–I done.** Branch is local only (not pushed). Possible follow-ups: a "risky orders" orders-list filter,
+  e2e specs for the new views, running the daily-brief job with Redis, owner adding ad campaigns in Finance › Ads.

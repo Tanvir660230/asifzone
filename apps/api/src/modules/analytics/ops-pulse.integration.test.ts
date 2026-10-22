@@ -147,4 +147,20 @@ describe("daily pulse", () => {
     expect((await agent.get("/api/analytics/ops-daily?from=2004-03-10")).status).toBe(400);
     expect((await agent.get("/api/analytics/ops-pulse?date=2999-01-01")).status).toBe(400);
   });
+
+  it("each pulse number opens exactly the orders it counted (orders list drill-down)", async () => {
+    const agent = await asOwner();
+    const list = async (event: string) => {
+      const res = await agent.get(`/api/orders?opsEvent=${event}&opsDate=${DAY}&pageSize=50`);
+      expect(res.status).toBe(200);
+      return (res.body.items as Array<{ id: string }>).map((o) => o.id).sort();
+    };
+    expect(await list("booked")).toEqual([ids.web!, ids.refused!].sort());
+    expect(await list("returned")).toEqual([ids.refused!]);
+    expect(await list("cancelled")).toEqual([ids.landing!]);
+    expect(await list("delivered")).toEqual([ids.old!]);
+    expect(await list("confirmed")).toEqual([ids.phone!, ids.web!, ids.refused!, ids.packed!].sort());
+    // Both params are needed; a bad step is rejected.
+    expect((await agent.get(`/api/orders?opsEvent=shipped_to_mars&opsDate=${DAY}`)).status).toBe(400);
+  });
 });

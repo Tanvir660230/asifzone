@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ORDER_QUEUE_FILTERS, type BdDivision, type OrderQueueId, type OrderStatus, type PaymentMethod, type PaymentStatus } from "@clothing-brand/shared";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useUrlState } from "@/hooks/use-url-state";
-import type { AdminOrderListParams } from "@/lib/api/admin-orders";
+import type { AdminOrderListParams, OrderOpsEvent } from "@/lib/api/admin-orders";
 import { activeFilterChips, clearFiltersPatch, filterSchema, type FilterValues } from "@/lib/admin/filters";
 import { urlParam, type UrlAliases, type UrlField } from "@/lib/url-state";
 import { ORDER_FILTERS, ORDER_FILTER_URL_ALIASES } from "./order-filters";
@@ -41,6 +41,8 @@ type OrderFilterFields = {
   "f.district": UrlField<string>;
   from: UrlField<string>;
   to: UrlField<string>;
+  "f.ops": UrlField<string>;
+  "f.opsDay": UrlField<string>;
 };
 
 const ORDERS_URL_SCHEMA = {
@@ -54,7 +56,7 @@ const ORDERS_URL_SCHEMA = {
 const ALIASES = ORDER_FILTER_URL_ALIASES as UrlAliases<typeof ORDERS_URL_SCHEMA>;
 
 /** The filters behind the "Filters" popover (everything except search, status and queue). */
-const MORE_KEYS = ["f.payment", "f.method", "f.courier", "f.delivery", "f.division", "f.district", "from", "to"] as const;
+const MORE_KEYS = ["f.payment", "f.method", "f.courier", "f.delivery", "f.division", "f.district", "from", "to", "f.ops", "f.opsDay"] as const;
 
 /**
  * All of the Orders list's view state in one place, persisted in the URL: view (active/trash), search, multi-status, the
@@ -79,6 +81,8 @@ export function useOrdersListState() {
     district: url["f.district"] as string,
     dateFrom: url.from as string,
     dateTo: url.to as string,
+    opsEvent: url["f.ops"] as OrderOpsEvent | "",
+    opsDate: url["f.opsDay"] as string,
   };
   const sortBy = url.sort?.column;
   const sortDir = url.sort?.dir ?? "desc";
@@ -129,6 +133,7 @@ export function useOrdersListState() {
       shippingDistrict: more.district || undefined,
       dateFrom: more.dateFrom || undefined,
       dateTo: more.dateTo || undefined,
+      ...(more.opsEvent && more.opsDate ? { opsEvent: more.opsEvent, opsDate: more.opsDate } : {}),
       sortBy,
       sortDir: sortBy ? sortDir : undefined,
     };

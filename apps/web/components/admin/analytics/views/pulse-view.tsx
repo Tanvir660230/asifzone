@@ -15,18 +15,24 @@ import { ChartFrame } from "@/components/admin/chart-frame";
 import { AnomalyStrip, BriefCard } from "./brief-card";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import type { OpsCountKey, OpsCounts, OpsDailyRow, OpsPulse } from "@/lib/api/admin-analytics";
+import type { OrderOpsEvent } from "@/lib/api/admin-orders";
 import { formatBusinessDate, formatCount, formatPrice, formatStoreTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/** The orders list filtered to the orders that reached `event` on `date` — exactly the set a pulse number counted. */
+function opsHref(event: OrderOpsEvent, date: string) {
+  return `/admin/orders?f.ops=${event}&f.opsDay=${date}`;
+}
 
 /** The pulse tiles, in the order work flows through the shop. `lowerIsBetter` flips the colour of a change. */
 const TILES: Array<{ key: OpsCountKey; label: string; hint: string; lowerIsBetter?: boolean; ordersHref?: (date: string) => string }> = [
   { key: "placed", label: "Orders in", hint: "Orders placed (website, landing pages and phone)", ordersHref: (d) => `/admin/orders?from=${d}&to=${d}` },
-  { key: "confirmed", label: "Confirmed", hint: "Orders that moved forward from pending for the first time" },
-  { key: "booked", label: "Sent to courier", hint: "Parcels booked with the courier" },
-  { key: "delivered", label: "Delivered", hint: "Parcels delivered in full" },
-  { key: "partially_delivered", label: "Part delivered", hint: "The customer kept only part of the parcel", lowerIsBetter: true },
-  { key: "returned", label: "Refused / returned", hint: "Parcels the courier brought back — refused at the door, or returned", lowerIsBetter: true },
-  { key: "cancelled", label: "Cancelled", hint: "Orders cancelled before they were sent to the courier", lowerIsBetter: true },
+  { key: "confirmed", label: "Confirmed", hint: "Orders that moved forward from pending for the first time", ordersHref: (d) => opsHref("confirmed", d) },
+  { key: "booked", label: "Sent to courier", hint: "Parcels booked with the courier", ordersHref: (d) => opsHref("booked", d) },
+  { key: "delivered", label: "Delivered", hint: "Parcels delivered in full", ordersHref: (d) => opsHref("delivered", d) },
+  { key: "partially_delivered", label: "Part delivered", hint: "The customer kept only part of the parcel", lowerIsBetter: true, ordersHref: (d) => opsHref("partially_delivered", d) },
+  { key: "returned", label: "Refused / returned", hint: "Parcels the courier brought back — refused at the door, or returned", lowerIsBetter: true, ordersHref: (d) => opsHref("returned", d) },
+  { key: "cancelled", label: "Cancelled", hint: "Orders cancelled before they were sent to the courier", lowerIsBetter: true, ordersHref: (d) => opsHref("cancelled", d) },
 ];
 
 /** Delivered in full ÷ every parcel that reached an end with the courier that day (delivered, part delivered, refused). */
@@ -286,15 +292,15 @@ function StaffList({ pulse }: { pulse: OpsPulse }) {
   );
 }
 
-const DAILY_COLUMNS: Array<{ key: keyof OpsDailyRow; label: string; money?: boolean }> = [
+const DAILY_COLUMNS: Array<{ key: keyof OpsDailyRow; label: string; money?: boolean; event?: OrderOpsEvent }> = [
   { key: "placed", label: "Orders" },
-  { key: "confirmed", label: "Confirmed" },
-  { key: "cancelled", label: "Cancelled" },
-  { key: "booked", label: "To courier" },
+  { key: "confirmed", label: "Confirmed", event: "confirmed" },
+  { key: "cancelled", label: "Cancelled", event: "cancelled" },
+  { key: "booked", label: "To courier", event: "booked" },
   { key: "booked_cod_value", label: "COD booked", money: true },
-  { key: "delivered", label: "Delivered" },
-  { key: "partially_delivered", label: "Part delivered" },
-  { key: "returned", label: "Refused / returned" },
+  { key: "delivered", label: "Delivered", event: "delivered" },
+  { key: "partially_delivered", label: "Part delivered", event: "partially_delivered" },
+  { key: "returned", label: "Refused / returned", event: "returned" },
   { key: "realised_net_sales", label: "Net sales", money: true },
   { key: "payments_received", label: "Cash in", money: true },
 ];
@@ -375,7 +381,15 @@ function DailyTable({ to }: { to: string }) {
                             align="right"
                             className={cn("whitespace-nowrap", r[c.key] === 0 && "text-fg-muted", c.key === "placed" && r.placed === best && best > 0 && "font-semibold text-success-700")}
                           >
-                            {c.money ? formatPrice(r[c.key] as number) : formatCount(r[c.key] as number)}
+                            {c.event && (r[c.key] as number) > 0 ? (
+                              <Link href={opsHref(c.event, r.date)} className="hover:underline" aria-label={`${c.label} on ${r.date}: ${r[c.key]} — open these orders`}>
+                                {formatCount(r[c.key] as number)}
+                              </Link>
+                            ) : c.money ? (
+                              formatPrice(r[c.key] as number)
+                            ) : (
+                              formatCount(r[c.key] as number)
+                            )}
                           </TableCell>
                         ))}
                       </TableRow>

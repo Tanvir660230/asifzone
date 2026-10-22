@@ -90,6 +90,14 @@ export async function loadOpsEvents(range: Pick<BusinessRange, "startUtc" | "end
   ];
 }
 
+/** The orders behind one daily-pulse count: those whose `kind` event fell on business date `date` (§4.5) — the
+ * orders list's drill-down, so a clicked number and the list it opens always agree. */
+export async function opsEventOrderIds(kind: OpsEventKind, date: string, now: Date = new Date()): Promise<string[]> {
+  const { timezone, currency } = await storeContext();
+  const range = resolveBusinessRange({ from: date, to: date }, timezone, now);
+  return [...new Set((await loadOpsEvents(range, currency)).filter((e) => e.kind === kind).map((e) => e.orderId))];
+}
+
 const toMajorCounts = (c: OpsCounts, currency: string): OpsCounts => ({ ...c, booked_cod_value: toMajor(money(Math.round(c.booked_cod_value), currency)) });
 
 async function cached<T>(key: string, compute: () => Promise<T>): Promise<T> {
