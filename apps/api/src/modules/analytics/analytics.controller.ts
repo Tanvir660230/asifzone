@@ -477,3 +477,8 @@ export const opsDaily = asyncHandler(async (req: Request, res: Response) => {
   if (!from || !to) throw AppError.badRequest("from and to are required (YYYY-MM-DD)", { code: "INVALID_RANGE" });
   res.json(await getOpsDaily(from, to));
 });
+
+export const channelPerformance = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getChannelPerformance(days, dateFrom, dateTo));
+});

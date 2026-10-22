@@ -241,6 +241,27 @@ Point-in-time queues: awaiting confirmation, on hold / call-backs due, confirmed
 status CONFIRMED…SHIPPED, plus its COD still to collect = Σ `codToCollect`), stuck with the courier (booked > 5 days ago),
 part deliveries to reconcile. Staff: every status-history entry an admin made that day (work done, not firsts).
 
+### 4.6 Traffic channels and sales by channel (Smart Analytics phase B, 2026-10-22)
+
+`classifyTraffic` (`packages/shared/src/traffic-channel.ts`, pure) turns a session's **first pageview** into a channel —
+facebook, instagram, messenger, whatsapp, google, search_other, tiktok, youtube, ai, email, sms, referral, direct — and
+`paid`. Evidence in order: `utm_source` (what the store tagged), then ad click ids in the landing URL, then the referrer
+host. Facebook's hosts (`lm.`/`m.`/`l.`/`www.facebook.com`, the Android app) are one channel; a visit with no referrer but
+an `fbclid` (in-app browsers) is Facebook. **Paid** = a paid UTM medium (paid, cpc, ppc, cpm, paid_social, ads…) or a
+`gclid`/`ttclid`; `fbclid` alone is NOT paid (Facebook adds it to every outbound link). A referrer on the store's own host
+is direct (the session cookie restarted mid-visit).
+
+| Key | Definition |
+|---|---|
+| traffic sources (`GET /api/analytics/traffic-sources`) | sessions whose first pageview is in the range, by channel × paid |
+| channel sessions | same population, per channel |
+| channel orders / net sales / AOV (`GET /api/analytics/channel-performance`) | `orders_placed`, `realised_net_sales`, `orders_realised` (§4.1 contributions, not a second calculation) grouped by the order's credited channel; AOV = net ÷ realised orders |
+| credited channel | **last non-direct click**: the channel of the ordering session's first touch; when that is direct, the same visitor's (`visitorId`, 1-year cookie) most recent non-direct session in the 30 days before it. Orders without a storefront session = "No website visit (phone, admin)" |
+| channel conversion | credited orders ÷ channel sessions (0–1) |
+
+Bots: `isBotUserAgent` (crawlers, link previews, headless browsers, scripts — never in-app browsers) pageviews are not
+stored at all, so no behaviour report counts them (2026-10-22: 0.1% of stored pageviews were HeadlessChrome).
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

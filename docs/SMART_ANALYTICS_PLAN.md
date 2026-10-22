@@ -16,7 +16,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   confirmations / bookings / cancellations. Live queues: awaiting confirmation, on hold, confirmed-not-booked, in
   transit, stuck in transit (> 5 days). Day-by-day table for any range. UI: Analytics › Operations › "Daily pulse"
   (default view) + day picker.
-- [ ] **B. Accuracy.** Bot filter on PageView (`isBot`, excluded from sessions, visitors, funnels); click ids
+- [x] **B. Accuracy.** Bot filter on PageView (`isBot`, excluded from sessions, visitors, funnels); click ids
   (fbclid / gclid / ttclid) + referrer → channel classifier (Facebook, Instagram, Google, TikTok, WhatsApp, direct…);
   order location from shipping district.
 - [ ] **C. Delivery outcomes.** Delivery success / refusal rate by district, product, payment method, order source,
@@ -41,4 +41,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   its store.* marker settings, migrated), API :4930 (`npx tsx src/server.ts`), web :3930 (`next dev -p 3930`), QA
   owner qa.analytics@local.test (password in the session notes only; recreate with a bcrypt upsert if needed). Redis
   not running locally (noise only).
-- Next: **B. Accuracy** (bot filter, click ids + channel classifier, order location from district).
+- **B done** (METRICS_REGISTRY §4.6). Bots are rejected at ingestion (not flagged): only 0.1% of stored pageviews
+  were bots, so no historical clean-up. Channel classifier + traffic sources regrouped + Marketing › Channels (sales by
+  channel, last non-direct click with 30-day visitor lookback — moved 43% of "direct" orders in the demo data). Order
+  location already used the shipping district (nothing to do).
+- Next: **C. Delivery outcomes**.

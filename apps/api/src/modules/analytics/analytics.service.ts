@@ -1,5 +1,5 @@
 import geoip from "geoip-lite";
-import { enumerateBuckets, previousRange, type TrackPageViewInput, type TrackPageExitInput, type TrackFunnelEventInput } from "@clothing-brand/shared";
+import { enumerateBuckets, isBotUserAgent, previousRange, type TrackPageViewInput, type TrackPageExitInput, type TrackFunnelEventInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { ABANDONMENT_THRESHOLD_MS } from "../cart/cart.service";
@@ -9,6 +9,8 @@ import { resolveLegacyWindow, resolveStoreRange, storeContext, utcInstant } from
 import { saleOrderSql } from "../../domain/metrics/sale-order";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { getCustomerInsights } from "./sales-analytics.service";
+// Traffic channels (§4.6): first-touch classification, sales by channel.
+export { getTrafficSources, getChannelPerformance } from "./traffic.service";
 
 const CACHE_TTL_SECONDS = 300;
 
@@ -133,7 +135,9 @@ export async function trackPageView(
   ip: string | null,
   acceptLanguage: string | null,
   isLoggedIn: boolean,
-): Promise<string> {
+): Promise<string | null> {
+  // Crawlers, link previews and headless browsers aren't visitors — nothing is stored, so no report counts them.
+  if (isBotUserAgent(userAgent)) return null;
   const geo = lookupGeo(ip);
   const row = await prisma.pageView.create({
     data: {
@@ -699,37 +703,6 @@ export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: D
 
 /** Sessions grouped by first-touch source: an explicit utm_source if present, else the referring
  * site's domain, else "Direct" (no referrer — typed URL, bookmark, or an app with no referrer). */
-export async function getTrafficSources(days = 30, limit = 10, dateFrom?: Date, dateTo?: Date) {
-  const range = await resolveDateRange(days, dateFrom, dateTo);
-  const cacheKey = `analytics:traffic-sources:${range.cacheKeyPart}:${limit}`;
-  const cached = await cacheGet<Array<{ source: string; sessions: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const { since, until } = range;
-  const rows = await prisma.$queryRaw<Array<{ source: string; sessions: bigint }>>`
-    WITH first_touch AS (
-      SELECT DISTINCT ON ("sessionId") "sessionId", referrer, "utmSource"
-      FROM "PageView"
-      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
-      ORDER BY "sessionId", "createdAt" ASC
-    )
-    SELECT
-      CASE
-        WHEN "utmSource" IS NOT NULL THEN "utmSource"
-        WHEN referrer IS NULL OR referrer = '' THEN 'Direct'
-        ELSE regexp_replace(regexp_replace(referrer, '^https?://(www\.)?', ''), '/.*$', '')
-      END AS source,
-      COUNT(*)::bigint AS sessions
-    FROM first_touch
-    GROUP BY source
-    ORDER BY sessions DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ source: r.source, sessions: Number(r.sessions) }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
 
 /** Sessions active in the last N minutes — deliberately uncached (or cached only briefly) since
  * "how many people are on the site right now" is only useful if it's actually current. */

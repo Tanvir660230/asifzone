@@ -70,6 +70,7 @@ analyticsRouter.get("/top-categories", requirePermission("analytics.read"), anal
 analyticsRouter.get("/top-brands", requirePermission("analytics.read"), analyticsController.topBrands);
 analyticsRouter.get("/funnel", requirePermission("analytics.read"), analyticsController.conversionFunnel);
 analyticsRouter.get("/traffic-sources", requirePermission("analytics.read"), analyticsController.trafficSources);
+analyticsRouter.get("/channel-performance", requirePermission("analytics.read"), analyticsController.channelPerformance);
 analyticsRouter.get("/campaigns", requirePermission("analytics.read"), analyticsController.campaignPerformance);
 analyticsRouter.get("/active-visitors", requirePermission("analytics.read"), analyticsController.activeVisitors);
 analyticsRouter.get("/traffic-heatmap", requirePermission("analytics.read"), analyticsController.trafficHeatmap);

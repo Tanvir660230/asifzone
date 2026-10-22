@@ -201,6 +201,8 @@ export function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: Date) {
 }
 
 export interface TrafficSource {
+  channel?: string;
+  paid?: boolean;
   source: string;
   sessions: number;
 }
@@ -933,4 +935,30 @@ export function getOpsPulse(date?: string) {
 /** A row per business day in [from, to] (inclusive, YYYY-MM-DD). */
 export function getOpsDaily(from: string, to: string) {
   return apiFetch<{ timezone: string; currency: string; days: OpsDailyRow[]; totals: OpsDailyRow }>(`/api/analytics/ops-daily?from=${from}&to=${to}`);
+}
+
+// ─── Traffic channels (docs/METRICS_REGISTRY.md §4.6) ────────────────────────────────────────────────────────────────
+
+export interface ChannelPerformanceRow {
+  key: string;
+  label: string;
+  channel: string | null;
+  paid: boolean;
+  sessions: number;
+  orders: number;
+  conversionRate: number | null;
+  netSales: number;
+  realisedOrders: number;
+  aov: number;
+}
+
+export interface ChannelPerformance {
+  channels: ChannelPerformanceRow[];
+  totals: { sessions: number; orders: number; netSales: number; reattributedFromDirect: number };
+  lookbackDays: number;
+}
+
+/** Visits, orders, conversion and realised net sales per traffic channel (orders: last non-direct click). */
+export function getChannelPerformance(dateFrom: Date, dateTo: Date) {
+  return apiFetch<ChannelPerformance>(`/api/analytics/channel-performance${windowParams({ dateFrom, dateTo })}`);
 }
