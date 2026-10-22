@@ -201,6 +201,8 @@ export function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: Date) {
 }
 
 export interface TrafficSource {
+  channel?: string;
+  paid?: boolean;
   source: string;
   sessions: number;
 }
@@ -858,4 +860,300 @@ export function downloadRevenueCsvUrl(days = 365) {
 
 export function downloadInventoryTurnoverCsvUrl() {
   return `${publicApiUrl()}/api/analytics/export/inventory-turnover.csv`;
+}
+
+// ─── Daily pulse (docs/METRICS_REGISTRY.md §4.5) ─────────────────────────────────────────────────────────────────────
+
+export const OPS_COUNT_KEYS = [
+  "placed",
+  "placed_web",
+  "placed_landing",
+  "placed_phone",
+  "confirmed",
+  "cancelled",
+  "booked",
+  "booked_cod_value",
+  "shipped",
+  "delivered",
+  "partially_delivered",
+  "returned",
+] as const;
+export type OpsCountKey = (typeof OPS_COUNT_KEYS)[number];
+export type OpsCounts = Record<OpsCountKey, number>;
+
+export interface OpsQueues {
+  awaitingConfirmation: number;
+  onHold: number;
+  holdsDue: number;
+  readyToBook: number;
+  withCourier: number;
+  withCourierCod: number;
+  stuckWithCourier: number;
+  partialToReconcile: number;
+}
+
+export interface OpsStaffRow {
+  adminId: string;
+  name: string;
+  confirmed: number;
+  cancelled: number;
+  packed: number;
+  shipped: number;
+  other: number;
+  total: number;
+}
+
+export interface OpsPulse {
+  date: string;
+  timezone: string;
+  currency: string;
+  partialDay: boolean;
+  asOf: string | null;
+  day: OpsCounts;
+  yesterday: OpsCounts;
+  lastWeek: OpsCounts;
+  typical: OpsCounts;
+  comparisonDates: { yesterday: string; lastWeek: string; typical: string[] };
+  hourly: Array<{ hour: number; day: number; typical: number }>;
+  cohort: { placed: number; waiting: number; onHold: number; confirmed: number; withCourier: number; delivered: number; returned: number; cancelled: number };
+  staff: OpsStaffRow[];
+  queues: OpsQueues;
+}
+
+export interface OpsDailyRow extends OpsCounts {
+  date: string;
+  realised_net_sales: number;
+  orders_realised: number;
+  payments_received: number;
+}
+
+/** One business day's operations against yesterday, the same weekday last week and the usual for that weekday. */
+export function getOpsPulse(date?: string) {
+  return apiFetch<OpsPulse>(`/api/analytics/ops-pulse${date ? `?date=${date}` : ""}`);
+}
+
+/** A row per business day in [from, to] (inclusive, YYYY-MM-DD). */
+export function getOpsDaily(from: string, to: string) {
+  return apiFetch<{ timezone: string; currency: string; days: OpsDailyRow[]; totals: OpsDailyRow }>(`/api/analytics/ops-daily?from=${from}&to=${to}`);
+}
+
+// ─── Traffic channels (docs/METRICS_REGISTRY.md §4.6) ────────────────────────────────────────────────────────────────
+
+export interface ChannelPerformanceRow {
+  key: string;
+  label: string;
+  channel: string | null;
+  paid: boolean;
+  sessions: number;
+  orders: number;
+  conversionRate: number | null;
+  netSales: number;
+  realisedOrders: number;
+  aov: number;
+}
+
+export interface ChannelPerformance {
+  channels: ChannelPerformanceRow[];
+  totals: { sessions: number; orders: number; netSales: number; reattributedFromDirect: number };
+  lookbackDays: number;
+}
+
+/** Visits, orders, conversion and realised net sales per traffic channel (orders: last non-direct click). */
+export function getChannelPerformance(dateFrom: Date, dateTo: Date) {
+  return apiFetch<ChannelPerformance>(`/api/analytics/channel-performance${windowParams({ dateFrom, dateTo })}`);
+}
+
+// ─── Delivery outcomes (docs/METRICS_REGISTRY.md §4.7) ───────────────────────────────────────────────────────────────
+
+export interface OutcomeCounts {
+  parcels: number;
+  delivered: number;
+  partial: number;
+  refused: number;
+  successRate: number;
+  refusalRate: number;
+}
+
+export interface OutcomeTotals extends OutcomeCounts {
+  refusedCodValue: number;
+  avgDaysToDeliver: number | null;
+}
+
+export interface OutcomeRow extends OutcomeCounts {
+  key: string;
+  avgDaysToDeliver: number | null;
+}
+
+export interface RepeatRefuser {
+  phone: string;
+  name: string;
+  refused: number;
+  delivered: number;
+  partial: number;
+  refusedCodValue: number;
+  lastOrderId: string;
+}
+
+export interface DeliveryOutcomes {
+  range: { from: string; to: string };
+  currency: string;
+  totals: OutcomeTotals;
+  previous: OutcomeTotals | null;
+  byDistrict: OutcomeRow[];
+  byDivision: OutcomeRow[];
+  byProduct: Array<OutcomeRow & { productId: string }>;
+  byPayment: OutcomeRow[];
+  byValue: OutcomeRow[];
+  byCustomer: OutcomeRow[];
+  byChannel: OutcomeRow[];
+  weekly: Array<{ week: string; parcels: number; delivered: number; partial: number; refused: number; successRate: number }>;
+  repeatRefusers: RepeatRefuser[];
+  minParcels: number;
+}
+
+/** Parcels that finished with the courier in the period: delivered, part delivered or refused — and where refusals cluster. */
+export function getDeliveryOutcomes(dateFrom: Date, dateTo: Date) {
+  return apiFetch<DeliveryOutcomes>(`/api/analytics/delivery-outcomes${windowParams({ dateFrom, dateTo })}`);
+}
+
+// ─── Order COD risk (docs/METRICS_REGISTRY.md §4.8) ──────────────────────────────────────────────────────────────────
+
+export interface OrderRisk {
+  level: "low" | "medium" | "high";
+  reasons: string[];
+  trusted: boolean;
+  history: { delivered: number; partial: number; refused: number; cancelledBeforeBooking: number; open: number; refusedCodValue: number };
+}
+
+/** The phone's earlier orders at this store, as a risk level with reasons — up to 100 orders per call. */
+export function getOrderRisk(orderIds: string[]) {
+  return apiFetch<{ orders: Record<string, OrderRisk> }>(`/api/analytics/order-risk?orders=${orderIds.map(encodeURIComponent).join(",")}`);
+}
+
+// ─── Anomalies and the daily brief (docs/METRICS_REGISTRY.md §4.9) ───────────────────────────────────────────────────
+
+export interface Anomaly {
+  key: string;
+  label: string;
+  direction: "up" | "down";
+  value: number;
+  expected: number;
+  changePct: number | null;
+  score: number;
+}
+
+export interface AnomalyReport {
+  date: string;
+  partialDay: boolean;
+  asOf: string | null;
+  anomalies: Anomaly[];
+}
+
+export interface DailyBrief {
+  date: string;
+  partialDay: boolean;
+  headline: string;
+  lines: string[];
+  unusual: string[];
+  todo: string[];
+  watch: string[];
+}
+
+/** What's unusual about a business day (default today, compared by this time). */
+export function getAnomalies(date?: string) {
+  return apiFetch<AnomalyReport>(`/api/analytics/anomalies${date ? `?date=${date}` : ""}`);
+}
+
+/** A business day in a few plain sentences (default yesterday). */
+export function getDailyBrief(date?: string) {
+  return apiFetch<DailyBrief>(`/api/analytics/daily-brief${date ? `?date=${date}` : ""}`);
+}
+
+// ─── Product action list (docs/METRICS_REGISTRY.md §4.10) ────────────────────────────────────────────────────────────
+
+export type ProductActionKind = "sold_out" | "restock" | "refusals" | "fix_page" | "clear_stock" | "promote";
+
+export interface ProductAction {
+  productId: string;
+  name: string;
+  slug: string;
+  kind: ProductActionKind;
+  priority: 1 | 2 | 3;
+  title: string;
+  detail: string;
+  sortKey: number;
+}
+
+export interface ProductActionsReport {
+  actions: ProductAction[];
+  baseline: { viewToCartRate: number; viewToOrderRate: number; refusalRate: number; currency: string };
+  counts: Record<ProductActionKind, number>;
+}
+
+/** What to do per product — restock, sold out, refusals, fix the page, clear stock, promote — most urgent first. */
+export function getProductActions() {
+  return apiFetch<ProductActionsReport>("/api/analytics/product-actions");
+}
+
+// ─── Why did it change (docs/METRICS_REGISTRY.md §4.11) ──────────────────────────────────────────────────────────────
+
+export interface Decomposition<K extends string> {
+  before: number;
+  after: number;
+  total: number;
+  effects: Record<K, number>;
+}
+
+export interface Mover {
+  key: string;
+  before: number;
+  after: number;
+  change: number;
+}
+
+export interface WhyChanged {
+  range: { from: string; to: string };
+  previous: { from: string; to: string };
+  webOrders: Decomposition<"visits" | "conversion">;
+  otherOrders: { before: number; after: number };
+  netSales: Decomposition<"orders" | "orderValue">;
+  numbers: Record<"before" | "after", { sessions: number; webOrders: number; orders: number; realisedOrders: number; netSales: number }>;
+  movers: Record<"products" | "districts" | "channels", { up: Mover[]; down: Mover[] }>;
+}
+
+/** The report period against the one before: website orders = visits × conversion, net sales = orders × order value,
+ * split exactly, plus the biggest movers by product, district and channel. */
+export function getWhyChanged(dateFrom: Date, dateTo: Date) {
+  return apiFetch<WhyChanged>(`/api/analytics/why-changed${windowParams({ dateFrom, dateTo })}`);
+}
+
+// ─── Ad returns (docs/METRICS_REGISTRY.md §4.12) ─────────────────────────────────────────────────────────────────────
+
+export interface AdReturnRow {
+  key: string;
+  name: string;
+  financeCampaignId: string | null;
+  sessions: number;
+  orders: number;
+  realisedOrders: number;
+  netSales: number;
+  grossMargin: number;
+  spend: number | null;
+  plannedShare: number | null;
+  roas: number | null;
+  profitAfterAds: number | null;
+  costPerRealisedOrder: number | null;
+}
+
+export interface AdReturnsReport {
+  range: { from: string; to: string };
+  campaigns: AdReturnRow[];
+  totals: { spend: number; netSales: number; grossMargin: number; orders: number; realisedOrders: number; profitAfterAds: number | null; roas: number | null };
+  unmatchedSpend: Array<{ name: string; spend: number }>;
+  financeConnected: boolean;
+}
+
+/** What each ad campaign really returned: delivered net sales, margin, and — with Finance spend — ROAS and profit. */
+export function getAdReturns(dateFrom: Date, dateTo: Date) {
+  return apiFetch<AdReturnsReport>(`/api/analytics/ad-returns${windowParams({ dateFrom, dateTo })}`);
 }

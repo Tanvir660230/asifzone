@@ -45,6 +45,7 @@ import type {
 } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
+import { opsEventOrderIds } from "../analytics/ops-pulse.service";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
 import { namespace } from "../../config/installation";
@@ -912,7 +913,9 @@ function buildOrderOrderBy(query: OrderListQuery) {
 }
 
 export async function listOrders(query: OrderListQuery) {
-  const where = buildOrderWhere(query);
+  const base = buildOrderWhere(query);
+  // Daily-pulse drill-down: narrow to exactly the orders the pulse counted for that step and day.
+  const where = query.opsEvent && query.opsDate ? { ...base, id: { in: await opsEventOrderIds(query.opsEvent, query.opsDate) } } : base;
   const orderBy = buildOrderOrderBy(query);
 
   // The list table only ever shows order-level fields (number, customer, total, status, date) —

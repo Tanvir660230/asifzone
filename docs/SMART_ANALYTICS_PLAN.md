@@ -1,0 +1,74 @@
+# Smart Analytics programme (2026-10-22)
+
+Owner request: make analytics accurate, smart and complete — "every kind of data you could want", e.g. how many
+parcels went to the courier today, compared with other days. Worktree `C:/dev/asifzone-analytics`, branch
+`feat/smart-analytics` (from main c75ddef5). One commit per phase. Rules: docs/METRICS_REGISTRY.md (business time via
+`resolveBusinessRange` / `utcInstant`, no ad-hoc revenue SQL — SSOT guard), docs/DESIGN_SYSTEM.md (admin light only).
+
+Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
+
+## Phases
+
+- [x] **A. Daily pulse (operations by day).** API `GET /analytics/ops-pulse?date=` + `GET /analytics/ops-daily?from=&to=`.
+  Per business date: orders placed (web / phone / landing page), confirmed, cancelled, parcels booked with the courier
+  (+ COD value booked), shipped, delivered, partially delivered, returned/refused, follow-up holds. Compared with
+  yesterday, the same weekday last week, and the 4-week same-weekday average. Hour-by-hour today vs typical. Per-staff
+  confirmations / bookings / cancellations. Live queues: awaiting confirmation, on hold, confirmed-not-booked, in
+  transit, stuck in transit (> 5 days). Day-by-day table for any range. UI: Analytics › Operations › "Daily pulse"
+  (default view) + day picker.
+- [x] **B. Accuracy.** Bot filter on PageView (`isBot`, excluded from sessions, visitors, funnels); click ids
+  (fbclid / gclid / ttclid) + referrer → channel classifier (Facebook, Instagram, Google, TikTok, WhatsApp, direct…);
+  order location from shipping district.
+- [x] **C. Delivery outcomes.** Delivery success / refusal rate by district, product, payment method, order source,
+  week; COD booked vs collected; average days to deliver by district; repeat refusers.
+- [x] **D. Customer risk score.** Phone-based history (refused, cancelled, returned, delivered) → risk level shown on
+  the order; analytics of risky orders.
+- [x] **E. Anomaly detection + daily brief.** Today vs same-weekday baseline for key metrics → insights list +
+  notification; morning brief text.
+- [x] **F. Product action list.** Restock / discount / pause ads / fix page (views high, add-to-cart low) in one list.
+- [x] **G. "Why did it change" decomposition.** Sales change split into traffic × conversion × order value, and by
+  channel / product / district.
+- [x] **H. Ad spend + ROAS.** Meta Ads daily spend import (needs owner token with ads_read) → spend, CPA, ROAS, profit
+  per campaign.
+- [x] **I. Drill-down + compare everywhere.** Every pulse number links to the matching order list; prior-period deltas.
+
+## Resume notes
+(update after each phase: what's done, what's next, how to verify)
+
+- **A done.** Definitions in METRICS_REGISTRY §4.5. Real-data findings that shaped them: Steadfast goes PACKED → DELIVERED
+  (SHIPPED ~never), a refused parcel is CANCELLED after booking, most orders skip CONFIRMED. Verify stack: private DBs
+  `clothing_brand_test_analytics` (vitest, apps/api/.env.test) and `asifzone_analytics_demo` (copy of asifzone_demo +
+  its store.* marker settings, migrated), API :4930 (`npx tsx src/server.ts`), web :3930 (`next dev -p 3930`), QA
+  owner qa.analytics@local.test (password in the session notes only; recreate with a bcrypt upsert if needed). Redis
+  not running locally (noise only).
+- **B done** (METRICS_REGISTRY §4.6). Bots are rejected at ingestion (not flagged): only 0.1% of stored pageviews
+  were bots, so no historical clean-up. Channel classifier + traffic sources regrouped + Marketing › Channels (sales by
+  channel, last non-direct click with 30-day visitor lookback — moved 43% of "direct" orders in the demo data). Order
+  location already used the shipping district (nothing to do).
+- **C done** (METRICS_REGISTRY §4.7): Operations › Deliveries — success/refusal by week, value, district, product,
+  channel, new vs returning, division; repeat refusers. Demo data: 88% delivered, Sylhet/Mymensingh refuse most, ৳2,000+
+  orders refuse 20%, one cap colour 60%. `creditedChannels` is exported from traffic.service for reuse.
+- **D done** (METRICS_REGISTRY §4.8): /analytics/order-risk (phone history at this store + Steadfast score → level +
+  reasons), pill on the orders list for undecided orders, "Earlier orders here" box on the order page. Demo: 7 of 99
+  undecided orders medium, none high. Not done: a "risky orders" queue/filter in the orders list (needs an orders-module
+  filter) — candidate for phase I.
+- **E done** (METRICS_REGISTRY §4.9): anomalies (ops counts + visits per channel vs same weekday, by this time),
+  template brief with unusual/todo, "Unusual today" strip + brief card on Daily pulse, 09:00 store-time bell notification
+  (jobs/daily-brief-cron.ts, BullMQ tz). Needs Redis to run the job (not running locally — job untested end-to-end;
+  sendMorningBrief is covered by the integration test).
+- **F done** (METRICS_REGISTRY §4.10): Analytics › Products › "To do" — sold out / restock / refusals / fix the page /
+  clear stock / promote, grouped Do today / This week / When there's time. Demo: 1 sold out, 1 restock, 2 refusal
+  checks, 3 page fixes.
+- **G done** (METRICS_REGISTRY §4.11): Analytics › Sales › "Why it changed" — exact LMDI split of website orders
+  (visits × conversion) and net sales (orders × order value) with bridges + sentences, movers by product / district /
+  channel. Demo: orders +98 from conversion despite fewer visits; net sales −৳20,381 because average order fell
+  ৳1,038 → ৳684; Google −৳54,575.
+- **H done** (METRICS_REGISTRY §4.12): Marketing › Ad returns — per utm_campaign real net sales / margin; with Finance
+  spend: real ROAS, profit after ads, cost per delivered order; unmatched spend flagged. Finance spend is injected
+  (`financeCampaignSpend`) and only read when Finance has campaigns. Demo has no Finance campaigns: the owner needs to
+  add them (Meta campaign id) or connect Meta in Finance › Ads.
+- **I done**: orders list filter "What happened · on day" (opsEvent/opsDate, resolved by the pulse's own
+  opsEventOrderIds so lists match the counts); every pulse tile and day-table count links to it. Prior-period
+  comparisons already exist across the new views (pulse, deliveries, why-changed).
+- **All phases A–I done.** Branch is local only (not pushed). Possible follow-ups: a "risky orders" orders-list filter,
+  e2e specs for the new views, running the daily-brief job with Redis, owner adding ad campaigns in Finance › Ads.

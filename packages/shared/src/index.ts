@@ -79,3 +79,4 @@ export * from "./integrations";
 
 export * from "./types";
 export * from "./permissions";
+export * from "./traffic-channel";

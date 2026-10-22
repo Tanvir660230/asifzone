@@ -15,6 +15,8 @@ import type {
 } from "@clothing-brand/shared";
 import { apiDownload, apiFetch, type FetchSignal } from "../api-client";
 
+export type OrderOpsEvent = "confirmed" | "booked" | "delivered" | "partially_delivered" | "returned" | "cancelled";
+
 export interface AdminOrderListParams {
   page?: number;
   pageSize?: number;
@@ -40,6 +42,9 @@ export interface AdminOrderListParams {
   courierIssue?: "true";
   dateFrom?: string;
   dateTo?: string;
+  /** Daily-pulse drill-down: orders that reached this step on `opsDate` (both needed). */
+  opsEvent?: OrderOpsEvent;
+  opsDate?: string;
   sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt";
   sortDir?: "asc" | "desc";
 }
@@ -85,6 +90,10 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.courierIssue) query.set("courierIssue", params.courierIssue);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
+  if (params.opsEvent && params.opsDate) {
+    query.set("opsEvent", params.opsEvent);
+    query.set("opsDate", params.opsDate);
+  }
   if (params.sortBy) query.set("sortBy", params.sortBy);
   if (params.sortDir) query.set("sortDir", params.sortDir);
   return query;

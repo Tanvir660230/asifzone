@@ -216,6 +216,144 @@ exceeded PostgreSQL's 32,767 bind-variable limit past ~32k orders.
 | `out_of_stock_variants` | sellable tracked variants with `variantStockState = OUT_OF_STOCK` |
 | `inventory_value` | Σ `max(stock, 0) × current cost` over the `stock_on_hand` set: TARGET §11 "Stock value"; the only valuation policy that exists (current cost), labelled *estimated* |
 
+### 4.5 Operations by day — the daily pulse (Smart Analytics phase A, 2026-10-22)
+
+Counts of what happened to orders on a business date (`modules/analytics/ops-pulse.ts` + `ops-pulse.service.ts`,
+`GET /api/analytics/ops-pulse?date=` and `GET /api/analytics/ops-daily?from=&to=`). Population: **operational orders**
+(§2: not trashed, not exchange replacements). Each order counts **once per step, on the day it first got there** (its first
+history entry of that kind). These are operations counts, not sales: money sales on the day table come from §4.1
+(`realised_net_sales`, `orders_realised`, `payments_received`, grouped by day).
+
+| Key | Definition | Time |
+|---|---|---|
+| `placed` | operational orders placed; split `placed_web` / `placed_landing` / `placed_phone` (the order's first history entry was made by an admin = phone; else its storefront session visited `/lp/…` = landing; else any session = web; else "other") | `Order.createdAt` |
+| `confirmed` | first time the order moved forward from PENDING: its first entry of CONFIRMED, PROCESSING, PACKED, SHIPPED, DELIVERED or PARTIALLY_DELIVERED (most COD orders go PENDING → PACKED at booking, with no CONFIRMED entry) | that entry |
+| `booked` / `booked_cod_value` | parcels booked with the courier; COD value = `total` − SUCCEEDED non-COD ORDER payments settled by the booking (what the rider is asked to collect; prepaid = 0) | `courierBookedAt` |
+| `shipped` | first SHIPPED entry (rare with Steadfast, which goes PACKED → DELIVERED; kept for couriers that report pickup) | that entry |
+| `delivered` / `partially_delivered` | first DELIVERED / PARTIALLY_DELIVERED entry | that entry |
+| `returned` | **refused or returned**: the first RETURNED entry, or a CANCELLED entry made after the parcel was booked (Steadfast "cancelled" = brought back); once per order | that entry |
+| `cancelled` | first CANCELLED entry made before any booking | that entry |
+| delivery success | `delivered ÷ (delivered + partially_delivered + returned)` of the day (UI-derived) | — |
+
+Comparisons: yesterday, the same weekday last week, and the **usual** = mean of the same weekday over the previous four
+weeks. For today (a day in progress) every comparison day is cut at the same local time of day ("by this time").
+Point-in-time queues: awaiting confirmation, on hold / call-backs due, confirmed not booked, **with the courier** (booked,
+status CONFIRMED…SHIPPED, plus its COD still to collect = Σ `codToCollect`), stuck with the courier (booked > 5 days ago),
+part deliveries to reconcile. Staff: every status-history entry an admin made that day (work done, not firsts).
+
+### 4.6 Traffic channels and sales by channel (Smart Analytics phase B, 2026-10-22)
+
+`classifyTraffic` (`packages/shared/src/traffic-channel.ts`, pure) turns a session's **first pageview** into a channel —
+facebook, instagram, messenger, whatsapp, google, search_other, tiktok, youtube, ai, email, sms, referral, direct — and
+`paid`. Evidence in order: `utm_source` (what the store tagged), then ad click ids in the landing URL, then the referrer
+host. Facebook's hosts (`lm.`/`m.`/`l.`/`www.facebook.com`, the Android app) are one channel; a visit with no referrer but
+an `fbclid` (in-app browsers) is Facebook. **Paid** = a paid UTM medium (paid, cpc, ppc, cpm, paid_social, ads…) or a
+`gclid`/`ttclid`; `fbclid` alone is NOT paid (Facebook adds it to every outbound link). A referrer on the store's own host
+is direct (the session cookie restarted mid-visit).
+
+| Key | Definition |
+|---|---|
+| traffic sources (`GET /api/analytics/traffic-sources`) | sessions whose first pageview is in the range, by channel × paid |
+| channel sessions | same population, per channel |
+| channel orders / net sales / AOV (`GET /api/analytics/channel-performance`) | `orders_placed`, `realised_net_sales`, `orders_realised` (§4.1 contributions, not a second calculation) grouped by the order's credited channel; AOV = net ÷ realised orders |
+| credited channel | **last non-direct click**: the channel of the ordering session's first touch; when that is direct, the same visitor's (`visitorId`, 1-year cookie) most recent non-direct session in the 30 days before it. Orders without a storefront session = "No website visit (phone, admin)" |
+| channel conversion | credited orders ÷ channel sessions (0–1) |
+
+Bots: `isBotUserAgent` (crawlers, link previews, headless browsers, scripts — never in-app browsers) pageviews are not
+stored at all, so no behaviour report counts them (2026-10-22: 0.1% of stored pageviews were HeadlessChrome).
+
+### 4.7 Delivery outcomes (Smart Analytics phase C, 2026-10-22)
+
+`GET /api/analytics/delivery-outcomes` (`delivery-outcomes.ts` pure + `delivery-outcomes.service.ts`). Population:
+operational orders booked with the courier whose parcel **finished** in the range. The outcome is the earliest of the
+first DELIVERED (**delivered**), the first PARTIALLY_DELIVERED (**partial**), or the refusal — a CANCELLED entry at or
+after booking, or a RETURNED entry (**refused**). A customer return after delivery does not undo the delivery.
+
+| Key | Definition |
+|---|---|
+| success rate | delivered ÷ finished parcels (partial is not a success) |
+| refusal rate | refused ÷ finished parcels |
+| refused COD value | Σ COD value at booking (§4.5 `booked_cod_value` rule) of refused parcels — money that came back |
+| days to deliver | mean (first DELIVERED − `courierBookedAt`), delivered parcels only |
+| breakdowns | district / division (shipping address), product (line `productIdSnapshot`; an order counts once per product), payment (COD vs paid in advance), order value band, first order vs returning (an earlier order from the same phone), credited channel (§4.6). District and product rows need ≥ 3 parcels; a row is flagged when its refusal rate ≥ max(2 × store rate, store rate + 10 pts) |
+| repeat refusers | phones (normalised 01XXXXXXXXX) with ≥ 2 refused parcels in the range |
+| weekly | the same counts per ISO week (Monday) of the finish date |
+
+### 4.8 Order COD risk (Smart Analytics phase D, 2026-10-22)
+
+`GET /api/analytics/order-risk?orders=a,b,…` (≤ 100, permission `orders.read`; `order-risk.ts` pure + service). For each
+order, the same phone's **earlier** orders at this store (phones compared on their last 11 digits), each classified by the
+§4.7 outcome rule, or cancelled before booking, or still open; plus the customer's cached Steadfast success rate. A level
+with plain reasons — a hint for the confirmation call, never a block (same stance as `computeRiskSignals`):
+
+| Level | When |
+|---|---|
+| high | refused ≥ 2 here, or refused ≥ 1 and never received a parcel here |
+| medium | refused once among deliveries; ≥ 2 cancelled before booking and no delivery; a first order of ৳2,000+ (refused 20% vs 8% overall, §4.7 data); Steadfast success < 60% |
+| low | none of the above; **trusted** when ≥ 2 delivered and none refused |
+
+Shown on the orders list (undecided orders only: pending → packed; courier-score-only reasons are left to the score badge
+beside it) and on the order page above the Call button.
+
+### 4.9 Anomalies and the daily brief (Smart Analytics phase E, 2026-10-22)
+
+`GET /api/analytics/anomalies?date=` and `GET /api/analytics/daily-brief?date=` (`anomalies.ts`, `daily-brief.ts` pure;
+`anomalies.service.ts`). A business day's §4.5 counts (orders, confirmed, parcels sent, deliveries, refused,
+cancellations) and §4.6 visits (all, and per channel with ≥ 10 visits on a usual day) against the same weekday over the
+previous four weeks; today is compared up to the same time of day. A count is **unusual** when it is ≥ 2.5 spreads from
+the baseline mean AND ≥ 4 away in absolute terms, where spread = max(baseline standard deviation, √mean) — so a jumpy
+metric needs a bigger move and 0 vs a usual 1 never alarms.
+
+The **brief** (default yesterday) is a template, not a model call: headline (orders vs the usual weekday, realised net
+sales), parcels and delivery success, cash in (`payments_received`) and cancellations, the channel with the most credited
+orders; `unusual` (the day's anomalies) and `todo` (the queues at the time the brief is made). At 09:00 store time the
+`daily-brief` job posts yesterday's brief to the admin bell (`notification.type = analytics.daily_brief`).
+
+### 4.10 Product action list (Smart Analytics phase F, 2026-10-22)
+
+`GET /api/analytics/product-actions` (`product-actions.ts` pure + service), published products with tracked stock:
+
+| Action | Rule | Priority |
+|---|---|---|
+| sold out | a variant at stock ≤ 0 ordered ≥ 3 times in 30 days (`units_ordered`) | today |
+| restock | a variant with stock ÷ (30-day units ÷ 30) ≤ 7 days | today when the shown (rounded) days ≤ 3, else this week |
+| refusals | ≥ 5 finished parcels (§4.7, 60 days) and refusal rate ≥ max(2 × store, store + 10 pts) | this week |
+| fix the page | ≥ 300 product views (30 days) and add-to-cart ÷ views < half the store's | this week |
+| clear stock | cost value (variant cost, else product cost) of variants with stock and no order in 60 days | when there's time |
+| promote | 50–1,000 views, ≥ 3 orders, orders ÷ views ≥ 2 × store, and > 14 days of stock | when there's time |
+
+Within a priority: sold out, restock, refusals, fix the page, clear stock, promote; then each by its own urgency.
+
+### 4.11 Why it changed (Smart Analytics phase G, 2026-10-22)
+
+`GET /api/analytics/why-changed` (`why-changed.ts` pure + service): the report period against the preceding period of
+equal length (`previousRange`). Two identities, each split exactly with the logarithmic mean Divisia index
+(effect_i = L(Y₁, Y₀)·ln(x_i₁/x_i₀), L(a,b) = (a−b)/(ln a − ln b); a zero factor falls back to shares of relative moves):
+
+| Identity | Factors (all from the engine) |
+|---|---|
+| website orders = visits × conversion | `sessions`; `conversion_rate` (D25) — website orders = conversion × sessions. Phone/admin orders (`orders_placed` − website orders) are reported beside it, not split |
+| net sales = realised orders × order value | `orders_realised`; `realised_net_sales ÷ orders_realised` |
+
+Movers: the largest rises and falls between the two periods — products by `net_merchandise_sales` (product grouping),
+districts by `realised_net_sales` grouped on the order's shipping district, channels by `realised_net_sales` grouped on
+the §4.6 credited channel.
+
+### 4.12 Ad returns (Smart Analytics phase H, 2026-10-22)
+
+`GET /api/analytics/ad-returns` (`ad-returns.service.ts`). A campaign is a `utm_campaign` value — the same session rule
+Finance › Ads uses to attribute orders. Per campaign: sessions started in the range with that campaign first; orders
+whose storefront session carried it, valued by the engine (`orders_placed`, `orders_realised`, `realised_net_sales`,
+`gross_margin`). Spend is Finance's own period figure for the matching Finance campaign (external id, else name;
+actual spend, else the planned budget) — read only when Finance has campaigns.
+
+| Key | Definition |
+|---|---|
+| real ROAS | `realised_net_sales` ÷ spend — delivered COD and paid online, less refunds; Finance › Ads' ROAS uses placed order totals |
+| profit after ads | `gross_margin` (costed lines only) − spend |
+| cost per delivered order | spend ÷ `orders_realised` |
+| unmatched spend | Finance campaigns with spend whose id/name no visit carried |
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

@@ -11,7 +11,15 @@ import { asyncHandler } from "../../lib/async-handler";
 import { metaContextFromRequest } from "../../lib/meta/capi";
 import { relayBrowserEvent } from "../../lib/meta/browser-event";
 import { csvCell } from "../../lib/csv";
+import { AppError } from "../../lib/app-error";
 import * as analyticsService from "./analytics.service";
+import { getOpsDaily, getOpsPulse } from "./ops-pulse.service";
+import { getDeliveryOutcomes } from "./delivery-outcomes.service";
+import { getOrderRisk } from "./order-risk.service";
+import { getAnomalies, getDailyBrief } from "./anomalies.service";
+import { getProductActions } from "./product-actions.service";
+import { getWhyChanged } from "./why-changed.service";
+import { getAdReturns } from "./ad-returns.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
 // any handler below runs — coerced to numbers and bounded (days: 1-365, limit: 1-100) — so this
@@ -476,4 +484,50 @@ export const exportInventoryTurnoverCsv = asyncHandler(async (_req: Request, res
     rows.map((r) => [r.name, r.slug, r.cogsSold, r.inventoryValue, r.turnoverRatio.toFixed(2)]),
   );
   sendCsv(res, "inventory-turnover", csv);
+});
+
+export const opsPulse = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getOpsPulse(query(req).date));
+});
+
+export const opsDaily = asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = query(req);
+  if (!from || !to) throw AppError.badRequest("from and to are required (YYYY-MM-DD)", { code: "INVALID_RANGE" });
+  res.json(await getOpsDaily(from, to));
+});
+
+export const channelPerformance = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getChannelPerformance(days, dateFrom, dateTo));
+});
+
+export const deliveryOutcomes = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getDeliveryOutcomes(days, dateFrom, dateTo));
+});
+
+export const orderRisk = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ orders: await getOrderRisk((query(req).orders ?? "").split(",")) });
+});
+
+export const anomalies = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getAnomalies(query(req).date));
+});
+
+export const dailyBrief = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getDailyBrief(query(req).date));
+});
+
+export const productActions = asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await getProductActions());
+});
+
+export const whyChanged = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getWhyChanged(days, dateFrom, dateTo));
+});
+
+export const adReturns = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getAdReturns(days, dateFrom, dateTo));
 });

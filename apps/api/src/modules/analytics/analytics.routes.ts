@@ -80,6 +80,7 @@ analyticsRouter.get("/top-categories", requirePermission("analytics.read"), anal
 analyticsRouter.get("/top-brands", requirePermission("analytics.read"), analyticsController.topBrands);
 analyticsRouter.get("/funnel", requirePermission("analytics.read"), analyticsController.conversionFunnel);
 analyticsRouter.get("/traffic-sources", requirePermission("analytics.read"), analyticsController.trafficSources);
+analyticsRouter.get("/channel-performance", requirePermission("analytics.read"), analyticsController.channelPerformance);
 analyticsRouter.get("/campaigns", requirePermission("analytics.read"), analyticsController.campaignPerformance);
 analyticsRouter.get("/active-visitors", requirePermission("analytics.read"), analyticsController.activeVisitors);
 analyticsRouter.get("/traffic-heatmap", requirePermission("analytics.read"), analyticsController.trafficHeatmap);
@@ -141,6 +142,22 @@ analyticsRouter.get("/dead-stock", requirePermission("analytics.read"), analytic
 analyticsRouter.get("/stock-movement-summary", requirePermission("analytics.read"), analyticsController.stockMovementSummary);
 
 // Section 11 — Operational Analytics
+// Daily pulse (docs/METRICS_REGISTRY.md §4.5): one day's operations against other days, and a day-by-day table.
+analyticsRouter.get("/ops-pulse", requirePermission("analytics.read"), analyticsController.opsPulse);
+analyticsRouter.get("/ops-daily", requirePermission("analytics.read"), analyticsController.opsDaily);
+// Delivery outcomes (§4.7): success / refusal by district, product, payment, value, customer and channel.
+analyticsRouter.get("/delivery-outcomes", requirePermission("analytics.read"), analyticsController.deliveryOutcomes);
+// Order COD risk (§4.8): the phone's history at this store — per-order customer data, so gated like orders.
+analyticsRouter.get("/order-risk", requirePermission("orders.read"), analyticsController.orderRisk);
+// Anomalies and the daily brief (§4.9).
+analyticsRouter.get("/anomalies", requirePermission("analytics.read"), analyticsController.anomalies);
+analyticsRouter.get("/daily-brief", requirePermission("analytics.read"), analyticsController.dailyBrief);
+// What to do per product (§4.10): restock, sold out, refusals, fix the page, clear stock, promote.
+analyticsRouter.get("/product-actions", requirePermission("analytics.read"), analyticsController.productActions);
+// Why sales changed against the previous period (§4.11).
+analyticsRouter.get("/why-changed", requirePermission("analytics.read"), analyticsController.whyChanged);
+// What each ad campaign really returned (§4.12).
+analyticsRouter.get("/ad-returns", requirePermission("analytics.read"), analyticsController.adReturns);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 

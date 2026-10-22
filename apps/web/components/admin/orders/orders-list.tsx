@@ -34,7 +34,9 @@ import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMess
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatCount, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CourierCell, DeliveryScoreBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
+import { CourierCell, DeliveryScoreBadge, OrderRiskBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
+import { useOrderRisk } from "./use-order-risk";
+import type { OrderRisk } from "@/lib/api/admin-analytics";
 import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
 import type { SortColumn } from "./use-orders-list-state";
@@ -259,7 +261,7 @@ function AttentionMarker({ order }: { order: AdminOrderListItem }) {
   );
 }
 
-function CustomerCell({ order, commands, perms }: { order: AdminOrderListItem } & Pick<OrdersListProps, "commands" | "perms">) {
+function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListItem; risk?: OrderRisk } & Pick<OrdersListProps, "commands" | "perms">) {
   return (
     <span className="flex items-center gap-2.5">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700" aria-hidden="true">
@@ -283,6 +285,7 @@ function CustomerCell({ order, commands, perms }: { order: AdminOrderListItem } 
             onCheck={perms.manage && perms.courierConfigured ? () => commands.checkDeliveryScore([order], true) : undefined}
             checking={commands.pending.scoreOrderId === order.id}
           />
+          <OrderRiskBadge risk={risk} />
         </span>
       </span>
     </span>
@@ -305,6 +308,8 @@ export function OrdersList(props: OrdersListProps) {
     onFocus: () => prefetchOrder(queryClient, id),
   });
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
+  // COD risk of the undecided orders on this page — one batched lookup (§4.8).
+  const risk = useOrderRisk(items);
 
   // Keyboard (the registry's list shortcuts): J/K move the highlighted row, Enter opens it, X selects it. Bound only while
   // focus is inside the table, like DataTable, so nothing else on the page competes for the keys.
@@ -391,7 +396,7 @@ export function OrdersList(props: OrdersListProps) {
                   <ProductCell summary={order.itemsSummary} />
                 </TableCell>
                 <TableCell className="px-3 py-2.5">
-                  <CustomerCell order={order} commands={commands} perms={perms} />
+                  <CustomerCell order={order} commands={commands} perms={perms} risk={risk[order.id]} />
                 </TableCell>
                 <TableCell className="px-3 py-2.5">
                   <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
@@ -476,6 +481,7 @@ export function OrdersList(props: OrdersListProps) {
                   <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
                   {order.courierConsignmentId && <CourierCell order={order} compact />}
                   {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} />}
+                  <OrderRiskBadge risk={risk[order.id]} />
                   <span className="flex-1" />
                   {!order.deletedAt && (
                     <a

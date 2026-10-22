@@ -15,6 +15,7 @@ import {
   timeAgo,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { OrderRisk } from "@/lib/api/admin-analytics";
 
 /** Order status pill: icon + words, so the state never depends on color alone. Colors stay centralized in lib/format. */
 export function OrderStatusBadge({ status, short = false, className }: { status: OrderStatus; short?: boolean; className?: string }) {
@@ -135,6 +136,35 @@ export function DeliveryScoreBadge({
     >
       <span className="sr-only">Delivery success rate: </span>
       {successRate === null ? "No history" : `${successRate}%`}
+    </span>
+  );
+}
+
+/** The short word on a risk pill — the reasons themselves are in the tooltip and for screen readers. */
+function riskLabel(risk: OrderRisk): string {
+  if (risk.history.refused > 0) return `Refused ${risk.history.refused}×`;
+  if (risk.reasons.some((r) => r.startsWith("First order"))) return "Big 1st order";
+  if (risk.reasons.some((r) => r.includes("cancelled before"))) return "Cancels";
+  return "Check";
+}
+
+/** COD risk from the phone's history at this store (§4.8). Nothing for a low-risk order — only what's worth a look — and
+ * nothing when the only reason is the courier's score, which DeliveryScoreBadge already shows beside it. */
+export function OrderRiskBadge({ risk }: { risk: OrderRisk | undefined }) {
+  if (!risk || risk.level === "low") return null;
+  if (risk.reasons.every((r) => r.startsWith("Courier success rate"))) return null;
+  const why = risk.reasons.join(" · ");
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-px text-xs font-semibold",
+        risk.level === "high" ? "bg-danger-100 text-danger-700" : "bg-warning-100 text-warning-700",
+      )}
+      title={why}
+    >
+      <AlertTriangle size={11} aria-hidden="true" />
+      <span className="sr-only">{risk.level === "high" ? "High" : "Some"} COD risk: {why}. </span>
+      <span aria-hidden="true">{riskLabel(risk)}</span>
     </span>
   );
 }
