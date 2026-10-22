@@ -21,7 +21,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   order location from shipping district.
 - [x] **C. Delivery outcomes.** Delivery success / refusal rate by district, product, payment method, order source,
   week; COD booked vs collected; average days to deliver by district; repeat refusers.
-- [ ] **D. Customer risk score.** Phone-based history (refused, cancelled, returned, delivered) → risk level shown on
+- [x] **D. Customer risk score.** Phone-based history (refused, cancelled, returned, delivered) → risk level shown on
   the order; analytics of risky orders.
 - [ ] **E. Anomaly detection + daily brief.** Today vs same-weekday baseline for key metrics → insights list +
   notification; morning brief text.
@@ -48,4 +48,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
 - **C done** (METRICS_REGISTRY §4.7): Operations › Deliveries — success/refusal by week, value, district, product,
   channel, new vs returning, division; repeat refusers. Demo data: 88% delivered, Sylhet/Mymensingh refuse most, ৳2,000+
   orders refuse 20%, one cap colour 60%. `creditedChannels` is exported from traffic.service for reuse.
-- Next: **D. Customer risk score** (reuse delivery-outcomes per phone; show on the order).
+- **D done** (METRICS_REGISTRY §4.8): /analytics/order-risk (phone history at this store + Steadfast score → level +
+  reasons), pill on the orders list for undecided orders, "Earlier orders here" box on the order page. Demo: 7 of 99
+  undecided orders medium, none high. Not done: a "risky orders" queue/filter in the orders list (needs an orders-module
+  filter) — candidate for phase I.
+- Next: **E. Anomaly detection + daily brief**.

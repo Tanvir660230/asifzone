@@ -83,6 +83,8 @@ export const analyticsQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional(),
+  /** Comma-separated order ids (order risk lookup). */
+  orders: z.string().max(3000).optional(),
 });
 
 export type AnalyticsQuery = z.infer<typeof analyticsQuerySchema>;

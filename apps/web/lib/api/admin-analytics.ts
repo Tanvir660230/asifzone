@@ -1015,3 +1015,17 @@ export interface DeliveryOutcomes {
 export function getDeliveryOutcomes(dateFrom: Date, dateTo: Date) {
   return apiFetch<DeliveryOutcomes>(`/api/analytics/delivery-outcomes${windowParams({ dateFrom, dateTo })}`);
 }
+
+// ─── Order COD risk (docs/METRICS_REGISTRY.md §4.8) ──────────────────────────────────────────────────────────────────
+
+export interface OrderRisk {
+  level: "low" | "medium" | "high";
+  reasons: string[];
+  trusted: boolean;
+  history: { delivered: number; partial: number; refused: number; cancelledBeforeBooking: number; open: number; refusedCodValue: number };
+}
+
+/** The phone's earlier orders at this store, as a risk level with reasons — up to 100 orders per call. */
+export function getOrderRisk(orderIds: string[]) {
+  return apiFetch<{ orders: Record<string, OrderRisk> }>(`/api/analytics/order-risk?orders=${orderIds.map(encodeURIComponent).join(",")}`);
+}

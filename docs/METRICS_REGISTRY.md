@@ -279,6 +279,22 @@ after booking, or a RETURNED entry (**refused**). A customer return after delive
 | repeat refusers | phones (normalised 01XXXXXXXXX) with ≥ 2 refused parcels in the range |
 | weekly | the same counts per ISO week (Monday) of the finish date |
 
+### 4.8 Order COD risk (Smart Analytics phase D, 2026-10-22)
+
+`GET /api/analytics/order-risk?orders=a,b,…` (≤ 100, permission `orders.read`; `order-risk.ts` pure + service). For each
+order, the same phone's **earlier** orders at this store (phones compared on their last 11 digits), each classified by the
+§4.7 outcome rule, or cancelled before booking, or still open; plus the customer's cached Steadfast success rate. A level
+with plain reasons — a hint for the confirmation call, never a block (same stance as `computeRiskSignals`):
+
+| Level | When |
+|---|---|
+| high | refused ≥ 2 here, or refused ≥ 1 and never received a parcel here |
+| medium | refused once among deliveries; ≥ 2 cancelled before booking and no delivery; a first order of ৳2,000+ (refused 20% vs 8% overall, §4.7 data); Steadfast success < 60% |
+| low | none of the above; **trusted** when ≥ 2 delivered and none refused |
+
+Shown on the orders list (undecided orders only: pending → packed; courier-score-only reasons are left to the score badge
+beside it) and on the order page above the Call button.
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |
