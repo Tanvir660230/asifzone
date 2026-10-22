@@ -130,7 +130,7 @@ Physical units = valuedQty + unvaluedQty − deficitQty.
 
 | Operation | Effect |
 |---|---|
-| INFLOW (receipt, customer return at the line's cost, count gain) | Covers any deficit first (FIFO). The remainder adds value; the average is recomputed. With no known cost, the units go to `unvaluedQty`. |
+| INFLOW (receipt, customer return at the line's cost, count gain) | Covers any deficit first (FIFO). The remainder adds value; the average is recomputed. With no known cost, the units first net off deficit units issued with no cost (FIFO over those layers — neither side was ever valued or booked, e.g. a cancelled sale of a never-costed variant); the rest go to `unvaluedQty` (they never settle a deficit issued at a provisional cost). |
 | OUTFLOW — SNAPSHOT basis (order lines) | Valued units leave at the line's own unit cost. The last valued unit takes all remaining value (no residue). A stale snapshot larger than the value held falls back to the average. Then unvalued units leave, then deficit units are issued at the snapshot as their provisional cost. |
 | OUTFLOW — AVERAGE basis (write-off, supplier return) | Proportional share `round(value × n / qty)`. |
 | REVALUE (late price difference, landed cost) | The share still held revalues the stock; it is capped so stock value never goes negative. |

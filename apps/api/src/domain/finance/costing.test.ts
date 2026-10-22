@@ -135,6 +135,30 @@ describe("units without a cost", () => {
     const { pos } = run([sale(2, 10_000), receipt(2, null)]);
     expect(pos).toMatchObject({ deficitQty: 2, unvaluedQty: 2 });
   });
+
+  it("an unvalued inflow nets off units issued short with no cost: a cancelled sale of a never-costed variant leaves nothing behind", () => {
+    const short = run([sale(2, null)]);
+    const back = run([{ type: "INFLOW", qty: 2, valueMinor: null, basis: "SNAPSHOT" }], short.pos);
+    expect(back.pos).toMatchObject({ valuedQty: 0, value: 0n, unvaluedQty: 0, deficitQty: 0, deficitLayers: [] });
+    expect(back.last).toMatchObject({ qtyChange: 2, valueChange: 0n, bookValue: 0n, costAdjustment: 0n, deficitQtyChange: -2, unvaluedQtyChange: 0, coveredQty: 2, coveredWithoutCost: 2, coveredProvisional: 0n, valuationStatus: "MISSING" });
+    // The next fill is valued in full — no phantom deficit to cover, no adjustment.
+    const fill = run([receipt(5, 50_000)], back.pos);
+    expect(fill.pos).toMatchObject({ valuedQty: 5, value: 50_000n, unvaluedQty: 0, deficitQty: 0 });
+    expect(fill.last).toMatchObject({ coveredQty: 0, coveredWithoutCost: 0, costAdjustment: 0n });
+  });
+
+  it("only no-cost deficit layers are netted (a provisional cost stays to be trued up), the rest is held unvalued", () => {
+    const { pos, last } = run([sale(2, 10_000), sale(3, null), receipt(4, null)]);
+    expect(pos).toMatchObject({ deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: 10_000 }], unvaluedQty: 1 });
+    expect(last).toMatchObject({ qtyChange: 4, deficitQtyChange: -3, unvaluedQtyChange: 1, coveredQty: 3, costAdjustment: 0n });
+  });
+
+  it("a mixed return nets its no-cost units against no-cost deficit first, then values the rest", () => {
+    const short = run([sale(2, null)]);
+    const back = run([{ type: "INFLOW", qty: 3, valueMinor: 10_000, basis: "SNAPSHOT", unvaluedQty: 2 }], short.pos);
+    expect(back.pos).toMatchObject({ valuedQty: 1, value: 10_000n, unvaluedQty: 0, deficitQty: 0 });
+    expect(back.last).toMatchObject({ qtyChange: 3, valueChange: 10_000n, bookValue: 10_000n, costAdjustment: 0n, deficitQtyChange: -2, unvaluedQtyChange: 0, coveredQty: 2, valuationStatus: "MISSING" });
+  });
 });
 
 describe("late cost (§16–§17)", () => {

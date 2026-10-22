@@ -166,20 +166,46 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
     assertQty(op.unvaluedQty, "unvalued qty");
     if (op.unvaluedQty > op.qty) throw new Error("unvalued qty exceeds the inflow");
     if (op.unvaluedQty === op.qty || op.valueMinor === null) return applyCostOperation(pos, { ...op, valueMinor: null, unvaluedQty: undefined }, currency);
-    const r = applyCostOperation(pos, { ...op, qty: op.qty - op.unvaluedQty, unvaluedQty: undefined }, currency);
+    // The units without a cost first (they net off units issued short with no cost — below), then the valued ones.
+    const n = applyCostOperation(pos, { type: "INFLOW", qty: op.unvaluedQty, valueMinor: null, basis: op.basis }, currency);
+    const r = applyCostOperation(n.next, { ...op, qty: op.qty - op.unvaluedQty, unvaluedQty: undefined }, currency);
     return {
-      next: { ...r.next, unvaluedQty: r.next.unvaluedQty + op.unvaluedQty },
-      entry: { ...r.entry, qtyChange: op.qty, unvaluedQtyChange: r.entry.unvaluedQtyChange + op.unvaluedQty, valuationStatus: "MISSING" },
+      next: r.next,
+      entry: {
+        ...r.entry, qtyChange: op.qty, valuationStatus: "MISSING",
+        unvaluedQtyChange: n.entry.unvaluedQtyChange + r.entry.unvaluedQtyChange,
+        deficitQtyChange: n.entry.deficitQtyChange + r.entry.deficitQtyChange,
+        coveredQty: n.entry.coveredQty + r.entry.coveredQty,
+        coveredWithoutCost: n.entry.coveredWithoutCost + r.entry.coveredWithoutCost,
+      },
     };
   }
 
   if (op.type === "INFLOW") {
     assertQty(op.qty, "inflow qty");
     if (op.valueMinor === null) {
-      // No cost known: the units are held unvalued — never at zero cost, and they don't settle a deficit (whose true cost
-      // would still be unknown).
-      const next = { ...pos, unvaluedQty: pos.unvaluedQty + op.qty };
-      return { next, entry: { ...base, kind: "INFLOW", qtyChange: op.qty, valueChange: 0n, bookValue: 0n, costAdjustment: 0n, unitCostScaled: null, costBasis: op.basis, valuationStatus: "MISSING", unvaluedQtyChange: op.qty } };
+      // No cost known: the units are held unvalued — never at zero cost, and they don't settle a deficit issued at a
+      // provisional cost (whose true cost would still be unknown). Units issued short with NO cost are netted off first
+      // (FIFO over those layers): neither side was ever valued or booked, so they cancel — a cancelled sale of a variant
+      // that never had a cost (a fill-to-order bottle never filled) leaves no unvalued units and no phantom deficit for the
+      // next receipt to "cover". Nothing is valued at zero and the ledger doesn't move.
+      let left = op.qty;
+      const layers: DeficitLayer[] = [];
+      for (const l of pos.deficitLayers) {
+        if (left === 0 || l.unitCostMinor !== null) { layers.push(l); continue; }
+        const take = Math.min(left, l.qty);
+        left -= take;
+        if (l.qty > take) layers.push({ qty: l.qty - take, unitCostMinor: null });
+      }
+      const netted = op.qty - left;
+      const next = { ...pos, unvaluedQty: pos.unvaluedQty + left, deficitQty: pos.deficitQty - netted, deficitLayers: netted ? layers : pos.deficitLayers };
+      return {
+        next,
+        entry: {
+          ...base, kind: "INFLOW", qtyChange: op.qty, valueChange: 0n, bookValue: 0n, costAdjustment: 0n, unitCostScaled: null, costBasis: op.basis, valuationStatus: "MISSING",
+          unvaluedQtyChange: left, deficitQtyChange: -netted, coveredQty: netted, coveredWithoutCost: netted,
+        },
+      };
     }
     assertMinor(op.valueMinor, "inflow value");
     if (op.valueMinor < 0) throw new Error("an inflow value can't be negative");
