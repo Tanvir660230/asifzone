@@ -496,8 +496,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +7: owner & partners with monthly profit shares (docs/FINANCE_EQUITY.md §8); +1: ad spend for a period; +3: autopilot (§15)
     // +1: the owner's home (docs/FINANCE_OWNER_HOME.md)
     // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
-    // +2: stock hub Bought — record a purchase, list recent ones (docs/STOCK_HUB.md); +1: Counted
-    expect(routes).toHaveLength(672);
+    // +2: stock hub Bought — record a purchase, list recent ones (docs/STOCK_HUB.md); +1: Counted; +1: the overview
+    expect(routes).toHaveLength(673);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

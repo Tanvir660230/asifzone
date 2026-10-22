@@ -69,6 +69,7 @@ import * as claims from "../../domain/finance/courier-claims.service";
 import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
 import * as stockPurchases from "../../domain/stock/purchase.service";
 import * as stockCounts from "../../domain/stock/count.service";
+import { stockHub } from "../../domain/stock/stock-hub.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -218,3 +219,5 @@ ownerBooksRouter.post("/stock/counts", requirePermission("finance.custody"), val
   const r = await stockCounts.recordCounts(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
+// The overview: quantities for anyone who sees inventory; values and average costs only with costing.read.
+ownerBooksRouter.get("/stock", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await stockHub({ canSeeCost: req.admin!.permissions.includes("costing.read") }))));
