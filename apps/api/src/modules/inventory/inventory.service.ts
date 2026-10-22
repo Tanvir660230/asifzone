@@ -446,26 +446,33 @@ export async function recordPackagingUse(tx: Tx, orderId: string, items: Array<{
 // --- manual adjustments -------------------------------------------------------------------------
 
 /** Admin stock adjustment (Inventory → Adjust). Never below zero; DAMAGED/LOST must reduce stock, RESTOCK must
- * add (validated by adjustStockSchema, re-checked here since this is the authority). */
-export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null) {
+ * add (validated by adjustStockSchema, re-checked here since this is the authority).
+ * `source`: the document line the adjustment is for (a stock hub count line) — written on the movement, and an adjustment
+ * already made for it is not made again (a retry). `floor`: how far below zero stock may go (a fill-to-order variant whose
+ * unfilled orders already took it below zero, docs/STOCK_HUB.md §3); 0 otherwise. */
+export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null, opts: { source?: { type: string; id: string }; floor?: number } = {}) {
   if (delta === 0) throw AppError.badRequest("Delta cannot be zero");
   if ((reason === "DAMAGED" || reason === "LOST") && delta > 0) throw AppError.badRequest("Damaged or lost stock must be a negative change");
   if (reason === "RESTOCK" && delta < 0) throw AppError.badRequest("A restock must add stock");
+  const source = opts.source ? { sourceType: opts.source.type, sourceId: opts.source.id } : null;
 
-  const { variant, replenished } = await prisma.$transaction(async (tx) => {
-    const after = await applyDelta(tx, variantId, delta, true);
+  const { variant, replenished, moved } = await prisma.$transaction(async (tx) => {
+    if (source && (await tx.stockMovement.findFirst({ where: { variantId, ...source }, select: { id: true } }))) {
+      return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: false, moved: false };
+    }
+    const after = await applyDelta(tx, variantId, delta, true, Math.max(0, opts.floor ?? 0));
     if (after === null) {
       const exists = await tx.productVariant.count({ where: { id: variantId } });
       throw exists ? AppError.conflict("Stock cannot go below zero") : AppError.notFound("Variant not found");
     }
-    const mv = await tx.stockMovement.create({ data: movement(variantId, delta, reason, { adminId, note }) });
+    const mv = await tx.stockMovement.create({ data: { ...movement(variantId, delta, reason, { adminId, note }), ...source } });
     // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
     // known) and booked against shrinkage / count adjustments — never as a purchase.
     await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
-    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0 };
+    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0, moved: true };
   });
   if (replenished) notifyReplenished([variantId]);
-  notifyStockMoved([variantId]);
+  if (moved) notifyStockMoved([variantId]);
   return variant;
 }
 

@@ -41,6 +41,7 @@ import {
   ownerHomeQuerySchema,
   stockPurchaseSchema,
   stockPurchaseListQuerySchema,
+  stockCountsSchema,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
 import * as autopilot from "../../domain/finance/autopilot.service";
@@ -67,6 +68,7 @@ import * as profit from "../../domain/finance/profit.service";
 import * as claims from "../../domain/finance/courier-claims.service";
 import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
 import * as stockPurchases from "../../domain/stock/purchase.service";
+import * as stockCounts from "../../domain/stock/count.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -209,5 +211,10 @@ ownerBooksRouter.post("/center/rolls/:id/finish", requirePermission("finance.tra
 ownerBooksRouter.get("/stock/purchases", requirePermission("purchasing.read"), validate(stockPurchaseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await stockPurchases.listPurchases(req.query as never))));
 ownerBooksRouter.post("/stock/purchases", requirePermission("purchasing.receive"), validate(stockPurchaseSchema), asyncHandler(async (req, res) => {
   const r = await stockPurchases.recordPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+// Counted: what is on the shelf; a shortfall needs its reason, a difference is booked at the running average.
+ownerBooksRouter.post("/stock/counts", requirePermission("finance.custody"), validate(stockCountsSchema), asyncHandler(async (req, res) => {
+  const r = await stockCounts.recordCounts(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
