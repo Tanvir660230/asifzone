@@ -295,6 +295,20 @@ with plain reasons — a hint for the confirmation call, never a block (same sta
 Shown on the orders list (undecided orders only: pending → packed; courier-score-only reasons are left to the score badge
 beside it) and on the order page above the Call button.
 
+### 4.9 Anomalies and the daily brief (Smart Analytics phase E, 2026-10-22)
+
+`GET /api/analytics/anomalies?date=` and `GET /api/analytics/daily-brief?date=` (`anomalies.ts`, `daily-brief.ts` pure;
+`anomalies.service.ts`). A business day's §4.5 counts (orders, confirmed, parcels sent, deliveries, refused,
+cancellations) and §4.6 visits (all, and per channel with ≥ 10 visits on a usual day) against the same weekday over the
+previous four weeks; today is compared up to the same time of day. A count is **unusual** when it is ≥ 2.5 spreads from
+the baseline mean AND ≥ 4 away in absolute terms, where spread = max(baseline standard deviation, √mean) — so a jumpy
+metric needs a bigger move and 0 vs a usual 1 never alarms.
+
+The **brief** (default yesterday) is a template, not a model call: headline (orders vs the usual weekday, realised net
+sales), parcels and delivery success, cash in (`payments_received`) and cancellations, the channel with the most credited
+orders; `unusual` (the day's anomalies) and `todo` (the queues at the time the brief is made). At 09:00 store time the
+`daily-brief` job posts yesterday's brief to the admin bell (`notification.type = analytics.daily_brief`).
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

@@ -13,6 +13,7 @@ import * as analyticsService from "./analytics.service";
 import { getOpsDaily, getOpsPulse } from "./ops-pulse.service";
 import { getDeliveryOutcomes } from "./delivery-outcomes.service";
 import { getOrderRisk } from "./order-risk.service";
+import { getAnomalies, getDailyBrief } from "./anomalies.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
 // any handler below runs — coerced to numbers and bounded (days: 1-365, limit: 1-100) — so this
@@ -492,4 +493,12 @@ export const deliveryOutcomes = asyncHandler(async (req: Request, res: Response)
 
 export const orderRisk = asyncHandler(async (req: Request, res: Response) => {
   res.json({ orders: await getOrderRisk((query(req).orders ?? "").split(",")) });
+});
+
+export const anomalies = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getAnomalies(query(req).date));
+});
+
+export const dailyBrief = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getDailyBrief(query(req).date));
 });

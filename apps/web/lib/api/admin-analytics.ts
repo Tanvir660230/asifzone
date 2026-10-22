@@ -1029,3 +1029,42 @@ export interface OrderRisk {
 export function getOrderRisk(orderIds: string[]) {
   return apiFetch<{ orders: Record<string, OrderRisk> }>(`/api/analytics/order-risk?orders=${orderIds.map(encodeURIComponent).join(",")}`);
 }
+
+// ─── Anomalies and the daily brief (docs/METRICS_REGISTRY.md §4.9) ───────────────────────────────────────────────────
+
+export interface Anomaly {
+  key: string;
+  label: string;
+  direction: "up" | "down";
+  value: number;
+  expected: number;
+  changePct: number | null;
+  score: number;
+}
+
+export interface AnomalyReport {
+  date: string;
+  partialDay: boolean;
+  asOf: string | null;
+  anomalies: Anomaly[];
+}
+
+export interface DailyBrief {
+  date: string;
+  partialDay: boolean;
+  headline: string;
+  lines: string[];
+  unusual: string[];
+  todo: string[];
+  watch: string[];
+}
+
+/** What's unusual about a business day (default today, compared by this time). */
+export function getAnomalies(date?: string) {
+  return apiFetch<AnomalyReport>(`/api/analytics/anomalies${date ? `?date=${date}` : ""}`);
+}
+
+/** A business day in a few plain sentences (default yesterday). */
+export function getDailyBrief(date?: string) {
+  return apiFetch<DailyBrief>(`/api/analytics/daily-brief${date ? `?date=${date}` : ""}`);
+}

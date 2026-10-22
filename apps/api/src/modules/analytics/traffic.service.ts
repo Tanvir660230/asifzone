@@ -46,11 +46,17 @@ const classify = (t: FirstTouch, own: string[]): TrafficClass => classifyTraffic
 /** Sessions whose first pageview falls in [startUtc, endUtc), with that pageview. */
 async function sessionsStartingIn(range: Pick<BusinessRange, "startUtc" | "endUtc">): Promise<FirstTouch[]> {
   return prisma.$queryRaw<FirstTouch[]>`
-    SELECT DISTINCT ON (pv."sessionId") pv."sessionId", pv.referrer, pv."utmSource", pv."utmMedium", pv.path
+    SELECT DISTINCT ON (pv."sessionId") pv."sessionId", pv."createdAt" AS at, pv.referrer, pv."utmSource", pv."utmMedium", pv.path
     FROM "PageView" pv
     WHERE pv."createdAt" >= ${utcInstant(range.startUtc)} AND pv."createdAt" < ${utcInstant(range.endUtc)}
       AND NOT EXISTS (SELECT 1 FROM "PageView" e WHERE e."sessionId" = pv."sessionId" AND e."createdAt" < ${utcInstant(range.startUtc)})
     ORDER BY pv."sessionId", pv."createdAt" ASC`;
+}
+
+/** Every session that started in the window: when, and its channel label ("Facebook ads", "Direct", …). */
+export async function sessionStarts(range: Pick<BusinessRange, "startUtc" | "endUtc">): Promise<Array<{ at: Date; channel: string }>> {
+  const own = ownHosts();
+  return (await sessionsStartingIn(range)).map((t) => ({ at: new Date(t.at!), channel: labelOf(classify(t, own)) }));
 }
 
 /** The first pageview of each given session, whenever it was. */

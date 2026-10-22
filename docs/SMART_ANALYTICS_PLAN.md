@@ -23,7 +23,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   week; COD booked vs collected; average days to deliver by district; repeat refusers.
 - [x] **D. Customer risk score.** Phone-based history (refused, cancelled, returned, delivered) → risk level shown on
   the order; analytics of risky orders.
-- [ ] **E. Anomaly detection + daily brief.** Today vs same-weekday baseline for key metrics → insights list +
+- [x] **E. Anomaly detection + daily brief.** Today vs same-weekday baseline for key metrics → insights list +
   notification; morning brief text.
 - [ ] **F. Product action list.** Restock / discount / pause ads / fix page (views high, add-to-cart low) in one list.
 - [ ] **G. "Why did it change" decomposition.** Sales change split into traffic × conversion × order value, and by
@@ -52,4 +52,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   reasons), pill on the orders list for undecided orders, "Earlier orders here" box on the order page. Demo: 7 of 99
   undecided orders medium, none high. Not done: a "risky orders" queue/filter in the orders list (needs an orders-module
   filter) — candidate for phase I.
-- Next: **E. Anomaly detection + daily brief**.
+- **E done** (METRICS_REGISTRY §4.9): anomalies (ops counts + visits per channel vs same weekday, by this time),
+  template brief with unusual/todo, "Unusual today" strip + brief card on Daily pulse, 09:00 store-time bell notification
+  (jobs/daily-brief-cron.ts, BullMQ tz). Needs Redis to run the job (not running locally — job untested end-to-end;
+  sendMorningBrief is covered by the integration test).
+- Next: **F. Product action list**.

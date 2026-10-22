@@ -12,6 +12,7 @@ import { SegmentedControl } from "@/components/ui/tabs";
 import { ErrorState } from "@/components/ui/empty-state";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow, TableSkeleton } from "@/components/ui/table";
 import { ChartFrame } from "@/components/admin/chart-frame";
+import { AnomalyStrip, BriefCard } from "./brief-card";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import type { OpsCountKey, OpsCounts, OpsDailyRow, OpsPulse } from "@/lib/api/admin-analytics";
 import { formatBusinessDate, formatCount, formatPrice, formatStoreTime } from "@/lib/format";
@@ -76,7 +77,8 @@ function changePct(value: number, base: number): number | null {
 function ChangeNote({ value, base, lowerIsBetter, against }: { value: number; base: number; lowerIsBetter?: boolean; against: string }) {
   const pct = changePct(value, base);
   if (pct === null) return <span className="text-fg-muted">{value > 0 ? `none ${against}` : `same as ${against}`}</span>;
-  if (Math.abs(pct) < 10) return <span className="text-fg-muted">about {against}</span>;
+  // Under one order apart (0 vs a usual 0.3) or within 10% isn't a change worth colouring.
+  if (Math.abs(pct) < 10 || Math.abs(value - base) < 1) return <span className="text-fg-muted">about {against}</span>;
   const good = lowerIsBetter ? pct < 0 : pct > 0;
   return (
     <span className={cn("font-semibold", good ? "text-success-700" : "text-danger-600")}>
@@ -501,6 +503,9 @@ export default function PulseView() {
           )}
         </div>
       </div>
+
+      <AnomalyStrip date={pulse.date} isToday={isToday} />
+      <BriefCard date={pulse.date} isToday={isToday} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {TILES.map((t) => (
