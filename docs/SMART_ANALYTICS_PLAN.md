@@ -25,7 +25,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   the order; analytics of risky orders.
 - [x] **E. Anomaly detection + daily brief.** Today vs same-weekday baseline for key metrics → insights list +
   notification; morning brief text.
-- [ ] **F. Product action list.** Restock / discount / pause ads / fix page (views high, add-to-cart low) in one list.
+- [x] **F. Product action list.** Restock / discount / pause ads / fix page (views high, add-to-cart low) in one list.
 - [ ] **G. "Why did it change" decomposition.** Sales change split into traffic × conversion × order value, and by
   channel / product / district.
 - [ ] **H. Ad spend + ROAS.** Meta Ads daily spend import (needs owner token with ads_read) → spend, CPA, ROAS, profit
@@ -56,4 +56,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   template brief with unusual/todo, "Unusual today" strip + brief card on Daily pulse, 09:00 store-time bell notification
   (jobs/daily-brief-cron.ts, BullMQ tz). Needs Redis to run the job (not running locally — job untested end-to-end;
   sendMorningBrief is covered by the integration test).
-- Next: **F. Product action list**.
+- **F done** (METRICS_REGISTRY §4.10): Analytics › Products › "To do" — sold out / restock / refusals / fix the page /
+  clear stock / promote, grouped Do today / This week / When there's time. Demo: 1 sold out, 1 restock, 2 refusal
+  checks, 3 page fixes.
+- Next: **G. "Why did it change" decomposition**.

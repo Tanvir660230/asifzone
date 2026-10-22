@@ -1068,3 +1068,29 @@ export function getAnomalies(date?: string) {
 export function getDailyBrief(date?: string) {
   return apiFetch<DailyBrief>(`/api/analytics/daily-brief${date ? `?date=${date}` : ""}`);
 }
+
+// ─── Product action list (docs/METRICS_REGISTRY.md §4.10) ────────────────────────────────────────────────────────────
+
+export type ProductActionKind = "sold_out" | "restock" | "refusals" | "fix_page" | "clear_stock" | "promote";
+
+export interface ProductAction {
+  productId: string;
+  name: string;
+  slug: string;
+  kind: ProductActionKind;
+  priority: 1 | 2 | 3;
+  title: string;
+  detail: string;
+  sortKey: number;
+}
+
+export interface ProductActionsReport {
+  actions: ProductAction[];
+  baseline: { viewToCartRate: number; viewToOrderRate: number; refusalRate: number; currency: string };
+  counts: Record<ProductActionKind, number>;
+}
+
+/** What to do per product — restock, sold out, refusals, fix the page, clear stock, promote — most urgent first. */
+export function getProductActions() {
+  return apiFetch<ProductActionsReport>("/api/analytics/product-actions");
+}

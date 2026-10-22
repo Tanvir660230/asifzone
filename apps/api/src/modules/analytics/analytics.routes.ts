@@ -142,6 +142,8 @@ analyticsRouter.get("/order-risk", requirePermission("orders.read"), analyticsCo
 // Anomalies and the daily brief (§4.9).
 analyticsRouter.get("/anomalies", requirePermission("analytics.read"), analyticsController.anomalies);
 analyticsRouter.get("/daily-brief", requirePermission("analytics.read"), analyticsController.dailyBrief);
+// What to do per product (§4.10): restock, sold out, refusals, fix the page, clear stock, promote.
+analyticsRouter.get("/product-actions", requirePermission("analytics.read"), analyticsController.productActions);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 

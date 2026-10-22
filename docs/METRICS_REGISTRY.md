@@ -309,6 +309,21 @@ sales), parcels and delivery success, cash in (`payments_received`) and cancella
 orders; `unusual` (the day's anomalies) and `todo` (the queues at the time the brief is made). At 09:00 store time the
 `daily-brief` job posts yesterday's brief to the admin bell (`notification.type = analytics.daily_brief`).
 
+### 4.10 Product action list (Smart Analytics phase F, 2026-10-22)
+
+`GET /api/analytics/product-actions` (`product-actions.ts` pure + service), published products with tracked stock:
+
+| Action | Rule | Priority |
+|---|---|---|
+| sold out | a variant at stock ≤ 0 ordered ≥ 3 times in 30 days (`units_ordered`) | today |
+| restock | a variant with stock ÷ (30-day units ÷ 30) ≤ 7 days | today when the shown (rounded) days ≤ 3, else this week |
+| refusals | ≥ 5 finished parcels (§4.7, 60 days) and refusal rate ≥ max(2 × store, store + 10 pts) | this week |
+| fix the page | ≥ 300 product views (30 days) and add-to-cart ÷ views < half the store's | this week |
+| clear stock | cost value (variant cost, else product cost) of variants with stock and no order in 60 days | when there's time |
+| promote | 50–1,000 views, ≥ 3 orders, orders ÷ views ≥ 2 × store, and > 14 days of stock | when there's time |
+
+Within a priority: sold out, restock, refusals, fix the page, clear stock, promote; then each by its own urgency.
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |
