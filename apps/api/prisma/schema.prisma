@@ -487,6 +487,9 @@ model Product {
   /// Shown and sold as sold out whatever its stock (a parcel on its way back, stock held for another channel…). Stock
   /// itself is untouched; storefront and checkout treat every variant as having none (shared withMarkedSoldOut).
   markedSoldOut      Boolean                  @default(false)
+  /// Filled to order (attar, docs/STOCK_HUB.md): a variant's stock is filled bottles and may go negative (ordered, not yet
+  /// filled); the shop sells max(0, stock) + what the approved recipe can still make from free materials (fill-capacity).
+  fillToOrder        Boolean                  @default(false)
   /// CourierNoteRule ids ticked on this product ("perfume — don't open", "fragile") — on top of its category's. No FK, same
   /// as Category.courierNoteRuleIds. Read when a courier is booked (modules/courier/courier-note.ts).
   courierNoteRuleIds String[]                 @default([])

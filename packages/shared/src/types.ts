@@ -197,6 +197,9 @@ export interface Product {
   freeDelivery?: boolean;
   /** The whole product shown and sold as sold out whatever its stock (withMarkedSoldOut). */
   markedSoldOut?: boolean;
+  /** Admin reads only: filled to order (attar) — stock is filled bottles, the shop also sells what the recipe can make
+   * (docs/STOCK_HUB.md). Set by the stock go-live, not by the product form. */
+  fillToOrder?: boolean;
   /** Admin reads only: courier-note rules ticked on this product. */
   courierNoteRuleIds?: string[];
   lowStockThreshold: number;
