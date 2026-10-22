@@ -20,6 +20,7 @@ import type { InitSessionParams, SslValidationResult } from "./payment/sslcommer
 import type { PushInput } from "./push/web-push";
 import type { SmsInput } from "./sms/bulksmsbd";
 import type { MetaCampaignDay } from "./ads/meta-insights";
+import type { PageConversation, RawTemplate, TemplateSend } from "./social/meta-graph";
 import type { CourierProviderId, EmailProviderId, PaymentGatewayKey, PushProviderId, SmsProviderId } from "./selection";
 
 export type { CreateConsignmentInput, SteadfastBulkResultItem, SteadfastConsignment, SteadfastFraudCheck };
@@ -130,6 +131,32 @@ export function gatewayIdForPaymentMethod(paymentMethod: string): OnlineGatewayI
   return paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ";
 }
 
+/** Social Inbox replies through Meta (WhatsApp Cloud API, Messenger, Instagram, Page comments). Each send returns Meta's
+ * id for the message it created. */
+export interface SocialMessenger {
+  whatsApp(to: string, body: string): Promise<string>;
+  /** Messenger or Instagram (both through the Facebook Page). */
+  direct(recipientId: string, body: string, opts: { humanAgentTag: boolean }): Promise<string>;
+  commentReply(commentId: string, body: string): Promise<string>;
+  privateReply(commentId: string, body: string): Promise<string>;
+  /** Never throws; null when unknown. */
+  profileName(channel: "MESSENGER" | "INSTAGRAM", userId: string): Promise<string | null>;
+  /** A WhatsApp approved-template message (the only kind allowed after the 24-hour window). Returns Meta's id. */
+  whatsAppTemplate(to: string, template: TemplateSend): Promise<string>;
+  /** The WhatsApp account's approved templates. */
+  approvedTemplates(): Promise<RawTemplate[]>;
+  /** Import past chats: the Page's Messenger / Instagram conversations updated since a date (20 latest messages each). */
+  pageConversations(platform: "messenger" | "instagram", since: Date): Promise<PageConversation[]>;
+  /** Connect WhatsApp: the server-side half of Meta's Embedded Signup. */
+  whatsAppSignup: {
+    exchangeCode(code: string): Promise<string>;
+    phoneNumbers(wabaId: string, token: string): Promise<Array<{ id: string; display: string | null }>>;
+    subscribe(wabaId: string, token: string): Promise<void>;
+    register(phoneNumberId: string, token: string, pin: string): Promise<void>;
+    syncBusinessApp(phoneNumberId: string, token: string, syncType: "smb_app_state_sync" | "history"): Promise<void>;
+  };
+}
+
 // ── The bundle the registry hands out ─────────────────────────────────────────────────────────
 
 /** Owner's books §5.2: an ad platform's daily spend per campaign (read-only). */
@@ -142,6 +169,7 @@ export interface AdSpendSource {
 }
 
 export interface Providers {
+  social: SocialMessenger;
   sms: SmsSender;
   email: EmailSender;
   push: PushSender;

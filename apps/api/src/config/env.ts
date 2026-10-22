@@ -83,6 +83,25 @@ export const env = {
     get apiKey() { return integrationSetting("ANTHROPIC_API_KEY"); },
     get model() { return integrationSetting("ANTHROPIC_MODEL") || "claude-opus-5"; },
   },
+  // Optional — the Social Inbox. Without the app secret every Meta webhook is refused (401); without a page / WhatsApp
+  // token replies on that channel can't be sent (Settings › Integrations shows which is missing).
+  metaInbox: {
+    get appId() { return integrationSetting("META_APP_ID"); },
+    get appSecret() { return integrationSetting("META_APP_SECRET"); },
+    get webhookVerifyToken() { return integrationSetting("META_WEBHOOK_VERIFY_TOKEN"); },
+    get pageId() { return integrationSetting("META_PAGE_ID"); },
+    get pageAccessToken() { return integrationSetting("META_PAGE_ACCESS_TOKEN"); },
+    get igAccountId() { return integrationSetting("META_IG_ACCOUNT_ID"); },
+  },
+  whatsapp: {
+    get phoneNumberId() { return integrationSetting("WHATSAPP_PHONE_NUMBER_ID"); },
+    get accessToken() { return integrationSetting("WHATSAPP_ACCESS_TOKEN"); },
+    get wabaId() { return integrationSetting("WHATSAPP_WABA_ID"); },
+  },
+  inboxAi: {
+    /** "factual" = the AI may send price / stock / delivery / order-status answers on its own; anything else = drafts only. */
+    get autoReply(): "off" | "factual" { return integrationSetting("INBOX_AI_AUTOREPLY") === "factual" ? "factual" : "off"; },
+  },
   // Optional — without an API key, sendMail() falls back to writing emails to .devmail/ instead
   // of actually sending them, so local dev and CI never need a real account.
   resend: {

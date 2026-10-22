@@ -12,6 +12,9 @@ import { processTikTokPurchase } from "../../lib/tiktok/purchase";
 import { getProviders } from "../../providers/registry";
 import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 import { deliverConversationReply } from "../../lib/conversation-reply";
+import { assistInboundMessage } from "../../modules/social-inbox/assist/assist.consumer";
+import { importPastChats } from "../../modules/social-inbox/history-import";
+import { learnFromReply } from "../../modules/social-inbox/answers/saved-answers.service";
 import { processFinancialEvent } from "../finance/events.service";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
@@ -86,9 +89,42 @@ export const OUTBOX_CONSUMERS = {
     eventTypes: ["conversation.reply_requested.v1"],
     payload: z.object({ messageId: z.string().min(1) }),
     idempotency:
-      "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. SMS has no provider key, so a crash after the provider accepted can resend once the lease expires (at-least-once).",
+      "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. Meta channels record Meta's message id on the message after sending and skip a message that already has one. SMS has no provider key, and a crash between Meta accepting and the id being saved can resend, once the lease expires (at-least-once).",
     async handle({ messageId }, event) {
       return deliverConversationReply(messageId, event.id);
+    },
+  } satisfies OutboxConsumer<{ messageId: string }>,
+
+  // Social Inbox: the AI reads a new customer message and either answers a factual question itself (as a
+  // `conversation-reply` intent) or leaves a draft for staff.
+  "conversation-assist": {
+    eventTypes: ["conversation.inbound_received.v1"],
+    payload: z.object({ messageId: z.string().min(1) }),
+    idempotency:
+      "Outbox row claim (one row per inbound message — eventKey is the message id). A repeat run re-checks the thread first: it skips once a newer customer message or any reply exists, and a draft is an upsert (one per conversation).",
+    async handle({ messageId }) {
+      return assistInboundMessage(messageId);
+    },
+  } satisfies OutboxConsumer<{ messageId: string }>,
+
+  // Social Inbox: Settings › Integrations › Import past chats — copies recent Messenger / Instagram conversations in.
+  "meta-history-import": {
+    eventTypes: ["meta.history_import_requested.v1"],
+    payload: z.object({ days: z.number().int().min(1).max(90) }),
+    idempotency: "Every imported message is stored once by Meta's message id (createMany skipDuplicates), so a repeated run only adds what is new.",
+    async handle({ days }) {
+      await importPastChats(days);
+      return "sent";
+    },
+  } satisfies OutboxConsumer<{ days: number }>,
+
+  // Social Inbox answer library: each chat reply teaches it which answer a question gets (Messages › Saved answers).
+  "answer-learning": {
+    eventTypes: ["conversation.reply_recorded.v1"],
+    payload: z.object({ messageId: z.string().min(1) }),
+    idempotency: "One example per reply message (AnswerExample.messageId is unique, written with an upsert); a repeat only re-checks the grouping.",
+    async handle({ messageId }) {
+      return (await learnFromReply(messageId)) === "skipped" ? "skipped" : "sent";
     },
   } satisfies OutboxConsumer<{ messageId: string }>,
 

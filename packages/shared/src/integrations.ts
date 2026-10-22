@@ -25,7 +25,7 @@ export interface IntegrationField {
   required?: boolean;
 }
 
-export type IntegrationGroup = "payments" | "courier" | "messaging" | "marketing" | "signin" | "ai";
+export type IntegrationGroup = "payments" | "courier" | "messaging" | "inbox" | "marketing" | "signin" | "ai";
 
 export interface IntegrationDefinition {
   id: string;
@@ -41,6 +41,7 @@ export const INTEGRATION_GROUP_LABELS: Readonly<Record<IntegrationGroup, string>
   payments: "Online payments",
   courier: "Courier",
   messaging: "SMS, email & push",
+  inbox: "Customer messages",
   marketing: "Ads & analytics",
   signin: "Customer sign-in",
   ai: "AI assistant",
@@ -196,6 +197,74 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
       { key: "ANTHROPIC_MODEL", label: "Model", kind: "text", placeholder: "claude-opus-5", help: "Leave blank for the default." },
     ],
   },
+  {
+    id: "meta-app",
+    name: "Meta app (webhook)",
+    group: "inbox",
+    description: "Lets WhatsApp, Messenger, Instagram and Facebook comments reach the Inbox. Needed for every channel below.",
+    docsHint: "developers.facebook.com › your app › App settings › Basic (app ID and app secret)",
+    fields: [
+      { key: "META_APP_ID", label: "App ID", kind: "text", help: "Needed for Connect WhatsApp." },
+      { key: "META_APP_SECRET", label: "App secret", kind: "secret", required: true, help: "Proves each message really comes from Meta." },
+      {
+        key: "META_WEBHOOK_VERIFY_TOKEN",
+        label: "Webhook verify token",
+        kind: "secret",
+        required: true,
+        help: "A password of your own. Generate one, then paste it with the callback URL in your Meta app › Webhooks.",
+      },
+    ],
+  },
+  {
+    id: "meta-messages",
+    name: "Facebook & Instagram messages",
+    group: "inbox",
+    description: "Messenger chats, Instagram DMs and comments on your posts and ads.",
+    docsHint: "Meta Business Suite › Settings › Page ID; a Page access token from a system user in Business settings",
+    fields: [
+      { key: "META_PAGE_ID", label: "Facebook Page ID", kind: "text", required: true },
+      { key: "META_PAGE_ACCESS_TOKEN", label: "Page access token", kind: "secret", required: true, help: "A permanent token from a system user, with messaging and comment permissions." },
+      { key: "META_IG_ACCOUNT_ID", label: "Instagram account ID", kind: "text", help: "Only if the Page's Instagram account should send DMs here." },
+    ],
+  },
+  {
+    id: "whatsapp",
+    name: "WhatsApp",
+    group: "inbox",
+    description: "Your WhatsApp Business number in the Inbox. The WhatsApp Business app on the phone keeps working.",
+    docsHint: "Meta app › WhatsApp › Embedded Signup (configuration ID) — then press Connect WhatsApp; the rest fills itself in",
+    fields: [
+      {
+        key: "WHATSAPP_SIGNUP_CONFIG_ID",
+        label: "Embedded Signup configuration ID",
+        kind: "text",
+        help: "From your Meta app › WhatsApp › Embedded Signup. With it (and the app ID above), Connect WhatsApp links your number.",
+      },
+      { key: "WHATSAPP_PHONE_NUMBER_ID", label: "Phone number ID", kind: "text", required: true, help: "Filled in by Connect WhatsApp. Not the phone number itself." },
+      { key: "WHATSAPP_ACCESS_TOKEN", label: "Access token", kind: "secret", required: true, help: "Filled in by Connect WhatsApp." },
+      { key: "WHATSAPP_WABA_ID", label: "WhatsApp Business account ID", kind: "text", help: "Filled in by Connect WhatsApp." },
+      { key: "WHATSAPP_PIN", label: "Two-step verification PIN", kind: "secret", help: "Set by Connect WhatsApp for a new number. Keep it — Meta asks for it if the number moves." },
+    ],
+  },
+  {
+    id: "inbox-ai",
+    name: "AI replies",
+    group: "inbox",
+    description: "Claude reads each new message and writes a reply for staff to send. Uses the Claude key under AI assistant.",
+    docsHint: "Turn on auto-send after a few days of checking its drafts",
+    fields: [
+      {
+        key: "INBOX_AI_AUTOREPLY",
+        label: "Mode",
+        kind: "select",
+        options: [
+          { value: "off", label: "Drafts only — staff send every reply" },
+          { value: "factual", label: "Auto-send price, stock, delivery and order-status answers" },
+        ],
+        help: "Everything else always waits for staff as a draft.",
+      },
+    ],
+  },
 ];
 
 export const INTEGRATION_FIELDS: ReadonlyMap<string, IntegrationField> = new Map(
@@ -245,6 +314,27 @@ export const updateIntegrationsSchema = z.object({
 
 export type UpdateIntegrationsInput = z.infer<typeof updateIntegrationsSchema>;
 
+/** Import past chats: how far back to copy Messenger / Instagram conversations into the Inbox. */
+export const metaHistoryImportSchema = z.object({ days: z.number().int().min(1).max(90) });
+export type MetaHistoryImportInput = z.infer<typeof metaHistoryImportSchema>;
+
+/** What Meta's Embedded Signup hands the browser (Settings › Integrations › Connect WhatsApp). `coexistence` = the number
+ * stays on the WhatsApp Business app; a coexistence finish carries only the WABA id, so the phone number id is optional. */
+export const whatsAppConnectSchema = z.object({
+  code: z.string().trim().min(1).max(4096),
+  wabaId: z.string().regex(/^\d{5,30}$/, "Invalid WhatsApp Business account ID"),
+  phoneNumberId: z.string().regex(/^\d{5,30}$/).optional(),
+  coexistence: z.boolean(),
+});
+export type WhatsAppConnectInput = z.infer<typeof whatsAppConnectSchema>;
+
+export interface WhatsAppConnectResult {
+  view: IntegrationsView;
+  phoneNumber: string | null;
+  /** Steps that didn't complete but don't block messaging (e.g. the one-time history sync was refused). */
+  warnings: string[];
+}
+
 /** Where a field's effective value comes from. */
 export type IntegrationValueSource = "dashboard" | "server" | "none";
 
@@ -269,4 +359,6 @@ export interface IntegrationsView {
   integrations: IntegrationState[];
   /** Base of the Steadfast Notify URL (append the webhook token). */
   steadfastWebhookUrl: string;
+  /** Callback URL for the Meta app's Webhooks (WhatsApp, Messenger, Instagram, Page feed). */
+  metaWebhookUrl: string;
 }

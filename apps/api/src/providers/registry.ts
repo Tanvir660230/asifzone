@@ -17,6 +17,7 @@ import * as eps from "./payment/eps";
 import * as sslcommerz from "./payment/sslcommerz";
 import * as webPush from "./push/web-push";
 import * as bulksmsbd from "./sms/bulksmsbd";
+import * as metaGraph from "./social/meta-graph";
 import { ProviderNotConfiguredError } from "./errors";
 import {
   capabilityAvailability,
@@ -41,6 +42,7 @@ import type {
   PushSender,
   ServerEventSink,
   SmsSender,
+  SocialMessenger,
   TikTokServerEventSink,
   SslcommerzGateway,
 } from "./capabilities";
@@ -144,10 +146,29 @@ const tiktokServerEvents: TikTokServerEventSink = {
   send: (event) => tiktokEvents.sendTikTokEvent(event),
 };
 
+const social: SocialMessenger = {
+  whatsApp: (to, body) => metaGraph.postGraph(metaGraph.whatsAppTextRequest(to, body)),
+  direct: (recipientId, body, { humanAgentTag }) => metaGraph.postGraph(metaGraph.pageMessageRequest(recipientId, body, humanAgentTag)),
+  commentReply: (commentId, body) => metaGraph.postGraph(metaGraph.commentReplyRequest(commentId, body)),
+  privateReply: (commentId, body) => metaGraph.postGraph(metaGraph.privateReplyRequest(commentId, body)),
+  profileName: (channel, userId) => metaGraph.fetchProfileName(channel, userId),
+  pageConversations: (platform, since) => metaGraph.fetchPageConversations(platform, since),
+  whatsAppTemplate: (to, template) => metaGraph.postGraph(metaGraph.whatsAppTemplateRequest(to, template)),
+  approvedTemplates: () => metaGraph.fetchApprovedTemplates(),
+  whatsAppSignup: {
+    exchangeCode: (code) => metaGraph.exchangeSignupCode(code),
+    phoneNumbers: (wabaId, token) => metaGraph.businessPhoneNumbers(wabaId, token),
+    subscribe: (wabaId, token) => metaGraph.subscribeAppToWaba(wabaId, token),
+    register: (phoneNumberId, token, pin) => metaGraph.registerPhoneNumber(phoneNumberId, token, pin),
+    syncBusinessApp: (phoneNumberId, token, syncType) => metaGraph.syncBusinessApp(phoneNumberId, token, syncType),
+  },
+};
+
 // ── Registry ───────────────────────────────────────────────────────────────────────────────────
 
 export function buildProviders(selection: ProviderSelection): Providers {
   return {
+    social,
     sms: smsSender(selection.sms),
     email: emailSender(selection.email),
     push: pushSender(selection.push),

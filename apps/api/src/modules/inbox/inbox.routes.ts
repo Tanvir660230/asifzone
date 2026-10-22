@@ -3,7 +3,8 @@ import { conversationListQuerySchema, conversationReplySchema, updateConversatio
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
 import { asyncHandler } from "../../lib/async-handler";
-import { deleteConversation, getConversation, listConversations, replyToConversation, updateConversation } from "./inbox.service";
+import { listTemplates } from "../social-inbox/templates.service";
+import { deleteConversation, discardDraft, getConversation, listConversations, replyToConversation, updateConversation } from "./inbox.service";
 
 /** /api/v1/admin/conversations — Messages › Inbox (R2). Reading and triage: content.manage (as the contact form was);
  * replying to a customer: customers.message. */
@@ -14,6 +15,13 @@ inboxRouter.get(
   "/", requirePermission("content.manage"), validate(conversationListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     res.json(await listConversations(req.query as unknown as ConversationListQuery, req.admin!.adminId));
+  }),
+);
+// The WhatsApp account's approved templates the composer can fill (replies after the 24-hour window).
+inboxRouter.get(
+  "/whatsapp-templates", requirePermission("customers.message"),
+  asyncHandler(async (_req, res) => {
+    res.json({ templates: await listTemplates() });
   }),
 );
 inboxRouter.get(
@@ -32,6 +40,13 @@ inboxRouter.delete(
   "/:id", requirePermission("content.manage"),
   asyncHandler(async (req, res) => {
     await deleteConversation(req.params.id!);
+    res.status(204).send();
+  }),
+);
+inboxRouter.delete(
+  "/:id/draft", requirePermission("customers.message"),
+  asyncHandler(async (req, res) => {
+    await discardDraft(req.params.id!);
     res.status(204).send();
   }),
 );

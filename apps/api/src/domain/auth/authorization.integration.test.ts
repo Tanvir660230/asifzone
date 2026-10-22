@@ -124,6 +124,8 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/settings/integrations",
   "PATCH /api/settings/integrations",
   "POST /api/settings/integrations/webpush/generate-keys",
+  "POST /api/settings/integrations/whatsapp/connect",
+  "POST /api/settings/integrations/meta/import-history",
   "GET /api/sms-settings/",
   "PATCH /api/sms-settings/",
   "POST /api/ai/generate",
@@ -496,7 +498,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +7: owner & partners with monthly profit shares (docs/FINANCE_EQUITY.md §8); +1: ad spend for a period; +3: autopilot (§15)
     // +1: the owner's home (docs/FINANCE_OWNER_HOME.md)
     // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
-    expect(routes).toHaveLength(669);
+    // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
+    expect(routes).toHaveLength(677);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

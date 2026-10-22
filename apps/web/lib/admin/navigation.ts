@@ -289,7 +289,7 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "operate",
     index: "/admin/feedback",
-    activeFor: ["/admin/feedback", "/admin/reviews"],
+    activeFor: ["/admin/feedback", "/admin/saved-answers", "/admin/reviews"],
     icon: "messages",
     capability: "content.manage",
     badge: "messages",
@@ -298,7 +298,18 @@ export const NAV_NODES: readonly NavNode[] = [
     keywords: ["support", "feedback"],
   },
   { id: "messages.feedback", label: "Inbox", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", order: 0, keywords: ["support", "messages", "feedback", "contact form", "reply"] },
-  { id: "messages.reviews", label: term("review"), kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", order: 1 },
+  {
+    id: "messages.answers",
+    label: "Saved answers",
+    kind: "page",
+    parent: "messages",
+    domain: "operate",
+    route: "/admin/saved-answers",
+    capability: "content.manage",
+    order: 1,
+    keywords: ["auto reply", "faq", "learned", "quick reply", "templates"],
+  },
+  { id: "messages.reviews", label: term("review"), kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", order: 2 },
 
   // ── Grow ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   {

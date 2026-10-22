@@ -76,6 +76,8 @@ export const CAPABILITIES = {
   /** Inbox replies (R2) — offered only when that provider is set up on this deployment. */
   "inbox.replyEmail": { permission: "customers.message", provider: "email" },
   "inbox.replySms": { permission: "customers.message", provider: "sms" },
+  /** WhatsApp / Messenger / Instagram / comment replies — sent through the store's Meta connection. */
+  "inbox.replySocial": { permission: "customers.message" },
   "content.manage": { permission: "content.manage" },
   // growth
   "promotions.manage": { permission: "promotions.manage" },
