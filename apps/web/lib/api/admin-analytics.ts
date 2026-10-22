@@ -1094,3 +1094,35 @@ export interface ProductActionsReport {
 export function getProductActions() {
   return apiFetch<ProductActionsReport>("/api/analytics/product-actions");
 }
+
+// ─── Why did it change (docs/METRICS_REGISTRY.md §4.11) ──────────────────────────────────────────────────────────────
+
+export interface Decomposition<K extends string> {
+  before: number;
+  after: number;
+  total: number;
+  effects: Record<K, number>;
+}
+
+export interface Mover {
+  key: string;
+  before: number;
+  after: number;
+  change: number;
+}
+
+export interface WhyChanged {
+  range: { from: string; to: string };
+  previous: { from: string; to: string };
+  webOrders: Decomposition<"visits" | "conversion">;
+  otherOrders: { before: number; after: number };
+  netSales: Decomposition<"orders" | "orderValue">;
+  numbers: Record<"before" | "after", { sessions: number; webOrders: number; orders: number; realisedOrders: number; netSales: number }>;
+  movers: Record<"products" | "districts" | "channels", { up: Mover[]; down: Mover[] }>;
+}
+
+/** The report period against the one before: website orders = visits × conversion, net sales = orders × order value,
+ * split exactly, plus the biggest movers by product, district and channel. */
+export function getWhyChanged(dateFrom: Date, dateTo: Date) {
+  return apiFetch<WhyChanged>(`/api/analytics/why-changed${windowParams({ dateFrom, dateTo })}`);
+}

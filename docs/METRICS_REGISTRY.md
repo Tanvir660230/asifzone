@@ -324,6 +324,21 @@ orders; `unusual` (the day's anomalies) and `todo` (the queues at the time the b
 
 Within a priority: sold out, restock, refusals, fix the page, clear stock, promote; then each by its own urgency.
 
+### 4.11 Why it changed (Smart Analytics phase G, 2026-10-22)
+
+`GET /api/analytics/why-changed` (`why-changed.ts` pure + service): the report period against the preceding period of
+equal length (`previousRange`). Two identities, each split exactly with the logarithmic mean Divisia index
+(effect_i = L(Y₁, Y₀)·ln(x_i₁/x_i₀), L(a,b) = (a−b)/(ln a − ln b); a zero factor falls back to shares of relative moves):
+
+| Identity | Factors (all from the engine) |
+|---|---|
+| website orders = visits × conversion | `sessions`; `conversion_rate` (D25) — website orders = conversion × sessions. Phone/admin orders (`orders_placed` − website orders) are reported beside it, not split |
+| net sales = realised orders × order value | `orders_realised`; `realised_net_sales ÷ orders_realised` |
+
+Movers: the largest rises and falls between the two periods — products by `net_merchandise_sales` (product grouping),
+districts by `realised_net_sales` grouped on the order's shipping district, channels by `realised_net_sales` grouped on
+the §4.6 credited channel.
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

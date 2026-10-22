@@ -15,6 +15,7 @@ import { getDeliveryOutcomes } from "./delivery-outcomes.service";
 import { getOrderRisk } from "./order-risk.service";
 import { getAnomalies, getDailyBrief } from "./anomalies.service";
 import { getProductActions } from "./product-actions.service";
+import { getWhyChanged } from "./why-changed.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
 // any handler below runs — coerced to numbers and bounded (days: 1-365, limit: 1-100) — so this
@@ -506,4 +507,9 @@ export const dailyBrief = asyncHandler(async (req: Request, res: Response) => {
 
 export const productActions = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await getProductActions());
+});
+
+export const whyChanged = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getWhyChanged(days, dateFrom, dateTo));
 });

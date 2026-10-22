@@ -26,7 +26,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
 - [x] **E. Anomaly detection + daily brief.** Today vs same-weekday baseline for key metrics → insights list +
   notification; morning brief text.
 - [x] **F. Product action list.** Restock / discount / pause ads / fix page (views high, add-to-cart low) in one list.
-- [ ] **G. "Why did it change" decomposition.** Sales change split into traffic × conversion × order value, and by
+- [x] **G. "Why did it change" decomposition.** Sales change split into traffic × conversion × order value, and by
   channel / product / district.
 - [ ] **H. Ad spend + ROAS.** Meta Ads daily spend import (needs owner token with ads_read) → spend, CPA, ROAS, profit
   per campaign.
@@ -59,4 +59,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
 - **F done** (METRICS_REGISTRY §4.10): Analytics › Products › "To do" — sold out / restock / refusals / fix the page /
   clear stock / promote, grouped Do today / This week / When there's time. Demo: 1 sold out, 1 restock, 2 refusal
   checks, 3 page fixes.
-- Next: **G. "Why did it change" decomposition**.
+- **G done** (METRICS_REGISTRY §4.11): Analytics › Sales › "Why it changed" — exact LMDI split of website orders
+  (visits × conversion) and net sales (orders × order value) with bridges + sentences, movers by product / district /
+  channel. Demo: orders +98 from conversion despite fewer visits; net sales −৳20,381 because average order fell
+  ৳1,038 → ৳684; Google −৳54,575.
+- Next: **H. Ad spend + ROAS** — finance already stores per-campaign daily spend (domain/finance/ads.service.ts).

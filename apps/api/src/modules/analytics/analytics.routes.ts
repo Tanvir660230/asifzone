@@ -144,6 +144,8 @@ analyticsRouter.get("/anomalies", requirePermission("analytics.read"), analytics
 analyticsRouter.get("/daily-brief", requirePermission("analytics.read"), analyticsController.dailyBrief);
 // What to do per product (§4.10): restock, sold out, refusals, fix the page, clear stock, promote.
 analyticsRouter.get("/product-actions", requirePermission("analytics.read"), analyticsController.productActions);
+// Why sales changed against the previous period (§4.11).
+analyticsRouter.get("/why-changed", requirePermission("analytics.read"), analyticsController.whyChanged);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 
