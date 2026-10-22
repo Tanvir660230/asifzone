@@ -62,7 +62,8 @@ import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryS
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
-import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
+import { applyCapacity, fillCapacity, fillToOrderFloors } from "../../domain/stock/fill-capacity.service";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import {
   REFUND_QUEUE_WHERE,
@@ -332,6 +333,7 @@ export async function insertOrderRecord(
   if (!snapshots.length) throw AppError.badRequest("Cart is empty");
   const oversoldItems: { name: string; size: string; color: string }[] = [];
   let stockAfter = new Map<string, number>();
+  let fillMoved: string[] = [];
   const untracked = new Set([...(pricing.rows?.values() ?? [])].filter((r) => !r.product.trackInventory).map((r) => r.id));
   const currency = await getCurrency();
 
@@ -410,11 +412,20 @@ export async function insertOrderRecord(
     // unless payment already succeeded (allowOversell). Untracked products (D5) never block on stock.
     const perVariant = new Map<string, number>();
     for (const s of snapshots) perVariant.set(s.variantId, (perVariant.get(s.variantId) ?? 0) + s.quantity);
+    // Fill to order (docs/STOCK_HUB.md §3): such a line may take stock below zero, by what its recipe can still make —
+    // decided under the materials' locks, taken here before any decrement so two orders for the last shared bottle
+    // serialize. Only when the order holds a fill-to-order variant.
+    const filling = [...perVariant].filter(([variantId]) => {
+      const row = pricing.rows?.get(variantId);
+      return row?.product.fillToOrder && !untracked.has(variantId);
+    });
+    const fill = filling.length ? await fillToOrderFloors(tx, filling.map(([variantId, quantity]) => ({ variantId, quantity }))) : null;
+    if (fill) fillMoved = [...fill.materialIds, ...fill.floors.keys()];
     const sale = await recordSale(
       tx,
       created.id,
       [...perVariant].map(([variantId, quantity]) => ({ variantId, quantity, orderItemIds: created.items.filter((i) => i.variantId === variantId).map((i) => i.id) })),
-      { allowOversell: opts.allowOversell, untrackedVariantIds: untracked },
+      { allowOversell: opts.allowOversell, untrackedVariantIds: untracked, floors: fill?.floors },
     );
     stockAfter = sale.stockAfter;
     for (const variantId of sale.oversold) {
@@ -504,10 +515,13 @@ export async function insertOrderRecord(
     );
   }
 
+  // Materials a fill-to-order line reserved may be shared with other products: refresh what those sell.
+  notifyStockMoved(fillMoved);
   for (const [variantId, remaining] of stockAfter) {
     const row = pricing.rows?.get(variantId);
     if (!row) continue;
-    if (row.product.trackInventory && remaining <= row.product.lowStockThreshold) {
+    // A fill-to-order variant normally holds no filled bottles (its low point is what it can make — the stock hub).
+    if (row.product.trackInventory && !row.product.fillToOrder && remaining <= row.product.lowStockThreshold) {
       notify({
         type: "product.low_stock",
         title: `Low stock: ${row.product.name}`,
@@ -663,6 +677,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
           basePrice: true,
           compareAtPrice: true,
           trackInventory: true,
+          fillToOrder: true,
           markedSoldOut: true,
           isActive: true,
           deletedAt: true,
@@ -671,7 +686,10 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
       },
     },
   });
-  const variantById = new Map(variants.map((v) => [v.id, v]));
+  // Fill to order: such a variant sells its filled bottles plus what can still be made (one read, only when present).
+  const filling = variants.filter((v) => v.product.fillToOrder && v.product.trackInventory);
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.map((v) => v.id) }) : null;
+  const variantById = new Map(variants.map((v) => [v.id, made && v.product.fillToOrder ? applyCapacity(made, [v])[0]! : v]));
   // The reorder price is the current server-resolved selling price (flash included) — a display cache for the cart,
   // re-quoted at checkout like any other cart line (PRICING_INVARIANTS §7).
   const byProduct = new Map<string, PriceableProduct>();

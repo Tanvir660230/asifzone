@@ -25,6 +25,7 @@ import {
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { loadShippingZones, loadTaxConfig } from "./pricing-config";
 import { getCurrency } from "../config/commerce-settings";
+import { applyCapacity, fillCapacity } from "../stock/fill-capacity.service";
 
 /**
  * PricingService — the orchestration half of the canonical pricing pipeline (docs/PRICING_INVARIANTS.md). It loads every
@@ -59,7 +60,7 @@ export interface CatalogRow {
   color: string;
   stock: number;
   isActive: boolean;
-  product: { name: string; categoryId: string; trackInventory: boolean; lowStockThreshold: number; isActive: boolean; deletedAt: Date | null };
+  product: { name: string; categoryId: string; trackInventory: boolean; fillToOrder: boolean; lowStockThreshold: number; isActive: boolean; deletedAt: Date | null };
 }
 
 export interface PricedQuote {
@@ -184,6 +185,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
           isActive: true,
           deletedAt: true,
           trackInventory: true,
+          fillToOrder: true,
           lowStockThreshold: true,
           freeDelivery: true,
         },
@@ -191,6 +193,10 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
     },
   });
   const offers = await loadFlashOffers([...new Set(rows.map((r) => r.productId))], now, db);
+  // Fill to order (docs/STOCK_HUB.md §3): such a variant sells its filled bottles plus what the recipe can still make —
+  // read only when the cart holds one. The checkout re-checks it under the materials' locks (fillToOrderFloors).
+  const filling = rows.filter((r) => r.product.fillToOrder && r.product.trackInventory);
+  const made = filling.length ? await fillCapacity(db, { variantIds: filling.map((r) => r.id) }) : null;
   const catalog = new Map<string, CatalogVariant>();
   for (const r of rows) {
     catalog.set(r.id, {
@@ -206,9 +212,10 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       productCompareAt: r.product.compareAtPrice ? fromMajor(r.product.compareAtPrice.toString(), currency) : null,
       variantCompareAt: r.compareAtPrice ? fromMajor(r.compareAtPrice.toString(), currency) : null,
       purchasable: r.product.isActive && r.product.deletedAt === null && r.isActive,
-      // "Show as sold out" is enforced here too, so a stale cart or an old link can't buy what the shop took off sale.
+      // "Show as sold out" is enforced here too (after fill to order, so it wins), so a stale cart or an old link can't buy
+      // what the shop took off sale.
       ...(() => {
-        const forSale = withMarkedSoldOut(r.product.trackInventory, r.product.markedSoldOut, [r]);
+        const forSale = withMarkedSoldOut(r.product.trackInventory, r.product.markedSoldOut, made && r.product.fillToOrder ? applyCapacity(made, [r]) : [r]);
         return { trackInventory: forSale.trackInventory, stock: forSale.variants[0]!.stock };
       })(),
       offers: offers.get(r.productId) ?? [],

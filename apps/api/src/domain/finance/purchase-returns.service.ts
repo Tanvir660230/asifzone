@@ -10,7 +10,7 @@ import type { Prisma, PurchaseReturnStatus } from "@prisma/client";
 import type { PurchaseReturnCreateInput } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
-import { recordDocumentMovements } from "../../modules/inventory/inventory.service";
+import { notifyStockMoved, recordDocumentMovements } from "../../modules/inventory/inventory.service";
 import { actorCan, recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
@@ -165,7 +165,8 @@ export async function deleteDraftPurchaseReturn(id: string, actor: FinanceActor)
 export async function shipPurchaseReturn(id: string, actor: FinanceActor) {
   const { business, brand } = await getFinanceContext();
   const cur = business.baseCurrency;
-  return financeTransaction(async (tx) => {
+  let movedIds: string[] = [];
+  const result = await financeTransaction(async (tx) => {
     const r = await lockReturn(tx, business.id, id);
     if (r.status === "SHIPPED") return { purchaseReturn: purchaseReturnDto(r, cur), replayed: true };
     need(r, "APPROVED");
@@ -188,8 +189,11 @@ export async function shipPurchaseReturn(id: string, actor: FinanceActor) {
     await tx.purchaseReturn.update({ where: { id: r.id }, data: { status: "SHIPPED", shippedAt: new Date(), shippedByAdminId: adminOf(actor) } });
     const after = await load(tx, business.id, r.id);
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "purchase_return.ship", entityType: "PurchaseReturn", entityId: r.id, before: { status: r.status }, after: { status: after.status, valueMinor } });
+    movedIds = r.lines.map((l) => l.variantId);
     return { purchaseReturn: purchaseReturnDto(after, cur), replayed: false };
   });
+  notifyStockMoved(movedIds);
+  return result;
 }
 
 export async function getPurchaseReturn(id: string) {

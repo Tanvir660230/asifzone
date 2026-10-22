@@ -6,6 +6,7 @@ import { paginate } from "../../lib/paginate";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { randomUUID } from "node:crypto";
+import { refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
 import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
@@ -31,16 +32,17 @@ const include = {
 };
 
 /** Applies `delta` to one variant's stock and returns the new balance — or null when the variant no longer
- * exists, or when `guard` is set and a decrease would take stock below zero. Raw SQL so the new value comes
- * back from the same atomic statement (needed to spot a 0 → positive "back in stock" crossing).
+ * exists, or when `guard` is set and a decrease would take stock below zero (below `-floor` when a floor is given —
+ * a fill-to-order variant, docs/STOCK_HUB.md §3). Raw SQL so the new value comes back from the same atomic statement
+ * (needed to spot a 0 → positive "back in stock" crossing).
  *
  * `updatedAt` is a `timestamp` without time zone that Prisma reads and writes as UTC. A bare NOW() would store the
  * DB session's local wall clock (Asia/Dhaka, +6 h), so the stamp is taken in UTC — the same semantics as @updatedAt. */
-async function applyDelta(tx: Tx, variantId: string, delta: number, guard: boolean): Promise<number | null> {
+async function applyDelta(tx: Tx, variantId: string, delta: number, guard: boolean, floor = 0): Promise<number | null> {
   const rows = guard
     ? await tx.$queryRaw<Array<{ stock: number }>>`
         UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
-        WHERE id = ${variantId} AND stock + ${delta} >= 0
+        WHERE id = ${variantId} AND stock + ${delta} >= ${-floor}
         RETURNING stock`
     : await tx.$queryRaw<Array<{ stock: number }>>`
         UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
@@ -75,6 +77,13 @@ export function notifyReplenished(variantIds: string[]): void {
   }
 }
 
+/** Fire-and-forget after commit: these variants' stock moved, so every fill-to-order product whose recipe uses one of
+ * them (a material) — or that owns one — is refreshed for the storefront (docs/STOCK_HUB.md §3). One query otherwise. */
+export function notifyStockMoved(variantIds: string[]): void {
+  if (!variantIds.length) return;
+  refreshProductsUsingMaterials(variantIds).catch((err) => captureError(err, { msg: "[read-model] fill-to-order refresh failed:" }));
+}
+
 // --- order-driven movements ---------------------------------------------------------------------
 
 export interface SaleResult {
@@ -87,7 +96,10 @@ export interface SaleResult {
 /** Takes an order's units out of stock (`ORDER` movements). Without `allowOversell`, any line short of stock
  * aborts the whole transaction with a 409; with it (a paid gateway settlement only), stock may go negative.
  * D5: a product with trackInventory = false has unlimited availability — its units are still recorded (ledger and
- * balance, for reporting) but never rejected, and never reported as oversold. */
+ * balance, for reporting) but never rejected, and never reported as oversold.
+ * Fill to order (docs/STOCK_HUB.md §3): a variant in `floors` may go down to `-floor` (ordered, not yet filled) — the
+ * caller computes the floors under the materials' locks (fill-capacity.service `fillToOrderFloors`). Its exit is costed
+ * like any other: units beyond what is valued become the costing deficit, settled when the bottles are filled. */
 export async function recordSale(
   tx: Tx,
   orderId: string,
@@ -95,7 +107,7 @@ export async function recordSale(
    * stock row lock taken by the decrement below and written to exactly these lines with the link to the exit — a costed
    * exit without its lines is refused, so an order can't commit a costed exit whose lines don't carry its cost. */
   items: Array<{ variantId: string; quantity: number; orderItemIds?: string[] }>,
-  opts: { allowOversell?: boolean; untrackedVariantIds?: Set<string> } & Actor = {},
+  opts: { allowOversell?: boolean; untrackedVariantIds?: Set<string>; floors?: Map<string, number> } & Actor = {},
 ): Promise<SaleResult> {
   // Whether costing is active needs no lock: read it before the decrement, so the row lock covers only the stock change and
   // the cost determination that depends on it.
@@ -104,7 +116,7 @@ export async function recordSale(
   const stockAfter = new Map<string, number>();
   // Distinct variant rows are independent — run the guarded decrements concurrently (checkout latency).
   const untracked = opts.untrackedVariantIds ?? new Set<string>();
-  const results = await Promise.all(items.map((item) => applyDelta(tx, item.variantId, -item.quantity, !untracked.has(item.variantId))));
+  const results = await Promise.all(items.map((item) => applyDelta(tx, item.variantId, -item.quantity, !untracked.has(item.variantId), opts.floors?.get(item.variantId) ?? 0)));
   for (const [i, item] of items.entries()) {
     let after = results[i];
     if (after === null || after === undefined) {
@@ -416,6 +428,7 @@ export async function adjustVariantStock(variantId: string, delta: number, reaso
     return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0 };
   });
   if (replenished) notifyReplenished([variantId]);
+  notifyStockMoved([variantId]);
   return variant;
 }
 

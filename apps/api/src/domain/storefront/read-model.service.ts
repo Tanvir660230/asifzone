@@ -23,6 +23,8 @@ import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto 
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
 import { getCurrency } from "../config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
+import { applyCapacity, fillCapacity } from "../stock/fill-capacity.service";
+import { invalidateProductCache, triggerStorefrontRevalidation } from "../../modules/products/product.cache";
 
 type Db = AppDb;
 
@@ -121,6 +123,31 @@ export async function ensureFreshReadModels(now: Date = new Date(), db: Db = pri
   }
 }
 
+/** Stock hub (docs/STOCK_HUB.md §3): what a fill-to-order product sells follows its materials' stock, so after a stock
+ * movement (receipt, issue, count, packaging, an order) every fill-to-order product whose approved recipe uses one of
+ * these variants — or that owns one — gets the refresh a product save gives (API cache, projection row, storefront tags).
+ * Call after commit, fire-and-forget (inventory.service `notifyStockMoved`). One query when nothing is fill-to-order. */
+export async function refreshProductsUsingMaterials(materialVariantIds: string[], db: Db = prisma): Promise<void> {
+  const ids = [...new Set(materialVariantIds)];
+  if (!ids.length) return;
+  const rows = await db.product.findMany({
+    where: {
+      fillToOrder: true,
+      deletedAt: null,
+      OR: [
+        { variants: { some: { id: { in: ids } } } },
+        { billsOfMaterials: { some: { status: "APPROVED", lines: { some: { suppliedBy: "BUSINESS", materialVariantId: { in: ids } } } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!rows.length) return;
+  const productIds = rows.map((r) => r.id);
+  await invalidateProductCache();
+  await refreshReadModels(productIds, new Date(), db);
+  void triggerStorefrontRevalidation({ productIds }).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
+}
+
 /** Full rebuild (deploy backfill, reconciliation repair): every non-trashed product, deterministic for `now`. */
 export async function rebuildAllReadModels(now: Date = new Date(), db: Db = prisma): Promise<number> {
   const ids = (await db.product.findMany({ where: { deletedAt: null }, select: { id: true }, orderBy: { id: "asc" } })).map((p) => p.id);
@@ -183,6 +210,8 @@ export interface StorefrontPresentable extends PriceableProduct {
   lowStockThreshold: number;
   /** "Show as sold out" (withMarkedSoldOut) — absent on selects that predate it, which then sell on stock alone. */
   markedSoldOut?: boolean;
+  /** Fill to order (docs/STOCK_HUB.md §3) — absent on selects that don't carry it, which then sell on stock alone. */
+  fillToOrder?: boolean;
   variants: Array<{ id: string; price: unknown; compareAtPrice?: unknown; isActive?: boolean; stock: number; markedSoldOut?: boolean }>;
 }
 
@@ -204,11 +233,16 @@ export type StorefrontProduct<T> = T & {
  * checks, recommendations and the flash-sale feed all return products through this one function. */
 export async function presentStorefrontProducts<T extends StorefrontPresentable>(products: T[], now: Date = new Date()): Promise<StorefrontProduct<T>[]> {
   const pricing = await priceProductsForDisplay(products, now);
+  // Fill to order: one capacity read for the whole batch, and only when it holds a fill-to-order product.
+  const filling = products.filter((p) => p.fillToOrder === true && p.trackInventory);
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
   return products.map((raw) => {
     const p = pricing.get(raw.id)!;
-    // A product or variant the shop marked sold out reaches every shopper-facing reader with no stock to sell — its real
-    // stock stays in the database and in the admin.
-    const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, raw.variants);
+    // A fill-to-order variant sells its filled bottles plus what can still be made; then a product or variant the shop
+    // marked sold out reaches every shopper-facing reader with no stock to sell (marked wins) — its real stock stays in
+    // the database and in the admin.
+    const variants = made && raw.fillToOrder === true && raw.trackInventory ? applyCapacity(made, raw.variants) : raw.variants;
+    const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, variants);
     const product = forSale.variants === raw.variants ? raw : { ...raw, trackInventory: forSale.trackInventory, variants: forSale.variants };
     return {
       ...product,
