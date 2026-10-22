@@ -262,6 +262,23 @@ is direct (the session cookie restarted mid-visit).
 Bots: `isBotUserAgent` (crawlers, link previews, headless browsers, scripts — never in-app browsers) pageviews are not
 stored at all, so no behaviour report counts them (2026-10-22: 0.1% of stored pageviews were HeadlessChrome).
 
+### 4.7 Delivery outcomes (Smart Analytics phase C, 2026-10-22)
+
+`GET /api/analytics/delivery-outcomes` (`delivery-outcomes.ts` pure + `delivery-outcomes.service.ts`). Population:
+operational orders booked with the courier whose parcel **finished** in the range. The outcome is the earliest of the
+first DELIVERED (**delivered**), the first PARTIALLY_DELIVERED (**partial**), or the refusal — a CANCELLED entry at or
+after booking, or a RETURNED entry (**refused**). A customer return after delivery does not undo the delivery.
+
+| Key | Definition |
+|---|---|
+| success rate | delivered ÷ finished parcels (partial is not a success) |
+| refusal rate | refused ÷ finished parcels |
+| refused COD value | Σ COD value at booking (§4.5 `booked_cod_value` rule) of refused parcels — money that came back |
+| days to deliver | mean (first DELIVERED − `courierBookedAt`), delivered parcels only |
+| breakdowns | district / division (shipping address), product (line `productIdSnapshot`; an order counts once per product), payment (COD vs paid in advance), order value band, first order vs returning (an earlier order from the same phone), credited channel (§4.6). District and product rows need ≥ 3 parcels; a row is flagged when its refusal rate ≥ max(2 × store rate, store rate + 10 pts) |
+| repeat refusers | phones (normalised 01XXXXXXXXX) with ≥ 2 refused parcels in the range |
+| weekly | the same counts per ISO week (Monday) of the finish date |
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

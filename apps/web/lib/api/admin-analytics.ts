@@ -962,3 +962,56 @@ export interface ChannelPerformance {
 export function getChannelPerformance(dateFrom: Date, dateTo: Date) {
   return apiFetch<ChannelPerformance>(`/api/analytics/channel-performance${windowParams({ dateFrom, dateTo })}`);
 }
+
+// ─── Delivery outcomes (docs/METRICS_REGISTRY.md §4.7) ───────────────────────────────────────────────────────────────
+
+export interface OutcomeCounts {
+  parcels: number;
+  delivered: number;
+  partial: number;
+  refused: number;
+  successRate: number;
+  refusalRate: number;
+}
+
+export interface OutcomeTotals extends OutcomeCounts {
+  refusedCodValue: number;
+  avgDaysToDeliver: number | null;
+}
+
+export interface OutcomeRow extends OutcomeCounts {
+  key: string;
+  avgDaysToDeliver: number | null;
+}
+
+export interface RepeatRefuser {
+  phone: string;
+  name: string;
+  refused: number;
+  delivered: number;
+  partial: number;
+  refusedCodValue: number;
+  lastOrderId: string;
+}
+
+export interface DeliveryOutcomes {
+  range: { from: string; to: string };
+  currency: string;
+  totals: OutcomeTotals;
+  previous: OutcomeTotals | null;
+  byDistrict: OutcomeRow[];
+  byDivision: OutcomeRow[];
+  byProduct: Array<OutcomeRow & { productId: string }>;
+  byPayment: OutcomeRow[];
+  byValue: OutcomeRow[];
+  byCustomer: OutcomeRow[];
+  byChannel: OutcomeRow[];
+  weekly: Array<{ week: string; parcels: number; delivered: number; partial: number; refused: number; successRate: number }>;
+  repeatRefusers: RepeatRefuser[];
+  minParcels: number;
+}
+
+/** Parcels that finished with the courier in the period: delivered, part delivered or refused — and where refusals cluster. */
+export function getDeliveryOutcomes(dateFrom: Date, dateTo: Date) {
+  return apiFetch<DeliveryOutcomes>(`/api/analytics/delivery-outcomes${windowParams({ dateFrom, dateTo })}`);
+}

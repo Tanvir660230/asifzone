@@ -135,6 +135,8 @@ analyticsRouter.get("/stock-movement-summary", requirePermission("analytics.read
 // Daily pulse (docs/METRICS_REGISTRY.md §4.5): one day's operations against other days, and a day-by-day table.
 analyticsRouter.get("/ops-pulse", requirePermission("analytics.read"), analyticsController.opsPulse);
 analyticsRouter.get("/ops-daily", requirePermission("analytics.read"), analyticsController.opsDaily);
+// Delivery outcomes (§4.7): success / refusal by district, product, payment, value, customer and channel.
+analyticsRouter.get("/delivery-outcomes", requirePermission("analytics.read"), analyticsController.deliveryOutcomes);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 

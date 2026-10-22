@@ -19,7 +19,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
 - [x] **B. Accuracy.** Bot filter on PageView (`isBot`, excluded from sessions, visitors, funnels); click ids
   (fbclid / gclid / ttclid) + referrer → channel classifier (Facebook, Instagram, Google, TikTok, WhatsApp, direct…);
   order location from shipping district.
-- [ ] **C. Delivery outcomes.** Delivery success / refusal rate by district, product, payment method, order source,
+- [x] **C. Delivery outcomes.** Delivery success / refusal rate by district, product, payment method, order source,
   week; COD booked vs collected; average days to deliver by district; repeat refusers.
 - [ ] **D. Customer risk score.** Phone-based history (refused, cancelled, returned, delivered) → risk level shown on
   the order; analytics of risky orders.
@@ -45,4 +45,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   were bots, so no historical clean-up. Channel classifier + traffic sources regrouped + Marketing › Channels (sales by
   channel, last non-direct click with 30-day visitor lookback — moved 43% of "direct" orders in the demo data). Order
   location already used the shipping district (nothing to do).
-- Next: **C. Delivery outcomes**.
+- **C done** (METRICS_REGISTRY §4.7): Operations › Deliveries — success/refusal by week, value, district, product,
+  channel, new vs returning, division; repeat refusers. Demo data: 88% delivered, Sylhet/Mymensingh refuse most, ৳2,000+
+  orders refuse 20%, one cap colour 60%. `creditedChannels` is exported from traffic.service for reuse.
+- Next: **D. Customer risk score** (reuse delivery-outcomes per phone; show on the order).

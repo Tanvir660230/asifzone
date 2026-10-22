@@ -101,6 +101,25 @@ function creditFor(touch: FirstTouch, history: FirstTouch[] | undefined, own: st
   return best ? { cls: best.cls, reattributed: true } : { cls, reattributed: false };
 }
 
+/** The credited channel (last non-direct click) of each storefront session that placed an order. */
+export async function creditedChannels(sessionIds: string[], own: string[] = ownHosts()): Promise<Map<string, { cls: TrafficClass; reattributed: boolean }>> {
+  const touches = await firstTouchOf(sessionIds);
+  const directVisitors = [...touches.values()].filter((t) => t.visitorId && t.at && classify(t, own).channel === "direct");
+  const history = directVisitors.length
+    ? await visitorSessions(
+        [...new Set(directVisitors.map((t) => t.visitorId!))],
+        new Date(Math.min(...directVisitors.map((t) => new Date(t.at!).getTime())) - LOOKBACK_DAYS * 86_400_000),
+        new Date(Math.max(...directVisitors.map((t) => new Date(t.at!).getTime()))),
+      )
+    : new Map<string, FirstTouch[]>();
+  const credit = new Map<string, { cls: TrafficClass; reattributed: boolean }>();
+  for (const t of touches.values()) credit.set(t.sessionId, creditFor(t, t.visitorId ? history.get(t.visitorId) : undefined, own));
+  return credit;
+}
+
+/** "Facebook ads", "Google", … */
+export const channelLabel = (c: TrafficClass) => labelOf(c);
+
 const keyOf = (c: TrafficClass) => `${c.channel}:${c.paid ? "paid" : "organic"}`;
 const labelOf = (c: TrafficClass) => `${TRAFFIC_CHANNEL_LABELS[c.channel]}${c.paid ? " ads" : ""}`;
 
@@ -165,17 +184,7 @@ export async function getChannelPerformance(
   const own = ownHosts();
   const [sessions, { orders, currency }] = await Promise.all([sessionsStartingIn(range), loadFactsForRange(range)]);
   const orderSessions = [...new Set(orders.map((o) => o.sessionId).filter((s): s is string => Boolean(s)))];
-  const touches = await firstTouchOf(orderSessions);
-  const directVisitors = [...touches.values()].filter((t) => t.visitorId && t.at && classify(t, own).channel === "direct");
-  const history = directVisitors.length
-    ? await visitorSessions(
-        [...new Set(directVisitors.map((t) => t.visitorId!))],
-        new Date(Math.min(...directVisitors.map((t) => new Date(t.at!).getTime())) - LOOKBACK_DAYS * 86_400_000),
-        new Date(Math.max(...directVisitors.map((t) => new Date(t.at!).getTime()))),
-      )
-    : new Map<string, FirstTouch[]>();
-  const credit = new Map<string, { cls: TrafficClass; reattributed: boolean }>();
-  for (const t of touches.values()) credit.set(t.sessionId, creditFor(t, t.visitorId ? history.get(t.visitorId) : undefined, own));
+  const credit = await creditedChannels(orderSessions, own);
 
   const rows = new Map<string, ChannelPerformanceRow>();
   const row = (k: string, init: () => Omit<ChannelPerformanceRow, "sessions" | "orders" | "netSales" | "realisedOrders" | "aov" | "conversionRate">) => {

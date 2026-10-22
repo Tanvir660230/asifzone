@@ -11,6 +11,7 @@ import { csvCell } from "../../lib/csv";
 import { AppError } from "../../lib/app-error";
 import * as analyticsService from "./analytics.service";
 import { getOpsDaily, getOpsPulse } from "./ops-pulse.service";
+import { getDeliveryOutcomes } from "./delivery-outcomes.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
 // any handler below runs — coerced to numbers and bounded (days: 1-365, limit: 1-100) — so this
@@ -481,4 +482,9 @@ export const opsDaily = asyncHandler(async (req: Request, res: Response) => {
 export const channelPerformance = asyncHandler(async (req: Request, res: Response) => {
   const { days, dateFrom, dateTo } = query(req);
   res.json(await analyticsService.getChannelPerformance(days, dateFrom, dateTo));
+});
+
+export const deliveryOutcomes = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getDeliveryOutcomes(days, dateFrom, dateTo));
 });
