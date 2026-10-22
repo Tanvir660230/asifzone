@@ -82,3 +82,63 @@ export const analyticsQuerySchema = z.object({
 });
 
 export type AnalyticsQuery = z.infer<typeof analyticsQuerySchema>;
+
+/** The browser Pixel events the Conversions API also receives a server copy of (apps/web/lib/pixels/meta.ts → POST
+ * /api/analytics/meta-event). Purchase is not here: the API sends that one itself, from the stored order. */
+export const META_BROWSER_EVENTS = [
+  "PageView",
+  "ViewContent",
+  "Search",
+  "AddToCart",
+  "InitiateCheckout",
+  "AddPaymentInfo",
+  "CompleteRegistration",
+  "Contact",
+] as const;
+
+const metaContentSchema = z.object({
+  id: z.string().min(1).max(64),
+  quantity: z.number().int().min(1).max(1000),
+  item_price: z.number().min(0).max(10_000_000),
+});
+
+/** Exactly the parameters lib/pixels/meta.ts's toMeta builds — nothing else is forwarded to Meta. */
+const metaCustomDataSchema = z
+  .object({
+    currency: z.string().length(3),
+    value: z.number().min(0).max(100_000_000),
+    content_type: z.enum(["product", "product_group"]),
+    content_ids: z.array(z.string().min(1).max(64)).max(100),
+    contents: z.array(metaContentSchema).max(100),
+    num_items: z.number().int().min(0).max(10_000),
+    content_name: z.string().max(300),
+    search_string: z.string().max(200),
+    payment_type: z.string().max(40),
+    registration_method: z.string().max(40),
+    status: z.boolean(),
+    contact_channel: z.enum(["form", "whatsapp", "call"]),
+  })
+  .partial()
+  .strict();
+
+/** Body of the Meta server-copy beacon: one browser Pixel event, with the eventID it was tracked under so Meta
+ * deduplicates the pair. `customer` is the advanced-matching identity the Pixel holds (lib/pixels/index.ts's
+ * pixelIdentify) — hashed on the server, never stored. */
+export const metaBrowserEventSchema = z.object({
+  eventName: z.enum(META_BROWSER_EVENTS),
+  eventId: z.string().min(1).max(64),
+  eventSourceUrl: z.string().min(1).max(2048),
+  customData: metaCustomDataSchema.default({}),
+  customer: z
+    .object({
+      email: nullableString(254),
+      phone: nullableString(32),
+      fullName: nullableString(200),
+      city: nullableString(100),
+      state: nullableString(100),
+    })
+    .partial()
+    .nullish(),
+});
+
+export type MetaBrowserEventInput = z.infer<typeof metaBrowserEventSchema>;

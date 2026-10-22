@@ -5,8 +5,11 @@ import type {
   TrackFunnelEventInput,
   AttributeSearchSessionInput,
   AnalyticsQuery,
+  MetaBrowserEventInput,
 } from "@clothing-brand/shared";
 import { asyncHandler } from "../../lib/async-handler";
+import { metaContextFromRequest } from "../../lib/meta/capi";
+import { relayBrowserEvent } from "../../lib/meta/browser-event";
 import { csvCell } from "../../lib/csv";
 import * as analyticsService from "./analytics.service";
 
@@ -59,6 +62,15 @@ export const trackFunnelEvent = asyncHandler(async (req: Request, res: Response)
   await analyticsService.trackFunnelEvent(req.body as TrackFunnelEventInput);
   res.status(204).end();
 });
+
+/** Server copy of a browser Pixel event (lib/meta/browser-event.ts) — answered at once; the send to Meta runs behind it. */
+export const relayMetaEvent = (req: Request, res: Response) => {
+  relayBrowserEvent(req.body as MetaBrowserEventInput, {
+    context: metaContextFromRequest(req),
+    externalId: req.customer?.customerId ?? null,
+  });
+  res.status(204).end();
+};
 
 export const attributeSearchSession = asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as AttributeSearchSessionInput;
