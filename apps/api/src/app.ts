@@ -50,6 +50,7 @@ import { smsTemplateRouter } from "./modules/sms-templates/sms-template.routes";
 import { aiRouter } from "./modules/ai/ai.routes";
 import { campaignRouter } from "./modules/campaigns/campaign.routes";
 import { courierRouter } from "./modules/courier/courier.routes";
+import { shipmentRouter } from "./modules/shipments/shipment.routes";
 import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { storefrontReadModelRouter } from "./modules/storefront/read-model.routes";
 import { financeRouter } from "./modules/finance/finance.routes";
@@ -141,6 +142,7 @@ app.use("/api/sms-templates", smsTemplateRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/campaigns", campaignRouter);
 app.use("/api/courier", courierRouter);
+app.use("/api/shipments", shipmentRouter);
 
 // Versioned API (TARGET_ARCHITECTURE §13): new endpoints land under /api/v1; existing /api routes are unchanged.
 app.use("/api/v1/checkout", checkoutV1Router);

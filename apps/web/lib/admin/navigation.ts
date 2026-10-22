@@ -619,6 +619,18 @@ export const NAV_NODES: readonly NavNode[] = [
     keywords: ["steadfast", "courier balance", "cod receivable", "payout import", "lost parcel", "partial delivery", "courier charges"],
   },
   {
+    id: "finance.courier-costs",
+    label: "Courier costs",
+    kind: "page",
+    parent: "finance.selling",
+    domain: "manage",
+    route: "/admin/finance/courier-costs",
+    capability: "courierCosts.view",
+    order: 2.6,
+    description: "What each parcel really cost, what customers paid riders on returns and exchanges, and what's left uncovered.",
+    keywords: ["courier cost", "return charge", "exchange", "refused parcel", "rider", "delivery charge", "uncovered", "partial", "reconcile shipment"],
+  },
+  {
     id: "finance.attempts",
     label: "Online checkouts",
     kind: "page",

@@ -2,6 +2,7 @@ import { createObservedWorker } from "../lib/observability/jobs";
 import { createQueue, queueConnection } from "../lib/queue";
 import { syncPendingCourierStatuses } from "../modules/courier/courier.service";
 import { logger } from "../lib/observability/logger";
+import { fillMissingReferences, syncRecentShipments } from "../domain/shipments/shipment-sync";
 
 const QUEUE_NAME = "courier-status-sync";
 
@@ -18,6 +19,9 @@ export async function startCourierStatusCron() {
     async () => {
       const changed = await syncPendingCourierStatuses();
       if (changed > 0) logger.info(`[courier-status-cron] status changed for ${changed} order(s)`);
+      // Courier costs (docs/COURIER_COSTS.md): legs of recently touched orders (status changes by staff, manual carriers).
+      await syncRecentShipments();
+      await fillMissingReferences();
     },
     { connection: queueConnection },
   );

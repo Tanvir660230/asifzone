@@ -291,6 +291,10 @@ const OWNER_ONLY_ROUTES = [
   "DELETE /api/v1/finance/rate-cards/gateway/:id",
   "GET /api/v1/finance/courier/reconciliation",
   "POST /api/v1/finance/courier/payouts/import",
+  // Courier costs (docs/COURIER_COSTS.md): STAFF records what was reported; verifying-only actions stay with the owner.
+  "POST /api/shipments/:id/reconcile",
+  "POST /api/shipments/:id/reopen",
+  "POST /api/shipments/:id/clear-review",
   "GET /api/v1/finance/ads/campaigns",
   "POST /api/v1/finance/ads/campaigns",
   "PATCH /api/v1/finance/ads/campaigns/:id",
@@ -499,7 +503,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: the owner's home (docs/FINANCE_OWNER_HOME.md)
     // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
     // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
-    expect(routes).toHaveLength(677);
+    // +9: courier costs (docs/COURIER_COSTS.md) — shipments, legs, cost events, rider contributions, verify, report
+    expect(routes).toHaveLength(686);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

@@ -59,6 +59,8 @@ export interface CourierProvider {
   /** Owner's books §3.2: the courier's payouts, and one payout with its parcels — raw, parsed by the finance side. */
   payouts(): Promise<unknown>;
   payout(id: string): Promise<unknown>;
+  /** Courier costs: the merchant's return requests (read only), parsed by domain/shipments/courier-evidence.ts. */
+  returnRequests(): Promise<unknown>;
 }
 
 // ── Server-side analytics events ───────────────────────────────────────────────────────────────
