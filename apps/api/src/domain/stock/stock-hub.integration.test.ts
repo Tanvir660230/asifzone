@@ -13,7 +13,7 @@ import { ensurePurchasingAccounting } from "../finance/purchasing-setup.service"
 import { updateBusinessSettings } from "../finance/chart.service";
 import { postOpeningBalances, saveOpeningInventory } from "../finance/opening-balances.service";
 import { approveCutover, draftCutover, postCutover } from "../finance/inventory-cutover.service";
-import { openRoll } from "../finance/stock-check.service";
+import { finishRoll, listRolls, openRoll } from "../finance/stock-check.service";
 import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.service";
 import { createMaterial } from "../manufacturing/materials.service";
 import { approveBom, createBom } from "../manufacturing/boms.service";
@@ -128,9 +128,36 @@ describe("stock hub overview", () => {
     const hub = (await get(owner, "OWNER")).body as Hub;
     expect(find(hub, "MATERIAL", oil)).toMatchObject({ usedPerDay: 4, daysLeft: 162, low: false }); // 120 / 30; 650 / 4
     expect(find(hub, "MATERIAL", bottle6)).toMatchObject({ usedPerDay: null, daysLeft: null, low: false });
-    // the cap: 2 sold in the order above → 2 / 30 a day; 8 left → 120 days
+    // the cap moved first today: 2 sold in its 1 day → 2 a day, not 2 / 30; 8 left → 4 days, low
+    expect(find(hub, "FINISHED", cap)).toMatchObject({ usedPerDay: 2, daysLeft: 4, low: true });
+    // the roll's history starts a day ago (rounded up: 2 days) → 1 used in 2 days; 1 left → 2 days
+    expect(find(hub, "MATERIAL", roll)).toMatchObject({ usedPerDay: 0.5, daysLeft: 2 });
+  });
+
+  it("an item with history older than 30 days still divides by 30", async () => {
+    await prisma.stockMovement.createMany({ data: [{ variantId: cap, change: 1, reason: "RESTOCK", createdAt: daysAgo(60) }] });
+    const hub = (await get(owner, "OWNER")).body as Hub;
     expect(find(hub, "FINISHED", cap)).toMatchObject({ usedPerDay: 0.07, daysLeft: 120, low: false });
-    expect(find(hub, "MATERIAL", roll)).toMatchObject({ daysLeft: 30 }); // 1 left, 1 used in 30 days
+  });
+
+  it("fill to order is low by what it can sell (filled bottles + what can be made), not by what can be made alone", async () => {
+    const filled = await createStockedProduct({ stocks: [20], basePrice: 350 }); // no recipe: makes nothing, 20 filled
+    await prisma.product.update({ where: { id: filled.product.id }, data: { fillToOrder: true } });
+    const hub = (await get(owner, "OWNER")).body as Hub;
+    expect(find(hub, "FILL_TO_ORDER", filled.variants[0]!.id)).toMatchObject({ stock: 20, makeable: 0, low: false });
+    expect(find(hub, "FILL_TO_ORDER", attar12)).toMatchObject({ makeable: 8, low: true });
+  });
+
+  it("only rolls in use are read (a finished roll's parcels aren't counted)", async () => {
+    const other = (await createMaterial({ name: `Vitest Hub Old roll ${RUN}`, stockUnit: "pcs", variants: [{ sku: `HUB-OLDROLL-${RUN}`, spec: "old" }] }, OWNER, { canSeeCost: true })).variants[0]!.id;
+    const opened = await openRoll({ materialVariantId: other, openedOn: "2026-09-02" }, OWNER);
+    await finishRoll(opened.id, { finishedOn: "2026-09-20" }, OWNER);
+    const open = await listRolls({ openOnly: true });
+    expect(open.rolls.some((r) => r.id === opened.id)).toBe(false);
+    expect(open.rolls.some((r) => r.materialVariantId === roll)).toBe(true);
+    expect((await listRolls()).rolls.some((r) => r.id === opened.id)).toBe(true);
+    const hub = (await get(owner, "OWNER")).body as Hub;
+    expect(hub.rolls.some((r) => r.materialVariantId === other)).toBe(false);
   });
 
   it("quantities only without costing.read", async () => {

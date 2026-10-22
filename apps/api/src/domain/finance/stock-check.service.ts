@@ -188,18 +188,31 @@ export async function stockCheck() {
   };
 }
 
-export async function recordStockCount(input: { variantId: string; counted: number; countDate?: string; note?: string | null }, actor: FinanceActor) {
+/**
+ * Records a physical count beside the site's stock. The stock hub passes `expected` (what should be on the shelf: stock
+ * plus units on orders not yet handed to the courier), kept as the count's `siteStock` so the difference shown here is
+ * the true one, and `sourceId` (its count line): a count already recorded for that line is returned, not repeated.
+ */
+export async function recordStockCount(
+  input: { variantId: string; counted: number; countDate?: string; note?: string | null; expected?: number; sourceId?: string },
+  actor: FinanceActor,
+) {
   const { business } = await getFinanceContext();
   const date = input.countDate ?? businessToday(business);
   if (date > businessToday(business)) throw financeError(400, "STOCK_COUNT_FUTURE", "A count can't be dated in the future");
   return financeTransaction(async (tx) => {
+    if (input.sourceId) {
+      const seen = await tx.stockCount.findUnique({ where: { sourceId: input.sourceId }, select: { id: true, counted: true, siteStock: true } });
+      if (seen) return { id: seen.id, siteStock: seen.siteStock, difference: seen.counted - seen.siteStock, existed: true };
+    }
     const v = await tx.productVariant.findUnique({ where: { id: input.variantId }, select: { id: true, stock: true, sku: true } });
     if (!v) throw financeError(404, "VARIANT_NOT_FOUND", "That product or material wasn't found");
+    const siteStock = input.expected ?? v.stock;
     const c = await tx.stockCount.create({
-      data: { businessId: business.id, variantId: v.id, countDate: dateColumn(date), counted: input.counted, siteStock: v.stock, note: input.note ?? null, countedByAdminId: adminOf(actor) },
+      data: { businessId: business.id, variantId: v.id, countDate: dateColumn(date), counted: input.counted, siteStock, note: input.note ?? null, countedByAdminId: adminOf(actor), sourceId: input.sourceId ?? null },
     });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "stock_count.record", entityType: "StockCount", entityId: c.id, before: null, after: { sku: v.sku, date, counted: input.counted, siteStock: v.stock } });
-    return { id: c.id, difference: input.counted - v.stock };
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "stock_count.record", entityType: "StockCount", entityId: c.id, before: null, after: { sku: v.sku, date, counted: input.counted, siteStock, stock: v.stock, sourceId: input.sourceId ?? null } });
+    return { id: c.id, siteStock, difference: input.counted - siteStock, existed: false };
   });
 }
 
@@ -208,11 +221,12 @@ async function parcelsBetween(from: string, to: string, tz: string) {
   return prisma.order.count({ where: { deletedAt: null, courierBookedAt: { gte: businessDayStartUtc(from, tz), lt: businessDayStartUtc(addDays(to, 1), tz) } } });
 }
 
-export async function listRolls() {
+/** Rolls with their yield; `openOnly`: just the rolls in use (the stock hub — no parcel counts for finished rolls). */
+export async function listRolls(opts: { openOnly?: boolean } = {}) {
   const { business } = await getFinanceContext();
   const today = businessToday(business);
   const rolls = await prisma.materialRoll.findMany({
-    where: { businessId: business.id },
+    where: { businessId: business.id, ...(opts.openOnly ? { finishedOn: null } : {}) },
     orderBy: [{ openedOn: "desc" }, { createdAt: "desc" }],
     include: { materialVariant: { select: { id: true, size: true, costPrice: true, product: { select: { name: true, costPrice: true } }, costState: { select: { avgUnitCost: true } } } } },
   });

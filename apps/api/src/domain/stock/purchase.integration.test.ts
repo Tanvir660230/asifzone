@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import { PERMISSIONS } from "@clothing-brand/shared";
 import { app } from "../../app";
@@ -16,9 +16,40 @@ import { processFinancialEvent } from "../finance/events.service";
 import { runReconciliation } from "../finance/reconciliation.service";
 import { ownerMoney } from "../finance/partner-profit.service";
 import { getSupplierInvoice } from "../finance/supplier-invoices.service";
+import { createGoodsReceipt } from "../finance/goods-receipts.service";
 import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.service";
 import { createMaterial } from "../manufacturing/materials.service";
-import { recordPurchase } from "./purchase.service";
+import { changePeriodStatus } from "../finance/periods.service";
+import { createSupplier, setSupplierStatus } from "../finance/suppliers.service";
+import { financeError } from "../finance/finance-values";
+import { listPurchases, recordPurchase } from "./purchase.service";
+
+// Test seams: run something just before the purchase creates its receipt / pays its bill (the real call follows).
+const hooks = vi.hoisted(() => ({ beforeReceipt: null as null | (() => Promise<void>), beforePayment: null as null | (() => Promise<void>) }));
+vi.mock("../finance/goods-receipts.service", async (orig) => {
+  const real = await orig<typeof import("../finance/goods-receipts.service")>();
+  return {
+    ...real,
+    createGoodsReceipt: async (...a: Parameters<typeof real.createGoodsReceipt>) => {
+      const h = hooks.beforeReceipt;
+      hooks.beforeReceipt = null;
+      if (h) await h();
+      return real.createGoodsReceipt(...a);
+    },
+  };
+});
+vi.mock("../finance/supplier-payments.service", async (orig) => {
+  const real = await orig<typeof import("../finance/supplier-payments.service")>();
+  return {
+    ...real,
+    paySupplier: async (...a: Parameters<typeof real.paySupplier>) => {
+      const h = hooks.beforePayment;
+      hooks.beforePayment = null;
+      if (h) await h();
+      return real.paySupplier(...a);
+    },
+  };
+});
 
 // Stock hub Task 5 (docs/STOCK_HUB.md §2 "Bought"): one form → a direct goods receipt, a bill matched to it, its payment
 // (from an account, or the owner's own money booked as capital first) and the extras as a landed cost spread by value.
@@ -174,19 +205,26 @@ describe("Bought", () => {
   it("paid from bKash lowers its balance; a payment refused mid-way resumes on retry without writing twice", async () => {
     const body = { supplierName: "Chawkbazar Bottle House", reference: "INV-77", lines: [{ variantId: cap, quantity: 3, amount: 1000 }], paidFrom: { financialAccountId: bkash } };
     const before = await counts();
+    // not enough in the wallet: refused before anything is written (no goods in without their payment)
     const short = await api().post("/stock/purchases", body, `sp-bkash-${RUN}`);
     expect(short.status, JSON.stringify(short.body)).toBe(409);
     expect(short.body.details?.code).toBe("INSUFFICIENT_FUNDS"); // bKash holds 100
-    // the goods arrived and the bill is entered; the list shows it unpaid
+    expect(await counts()).toEqual(before);
+    expect(await prisma.stockHubEntry.count({ where: { idempotencyKey: `purchase:sp-bkash-${RUN}` } })).toBe(0);
+
+    await ownerMoney({ kind: "INVEST", financialAccountId: bkash, amount: 2000, note: "top up" }, OWNER, `sp-topup-${RUN}`);
+    // the money moves away between the check and the payment: the goods are in, the bill entered, the payment refused
+    hooks.beforePayment = async () => { throw financeError(409, "INSUFFICIENT_FUNDS", "bKash was emptied meanwhile"); };
+    const stuck = await api().post("/stock/purchases", body, `sp-bkash-${RUN}`);
+    expect(stuck.status, JSON.stringify(stuck.body)).toBe(409);
     const listed = (await api().get("/stock/purchases")).body.purchases.find((p: { supplier: { name: string } }) => p.supplier.name === "Chawkbazar Bottle House");
-    expect(listed).toMatchObject({ complete: false, total: 1000 });
+    expect(listed).toMatchObject({ complete: false, pendingStep: "payment", total: 1000 });
     expect(await stock(cap)).toBe(3);
     // a crash between a step and its bookkeeping: the receipt and bill are found again by their stamp
     const entry = await prisma.stockHubEntry.findFirstOrThrow({ where: { idempotencyKey: `purchase:sp-bkash-${RUN}` } });
     const steps = entry.steps as Record<string, unknown>;
     await prisma.stockHubEntry.update({ where: { id: entry.id }, data: { steps: { ...steps, receiptId: undefined, invoiceId: undefined } as never } });
 
-    await ownerMoney({ kind: "INVEST", financialAccountId: bkash, amount: 2000, note: "top up" }, OWNER, `sp-topup-${RUN}`);
     const walletBefore = await balance(bkash);
     const r = await api().post("/stock/purchases", body, `sp-bkash-${RUN}`);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
@@ -210,11 +248,24 @@ describe("Bought", () => {
     };
     const capitalBefore = await capitalOf();
     const cashBefore = await balance(cashBox);
+    // owner-only, like POST /equity/owner/money: without finance.sensitive nothing is written
+    const before = await counts();
+    const noSensitive: FinanceActor = { type: "ADMIN", adminId: admin, label: "manager@test", permissions: PERMISSIONS.filter((p) => p !== "finance.sensitive") };
+    await expect(recordPurchase(oilPurchase({ ownerPocket: true }) as never, noSensitive, `sp-owner-nosens-${RUN}`)).rejects.toMatchObject({ statusCode: 403 });
+    expect(await counts()).toEqual(before);
+    expect(await prisma.stockHubEntry.count({ where: { idempotencyKey: `purchase:sp-owner-nosens-${RUN}` } })).toBe(0);
+
     const r = await api().post("/stock/purchases", oilPurchase({ ownerPocket: true }, [{ description: "Rickshaw", amount: 100 }]), `sp-owner-${RUN}`);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(await capitalOf()).toBe(capitalBefore + 12100);
-    expect(await balance(cashBox)).toBe(cashBefore); // in and out the same day
-    expect(r.body.purchase.paidFrom).toMatchObject({ kind: "OWNER", financialAccountId: cashBox });
+    // his money passes through his own "— own money" cash account (made the first time), never another cash box
+    expect(await balance(cashBox)).toBe(cashBefore);
+    const pocket = await prisma.financialAccount.findUniqueOrThrow({ where: { id: r.body.purchase.paidFrom.financialAccountId } });
+    expect(pocket).toMatchObject({ kind: "CASH", isActive: true });
+    expect(pocket.name).toMatch(/ — own money$/);
+    expect(pocket.id).not.toBe(cashBox);
+    expect(await balance(pocket.id)).toBe(0); // in and out the same day
+    expect(r.body.purchase.paidFrom).toMatchObject({ kind: "OWNER", name: pocket.name });
     expect(await stock(oil)).toBe(1000);
     expect(await avg(oil)).toBe(24.5); // (12,400 + 12,100) / 1,000
     await booksMatch();
@@ -237,5 +288,122 @@ describe("Bought", () => {
     await expect(recordPurchase({ lines: [{ variantId: oil, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, clerk, `sp-clerk-${RUN}`)).rejects.toMatchObject({ statusCode: 403 });
     const noKey = await api().post("/stock/purchases", oilPurchase({ financialAccountId: bank }));
     expect(noKey.status).toBe(400);
+  });
+});
+
+describe("Bought — review fixes", () => {
+  it("a request that outlived its lease can't post a second receipt: the retry that took over finishes, the late one is refused", async () => {
+    const body = { lines: [{ variantId: bottle, quantity: 10, amount: 500 }], paidFrom: { financialAccountId: bank } };
+    const key = `sp-lease-${RUN}`;
+    const before = await counts();
+    const stockBefore = await stock(bottle);
+    let retry: request.Response | undefined;
+    hooks.beforeReceipt = async () => {
+      // the first request is about to create the receipt when its lease runs out; a retry takes the entry over and finishes
+      await prisma.stockHubEntry.updateMany({ where: { idempotencyKey: `purchase:${key}` }, data: { leaseUntil: new Date(Date.now() - 1000) } });
+      retry = await api().post("/stock/purchases", body, key);
+    };
+    const late = await api().post("/stock/purchases", body, key);
+    expect(retry?.status, JSON.stringify(retry?.body)).toBe(201);
+    expect(late.status, JSON.stringify(late.body)).toBe(409);
+    expect(late.body.details?.code).toBe("STOCK_ENTRY_LEASE_LOST");
+    expect(await prisma.goodsReceipt.count({ where: { evidence: `stock-purchase:${key}:receipt` } })).toBe(1);
+    expect(await counts()).toMatchObject({ receipts: before.receipts + 1, bills: before.bills + 1, movements: before.movements + 1 });
+    expect(await stock(bottle)).toBe(stockBefore + 10);
+    const replay = await api().post("/stock/purchases", body, key);
+    expect(replay.body).toMatchObject({ replayed: true, receiptId: retry!.body.receiptId });
+    await booksMatch();
+  });
+
+  it("the database keeps one live receipt per stamp", async () => {
+    const receipt = await prisma.goodsReceipt.findFirstOrThrow({ where: { evidence: `stock-purchase:sp-lease-${RUN}:receipt` } });
+    await expect(createGoodsReceipt({ supplierId: receipt.supplierId, evidence: receipt.evidence, directReason: "dup", lines: [{ variantId: bottle, qtyAccepted: 1, unitCost: 1 }] } as never, OWNER)).rejects.toThrow();
+    expect(await prisma.goodsReceipt.count({ where: { evidence: receipt.evidence } })).toBe(1);
+  });
+
+  it("not enough money, a date before the books or in a closed month: refused before anything is written", async () => {
+    const before = await counts();
+    const entries = await prisma.stockHubEntry.count();
+    const early = await api().post("/stock/purchases", { date: "2026-08-15", lines: [{ variantId: cap, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-early2-${RUN}`);
+    expect(early.status, JSON.stringify(early.body)).toBe(409);
+    expect(early.body.details?.code).toBe("BEFORE_OPENING_DATE");
+    const { business } = await getFinanceContext();
+    const sept = await prisma.financialPeriod.findFirstOrThrow({ where: { businessId: business.id, startDate: new Date("2026-09-01T00:00:00Z") } });
+    await changePeriodStatus(sept.id, "close", "test: September is closed", OWNER);
+    try {
+      const closed = await api().post("/stock/purchases", { date: "2026-09-15", lines: [{ variantId: cap, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-closed-${RUN}`);
+      expect(closed.status, JSON.stringify(closed.body)).toBe(409);
+      expect(closed.body.details?.code).toBe("PERIOD_CLOSED");
+    } finally {
+      await changePeriodStatus(sept.id, "reopen", "test done", OWNER);
+    }
+    expect(await counts()).toEqual(before);
+    expect(await prisma.stockHubEntry.count()).toBe(entries);
+  });
+
+  it("a supplier on hold is never picked or paid: refused before anything is written", async () => {
+    const held = await createSupplier({ legalName: `Held Traders ${RUN}`, displayName: `Held Traders ${RUN}` } as never, OWNER);
+    await setSupplierStatus(held.id, { status: "ON_HOLD", reason: "disputed delivery" }, OWNER);
+    const before = await counts();
+    const r = await api().post("/stock/purchases", { supplierName: `Held Traders ${RUN}`, lines: [{ variantId: cap, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-held-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(409);
+    expect(r.body.details?.code).toBe("SUPPLIER_ON_HOLD");
+    expect(r.body.error).toMatch(/on hold/);
+    expect(await counts()).toEqual(before);
+    expect(await prisma.stockHubEntry.count({ where: { idempotencyKey: `purchase:sp-held-${RUN}` } })).toBe(0);
+  });
+
+  it("caps the amounts: each at most 1,000,000,000 and the purchase at most 10,000,000,000", async () => {
+    const huge = await api().post("/stock/purchases", { lines: [{ variantId: cap, quantity: 1, amount: 2_000_000_000 }], paidFrom: { financialAccountId: bank } }, `sp-huge-${RUN}`);
+    expect(huge.status).toBe(400);
+    const many = await api().post("/stock/purchases", {
+      lines: [{ variantId: cap, quantity: 1, amount: 1_000_000_000 }],
+      extras: Array.from({ length: 10 }, (_, i) => ({ description: `x${i}`, amount: 1_000_000_000 })),
+      paidFrom: { financialAccountId: bank },
+    }, `sp-many-${RUN}`);
+    expect(many.status).toBe(400);
+  });
+
+  it("a purchase stuck mid-way is finished from another account; GET says what is pending", async () => {
+    const body = { supplierName: "Finish Test Traders", lines: [{ variantId: cap, quantity: 2, amount: 600 }], paidFrom: { financialAccountId: bkash } };
+    hooks.beforePayment = async () => {
+      throw financeError(409, "INSUFFICIENT_FUNDS", "bKash was emptied meanwhile");
+    };
+    const stuck = await api().post("/stock/purchases", body, `sp-finish-${RUN}`);
+    expect(stuck.status, JSON.stringify(stuck.body)).toBe(409);
+    const entry = await prisma.stockHubEntry.findFirstOrThrow({ where: { idempotencyKey: `purchase:sp-finish-${RUN}` } });
+    const listed = await api().get(`/stock/purchases/${entry.id}`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.purchase).toMatchObject({ complete: false, pendingStep: "payment", paymentStatus: null });
+
+    const bankBefore = await balance(bank);
+    const walletBefore = await balance(bkash);
+    const before = await counts();
+    const done = await api().post(`/stock/purchases/${entry.id}/finish`, { paidFrom: { financialAccountId: bank } });
+    expect(done.status, JSON.stringify(done.body)).toBe(201);
+    expect(done.body).toMatchObject({ replayed: false, purchase: { complete: true, pendingStep: null, paidFrom: { kind: "ACCOUNT", financialAccountId: bank }, paymentStatus: "POSTED" } });
+    expect(await balance(bank)).toBe(bankBefore - 600);
+    expect(await balance(bkash)).toBe(walletBefore);
+    expect(await counts()).toMatchObject({ receipts: before.receipts, bills: before.bills, movements: before.movements + 1 });
+
+    const again = await api().post(`/stock/purchases/${entry.id}/finish`, { paidFrom: { financialAccountId: bkash } });
+    expect(again.status).toBe(200);
+    expect(again.body.replayed).toBe(true);
+    const original = await api().post("/stock/purchases", body, `sp-finish-${RUN}`);
+    expect(original.status).toBe(200);
+    expect(original.body.replayed).toBe(true);
+    expect(await counts()).toMatchObject({ movements: before.movements + 1 });
+    expect((await api().post(`/stock/purchases/missing-${RUN}/finish`, {})).status).toBe(404);
+    await booksMatch();
+  });
+
+  it("the list reads the payment's status live and shows amounts only with costing.read", async () => {
+    const entry = await prisma.stockHubEntry.findFirstOrThrow({ where: { idempotencyKey: `purchase:sp-oil-${RUN}` } });
+    await prisma.stockHubEntry.update({ where: { id: entry.id }, data: { steps: { ...(entry.steps as object), paymentStatus: "PENDING_APPROVAL" } as never } });
+    const seen = (await listPurchases({}, { canSeeCost: true })).purchases.find((p) => p.id === entry.id)!;
+    expect(seen.paymentStatus).toBe("POSTED");
+    expect(seen).toMatchObject({ goods: 12000, total: 12400, lines: [{ amount: 12000, unitCost: 24 }] });
+    const hidden = (await listPurchases({}, { canSeeCost: false })).purchases.find((p) => p.id === entry.id)!;
+    expect(hidden).toMatchObject({ goods: null, extras: null, total: null, lines: [{ variantId: oil, quantity: 500, amount: null, unitCost: null }], extrasLines: [{ description: "Transport", amount: null }] });
   });
 });

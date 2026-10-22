@@ -21,7 +21,7 @@ import type { FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { businessDateOf, financeError } from "../finance/finance-values";
 import { recordStockCount } from "../finance/stock-check.service";
-import { claimEntry, completeEntry, fingerprintOf, releaseEntry, saveSteps, unitOf, variantLabel } from "./hub-entry";
+import { claimEntry, completeEntry, fingerprintOf, releaseEntry, renewLease, saveSteps, unitOf, variantLabel } from "./hub-entry";
 
 /** Order statuses whose units are still on the shelf (packed at most; not yet handed to the courier). */
 export const ON_SHELF_STATUSES = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"] as const;
@@ -72,7 +72,9 @@ interface CountSteps {
   lines: CountLine[];
 }
 
-const lineSource = (entryId: string, i: number) => ({ type: "StockHubEntry", id: `${entryId}:${i}` });
+const lineSource = (entryId: string, i: number) => ({ type: "StockHubEntry", id: countSource(entryId, i) });
+/** A count line: `<entry id>:<line>` — the StockCount and the stock movement it makes carry it, so a retry finds them. */
+const countSource = (entryId: string, i: number) => `${entryId}:${i}`;
 
 /** Records a count (see the file header). */
 export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, key: string | null) {
@@ -111,8 +113,8 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
       return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), counted: l.counted, reason: l.reason ?? null, note: l.note, fillToOrder: v.product.fillToOrder };
     }),
   };
-  const { entry, done } = await claimEntry({ businessId: business.id, kind: "COUNT", key, fingerprint: fingerprintOf(input), entryDate: input.date ?? today, steps: initial as never, actor });
-  if (done) return outcome(entry.id, businessDateOf(entry.entryDate), entry.steps as unknown as CountSteps, true);
+  const { entry, done, lease } = await claimEntry({ businessId: business.id, kind: "COUNT", key, fingerprint: fingerprintOf(input), entryDate: input.date ?? today, steps: initial as never, actor });
+  if (done || !lease) return outcome(entry.id, businessDateOf(entry.entryDate), entry.steps as unknown as CountSteps, true);
 
   const steps = entry.steps as unknown as CountSteps;
   const date = businessDateOf(entry.entryDate);
@@ -120,16 +122,28 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
     for (const [i, line] of steps.lines.entries()) {
       if (line.done) continue;
       if (!line.stockCountId) {
-        // What should be there now, read fresh: an order placed since the form opened changes the expectation.
-        const [now] = await prisma.productVariant.findMany({ where: { id: line.variantId }, select: { stock: true } });
-        const waiting = (await reservedNotDispatched(prisma, [line.variantId])).get(line.variantId) ?? 0;
-        line.expected = expectedOnShelf(now?.stock ?? 0, waiting);
-        line.difference = line.counted - line.expected;
-        const problem = reasonProblem(line.name, line.difference, line.reason);
-        if (problem) throw financeError(409, "COUNT_REASON", `${problem} (stock moved while counting)`, { lines: [problem] });
-        line.stockCountId = (await recordStockCount({ variantId: line.variantId, counted: line.counted, countDate: date, note: line.note }, actor)).id;
-        await saveSteps(entry.id, steps as never);
+        await renewLease(lease);
+        const sourceId = countSource(entry.id, i);
+        // Recorded before a crash: its expectation stands (the stock has not been adjusted for it yet).
+        const seen = await prisma.stockCount.findUnique({ where: { sourceId }, select: { id: true, siteStock: true } });
+        if (seen) {
+          line.expected = seen.siteStock;
+          line.difference = line.counted - seen.siteStock;
+          line.stockCountId = seen.id;
+        } else {
+          // What should be there now, read fresh: an order placed since the form opened changes the expectation.
+          const [now] = await prisma.productVariant.findMany({ where: { id: line.variantId }, select: { stock: true } });
+          const waiting = (await reservedNotDispatched(prisma, [line.variantId])).get(line.variantId) ?? 0;
+          line.expected = expectedOnShelf(now?.stock ?? 0, waiting);
+          line.difference = line.counted - line.expected;
+          const problem = reasonProblem(line.name, line.difference, line.reason);
+          if (problem) throw financeError(409, "COUNT_REASON", `${problem} (stock moved while counting)`, { lines: [problem] });
+          // kept with what should have been on the shelf, so Finance → Stock check shows the true difference
+          line.stockCountId = (await recordStockCount({ variantId: line.variantId, counted: line.counted, countDate: date, note: line.note, expected: line.expected, sourceId }, actor)).id;
+        }
+        await saveSteps(lease, steps as never);
       }
+      await renewLease(lease);
       line.movementId = null;
       if (line.difference) {
         const reason: StockCountReason = line.reason ?? "FOUND";
@@ -141,12 +155,12 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
         line.movementId = mv.id;
       }
       line.done = true;
-      await saveSteps(entry.id, steps as never);
+      await saveSteps(lease, steps as never);
     }
-    await completeEntry(entry.id, steps as never);
+    await completeEntry(lease, steps as never);
     return outcome(entry.id, date, steps, false);
   } catch (err) {
-    await releaseEntry(entry.id);
+    await releaseEntry(lease);
     throw err;
   }
 }

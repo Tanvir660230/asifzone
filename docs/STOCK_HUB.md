@@ -65,3 +65,30 @@ writes nothing):
 7. **Read model rebuild** — the website then shows attar availability = makeable.
 
 Afterwards every finance check must read MATCHED.
+
+## 5. API and safeguards
+
+All under `/api/v1/finance`. Bought and Counted need an `Idempotency-Key` header; the same key replays (200), a different
+request under it is refused (409 `IDEMPOTENCY_KEY_REUSED`).
+
+| Route | Permission | Notes |
+|---|---|---|
+| `GET /stock` | `inventory.read` | The overview; values and average costs only with `costing.read` |
+| `GET /stock/purchases?limit=` | `purchasing.read` | Recent purchases; amounts and unit costs only with `costing.read`; payment status read live |
+| `GET /stock/purchases/:id` | `purchasing.read` | One purchase: `complete`, `pendingStep` |
+| `POST /stock/purchases` | `purchasing.receive` (+ `purchasing.approve`, `ap.manage`, `finance.transact`; + `finance.sensitive` for the owner's own money) | 201 / 200 replay |
+| `POST /stock/purchases/:id/finish` | as above | Completes a purchase stuck mid-way, optionally from another account while nothing has been paid (`PAID_FROM_LOCKED` otherwise) |
+| `POST /stock/counts` | `inventory.adjust` | 201 / 200 replay |
+
+- **Checked before anything is written** (409, nothing written): the date is in open books (`BEFORE_OPENING_DATE`,
+  `PERIOD_CLOSED`, `PERIOD_SOFT_CLOSED`), the supplier isn't on hold (`SUPPLIER_ON_HOLD`), a cash box or wallet holds
+  what is still to be paid (`INSUFFICIENT_FUNDS`; a bank may go overdrawn, as in treasury). Amounts: each at most
+  1,000,000,000, a purchase at most 10,000,000,000.
+- **Owner's own money** passes only through his "<owner> — own money" cash account (made the first time), never another
+  cash box, and needs `finance.sensitive` like `POST /equity/owner/money`.
+- **Leases are fenced**: each claim gets a token; every save, completion and release is conditional on it and renews the
+  lease. A request that outlived its lease stops with 409 `STOCK_ENTRY_LEASE_LOST`. The receipt and bill stamps
+  (`stock-purchase:<key>:receipt|invoice`) are unique in the database among receipts not reversed and bills not voided.
+- **Counts** are kept with what should have been on the shelf (`StockCount.siteStock` = stock + units waiting unpacked)
+  and their count line (`StockCount.sourceId`), so Finance → Stock check shows the true difference and a retry never
+  records a count twice.

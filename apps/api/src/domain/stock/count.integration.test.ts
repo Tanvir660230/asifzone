@@ -15,6 +15,8 @@ import { postOpeningBalances, saveOpeningInventory } from "../finance/opening-ba
 import { approveCutover, draftCutover, postCutover } from "../finance/inventory-cutover.service";
 import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.service";
 import { createMaterial } from "../manufacturing/materials.service";
+import { recordStockCount, stockCheck } from "../finance/stock-check.service";
+import { listRoutes, routePermission } from "../../test-routes";
 import { expectedOnShelf, recordCounts, reservedNotDispatched } from "./count.service";
 
 // Stock hub Task 6 (docs/STOCK_HUB.md §2 "Counted"): expected on the shelf = stock + units on orders not yet booked with
@@ -158,5 +160,40 @@ describe("Counted", () => {
 
   it("needs an Idempotency-Key", async () => {
     expect((await post({ lines: [{ variantId: cap, counted: 8 }] })).status).toBe(400);
+  });
+});
+
+describe("Counted — review fixes", () => {
+  it("is gated by inventory.adjust (who counts the shelf), not finance.custody", () => {
+    const route = listRoutes().find((r) => r.method === "POST" && r.path === "/api/v1/finance/stock/counts");
+    expect(route && routePermission(route)).toBe("inventory.adjust");
+  });
+
+  it("a hub count with orders waiting stores what should have been on the shelf: stock check shows the true difference", async () => {
+    const p = (await createStockedProduct({ stocks: [6], basePrice: 400 })).variants[0]!.id;
+    await placeOrder([{ variantId: p, quantity: 2 }]); // stock 4, 2 waiting unpacked → 6 should be on the shelf
+    const r = await recordCounts({ lines: [{ variantId: p, counted: 5, reason: "LOST" }] }, OWNER, `cnt-true-${RUN}`);
+    expect(r.lines[0]).toMatchObject({ expected: 6, counted: 5, difference: -1 });
+    const [row] = await prisma.stockCount.findMany({ where: { variantId: p } });
+    expect(row).toMatchObject({ counted: 5, siteStock: 6, sourceId: `${r.id}:0` });
+    const check = await stockCheck();
+    expect(check.finished.find((f: { variantId: string }) => f.variantId === p)?.count).toMatchObject({ counted: 5, siteStockThen: 6, difference: -1 });
+    // stock check's own counts are unchanged: against the site's stock
+    const own = await recordStockCount({ variantId: p, counted: 3 }, OWNER);
+    expect(own.difference).toBe(0);
+  });
+
+  it("a retry after a crash between the count and its bookkeeping records the count once", async () => {
+    const p = (await createStockedProduct({ stocks: [4], basePrice: 400 })).variants[0]!.id;
+    const body = { lines: [{ variantId: p, counted: 5, reason: "FOUND" as const }] };
+    const first = await recordCounts(body, OWNER, `cnt-crash-${RUN}`);
+    // as if the process died after the StockCount was written but before the entry remembered it
+    const entry = await prisma.stockHubEntry.findUniqueOrThrow({ where: { id: first.id } });
+    const steps = entry.steps as { lines: Array<Record<string, unknown>> };
+    await prisma.stockHubEntry.update({ where: { id: entry.id }, data: { completedAt: null, leaseUntil: null, leaseToken: null, steps: { lines: steps.lines.map((l) => ({ ...l, stockCountId: undefined, done: undefined, expected: undefined, difference: undefined })) } as never } });
+    const again = await recordCounts(body, OWNER, `cnt-crash-${RUN}`);
+    expect(again.lines[0]).toMatchObject({ expected: 4, counted: 5, difference: 1 });
+    expect(await prisma.stockCount.count({ where: { variantId: p } })).toBe(1);
+    expect(await stock(p)).toBe(5); // the adjustment is booked once too (its source is the line)
   });
 });

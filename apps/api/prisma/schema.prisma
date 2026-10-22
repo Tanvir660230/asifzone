@@ -5813,10 +5813,13 @@ model StockCount {
   variant          ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
   countDate        DateTime        @db.Date
   counted          Int
-  /// The site's stock when the count was recorded.
+  /// The site's stock when the count was recorded — for a stock hub count, what should have been on the shelf then
+  /// (stock + units on orders not yet handed to the courier), so `counted − siteStock` is the true difference.
   siteStock        Int
   note             String?
   countedByAdminId String?
+  /// The stock hub count line that recorded it (`<entry id>:<line>`): a retry finds it instead of counting twice.
+  sourceId         String?         @unique
   createdAt        DateTime        @default(now())
 
   @@index([variantId, countDate])
@@ -5865,6 +5868,9 @@ model StockHubEntry {
   steps            Json              @default("{}")
   completedAt      DateTime?
   leaseUntil       DateTime?
+  /// Who holds the lease: every save, completion and release is conditional on it, so a request that outlived its
+  /// lease can't write over the retry that took the entry over.
+  leaseToken       String?
   createdByAdminId String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt

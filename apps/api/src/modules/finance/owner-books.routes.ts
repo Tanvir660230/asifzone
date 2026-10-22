@@ -41,6 +41,7 @@ import {
   ownerHomeQuerySchema,
   stockPurchaseSchema,
   stockPurchaseListQuerySchema,
+  stockPurchaseFinishSchema,
   stockCountsSchema,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
@@ -208,14 +209,23 @@ ownerBooksRouter.post("/center/rolls/:id/finish", requirePermission("finance.tra
 
 // ── Stock hub (docs/STOCK_HUB.md): Bought · Counted · the overview ─────────────────────────────────────────────────────
 // Bought posts a receipt (purchasing.receive — the service also asks for purchasing.approve, ap.manage and
-// finance.transact, which the composition needs); retries with the same Idempotency-Key resume or replay.
-ownerBooksRouter.get("/stock/purchases", requirePermission("purchasing.read"), validate(stockPurchaseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await stockPurchases.listPurchases(req.query as never))));
+// finance.transact, which the composition needs, and finance.sensitive when the owner's own money pays); retries with the
+// same Idempotency-Key resume or replay. Amounts and unit costs in the list only with costing.read.
+const canSeeCost = (req: Request) => req.admin!.permissions.includes("costing.read");
+ownerBooksRouter.get("/stock/purchases", requirePermission("purchasing.read"), validate(stockPurchaseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await stockPurchases.listPurchases(req.query as never, { canSeeCost: canSeeCost(req) }))));
+ownerBooksRouter.get("/stock/purchases/:id", requirePermission("purchasing.read"), asyncHandler(async (req, res) => res.json(await stockPurchases.getPurchase(id(req), { canSeeCost: canSeeCost(req) }))));
 ownerBooksRouter.post("/stock/purchases", requirePermission("purchasing.receive"), validate(stockPurchaseSchema), asyncHandler(async (req, res) => {
   const r = await stockPurchases.recordPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
-// Counted: what is on the shelf; a shortfall needs its reason, a difference is booked at the running average.
-ownerBooksRouter.post("/stock/counts", requirePermission("finance.custody"), validate(stockCountsSchema), asyncHandler(async (req, res) => {
+// A purchase stuck mid-way: the remaining steps, from the same or (nothing paid yet) another account. Idempotent.
+ownerBooksRouter.post("/stock/purchases/:id/finish", requirePermission("purchasing.receive"), validate(stockPurchaseFinishSchema), asyncHandler(async (req, res) => {
+  const r = await stockPurchases.finishPurchase(id(req), req.body, await actorOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+// Counted: what is on the shelf (inventory.adjust — who may correct stock); a shortfall needs its reason, a difference
+// is booked at the running average.
+ownerBooksRouter.post("/stock/counts", requirePermission("inventory.adjust"), validate(stockCountsSchema), asyncHandler(async (req, res) => {
   const r = await stockCounts.recordCounts(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
