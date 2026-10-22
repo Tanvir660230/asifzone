@@ -4,7 +4,7 @@
  * (district, product, payment method, order value, new vs returning customer, channel). Pure; the loader is
  * delivery-outcomes.service.ts. Money is minor units.
  */
-import { addDays, businessDate, localClock } from "@clothing-brand/shared";
+import { addDays, BD_DIALLING_CODE, businessDate, currencySymbol, localClock } from "@clothing-brand/shared";
 
 export type ParcelOutcome = "delivered" | "partial" | "refused";
 
@@ -92,22 +92,26 @@ export function breakdown(list: Parcel[], keys: (p: Parcel) => Array<string | nu
   return opts.limit ? rows.slice(0, opts.limit) : rows;
 }
 
-const BANDS: Array<[number, string]> = [
-  [50_000, "Under ৳500"],
-  [100_000, "৳500–999"],
-  [200_000, "৳1,000–1,999"],
-];
+/** Order value bands (minor units): upper limits, then the open-ended top band. */
+const BAND_LIMITS = [50_000, 100_000, 200_000] as const;
 
-/** Order value band (minor units, BDT). */
-export function valueBand(value: number): string {
-  for (const [limit, label] of BANDS) if (value < limit) return label;
-  return "৳2,000+";
+/** The bands' labels, lowest first, in the store currency ("Under 500" … "2,000+", with its symbol). */
+export function valueBands(currency: string): string[] {
+  const s = currencySymbol(currency);
+  return [`Under ${s}500`, `${s}500–999`, `${s}1,000–1,999`, `${s}2,000+`];
+}
+
+/** Order value band (minor units) — its label from valueBands. */
+export function valueBand(value: number, currency: string): string {
+  const labels = valueBands(currency);
+  const i = BAND_LIMITS.findIndex((limit) => value < limit);
+  return labels[i === -1 ? BAND_LIMITS.length : i]!;
 }
 
 /** Bangladeshi mobile numbers in one spelling: 01XXXXXXXXX (drops +88 / 88 and spaces/dashes). */
 export function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
-  return digits.startsWith("880") ? digits.slice(2) : digits.startsWith("88") && digits.length === 13 ? digits.slice(2) : digits;
+  return digits.startsWith(BD_DIALLING_CODE) ? digits.slice(2) : digits.startsWith(BD_DIALLING_CODE.slice(0, 2)) && digits.length === 13 ? digits.slice(2) : digits;
 }
 
 export interface RepeatRefuser {

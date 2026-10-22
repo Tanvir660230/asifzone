@@ -4,6 +4,7 @@
  * queues, most urgent first). A template, not a model call: the same numbers always read the same way. Pure; money in
  * major units.
  */
+import { currencySymbol } from "@clothing-brand/shared";
 import type { Anomaly } from "./anomalies";
 import type { OpsCounts } from "./ops-pulse";
 import type { OpsQueues } from "./ops-pulse.service";
@@ -34,7 +35,7 @@ export interface DailyBrief {
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 const avg = (n: number) => (Number.isInteger(n) ? count(n) : n.toFixed(1));
-const money = (v: number, currency: string) => (currency === "BDT" ? `৳${count(v)}` : `${currency} ${count(v)}`);
+const money = (v: number, currency: string) => `${currencySymbol(currency)}${count(v)}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n === 1 ? one : many}`;
 
 function weekdayOf(date: string): string {

@@ -4,6 +4,8 @@
  * customers/customer-tags.ts computeRiskSignals: a signal for a human to look at). Pure. Money is minor units (BDT).
  */
 
+import { currencySymbol } from "@clothing-brand/shared";
+
 export interface PhoneHistory {
   delivered: number;
   partial: number;
@@ -24,15 +26,15 @@ export interface OrderRisk {
   trusted: boolean;
 }
 
-/** A first order this big is refused far more often (§4.7: ৳2,000+ refused 20% vs 8% overall in the store's data). */
+/** A first order this big (2,000 in major units) is refused far more often (§4.7: refused 20% vs 8% overall in the store's data). */
 export const BIG_FIRST_ORDER = 200_000;
 /** Steadfast's cross-shop success rate below this is worth a call before sending. */
 export const WEAK_COURIER_SCORE = 60;
 
-const taka = (minor: number) => `৳${Math.round(minor / 100).toLocaleString("en-US")}`;
+const amount = (minor: number, currency: string) => `${currencySymbol(currency)}${Math.round(minor / 100).toLocaleString("en-US")}`;
 
-export function orderRisk(input: { history: PhoneHistory; orderValue: number; courierSuccessRate?: number | null }): OrderRisk {
-  const { history: h, orderValue, courierSuccessRate } = input;
+export function orderRisk(input: { history: PhoneHistory; orderValue: number; currency: string; courierSuccessRate?: number | null }): OrderRisk {
+  const { history: h, orderValue, currency, courierSuccessRate } = input;
   const reasons: string[] = [];
   let level: RiskLevel = "low";
   const raise = (to: RiskLevel) => {
@@ -40,7 +42,7 @@ export function orderRisk(input: { history: PhoneHistory; orderValue: number; co
   };
 
   if (h.refused > 0) {
-    reasons.push(`Refused ${h.refused} parcel${h.refused > 1 ? "s" : ""} here before (${taka(h.refusedCodValue)} COD)`);
+    reasons.push(`Refused ${h.refused} parcel${h.refused > 1 ? "s" : ""} here before (${amount(h.refusedCodValue, currency)} COD)`);
     raise(h.refused >= 2 || h.delivered === 0 ? "high" : "medium");
   }
   if (h.cancelledBeforeBooking >= 2 && h.delivered === 0) {
@@ -49,7 +51,7 @@ export function orderRisk(input: { history: PhoneHistory; orderValue: number; co
   }
   const firstOrder = h.delivered + h.partial + h.refused + h.cancelledBeforeBooking + h.open === 0;
   if (firstOrder && orderValue >= BIG_FIRST_ORDER) {
-    reasons.push("First order, ৳2,000 or more");
+    reasons.push(`First order, ${amount(BIG_FIRST_ORDER, currency)} or more`);
     raise("medium");
   }
   if (courierSuccessRate !== null && courierSuccessRate !== undefined && courierSuccessRate < WEAK_COURIER_SCORE) {

@@ -9,7 +9,7 @@ import { fromMajor, money, previousRange, toMajor, type BusinessRange } from "@c
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { resolveLegacyWindow, storeContext, utcInstant } from "../../domain/metrics/store-time";
-import { breakdown, outcomeTotals, repeatRefusers, valueBand, weeklyTrend, type BreakdownRow, type OutcomeTotals, type Parcel, type ParcelOutcome, type RepeatRefuser } from "./delivery-outcomes";
+import { breakdown, outcomeTotals, repeatRefusers, valueBand, valueBands, weeklyTrend, type BreakdownRow, type OutcomeTotals, type Parcel, type ParcelOutcome, type RepeatRefuser } from "./delivery-outcomes";
 import { channelLabel, creditedChannels } from "./traffic.service";
 
 const CACHE_TTL_SECONDS = 300;
@@ -107,7 +107,6 @@ export interface DeliveryOutcomesReport {
   minParcels: number;
 }
 
-const VALUE_ORDER = ["Under ৳500", "৳500–999", "৳1,000–1,999", "৳2,000+"];
 
 export async function getDeliveryOutcomes(days?: number, dateFrom?: Date, dateTo?: Date): Promise<DeliveryOutcomesReport> {
   const range = await resolveLegacyWindow(days, dateFrom, dateTo);
@@ -130,7 +129,7 @@ export async function getDeliveryOutcomes(days?: number, dateFrom?: Date, dateTo
     byDivision: breakdown(parcels, (p) => [p.division]),
     byProduct: breakdown(parcels, (p) => p.products.map((x) => x.id), { minParcels: MIN_PARCELS, limit: 50 }).map((r) => ({ ...r, productId: r.key, key: productName.get(r.key) ?? r.key })),
     byPayment: breakdown(parcels, (p) => [p.paymentMethod === "COD" ? "Cash on delivery" : "Paid in advance"]),
-    byValue: breakdown(parcels, (p) => [valueBand(p.value)]).sort((a, b) => VALUE_ORDER.indexOf(a.key) - VALUE_ORDER.indexOf(b.key)),
+    byValue: breakdown(parcels, (p) => [valueBand(p.value, currency)]).sort((a, b) => valueBands(currency).indexOf(a.key) - valueBands(currency).indexOf(b.key)),
     byCustomer: breakdown(parcels, (p) => [p.repeatCustomer ? "Returning customer" : "First order"]),
     byChannel: breakdown(parcels, (p) => [p.channel ?? "No website visit (phone, admin)"]),
     weekly: weeklyTrend(parcels, range.timezone),

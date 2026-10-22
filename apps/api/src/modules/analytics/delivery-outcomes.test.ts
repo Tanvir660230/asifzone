@@ -56,10 +56,10 @@ describe("delivery outcomes", () => {
   });
 
   it("value bands", () => {
-    expect(valueBand(49_900)).toBe("Under ৳500");
-    expect(valueBand(50_000)).toBe("৳500–999");
-    expect(valueBand(150_000)).toBe("৳1,000–1,999");
-    expect(valueBand(250_000)).toBe("৳2,000+");
+    expect(valueBand(49_900, "BDT")).toBe("Under ৳500");
+    expect(valueBand(50_000, "BDT")).toBe("৳500–999");
+    expect(valueBand(150_000, "BDT")).toBe("৳1,000–1,999");
+    expect(valueBand(250_000, "BDT")).toBe("৳2,000+");
   });
 
   it("repeat refusers: phones that refused two or more parcels, worst first", () => {

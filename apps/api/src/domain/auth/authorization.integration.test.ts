@@ -506,7 +506,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
     // +9: courier costs (docs/COURIER_COSTS.md) — shipments, legs, cost events, rider contributions, verify, report
     // +1: profit by day (docs/FINANCE_PROFIT_DASHBOARD.md)
-    expect(routes).toHaveLength(687);
+    // +10: smart analytics (docs/SMART_ANALYTICS_PLAN.md) — ops pulse + daily, channels, delivery outcomes, order risk, anomalies + brief, product to-do, why it changed, ad returns, ops-event order ids
+    expect(routes).toHaveLength(697);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

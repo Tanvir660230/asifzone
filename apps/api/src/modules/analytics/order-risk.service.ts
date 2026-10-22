@@ -84,7 +84,7 @@ export async function getOrderRisk(orderIds: string[]): Promise<Record<string, O
       open: Number(r?.open ?? 0),
       refusedCodValue: refusedCodMinor,
     };
-    const risk = orderRisk({ history, orderValue: fromMajor(o.total.toString(), currency).amount, courierSuccessRate: o.customer?.deliverySuccessRate ?? null });
+    const risk = orderRisk({ history, orderValue: fromMajor(o.total.toString(), currency).amount, currency, courierSuccessRate: o.customer?.deliverySuccessRate ?? null });
     out[o.id] = { ...risk, history: { ...history, refusedCodValue: toMajor(money(refusedCodMinor, currency)) } };
   }
   return out;

@@ -51,7 +51,9 @@ const asOwner = () => agent(owner, "OWNER");
 const asStaff = () => agent(staff, "STAFF");
 
 let seq = 0;
-const cid = () => `SF-${RUN}-${++seq}`;
+// Numeric like a real Steadfast consignment id (the webhook ignores anything else), unique per run.
+const RUN_DIGITS = String(Date.now()).slice(-9);
+const cid = () => `${RUN_DIGITS}${String(++seq).padStart(3, "0")}`;
 
 async function shippedOrder(consignment: string, opts: { variants?: number } = {}) {
   const p = await createStockedProduct({ stocks: Array.from({ length: opts.variants ?? 1 }, () => 20), basePrice: 1000 });

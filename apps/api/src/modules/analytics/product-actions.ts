@@ -4,6 +4,8 @@
  * rule needs enough data to mean something (a few views never trigger "fix the page"). Pure; money in major units.
  */
 
+import { currencySymbol } from "@clothing-brand/shared";
+
 export type ProductActionKind = "sold_out" | "restock" | "refusals" | "fix_page" | "clear_stock" | "promote";
 
 export interface VariantSignal {
@@ -62,7 +64,7 @@ const MIN_ORDERS_FOR_PROMOTE = 3;
 const pct = (r: number) => `${(r * 100).toFixed(1)}%`;
 const pct0 = (r: number) => `${Math.round(r * 100)}%`;
 const n = (v: number) => Math.round(v).toLocaleString("en-US");
-const money = (v: number, currency: string) => (currency === "BDT" ? `৳${n(v)}` : `${currency} ${n(v)}`);
+const money = (v: number, currency: string) => `${currencySymbol(currency)}${n(v)}`;
 const perDay = (v: number) => (v >= 1 ? n(v) : v.toFixed(1));
 
 export function productActions(products: ProductSignals[], store: StoreBaseline): ProductAction[] {
