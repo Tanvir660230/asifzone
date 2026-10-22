@@ -160,7 +160,7 @@ export const quickRefill = (body: { variantId: string; quantity: number; used?: 
 
 export interface ProfitReport {
   period: { from: string; to: string };
-  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; otherCosts: number; netProfit: number };
+  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; outsideSalesCost: number; outsideSaleCostPct: number | null; otherCosts: number; netProfit: number };
   orders: Array<{ orderId: string; orderNumber: string; date: string; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number }>;
   products: Array<{ name: string; units: number; sales: number; costs: number; contribution: number; marginPct: number | null }>;
 }
@@ -218,7 +218,7 @@ export interface SmsStatus {
   usedPerDay: number | null; daysLeft: number | null; runsOutOn: string | null; monthlyUsage: Array<{ month: string; used: number }>;
   recharges: Array<{ id: string; date: string; amount: number; payee: string | null; description: string }>; readings: Array<{ at: string; balance: number; source: string; note: string | null }>; smsAccountId: string | null;
 }
-export interface CenterSettings { defaultUsdRate: number | null; smsLowBalance: number | null }
+export interface CenterSettings { defaultUsdRate: number | null; smsLowBalance: number | null; outsideSaleCostPct: number | null }
 export const getCenterSummary = () => apiFetch<CenterSummary>(`${BASE}/center/summary`);
 export const listVerifications = (status?: EntryVerification) => apiFetch<{ items: VerificationItem[]; totals: CenterSummary["verification"] }>(`${BASE}/center/verifications${qs({ status })}`);
 export const setVerification = (body: { entityType: VerifiableType; entityId: string; status: EntryVerification; source?: string | null; note?: string | null }) => apiFetch<{ status: EntryVerification }>(`${BASE}/center/verifications`, { method: "PUT", body });

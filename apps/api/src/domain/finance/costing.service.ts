@@ -29,6 +29,7 @@ import { FINANCE_BUSINESS_KEY } from "./finance-context";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { recordFinancialEvent } from "./events.service";
 import { INVENTORY_VALUED_EVENT } from "./inventory-posting-rules";
+import { OUTSIDE_RELEASE_REASONS, outsideReleaseInTx } from "./outside-stock";
 
 // ── arithmetic ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -615,6 +616,9 @@ async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: M
   const adjustmentMinor = Number(result.figures.costAdjustment);
   if (bookMinor === 0 && adjustmentMinor === 0) return;
   const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
+  const counterKey = m.ledger === "MOVEMENT" ? (COUNTER_FOR_REASON[m.movement.reason] ?? "cogs.count_adjustments") : null;
+  // A count correction or loss is first the goods already costed as sold outside the website (outside-stock.ts).
+  const outsideReleaseMinor = counterKey && bookMinor < 0 && OUTSIDE_RELEASE_REASONS.has(m.movement.reason) ? await outsideReleaseInTx(tx, scope.business.id, scope.business.baseCurrency, -bookMinor) : 0;
   await recordFinancialEvent(tx, {
     contract: "finance.event",
     contractVersion: 1,
@@ -631,9 +635,10 @@ async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: M
       reason: m.movement.reason,
       orderId: m.movement.orderId,
       bookMinor,
-      counterKey: m.ledger === "MOVEMENT" ? (COUNTER_FOR_REASON[m.movement.reason] ?? "cogs.count_adjustments") : null,
+      counterKey,
       costAdjustmentMinor: adjustmentMinor,
       status: result.figures.valuationStatus,
+      ...(outsideReleaseMinor > 0 ? { outsideReleaseMinor } : {}),
     },
   });
 }

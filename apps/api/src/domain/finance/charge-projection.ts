@@ -4,8 +4,8 @@
  *
  *   order:<id>:courier_charge          while the parcel is delivered / partly delivered / returned and NO posted courier
  *                                      settlement names the order (the settlement then books the actual charge, and this
- *                                      estimate is withdrawn by a void revision).
- *   order:<id>:gateway_fee:<payment>   while the gateway payment has no posted gateway settlement line.
+ *                                      estimate is withdrawn by a void revision dated on the payout's day).
+ *   order:<id>:gateway_fee:<payment>   while no posted gateway settlement line settles that payment.
  *
  * Only reads commerce. No rate card / fee rate in force → no estimate.
  */
@@ -41,35 +41,41 @@ export async function loadRateCards(businessId: string, cur: string): Promise<{ 
   };
 }
 
-export async function chargeEstimatesForOrder(orderId: string, ctx: FinanceContext, rates?: Awaited<ReturnType<typeof loadRateCards>>): Promise<Desired[]> {
+export async function chargeEstimatesForOrder(orderId: string, ctx: FinanceContext, rates?: Awaited<ReturnType<typeof loadRateCards>>): Promise<{ events: Desired[]; withdrawnAt: Map<string, Date> }> {
   const cur = ctx.business.baseCurrency;
   const { cards, fees } = rates ?? (await loadRateCards(ctx.business.id, cur));
-  if (!cards.length && !fees.size) return [];
+  if (!cards.length && !fees.size) return { events: [], withdrawnAt: new Map() };
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     select: {
       id: true, orderNumber: true, status: true, courierConsignmentId: true, courierStatus: true, courierBookedAt: true, courierStatusSyncedAt: true, updatedAt: true,
       shippingDistrict: true, shippingArea: true,
       statusHistory: { select: { status: true, createdAt: true }, orderBy: { createdAt: "asc" } },
-      payments: { where: { status: "SUCCEEDED" }, select: { id: true, provider: true, amount: true, settledAt: true } },
+      payments: { where: { status: "SUCCEEDED" }, select: { id: true, provider: true, purpose: true, amount: true, settledAt: true, providerTransactionId: true } },
     },
   });
-  if (!order) return [];
+  if (!order) return { events: [], withdrawnAt: new Map() };
   const settled = await prisma.clearingSettlementLine.findMany({
     where: { orderId, settlement: { status: "POSTED", businessId: ctx.business.id } },
-    select: { externalRef: true, settlement: { select: { clearingAccount: { select: { kind: true } } } } },
+    select: { externalRef: true, settlement: { select: { settlementDate: true, clearingAccount: { select: { kind: true } } } } },
   });
-  const settledBy = (kind: string) => settled.some((l) => l.settlement.clearingAccount.kind === kind);
   const out: Desired[] = [];
   const tz = ctx.business.timezone;
+  // An estimate a payout replaced is withdrawn on the payout's day (where the actual charge is booked), never on the day
+  // the books happened to notice — so a payout entered late doesn't count the charge twice in its month.
+  const withdrawnAt = new Map<string, Date>();
+  const payoutDay = (lines: typeof settled) => new Date(`${businessDateOf(lines.map((l) => l.settlement.settlementDate).sort((a, b) => a.getTime() - b.getTime())[0]!)}T12:00:00.000Z`);
+  const courierLines = settled.filter((l) => l.settlement.clearingAccount.kind === "COURIER");
+  if (courierLines.length) withdrawnAt.set(`order:${order.id}:courier_charge`, payoutDay(courierLines));
 
-  if (cards.length && order.courierConsignmentId && !settledBy("COURIER")) {
+  if (cards.length && order.courierConsignmentId && !courierLines.length) {
     const outcome = courierOutcome(order.courierStatus, order.status);
     if (outcome) {
       const booked = order.courierBookedAt?.getTime() ?? 0;
       const hit = order.statusHistory.find((h) => OUTCOME_STATUSES[outcome]!.includes(h.status) && h.createdAt.getTime() >= booked);
       const at = hit?.createdAt ?? order.courierStatusSyncedAt ?? order.updatedAt;
-      const collected = order.payments.filter((p) => p.provider === "COD").reduce((s, p) => s + toMinor(p.amount, cur), 0);
+      // What the rider collected for the order (a return charge is not order money and carries no COD charge).
+      const collected = order.payments.filter((p) => p.provider === "COD" && p.purpose === "ORDER").reduce((s, p) => s + toMinor(p.amount, cur), 0);
       const e = courierChargeEstimate({ outcome, collected: outcome === "RETURNED" ? 0 : collected, district: order.shippingDistrict, area: order.shippingArea, date: businessDate(at, tz), cards });
       if (e && e.total > 0) {
         out.push({
@@ -80,8 +86,21 @@ export async function chargeEstimatesForOrder(orderId: string, ctx: FinanceConte
     }
   }
 
-  if (fees.size && !settledBy("PAYMENT_GATEWAY")) {
-    for (const p of order.payments.filter((x) => GATEWAYS.has(x.provider))) {
+  // A gateway payout settles the payments it names (by transaction id); a line naming none of the order's payments
+  // settles one payment it doesn't name — all of them when there are at least as many such lines.
+  const gatewayLines = settled.filter((l) => l.settlement.clearingAccount.kind === "PAYMENT_GATEWAY");
+  const gatewayPayments = order.payments.filter((x) => GATEWAYS.has(x.provider));
+  const byRef = (p: (typeof gatewayPayments)[number]) => gatewayLines.filter((l) => p.providerTransactionId && l.externalRef?.trim() === p.providerTransactionId);
+  const unnamed = gatewayLines.filter((l) => !gatewayPayments.some((p) => byRef(p).includes(l)));
+  const unmatchedPayments = gatewayPayments.filter((p) => !byRef(p).length);
+  for (const p of gatewayPayments) {
+    const lines = byRef(p).length ? byRef(p) : unnamed.length >= unmatchedPayments.length ? unnamed : [];
+    if (lines.length) withdrawnAt.set(`order:${order.id}:gateway_fee:${p.id}`, payoutDay(lines));
+  }
+
+  if (fees.size) {
+    for (const p of gatewayPayments) {
+      if (withdrawnAt.has(`order:${order.id}:gateway_fee:${p.id}`)) continue;
       const amount = toMinor(p.amount, cur);
       const e = gatewayFeeEstimate(amount, fees.get(p.provider) ?? [], businessDate(p.settledAt, tz));
       if (!e || e.fee <= 0) continue;
@@ -91,5 +110,5 @@ export async function chargeEstimatesForOrder(orderId: string, ctx: FinanceConte
       });
     }
   }
-  return out;
+  return { events: out, withdrawnAt };
 }

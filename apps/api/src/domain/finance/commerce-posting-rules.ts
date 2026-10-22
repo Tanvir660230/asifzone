@@ -25,6 +25,8 @@ export const COMMERCE_EVENT_TYPES = {
   writtenOff: "commerce.return.written_off",
   credit: "commerce.store_credit.entry",
   stockWriteOff: "finance.stock.write_off_estimated",
+  salesReturn: "commerce.return.sales_return",
+  uncollected: "commerce.order.uncollected_written_off",
 } as const;
 
 const minor = z.number().int();
@@ -159,6 +161,38 @@ registerPostingRule(COMMERCE_EVENT_TYPES.writtenOff, 1, {
     ], p.orderNumber),
 });
 
+// ── an approved item return: goods the order no longer charges (PAYMENT_LEDGER §5c) ────────────────────────────────
+// A sales return whether or not money goes back — a partial delivery's rejected items never are paid for. The receivable
+// falls by what the order stops charging; a later refund of that money is then overpayment (no second revenue part).
+
+const salesReturnRevenue = z.object({ merchandiseExVat: minor, vat: minor, other: minor });
+export function salesReturnLines(r: z.infer<typeof salesReturnRevenue>, orderId: string | null, exchange: boolean): PostingRuleLine[] {
+  const pty = party(orderId);
+  return [
+    debit("revenue.returns_refunds", r.merchandiseExVat, pty),
+    debit("liability.vat_output", r.vat, pty),
+    debit("revenue.other_refunds", r.other, pty),
+    credit(hub(exchange), r.merchandiseExVat + r.vat + r.other, pty),
+  ];
+}
+const salesReturnPayload = z.object({ ...base, returnRequestId: z.string(), value: minor, exchange: z.boolean(), revenue: salesReturnRevenue });
+registerPostingRule(COMMERCE_EVENT_TYPES.salesReturn, 1, {
+  payload: salesReturnPayload,
+  build: (p) => voidOr(p, `Items returned, no longer charged — order ${p.orderNumber}`, () => salesReturnLines(p.revenue, p.orderId, p.exchange), p.orderNumber),
+});
+
+// ── a returned order's charge nobody will pay (the payment position: a returned order owes nothing more) ──────────
+
+const uncollectedPayload = z.object({ ...base, amount: minor });
+registerPostingRule(COMMERCE_EVENT_TYPES.uncollected, 1, {
+  payload: uncollectedPayload,
+  build: (p) =>
+    voidOr(p, `Order returned — charge not collected, written off — order ${p.orderNumber}`, () => [
+      { account: "revenue.other_refunds", debit: p.amount, credit: 0, ...party(p.orderId), memo: "Delivery and other charges the returned order never collected" },
+      { account: "asset.receivable_trade", debit: 0, credit: p.amount, ...party(p.orderId) },
+    ], p.orderNumber),
+});
+
 // ── order realisation reversed by a later cancellation (the dashboard's P5-2 reversal) ────────────────────────────
 
 const reversalPayload = z.object({
@@ -167,6 +201,8 @@ const reversalPayload = z.object({
   exchange: z.boolean(),
   refunds: z.array(z.object({ refundId: z.string(), revenue: refundRevenue })),
   returns: z.array(z.object({ movementId: z.string(), cost: minor, status: valuation })),
+  /** Sales returns before the cancellation (absent on reversals recorded before they existed). */
+  salesReturns: z.array(z.object({ returnRequestId: z.string(), revenue: salesReturnRevenue })).optional(),
 });
 registerPostingRule(COMMERCE_EVENT_TYPES.reversed, 1, {
   payload: reversalPayload,
@@ -174,6 +210,7 @@ registerPostingRule(COMMERCE_EVENT_TYPES.reversed, 1, {
     voidOr(p, `Sale reversed by cancellation — order ${p.orderNumber}`, () => [
       ...mirror(recognitionLines(p.recognition, p.orderId)),
       ...p.refunds.flatMap((r) => mirror(refundRevenueLines(r.revenue, p.orderId, p.exchange))),
+      ...(p.salesReturns ?? []).flatMap((r) => mirror(salesReturnLines(r.revenue, p.orderId, p.exchange))),
       ...p.returns.flatMap((r) => [
         { account: "cogs.goods" as AccountMappingKey, debit: r.cost, credit: 0, valuationStatus: r.status, ...party(p.orderId) },
         { account: "asset.inventory" as AccountMappingKey, debit: 0, credit: r.cost, valuationStatus: r.status, ...party(p.orderId) },
@@ -239,12 +276,19 @@ registerPostingRule(COMMERCE_EVENT_TYPES.credit, 1, {
 
 // ── an approved estimate for a stock write-off with no recorded cost (finance exception resolution) ───────────────
 
-const stockWriteOffPayload = z.object({ ...base, exceptionId: z.string(), movementId: z.string(), variantId: z.string(), units: z.number().int(), cost: minor, reason: z.string() });
+const stockWriteOffPayload = z.object({
+  ...base, exceptionId: z.string(), movementId: z.string(), variantId: z.string(), units: z.number().int(), cost: minor, reason: z.string(),
+  /** The part that is goods already costed as sold outside the website (outside-stock.ts). */
+  outsideReleaseMinor: z.number().int().positive().optional(),
+});
 registerPostingRule(COMMERCE_EVENT_TYPES.stockWriteOff, 1, {
   payload: stockWriteOffPayload,
-  build: (p) =>
-    voidOr(p, `Stock written off at an approved estimate (${p.units} unit(s))`, () => [
-      { account: "cogs.inventory_shrinkage", debit: p.cost, credit: 0, valuationStatus: "ESTIMATED", memo: p.reason },
+  build: (p) => {
+    const release = Math.min(p.outsideReleaseMinor ?? 0, p.cost);
+    return voidOr(p, `Stock written off at an approved estimate (${p.units} unit(s))`, () => [
+      { account: "cogs.inventory_shrinkage", debit: p.cost - release, credit: 0, valuationStatus: "ESTIMATED", memo: p.reason },
+      ...(release ? [{ account: "asset.inventory_sent_outside" as AccountMappingKey, debit: release, credit: 0, valuationStatus: "ESTIMATED" as const, memo: "Stock already costed as sold outside the website" }] : []),
       { account: "asset.inventory", debit: 0, credit: p.cost, valuationStatus: "ESTIMATED" },
-    ]),
+    ]);
+  },
 });

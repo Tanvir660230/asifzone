@@ -13,6 +13,8 @@ import { fromMajor, type BusinessRange, type InventoryVariantFact, type LineFact
 import { prisma } from "../../config/prisma";
 
 const DELIVERED_STATUSES = ["DELIVERED", "PARTIALLY_DELIVERED"] as const;
+/** Approved item returns (item-level returns, reconciled partial deliveries) — the ledger's `returned`. */
+const ITEM_RETURN = { type: "RETURN", status: "APPROVED" } as const;
 const BATCH = 500;
 
 function minor(v: { toString(): string } | number | null | undefined, currency: string): number {
@@ -26,17 +28,18 @@ function minorOrNull(v: { toString(): string } | number | null | undefined, curr
 export async function candidateOrderIds(range: Pick<BusinessRange, "startUtc" | "endUtc" | "preset">): Promise<string[] | null> {
   if (range.preset === "lifetime") return null;
   const window = { gte: range.startUtc, lt: range.endUtc };
-  const [placed, delivered, cancelled, paid, refunded, returned] = await Promise.all([
+  const [placed, delivered, cancelled, paid, refunded, returned, itemReturned] = await Promise.all([
     prisma.order.findMany({ where: { createdAt: window }, select: { id: true } }),
     prisma.orderStatusHistory.findMany({ where: { status: { in: [...DELIVERED_STATUSES] }, createdAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.orderStatusHistory.findMany({ where: { status: "CANCELLED", createdAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.payment.findMany({ where: { settledAt: window, orderId: { not: null } }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.refund.findMany({ where: { completedAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.stockMovement.findMany({ where: { reason: "RETURN", createdAt: window, orderId: { not: null } }, select: { orderId: true }, distinct: ["orderId"] }),
+    prisma.returnRequest.findMany({ where: { ...ITEM_RETURN, OR: [{ reviewedAt: window }, { reviewedAt: null, createdAt: window }] }, select: { orderId: true }, distinct: ["orderId"] }),
   ]);
   const ids = new Set<string>();
   for (const r of placed) ids.add(r.id);
-  for (const r of [...delivered, ...cancelled, ...paid, ...refunded, ...returned]) if (r.orderId) ids.add(r.orderId);
+  for (const r of [...delivered, ...cancelled, ...paid, ...refunded, ...returned, ...itemReturned]) if (r.orderId) ids.add(r.orderId);
   return [...ids];
 }
 
@@ -105,7 +108,7 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
   if (!rows.length) return [];
   const orderIds = rows.map((r) => r.id);
 
-  const [returnMovements, exchangeRequests, replacementRefs, variants] = await Promise.all([
+  const [returnMovements, exchangeRequests, replacementRefs, variants, itemReturns] = await Promise.all([
     batched(orderIds, (chunk) =>
       prisma.stockMovement.findMany({ where: { reason: "RETURN", orderId: { in: chunk } }, select: { id: true, orderId: true, variantId: true, change: true, createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
     ),
@@ -117,9 +120,16 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
     ),
     batched(orderIds, (chunk) => prisma.returnRequest.findMany({ where: { exchangeOrderId: { in: chunk } }, select: { exchangeOrderId: true } })),
     loadVariantProducts([...new Set(rows.flatMap((r) => r.items.filter((i) => !i.productIdSnapshot).map((i) => i.variantId)))]),
+    batched(orderIds, (chunk) =>
+      prisma.returnRequest.findMany({ where: { ...ITEM_RETURN, orderId: { in: chunk } }, select: { id: true, orderId: true, lines: true, reviewedAt: true, createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    ),
   ]);
 
   const movementsBy = groupBy(returnMovements, (m) => m.orderId!);
+  // Valued returns only (a partial-delivery return reconciled before values were recorded has `lines` null until the
+  // backfill values it — the payment ledger doesn't count it either).
+  const itemReturnsBy = groupBy(itemReturns.filter((r) => Array.isArray(r.lines)), (r) => r.orderId);
+  const returnValue = (lines: unknown) => (lines as Array<{ value?: number }>).reduce((n, l) => n + minor(l.value ?? 0, currency), 0);
   const exchangesBy = groupBy(exchangeRequests, (e) => e.orderId);
   const replacementIds = new Set(replacementRefs.map((r) => r.exchangeOrderId!));
 
@@ -181,6 +191,7 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
       .map((p) => ({ id: p.id, amount: minor(p.amount, currency), provider: p.provider, settledAt: p.settledAt })),
     refunds: o.refunds.map((r) => ({ id: r.id, amount: minor(r.amount, currency), status: r.status, completedAt: r.completedAt })),
     returnMovements: (movementsBy.get(o.id) ?? []).map((m) => ({ id: m.id, variantId: m.variantId, units: m.change, at: m.createdAt })),
+    itemReturns: (itemReturnsBy.get(o.id) ?? []).map((r) => ({ id: r.id, at: r.reviewedAt ?? r.createdAt, value: returnValue(r.lines) })).filter((r) => r.value > 0),
     exchangedLines: (exchangesBy.get(o.id) ?? []).map((e) => ({ orderItemId: e.orderItemId!, approvedAt: e.reviewedAt ?? e.updatedAt })),
   }));
 }

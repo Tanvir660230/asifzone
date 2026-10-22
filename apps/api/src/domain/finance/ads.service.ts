@@ -59,15 +59,25 @@ export function plannedByVersions(c: { startDate: string; endDate: string | null
   return out;
 }
 
-type BudgetedCampaign = { startDate: Date; endDate: Date | null; budgetType: AdBudgetType | null; budget: Prisma.Decimal | null; budgetChanges?: Array<{ effectiveDate: Date; budgetType: AdBudgetType | null; budget: Prisma.Decimal | null }> };
+type BudgetedCampaign = { startDate: Date; endDate: Date | null; budgetType: AdBudgetType | null; budget: Prisma.Decimal | null; budgetChanges?: Array<{ effectiveDate: Date; budgetType: AdBudgetType | null; budget: Prisma.Decimal | null; createdAt?: Date }> };
 
-/** A campaign's planned spend through `through`, by its budget history (a campaign from before the history: its budget). */
+/** A campaign's planned spend through `through`, by its budget history (a campaign from before the history: its budget).
+ * Entries on the same day apply in the order they were made. */
 function campaignPlanned(c: BudgetedCampaign, cur: string, through: string) {
   const range = { startDate: businessDateOf(c.startDate), endDate: c.endDate ? businessDateOf(c.endDate) : null };
   const versions = c.budgetChanges?.length
-    ? c.budgetChanges.map((v) => ({ from: businessDateOf(v.effectiveDate), budgetType: v.budgetType, budget: v.budget ? toMinor(v.budget, cur) : null }))
+    ? [...c.budgetChanges]
+        .sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0))
+        .map((v) => ({ from: businessDateOf(v.effectiveDate), budgetType: v.budgetType, budget: v.budget ? toMinor(v.budget, cur) : null }))
     : [{ from: range.startDate, budgetType: c.budgetType, budget: c.budget ? toMinor(c.budget, cur) : null }];
   return plannedByVersions(range, versions, through);
+}
+
+/** Planned spend of the days a campaign ran. One switched off keeps the days before it was (its history has a stop
+ * entry from that day); one switched off before stops were recorded has no planned days, as it had then. */
+function plannedFor(c: BudgetedCampaign & { isActive: boolean }, cur: string, through: string) {
+  const stopped = c.budgetChanges?.some((v) => v.budgetType === null && v.budget === null) ?? false;
+  return c.isActive || stopped ? campaignPlanned(c, cur, through) : new Map<string, number>();
 }
 
 // ── campaigns ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -138,13 +148,24 @@ export async function updateCampaign(id: string, input: Partial<CampaignInput>, 
   let budgetFrom = input.budgetFrom ?? today;
   if (budgetFrom < merged.startDate) budgetFrom = merged.startDate;
   if (budgetChanged && input.budgetFrom && input.budgetFrom > today) throw financeError(400, "BUDGET_FROM", "A budget change starts today or on a day that has passed");
+  // Switching a campaign off stops its planned spend from today — the days it ran keep theirs (they are history) — and
+  // switching it back on resumes its budget from today. Both are budget-history entries, so no past day is rewritten.
+  const switchedOff = before.isActive && input.isActive === false;
+  const switchedOn = !before.isActive && input.isActive === true;
   await financeTransaction(async (tx) => {
-    if (budgetChanged) {
+    if (budgetChanged || switchedOff || switchedOn) {
       if (!(await tx.adBudgetChange.count({ where: { campaignId: id } }))) {
         // A campaign from before the history: its old budget held from its start.
         await tx.adBudgetChange.create({ data: { campaignId: id, effectiveDate: before.startDate, budgetType: before.budgetType, budget: before.budget } });
       }
+    }
+    if (budgetChanged && !switchedOff) {
       await tx.adBudgetChange.create({ data: { campaignId: id, effectiveDate: dateColumn(budgetFrom), budgetType: merged.budgetType, budget: merged.budget ? toDecimal(toMinor(merged.budget, cur), cur) : null, changedByAdminId: adminOf(actor) } });
+    }
+    const from = dateColumn(today < merged.startDate ? merged.startDate : today);
+    if (switchedOff) await tx.adBudgetChange.create({ data: { campaignId: id, effectiveDate: from, budgetType: null, budget: null, changedByAdminId: adminOf(actor) } });
+    if (switchedOn && !budgetChanged) {
+      await tx.adBudgetChange.create({ data: { campaignId: id, effectiveDate: from, budgetType: merged.budgetType, budget: merged.budget ? toDecimal(toMinor(merged.budget, cur), cur) : null, changedByAdminId: adminOf(actor) } });
     }
     const after = await tx.adCampaign.update({
       where: { id },
@@ -434,7 +455,7 @@ async function desiredForCampaign(campaignId: string, today: string): Promise<Fi
   const c = await prisma.adCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { adAccount: { select: { ledgerAccountId: true } }, spendDays: true, budgetChanges: true } });
   const actual = new Map(c.spendDays.map((d) => [businessDateOf(d.date), toMinor(d.amount, cur)]));
   // A planned day is a day that has ended (yesterday and before); today's spend waits for its actual figure.
-  const planned = c.isActive ? campaignPlanned(c, cur, addDays(today, -1)) : new Map<string, number>();
+  const planned = plannedFor(c, cur, addDays(today, -1));
   const days = new Set([...actual.keys(), ...planned.keys()]);
   const facts: FinanceFact[] = [];
   for (const date of [...days].sort()) {
@@ -525,6 +546,23 @@ export async function importMetaSpend(input: { days?: number; since?: string }, 
           } satisfies Prisma.AdSpendDayUpdateInput;
           await tx.adSpendDay.upsert({ where: { campaignId_date: { campaignId: campaign.id, date: dateColumn(r.date) } }, create: { campaignId: campaign.id, date: dateColumn(r.date), ...data }, update: data });
         }
+        // Meta reports only the days a campaign spent. A Meta campaign with a budget had a finished day in the window that
+        // Meta didn't report: it spent nothing (paused, off) — recorded as 0, so its budget is never booked for that day.
+        const reported = new Set(rows.map((r) => `${r.campaignId}|${r.date}`));
+        const linked = await tx.adCampaign.findMany({
+          where: { financialAccountId: fa.id, externalId: { not: null }, budget: { not: null } },
+          select: { id: true, externalId: true, startDate: true, endDate: true, spendDays: { where: { date: { gte: dateColumn(since), lte: dateColumn(today) } }, select: { date: true } } },
+        });
+        for (const c of linked) {
+          const have = new Set(c.spendDays.map((d) => businessDateOf(d.date)));
+          const first = businessDateOf(c.startDate) > since ? businessDateOf(c.startDate) : since;
+          const last = c.endDate && businessDateOf(c.endDate) < addDays(today, -1) ? businessDateOf(c.endDate) : addDays(today, -1);
+          for (let d = first; d <= last; d = addDays(d, 1)) {
+            if (have.has(d) || periodDays.has(d) || reported.has(`${c.externalId}|${d}`)) continue;
+            await tx.adSpendDay.create({ data: { campaignId: c.id, date: dateColumn(d), source: "META_API", amount: toDecimal(0, cur) } });
+            touched.add(c.id);
+          }
+        }
         await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.import", entityType: "FinancialAccount", entityId: fa.id, after: { adAccountId: act, since, until: today, rows: rows.length } });
       });
       for (const id of touched) await syncCampaignSpend(id);
@@ -554,7 +592,7 @@ export async function listCampaigns(q: { from?: string; to?: string }) {
   const out = [];
   for (const c of campaigns) {
     const actual = new Map(c.spendDays.map((d) => [businessDateOf(d.date), toMinor(d.amount, cur)]));
-    const planned = c.isActive ? campaignPlanned(c, cur, addDays(today, -1)) : new Map<string, number>();
+    const planned = plannedFor(c, cur, addDays(today, -1));
     let actualMinor = 0;
     let plannedMinor = 0;
     for (const d of new Set([...actual.keys(), ...planned.keys()])) {

@@ -103,6 +103,7 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.cash_over_short",
   "liability.owner_reimbursable",
   "revenue.outside_sales",
+  "asset.inventory_sent_outside",
   "expense.unallocated",
   "expense.sms",
   "equity.owner_drawings",
@@ -171,7 +172,7 @@ export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.sa
  * estimates, ad spend, prepaid costs, packaging used and landed costs. */
 export const OWNER_BOOKS_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "group.ad_platform", "asset.prepaid", "asset.courier_claims", "liability.courier_charges_accrued", "liability.gateway_fees_accrued",
-  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "revenue.outside_sales", "expense.unallocated", "expense.sms", "expense.courier_fees",
+  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "revenue.outside_sales", "asset.inventory_sent_outside", "expense.unallocated", "expense.sms", "expense.courier_fees",
   "expense.gateway_fees", "asset.inventory", "cogs.cost_adjustments", "cogs.inventory_shrinkage", "equity.owner_capital", "equity.owner_drawings", "equity.profit_shared",
 ];
 
@@ -218,6 +219,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
   { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
   { code: "1630", name: "Work in progress (production)", type: "ASSET", parent: "1600", mapping: "asset.wip" },
+  // Contra to 1610: the estimated cost of goods sold outside the website (courier-panel parcels), which left the shelf but
+  // not the site's stock yet. A later stock decrease (a count, a loss) comes off it first, so those units are costed once.
+  { code: "1690", name: "Stock sent outside the website (estimated cost)", type: "ASSET", parent: "1600", normalBalance: "CREDIT", mapping: "asset.inventory_sent_outside" },
   { code: "1700", name: "Other current assets", type: "ASSET", parent: "1000", group: true },
   { code: "1710", name: "VAT input recoverable", type: "ASSET", parent: "1700", mapping: "asset.vat_input" },
   { code: "1720", name: "Prepaid expenses", type: "ASSET", parent: "1700", mapping: "asset.prepaid" },

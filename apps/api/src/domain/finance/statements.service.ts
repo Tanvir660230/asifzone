@@ -103,15 +103,38 @@ async function profitAndLoss(range: { from: string; to: string; brandId?: string
   return { sections: secs, grossProfit: m(gross), operatingProfit: m(operating), netProfit: m(net), grossMarginPct: t("revenue") ? Math.round((gross / t("revenue")) * 10_000) / 100 : null };
 }
 
-/** Income statement for [from, to], with the prior period of the same length alongside. */
+const lastDayOf = (ym: string) => addDays(`${shiftMonth(ym, 1)}-01`, -1);
+function shiftMonth(ym: string, n: number) {
+  const [y, m] = ym.split("-").map(Number) as [number, number];
+  const k = y * 12 + (m - 1) + n;
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, "0")}`;
+}
+
+/**
+ * The period to compare [from, to] with. A period that starts on the 1st is compared month for month: October with
+ * September, October 1–22 with September 1–22, a quarter with the quarter before (a day past the shorter month's end is
+ * its last day). Any other range: the same number of days just before it. Pure.
+ */
+export function priorPeriod(from: string, to: string): { from: string; to: string } {
+  if (from.endsWith("-01")) {
+    const n = (Number(to.slice(0, 4)) * 12 + Number(to.slice(5, 7))) - (Number(from.slice(0, 4)) * 12 + Number(from.slice(5, 7))) + 1;
+    const toMonth = shiftMonth(to.slice(0, 7), -n);
+    const end = lastDayOf(toMonth);
+    const day = `${toMonth}-${to.slice(8, 10)}`;
+    return { from: `${shiftMonth(from.slice(0, 7), -n)}-01`, to: to === lastDayOf(to.slice(0, 7)) || day > end ? end : day };
+  }
+  const len = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+  const priorTo = addDays(from, -1);
+  return { from: addDays(priorTo, -len), to: priorTo };
+}
+
+/** Income statement for [from, to], with the prior period (priorPeriod) alongside. */
 export async function incomeStatement(q: { from?: string; to?: string; brandId?: string }, viewer: FinanceViewer = FULL_VIEW) {
   const { business } = await getFinanceContext();
   const to = q.to ?? businessToday(business);
   const from = q.from ?? `${to.slice(0, 7)}-01`;
   if (from > to) throw financeError(400, "PERIOD_RANGE", "The period starts before it ends");
-  const len = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
-  const priorTo = addDays(from, -1);
-  const priorFrom = addDays(priorTo, -len);
+  const { from: priorFrom, to: priorTo } = priorPeriod(from, to);
   const [current, prior] = await Promise.all([profitAndLoss({ from, to, brandId: q.brandId }, viewer), profitAndLoss({ from: priorFrom, to: priorTo, brandId: q.brandId }, viewer)]);
   return { currency: business.baseCurrency, period: { from, to }, prior: { from: priorFrom, to: priorTo }, brandId: q.brandId ?? null, current, priorPeriod: prior };
 }
