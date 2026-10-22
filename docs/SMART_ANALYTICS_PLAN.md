@@ -28,7 +28,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
 - [x] **F. Product action list.** Restock / discount / pause ads / fix page (views high, add-to-cart low) in one list.
 - [x] **G. "Why did it change" decomposition.** Sales change split into traffic × conversion × order value, and by
   channel / product / district.
-- [ ] **H. Ad spend + ROAS.** Meta Ads daily spend import (needs owner token with ads_read) → spend, CPA, ROAS, profit
+- [x] **H. Ad spend + ROAS.** Meta Ads daily spend import (needs owner token with ads_read) → spend, CPA, ROAS, profit
   per campaign.
 - [ ] **I. Drill-down + compare everywhere.** Every pulse number links to the matching order list; prior-period deltas.
 
@@ -63,4 +63,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (commit)
   (visits × conversion) and net sales (orders × order value) with bridges + sentences, movers by product / district /
   channel. Demo: orders +98 from conversion despite fewer visits; net sales −৳20,381 because average order fell
   ৳1,038 → ৳684; Google −৳54,575.
-- Next: **H. Ad spend + ROAS** — finance already stores per-campaign daily spend (domain/finance/ads.service.ts).
+- **H done** (METRICS_REGISTRY §4.12): Marketing › Ad returns — per utm_campaign real net sales / margin; with Finance
+  spend: real ROAS, profit after ads, cost per delivered order; unmatched spend flagged. Finance spend is injected
+  (`financeCampaignSpend`) and only read when Finance has campaigns. Demo has no Finance campaigns: the owner needs to
+  add them (Meta campaign id) or connect Meta in Finance › Ads.
+- Next: **I. Drill-down + compare everywhere** (pulse numbers → order lists filtered by event day; orders list
+  "risky" filter).

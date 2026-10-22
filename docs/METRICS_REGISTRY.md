@@ -339,6 +339,21 @@ Movers: the largest rises and falls between the two periods — products by `net
 districts by `realised_net_sales` grouped on the order's shipping district, channels by `realised_net_sales` grouped on
 the §4.6 credited channel.
 
+### 4.12 Ad returns (Smart Analytics phase H, 2026-10-22)
+
+`GET /api/analytics/ad-returns` (`ad-returns.service.ts`). A campaign is a `utm_campaign` value — the same session rule
+Finance › Ads uses to attribute orders. Per campaign: sessions started in the range with that campaign first; orders
+whose storefront session carried it, valued by the engine (`orders_placed`, `orders_realised`, `realised_net_sales`,
+`gross_margin`). Spend is Finance's own period figure for the matching Finance campaign (external id, else name;
+actual spend, else the planned budget) — read only when Finance has campaigns.
+
+| Key | Definition |
+|---|---|
+| real ROAS | `realised_net_sales` ÷ spend — delivered COD and paid online, less refunds; Finance › Ads' ROAS uses placed order totals |
+| profit after ads | `gross_margin` (costed lines only) − spend |
+| cost per delivered order | spend ÷ `orders_realised` |
+| unmatched spend | Finance campaigns with spend whose id/name no visit carried |
+
 ## 5. API contract
 
 | Method & path | Auth | Query | Response |

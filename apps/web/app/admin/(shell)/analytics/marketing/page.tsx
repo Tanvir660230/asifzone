@@ -4,6 +4,7 @@ import { lazy } from "react";
 import { AnalyticsTab } from "@/components/admin/analytics/analytics-tab";
 
 const ChannelsView = lazy(() => import("@/components/admin/analytics/views/channels-view"));
+const AdReturnsView = lazy(() => import("@/components/admin/analytics/views/ad-returns-view"));
 const MarketingView = lazy(() => import("@/components/admin/analytics/views/marketing-view"));
 const VisitorsView = lazy(() => import("@/components/admin/analytics/views/visitors-view"));
 const JourneyView = lazy(() => import("@/components/admin/analytics/views/journey-view"));
@@ -15,6 +16,7 @@ export default function AnalyticsMarketingPage() {
       description="Where visitors come from, what they do, and what converts."
       views={[
         { value: "channels", label: "Channels", Component: ChannelsView },
+        { value: "ads", label: "Ad returns", Component: AdReturnsView },
         { value: "marketing", label: "Campaigns", Component: MarketingView },
         { value: "visitors", label: "Visitors", Component: VisitorsView },
         { value: "journey", label: "Journey", Component: JourneyView },

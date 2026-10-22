@@ -17,6 +17,7 @@ const SCANNED = [
   "modules/analytics/anomalies.service.ts",
   "modules/analytics/product-actions.service.ts",
   "modules/analytics/why-changed.service.ts",
+  "modules/analytics/ad-returns.service.ts",
   "modules/bi/bi.service.ts",
   "modules/customers/customer.service.ts",
   "modules/products/product.service.ts",

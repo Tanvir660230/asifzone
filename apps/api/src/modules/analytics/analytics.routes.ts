@@ -146,6 +146,8 @@ analyticsRouter.get("/daily-brief", requirePermission("analytics.read"), analyti
 analyticsRouter.get("/product-actions", requirePermission("analytics.read"), analyticsController.productActions);
 // Why sales changed against the previous period (§4.11).
 analyticsRouter.get("/why-changed", requirePermission("analytics.read"), analyticsController.whyChanged);
+// What each ad campaign really returned (§4.12).
+analyticsRouter.get("/ad-returns", requirePermission("analytics.read"), analyticsController.adReturns);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 

@@ -1126,3 +1126,34 @@ export interface WhyChanged {
 export function getWhyChanged(dateFrom: Date, dateTo: Date) {
   return apiFetch<WhyChanged>(`/api/analytics/why-changed${windowParams({ dateFrom, dateTo })}`);
 }
+
+// ─── Ad returns (docs/METRICS_REGISTRY.md §4.12) ─────────────────────────────────────────────────────────────────────
+
+export interface AdReturnRow {
+  key: string;
+  name: string;
+  financeCampaignId: string | null;
+  sessions: number;
+  orders: number;
+  realisedOrders: number;
+  netSales: number;
+  grossMargin: number;
+  spend: number | null;
+  plannedShare: number | null;
+  roas: number | null;
+  profitAfterAds: number | null;
+  costPerRealisedOrder: number | null;
+}
+
+export interface AdReturnsReport {
+  range: { from: string; to: string };
+  campaigns: AdReturnRow[];
+  totals: { spend: number; netSales: number; grossMargin: number; orders: number; realisedOrders: number; profitAfterAds: number | null; roas: number | null };
+  unmatchedSpend: Array<{ name: string; spend: number }>;
+  financeConnected: boolean;
+}
+
+/** What each ad campaign really returned: delivered net sales, margin, and — with Finance spend — ROAS and profit. */
+export function getAdReturns(dateFrom: Date, dateTo: Date) {
+  return apiFetch<AdReturnsReport>(`/api/analytics/ad-returns${windowParams({ dateFrom, dateTo })}`);
+}
