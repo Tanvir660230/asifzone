@@ -128,7 +128,7 @@ const STATUS_WORDS: Record<string, string> = {
 async function orderStatus(input: unknown, ctx: AssistContext): Promise<ToolOutcome> {
   const { orderNumber, phone } = orderStatusInput.parse(input);
   const select = { orderNumber: true, status: true, total: true, createdAt: true, courierTrackingLink: true } as const;
-  let orders: Array<{ orderNumber: string; status: string; total: unknown; createdAt: Date; courierTrackingLink: string | null }> = [];
+  let orders: Array<{ orderNumber: string; status: string; total: unknown; createdAt: Date; courierTrackingLink: string | null }>;
 
   if (ctx.channel === "WHATSAPP" && ctx.phone) {
     orders = await prisma.order.findMany({
