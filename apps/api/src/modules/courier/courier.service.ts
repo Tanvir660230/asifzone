@@ -10,6 +10,7 @@ import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
 import { CourierOutcomeUnknownError } from "../../providers/errors";
+import { syncOrderShipmentsSafely } from "../../domain/shipments/shipment-sync";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -88,8 +89,14 @@ function hasUsableAddress(order: {
 /** Records the raw Steadfast status and, if it maps onto one of our own order statuses and the
  * order isn't already in a terminal state, drives it through the normal updateOrderStatus path
  * (order.service.ts) so the status-history timeline and delivery-points award stay authoritative —
- * a courier update is just another way an order's status changes, not a side channel. */
+ * a courier update is just another way an order's status changes, not a side channel. Then the order's shipment leg
+ * follows (docs/COURIER_COSTS.md) — never failing the courier update it follows. */
 async function applyCourierStatus(order: { id: string; orderNumber: string; status: OrderStatus }, status: string) {
+  await applyCourierStatusToOrder(order, status);
+  await syncOrderShipmentsSafely(order.id);
+}
+
+async function applyCourierStatusToOrder(order: { id: string; orderNumber: string; status: OrderStatus }, status: string) {
   await prisma.order.update({
     where: { id: order.id },
     data: { courierStatus: status, courierStatusSyncedAt: new Date(), courierSyncError: null },
@@ -209,6 +216,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
   if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
     await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
   }
+  await syncOrderShipmentsSafely(orderId);
 
   notify({
     type: "order.courier_booked",
@@ -320,6 +328,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
     if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
       await updateOrderStatus(order.id, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
     }
+    await syncOrderShipmentsSafely(order.id);
     booked.push({ orderId: order.id, orderNumber: order.orderNumber, trackingNumber: result.tracking_code });
   }
 
@@ -510,6 +519,8 @@ export async function unlinkCourierBooking(orderId: string) {
       courierSyncError: null,
     },
   });
+  // The unlinked consignment's leg is kept as history, no longer tracked (docs/COURIER_COSTS.md).
+  await syncOrderShipmentsSafely(orderId);
 
   notify({
     type: "order.courier_update",

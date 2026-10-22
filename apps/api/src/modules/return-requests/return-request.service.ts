@@ -23,6 +23,7 @@ import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
 import { issueStoreCreditFromOrder, recordExchangeCovered, requestRefund, summarizeOrderPayments } from "../../domain/payments/payment-ledger.service";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
+import { openReturnLeg } from "../../domain/shipments/shipment-sync";
 
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
@@ -155,6 +156,8 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
     if (result.count === 0) throw AppError.conflict("This return request has already been reviewed");
 
     if (input.status !== "APPROVED") return null;
+    // Courier costs (docs/COURIER_COSTS.md): the parcel coming back is a shipment leg of its own, with its own charge.
+    await openReturnLeg(tx, request, adminId);
     if (request.type === "EXCHANGE") {
       await createExchangeOrder(tx, request, adminId, input.compensation);
       return null;

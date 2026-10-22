@@ -118,7 +118,7 @@ function pushSender(id: ProviderSelection["push"]): PushSender {
 function courierProvider(id: ProviderSelection["courier"]): CourierProvider {
   if (id === "none") {
     const off = async (): Promise<never> => Promise.reject(new ProviderNotConfiguredError("Courier", "COURIER_PROVIDER"));
-    return { id, createShipment: off, createShipments: off, statusByConsignment: off, balance: off, deliveryScore: off, payouts: off, payout: off };
+    return { id, createShipment: off, createShipments: off, statusByConsignment: off, balance: off, deliveryScore: off, payouts: off, payout: off, returnRequests: off };
   }
   return {
     id,
@@ -129,6 +129,7 @@ function courierProvider(id: ProviderSelection["courier"]): CourierProvider {
     deliveryScore: (phone) => steadfast.getSteadfastFraudCheck(phone),
     payouts: () => steadfast.getSteadfastPayments(),
     payout: (paymentId) => steadfast.getSteadfastPayment(paymentId),
+    returnRequests: () => steadfast.getSteadfastReturnRequests(),
   };
 }
 

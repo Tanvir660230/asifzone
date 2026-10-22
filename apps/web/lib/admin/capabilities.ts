@@ -34,6 +34,10 @@ export const CAPABILITIES = {
   "refunds.manage": { permission: "refunds.manage" },
   "returns.manage": { permission: "returns.manage" },
   "courier.manage": { permission: "courier.manage", provider: "courier" },
+  // courier cost reconciliation (docs/COURIER_COSTS.md)
+  "courierCosts.view": { permission: "courier_costs.read" },
+  "courierCosts.record": { permission: "courier_costs.record" },
+  "courierCosts.verify": { permission: "courier_costs.verify" },
   // financial core (docs/FINANCE_PHASE_2.md §7) — OWNER-only permissions until a finance role is decided
   "finance.view": { permission: "finance.read" },
   "finance.transact": { permission: "finance.transact" },
