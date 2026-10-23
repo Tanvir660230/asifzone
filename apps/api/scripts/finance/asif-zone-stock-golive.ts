@@ -301,7 +301,12 @@ async function main() {
     if (spec) return { variantId: v.id, unitCost: spec.rate, valuationStatus: "KNOWN", costSource: "OWNER", evidence: `owner count ${counts.countedOn}`, qty: costingOn ? v.stock : spec.qty };
     const a = attarById.get(v.id);
     if (a) return { variantId: v.id, unitCost: recipeCost(a.f, a.size), valuationStatus: "KNOWN", costSource: "OWNER", evidence: `recipe at the rates of the owner count ${counts.countedOn}`, qty: costingOn ? v.stock : attarTarget.get(v.id)! };
-    if (capIds.has(v.id)) return { variantId: v.id, unitCost: counts.caps.rate, valuationStatus: "KNOWN", costSource: "OWNER", evidence: "owner's cost list", qty: v.stock };
+    // A cap batch bought at another price carries it on its variants (typed in the product form); the counts file's rate
+    // covers caps with none.
+    if (capIds.has(v.id)) {
+      const own = v.costPrice !== null && Number(v.costPrice) > 0 ? r2(Number(v.costPrice)) : null;
+      return { variantId: v.id, unitCost: own ?? counts.caps.rate, valuationStatus: "KNOWN", costSource: "OWNER", evidence: own !== null ? "owner's cost price on the cap" : "owner's cost list", qty: v.stock };
+    }
     const cp = v.costPrice ?? v.product.costPrice;
     if (cp !== null && Number(cp) > 0) return { variantId: v.id, unitCost: r2(Number(cp)), valuationStatus: "ESTIMATED", costSource: v.costPrice !== null ? "CATALOG_VARIANT" : "CATALOG_PRODUCT", evidence: "Typed catalog cost price — not purchase-verified", qty: v.stock };
     return { variantId: v.id, unitCost: null, valuationStatus: "MISSING", costSource: "NONE", evidence: null, qty: v.stock };
@@ -310,7 +315,7 @@ async function main() {
   const projValuation = r2(projected.reduce((s, l) => s + Math.max(0, l.qty) * (l.unitCost ?? 0), 0));
   const others = tracked.filter((v) => !specBySku.has(v.sku) && !attarById.has(v.id) && !capIds.has(v.id));
   const missing = projected.filter((l) => l.valuationStatus === "MISSING");
-  say(`4. Valuation cutover: materials at the counted rates, attar at recipe cost, caps at ${taka(counts.caps.rate)} (KNOWN); ${others.length} other tracked variant(s) at cost price (ESTIMATED)${missing.length ? `, ${missing.length} MISSING (held unvalued): ${missing.map((l) => tracked.find((v) => v.id === l.variantId)?.sku).join(", ")}` : ""}`);
+  say(`4. Valuation cutover: materials at the counted rates, attar at recipe cost, caps at their own cost price, else ${taka(counts.caps.rate)} (KNOWN); ${others.length} other tracked variant(s) at cost price (ESTIMATED)${missing.length ? `, ${missing.length} MISSING (held unvalued): ${missing.map((l) => tracked.find((v) => v.id === l.variantId)?.sku).join(", ")}` : ""}`);
   const cutover = await getCutover();
   let projectedTrueUp: number | null = null;
   if (cutover.batch?.status === "POSTED") {
