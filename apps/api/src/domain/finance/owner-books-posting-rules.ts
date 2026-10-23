@@ -202,3 +202,19 @@ registerPostingRule(PROFIT_SHARE_EVENT, 1, {
     ],
   }),
 });
+
+// An approved correction UP: a shared month's profit turned out higher, so the partner is credited the difference at that
+// month's own rate. Only ever positive — a lower profit never posts (it waits for an accounting decision).
+export const PROFIT_SHARE_ADJUSTED_EVENT = "finance.partner.profit_share_adjusted";
+const adjustedPayload = z.object({ adjustmentId: z.string(), partnerId: z.string(), partnerName: z.string(), period: z.string(), amount: minor.positive(), currentAccountId: z.string() });
+registerPostingRule(PROFIT_SHARE_ADJUSTED_EVENT, 1, {
+  payload: adjustedPayload,
+  build: (p) => ({
+    description: `Profit share correction ${p.period} — ${p.partnerName}`,
+    reference: `PSA-${p.period}`,
+    lines: [
+      { account: "equity.profit_shared", debit: p.amount, credit: 0, partyType: "Partner", partyId: p.partnerId },
+      { account: { accountId: p.currentAccountId }, debit: 0, credit: p.amount, partyType: "Partner", partyId: p.partnerId, memo: "A shared month's profit was higher" },
+    ],
+  }),
+});

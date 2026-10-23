@@ -302,8 +302,11 @@ export interface OwnerHome {
   };
   /** Only for the owner. */
   people: null | {
-    owner: { name: string; putIn: number; takenOut: number; inBusiness: number } | null;
-    partners: Array<{ id: string; name: string; sharePct: number | null; owed: number; earned: number; paid: number; runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null }>;
+    /** Net capital (owner capital's balance) and drawings (the drawings account's balance) — two figures, never added up. */
+    owner: { name: string; netCapital: number; drawings: number; asOf: string } | null;
+    /** owed = posted; pending = payments waiting for approval; available = what can be paid now; paidInAdvance > 0 when
+     * the owner has paid beyond what is owed. */
+    partners: Array<{ id: string; name: string; sharePct: number | null; status: "ACTIVE" | "LEFT" | "NO_CURRENT_SHARE"; owed: number; pending: number; available: number; paidInAdvance: number; earned: number; paid: number; runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null }>;
   };
   todo: Array<{ kind: OwnerTodoKind; count?: number; amount?: number; name?: string; date?: string; partnerId?: string; href: string }>;
 }

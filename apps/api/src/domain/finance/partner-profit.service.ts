@@ -14,23 +14,19 @@
  */
 import { addDays, type PAYMENT_METHODS } from "@clothing-brand/shared";
 import type { Prisma } from "@prisma/client";
-import { installId } from "../../config/installation";
 import { prisma } from "../../config/prisma";
-import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
+import type { FinanceActor } from "./finance-audit";
 import { businessToday, getFinanceContext } from "./finance-context";
-import { financeTransaction } from "./finance-tx";
-import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
-import { processFinancialEvent, recordFinancialEvent } from "./events.service";
+import { businessDateOf, financeError, toMajorNumber, toMinor } from "./finance-values";
 import { incomeStatement } from "./statements.service";
 import { resolveMappedAccount } from "./chart.service";
 import { requestMovement } from "./treasury.service";
-import { PROFIT_SHARE_EVENT } from "./owner-books-posting-rules";
-import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 import { booksStarted } from "./finance-facts";
 import { isBusinessOwner, partnerNumber } from "./equity.service";
+import { classifiedLines, partnerBalances, type LineClass } from "./partner-statement.service";
+import { postVerifiedPeriods } from "./profit-share-period.service";
 
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
-const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 const METHOD_LABEL: Record<PaymentMethod, string> = { CASH: "cash", BKASH: "bKash", NAGAD: "Nagad", BANK: "bank", OTHER: "other" };
 
 // ── the rules (pure) ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -97,7 +93,7 @@ function shareDto(r: ShareRow, cur: string) {
 }
 
 /** The first month a partner shares in, and the last finished month (nothing in the running month). */
-function shareWindow(p: { shareFrom: Date | null; joinedOn: Date; leftOn: Date | null }, openingDate: string | null, today: string) {
+export function shareWindow(p: { shareFrom: Date | null; joinedOn: Date; leftOn: Date | null }, openingDate: string | null, today: string) {
   const starts = [p.shareFrom ? businessDateOf(p.shareFrom) : businessDateOf(p.joinedOn), openingDate ?? "9999-12-31"].sort();
   const first = monthOf(starts[1]!);
   const lastFinished = monthOf(addDays(`${monthOf(today)}-01`, -1));
@@ -107,92 +103,48 @@ function shareWindow(p: { shareFrom: Date | null; joinedOn: Date; leftOn: Date |
 
 // ── profit shares ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Shares every finished month not shared yet, for each partner with a confirmed share — up to `through`. */
+/**
+ * The Share button and Autopilot: posts every month a person has prepared and verified once its accounting period is
+ * closed (profit-share-period.service), and says why each other finished month wasn't shared. It never re-prices an
+ * earlier month and never carries a loss — later changes are corrections. (`nextShare` stays only to read old rows.)
+ */
 export async function runProfitShares(q: { through?: string }, actor: FinanceActor) {
   const ctx = await getFinanceContext();
-  const { business } = ctx;
-  const cur = business.baseCurrency;
   if (!(await booksStarted(ctx))) throw financeError(409, "BOOKS_NOT_STARTED", "Start the books first — until the opening balances are posted the month's profit isn't known");
-  const today = businessToday(business);
-  const partners = await prisma.partner.findMany({ where: { businessId: business.id, profitSharePct: { not: null }, shareConfirmedAt: { not: null }, role: { not: "OWNER" } }, orderBy: { number: "asc" } });
-  const made: Array<{ partner: string; period: string; amount: number }> = [];
-  for (const p of partners) {
-    if (p.lossRule !== "ZERO_IN_LOSS_MONTHS") throw financeError(409, "LOSS_RULE_NOT_BUILT", "Carrying losses forward isn't available yet");
-    const w = shareWindow(p, business.openingDate, today);
-    const last = q.through && q.through < w.last ? q.through : w.last;
-    if (w.first > last) continue;
-    for (const period of monthsBetween(w.first, last)) {
-      const done = await prisma.profitShare.findUnique({ where: { partnerId_period: { partnerId: p.id, period } } });
-      if (done) continue;
-      const pct = Number(p.profitSharePct);
-      const earlierRows = await prisma.profitShare.findMany({ where: { partnerId: p.id, period: { lt: period } }, orderBy: { period: "asc" } });
-      const earlier = [];
-      for (const r of earlierRows) {
-        const credited = toMinor(r.monthShare, cur) + earlierRows.flatMap(correctionsOf).filter((c) => c.kind === "CHANGE" && c.period === r.period).reduce((s, c) => s + toMinor(c.amount, cur), 0);
-        earlier.push({ period: r.period, profitNowMinor: await monthProfitMinor(r.period, cur), creditedForPeriodMinor: credited });
-      }
-      const prev = earlierRows.at(-1);
-      const profitMinor = await monthProfitMinor(period, cur);
-      const s = nextShare({ pct, profitMinor, earlier, carriedMinor: prev ? toMinor(prev.carried, cur) : 0, carriedFrom: prev?.period ?? null });
-      const corrections = s.corrections.map(({ amountMinor, ...c }) => ({ ...c, amount: toMajorNumber(amountMinor, cur) }));
-      const result = await financeTransaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`profit-share:${p.id}`}))`;
-        if (await tx.profitShare.findUnique({ where: { partnerId_period: { partnerId: p.id, period } } })) return null;
-        await ensureOwnerBooksSetupInTx(tx, business, actor);
-        let eventId: string | null = null;
-        if (s.amount > 0) {
-          const { event } = await recordFinancialEvent(tx, {
-            contract: "finance.event", contractVersion: 1, businessKey: business.key, brandKey: ctx.brand.key,
-            source: { installId, system: "finance", entityType: "Partner", entityId: p.id },
-            event: { type: PROFIT_SHARE_EVENT, version: 1, key: `profit-share:${p.id}:${period}#r0`, occurredAt: new Date().toISOString() },
-            financialDate: monthEnd(period), currency: cur,
-            payload: { partnerId: p.id, partnerName: p.name, period, amount: s.amount, currentAccountId: p.currentAccountId },
-          });
-          eventId = event.id;
-        }
-        const row = await tx.profitShare.create({
-          data: {
-            businessId: business.id, partnerId: p.id, period, periodStart: dateColumn(monthStart(period)), periodEnd: dateColumn(monthEnd(period)),
-            netProfit: toDecimal(profitMinor, cur), sharePct: pct.toFixed(4), monthShare: toDecimal(s.monthShare, cur),
-            corrections: corrections as unknown as Prisma.InputJsonValue, amount: toDecimal(s.amount, cur), carried: toDecimal(s.carried, cur),
-            eventId, createdByAdminId: adminOf(actor),
-          },
-        });
-        await recordFinanceAudit(tx, { businessId: business.id, actor, action: "equity.profit_share", entityType: "ProfitShare", entityId: row.id, after: shareDto(row, cur) });
-        return { row, eventId };
-      });
-      if (!result) continue;
-      if (result.eventId) await processFinancialEvent(result.eventId);
-      made.push({ partner: p.name, period, amount: toMajorNumber(s.amount, cur) });
-    }
-  }
-  return { shared: made };
+  return postVerifiedPeriods(q, actor);
 }
 
-/** Each partner's shares, what is owed now and what was paid; months waiting to be shared. */
+/**
+ * Every partner but the owner — with a share or not, still here or gone — with what they are owed, what is waiting for
+ * approval and what can be paid now (from the ledger, partner-statement.service), their shares, and months waiting.
+ */
 export async function profitShareOverview() {
   const ctx = await getFinanceContext();
   const { business } = ctx;
   const started = await booksStarted(ctx);
   const cur = business.baseCurrency;
   const today = businessToday(business);
-  const partners = await prisma.partner.findMany({ where: { businessId: business.id, profitSharePct: { not: null } }, orderBy: { number: "asc" }, include: { profitShares: { orderBy: { period: "desc" } } } });
+  const partners = await prisma.partner.findMany({ where: { businessId: business.id, role: { not: "OWNER" } }, orderBy: { number: "asc" }, include: { profitShares: { orderBy: { period: "desc" } } } });
+  const balances = await partnerBalances(partners, today);
   const out = [];
   for (const p of partners) {
-    const lines = await prisma.journalLine.aggregate({ where: { accountId: p.currentAccountId, entry: { status: "POSTED" } }, _sum: { debit: true, credit: true } });
-    const credited = toMinor(lines._sum.credit ?? 0, cur);
-    const debited = toMinor(lines._sum.debit ?? 0, cur);
+    const b = balances.get(p.id)!;
+    const sharing = p.profitSharePct !== null;
+    const left = Boolean(p.leftOn && businessDateOf(p.leftOn) <= today);
     const w = shareWindow(p, business.openingDate, today);
     const shared = new Set(p.profitShares.map((s) => s.period));
-    const waiting = started && w.first <= w.last ? monthsBetween(w.first, w.last).filter((m) => !shared.has(m)) : [];
-    // the running month, as it stands — information only, nothing is posted until it ends
+    const waiting = sharing && started && w.first <= w.last ? monthsBetween(w.first, w.last).filter((m) => !shared.has(m)) : [];
+    // the running month, as it stands — information only, nothing is posted until it ends; none for someone who has left
     const running = monthOf(today);
-    const runningProfit = started && running >= w.first ? toMajorNumber(await monthProfitMinor(running, cur), cur) : null;
+    const runningProfit = sharing && !left && started && running >= w.first ? toMajorNumber(await monthProfitMinor(running, cur), cur) : null;
     out.push({
-      partnerId: p.id, number: partnerNumber(p.number), name: p.name, role: p.role, sharePct: Number(p.profitSharePct), lossRule: p.lossRule,
-      confirmed: Boolean(p.shareConfirmedAt), confirmedNote: p.shareConfirmedNote,
+      partnerId: p.id, number: partnerNumber(p.number), name: p.name, role: p.role, sharePct: sharing ? Number(p.profitSharePct) : null, lossRule: p.lossRule,
+      confirmed: Boolean(p.shareConfirmedAt), confirmedNote: p.shareConfirmedNote, leftOn: p.leftOn ? businessDateOf(p.leftOn) : null,
+      status: left ? ("LEFT" as const) : sharing ? ("ACTIVE" as const) : ("NO_CURRENT_SHARE" as const),
       shares: p.profitShares.map((s) => shareDto(s, cur)),
-      totals: { earned: toMajorNumber(p.profitShares.reduce((s, r) => s + toMinor(r.amount, cur), 0), cur), paid: toMajorNumber(debited, cur), owed: toMajorNumber(credited - debited, cur) },
+      balances: b,
+      /** Kept for older screens: earned / paid / owed from the ledger (owed = what is posted, before pending payments). */
+      totals: { earned: b.finalizedEarnings, paid: b.paymentsCompleted, owed: b.postedPayable },
       waitingMonths: waiting,
       runningMonth: runningProfit === null ? null : { period: running, profitSoFar: runningProfit, shareSoFar: toMajorNumber(shareOf(Number(p.profitSharePct), toMinor(runningProfit, cur)), cur) },
     });
@@ -243,6 +195,28 @@ export async function ownerMoney(input: { kind: "INVEST" | "WITHDRAW"; financial
   );
 }
 
+/**
+ * A partner's capital (31xx) — not their profit share: money they put in (a deposit to their capital account) or take back
+ * (a withdrawal from it). A return is at most what is in it, less returns waiting for approval (partner-payable.ts), so
+ * capital never goes below zero. The owner's own money goes through ownerMoney.
+ */
+export async function partnerCapital(partnerId: string, input: { kind: "CONTRIBUTE" | "RETURN"; financialAccountId: string; amount: number; date?: string; method?: PaymentMethod; note?: string | null }, actor: FinanceActor, key: string | null) {
+  const { business } = await getFinanceContext();
+  const p = await prisma.partner.findFirst({ where: { id: partnerId, businessId: business.id } });
+  if (!p) throw financeError(404, "PARTNER_NOT_FOUND", "Partner not found");
+  if (isBusinessOwner(p.role)) throw financeError(400, "OWNER_CAPITAL", "The owner's money in and out is recorded as owner money");
+  const how = input.method ? ` (${METHOD_LABEL[input.method]})` : "";
+  const date = input.date ?? businessToday(business);
+  const note = input.note ? ` — ${input.note}` : "";
+  return requestMovement(
+    input.kind === "CONTRIBUTE"
+      ? { kind: "DEPOSIT", movementDate: date, amount: input.amount, toFinancialAccountId: input.financialAccountId, counterAccountId: p.capitalAccountId, reference: partnerNumber(p.number), description: `Capital put in by ${p.name}${how}${note}`.slice(0, 300) }
+      : { kind: "WITHDRAWAL", movementDate: date, amount: input.amount, fromFinancialAccountId: input.financialAccountId, counterAccountId: p.capitalAccountId, reference: partnerNumber(p.number), description: `Capital returned to ${p.name}${how}${note}`.slice(0, 300) },
+    actor,
+    key ? `partner-capital:${key}` : null,
+  );
+}
+
 const tookKey = (settlementId: string) => `owner-took-payout:${settlementId}`;
 
 /** Posted courier / gateway payouts and whether the owner's taking of each is recorded. */
@@ -287,29 +261,43 @@ export async function markPayoutsTaken(settlementIds: string[], actor: FinanceAc
 
 // ── activity ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** The history label of a line, from what produced it (its class), never from its sign alone — a reversed share is not
+ * "paid", a reversed payment is not "credited". */
+function activityKind(cls: LineClass, account: "capital" | "current", net: number, owner: boolean) {
+  if (account === "capital") {
+    if (cls === "CAPITAL_IN_REVERSAL") return "PUT_IN_REVERSED" as const;
+    if (cls === "CAPITAL_OUT_REVERSAL") return "CAPITAL_BACK_REVERSED" as const;
+    return net >= 0 ? ("PUT_IN" as const) : ("CAPITAL_BACK" as const);
+  }
+  switch (cls) {
+    case "SHARE": return "PROFIT_SHARE" as const;
+    case "SHARE_REVERSAL": return "SHARE_REVERSED" as const;
+    case "SHARE_CORRECTION": return "SHARE_CORRECTED" as const;
+    case "SHARE_CORRECTION_REVERSAL": return "SHARE_REVERSED" as const;
+    case "PAYMENT": return owner ? ("TAKEN_OUT" as const) : ("PAID" as const);
+    case "PAYMENT_REVERSAL": return "PAYMENT_REVERSED" as const;
+    case "PARTNER_DEPOSIT": return "RECEIVED" as const;
+    case "PARTNER_DEPOSIT_REVERSAL": return "RECEIVED_REVERSED" as const;
+    default: return net >= 0 ? ("CREDITED" as const) : ("OTHER" as const);
+  }
+}
+
 /** Every posted line on the partner's capital and current accounts, oldest first, with running totals. */
 export async function partnerActivity(partnerId: string, q: { from?: string; to?: string } = {}) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const p = await prisma.partner.findFirst({ where: { id: partnerId, businessId: business.id } });
   if (!p) throw financeError(404, "PARTNER_NOT_FOUND", "Partner not found");
-  const lines = await prisma.journalLine.findMany({
-    where: {
-      accountId: { in: [p.capitalAccountId, p.currentAccountId] }, entry: { status: "POSTED", ...(q.from || q.to ? { entryDate: { ...(q.from ? { gte: dateColumn(q.from) } : {}), ...(q.to ? { lte: dateColumn(q.to) } : {}) } } : {}) },
-    },
-    include: { entry: { select: { id: true, entryDate: true, description: true, reference: true, number: true, sourceType: true } } },
-    orderBy: [{ entry: { entryDate: "asc" } }, { entry: { createdAt: "asc" } }],
-  });
+  const lines = await classifiedLines(prisma, business.id, { cur: p.currentAccountId, cap: p.capitalAccountId }, q);
+  const owner = isBusinessOwner(p.role);
   let capital = 0;
   let current = 0;
-  const items = lines.map((l) => {
+  const items = lines.map(({ line: l, cls, account, advance }) => {
     const net = toMinor(l.credit, cur) - toMinor(l.debit, cur);
-    const onCapital = l.accountId === p.capitalAccountId;
-    if (onCapital) capital += net; else current += net;
-    const kind = onCapital ? (net >= 0 ? "PUT_IN" : "CAPITAL_BACK") : l.entry.reference?.startsWith("PS-") && net > 0 ? "PROFIT_SHARE" : net >= 0 ? "CREDITED" : isBusinessOwner(p.role) ? "TAKEN_OUT" : "PAID";
+    if (account === "capital") capital += net; else current += net;
     return {
       id: l.id, date: businessDateOf(l.entry.entryDate), entryId: l.entry.id, description: l.entry.description, reference: l.entry.reference,
-      account: onCapital ? ("capital" as const) : ("current" as const), kind, amount: toMajorNumber(net, cur),
+      account, kind: activityKind(cls, account, net, owner), class: cls, advance, amount: toMajorNumber(net, cur),
       capitalAfter: toMajorNumber(capital, cur), currentAfter: toMajorNumber(current, cur),
     };
   });

@@ -236,10 +236,9 @@ function People({ people, onAdd }: { people: NonNullable<Home["people"]>; onAdd:
       {o && (
         <Link href="/admin/finance/equity" className="block px-5 py-4 hover:bg-surface-muted sm:px-6">
           <p className="text-[15px] font-medium text-fg">{o.name}</p>
-          <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
-            <div><dt className="text-xs text-fg-muted">Put in</dt><dd className="tabular-nums text-fg">{formatPrice(o.putIn)}</dd></div>
-            <div><dt className="text-xs text-fg-muted">Took out</dt><dd className="tabular-nums text-fg">{formatPrice(o.takenOut)}</dd></div>
-            <div><dt className="text-xs text-fg-muted">Still in</dt><dd className="font-medium tabular-nums text-fg">{signed(o.inBusiness)}</dd></div>
+          <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+            <div><dt className="text-xs text-fg-muted">Net capital</dt><dd className="font-medium tabular-nums text-fg">{signed(o.netCapital)}</dd></div>
+            <div><dt className="text-xs text-fg-muted">Drawings</dt><dd className="font-medium tabular-nums text-fg">{signed(o.drawings)}</dd></div>
           </dl>
         </Link>
       )}
@@ -247,13 +246,19 @@ function People({ people, onAdd }: { people: NonNullable<Home["people"]>; onAdd:
         {people.partners.map((p) => (
           <li key={p.id} className="flex items-center gap-3 px-5 py-4 sm:px-6">
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-medium text-fg">{p.name} <span className="text-sm font-normal text-fg-muted">{p.sharePct}% of profit</span></p>
+              <p className="text-[15px] font-medium text-fg">
+                {p.name}{" "}
+                <span className="text-sm font-normal text-fg-muted">{p.status === "LEFT" ? "left" : p.sharePct !== null ? `${p.sharePct}% of profit` : "no profit share now"}</span>
+              </p>
               <p className="text-sm text-fg-muted">
-                {p.owed > 0 ? <>Owed now <span className="tabular-nums text-fg">{formatPrice(p.owed)}</span></> : "Nothing owed now"}
-                {p.runningMonth && <>. This month so far <span className="tabular-nums text-fg">{formatPrice(p.runningMonth.shareSoFar)}</span></>}
+                {p.available > 0 ? <>Can be paid now <span className="tabular-nums text-fg">{formatPrice(p.available)}</span></>
+                  : p.paidInAdvance > 0 ? <>Paid <span className="tabular-nums text-fg">{formatPrice(p.paidInAdvance)}</span> in advance</>
+                  : "Nothing to pay now"}
+                {p.pending > 0 && <>. <span className="tabular-nums text-fg">{formatPrice(p.pending)}</span> waiting for approval</>}
+                {p.runningMonth && <>. This month so far <span className="tabular-nums text-fg">{formatPrice(p.runningMonth.shareSoFar)}</span> (estimate)</>}
               </p>
             </div>
-            {p.owed > 0 && <Button size="sm" onClick={() => onAdd({ kind: "PAY_PARTNER", partnerId: p.id })}>Pay</Button>}
+            {p.available > 0 && <Button size="sm" onClick={() => onAdd({ kind: "PAY_PARTNER", partnerId: p.id })}>Pay</Button>}
           </li>
         ))}
       </ul>
