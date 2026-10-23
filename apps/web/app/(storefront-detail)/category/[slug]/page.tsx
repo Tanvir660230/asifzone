@@ -39,7 +39,9 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
   const { category } = data;
   const title = category.seoTitle || category.name;
-  const description = category.seoDescription || undefined;
+  // Without an owner-written description the page would ship none, and search engines fill the snippet with whatever
+  // product text they scrape first.
+  const description = category.seoDescription || `Shop ${category.name} at ${settings.storeName} — browse the full range and order online.`;
   const page = Number(resolvedSearchParams.page) || 1;
   const url = `${getSiteUrl()}/category/${category.slug}${page > 1 ? `?page=${page}` : ""}`;
 

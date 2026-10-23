@@ -37,6 +37,10 @@ export const PERMISSIONS = [
   "refunds.manage", // record / complete refunds
   "returns.manage", // review returns & exchanges
   "courier.manage",
+  // courier cost reconciliation (docs/COURIER_COSTS.md): shipment charges and what customers paid the rider
+  "courier_costs.read",
+  "courier_costs.record", // enter / report charges and contributions, add return and replacement legs, refresh from the courier
+  "courier_costs.verify", // verify charges and contributions, decide who bears an uncovered or excess amount, reconcile
   // commerce configuration
   "promotions.manage", // coupons, bundles, flash sales
   "promotions.purge", // permanent coupon delete (PD-10.1)
@@ -117,6 +121,8 @@ export const OWNER_ONLY_PERMISSIONS = [
   "costing.adjust",
   // Manufacturing: STAFF runs production (orders, materials, receiving) but never approves costs, write-offs or closes.
   "manufacturing.approve",
+  // Courier costs: STAFF records what the rider / customer reported; verifying and reconciling stay with the owner and finance.
+  "courier_costs.verify",
 ] as const satisfies readonly Permission[];
 
 const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);
@@ -127,12 +133,14 @@ const FINANCE_ADMIN_PERMISSIONS = [
   "finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile", "finance.custody",
   "suppliers.read", "suppliers.manage", "purchasing.read", "purchasing.manage", "purchasing.approve", "ap.read", "ap.manage", "costing.read",
   "manufacturing.read", "manufacturing.manage", "manufacturing.approve",
+  "courier_costs.read", "courier_costs.record", "courier_costs.verify",
 ] as const satisfies readonly Permission[];
 const ACCOUNTANT_PERMISSIONS = [
   "finance.read", "finance.transact", "finance.reconcile", "finance.custody",
   "suppliers.read", "suppliers.manage", "purchasing.read", "ap.read", "ap.manage", "costing.read", "manufacturing.read",
+  "courier_costs.read", "courier_costs.record", "courier_costs.verify",
 ] as const satisfies readonly Permission[];
-const FINANCE_VIEWER_PERMISSIONS = ["finance.read", "suppliers.read", "purchasing.read", "ap.read", "costing.read", "manufacturing.read"] as const satisfies readonly Permission[];
+const FINANCE_VIEWER_PERMISSIONS = ["finance.read", "suppliers.read", "purchasing.read", "ap.read", "costing.read", "manufacturing.read", "courier_costs.read"] as const satisfies readonly Permission[];
 
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRoleName, readonly Permission[]>> = Object.freeze({
   OWNER: Object.freeze([...PERMISSIONS]),

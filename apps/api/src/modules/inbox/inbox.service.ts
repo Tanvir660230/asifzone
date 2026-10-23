@@ -1,11 +1,14 @@
 import type { Prisma } from "@prisma/client";
 import {
   normalizeBdPhone,
+  replyChannelsFor,
+  replyWindow,
+  type ReplyChannel,
   type ConversationDetail,
   type ConversationListQuery,
   type ConversationListRow,
   type ConversationMessageRow,
-  type ConversationReplyInput,
+  type ConversationReply,
   type CreateFeedbackInput,
   type MessageDelivery,
 } from "@clothing-brand/shared";
@@ -13,6 +16,9 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
+import type { TemplateSend } from "../../providers/social/meta-graph";
+import { resolveTemplateReply } from "../social-inbox/templates.service";
+import { recordDraftOutcome } from "../social-inbox/answers/saved-answers.service";
 
 /**
  * Admin V2 Inbox R2 (DR-4, owner 2026-10-08). A conversation is one thread with a customer; staff reply by email or SMS.
@@ -45,6 +51,7 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
   const where: Prisma.ConversationWhereInput = {
     ...(query.status === "open" ? { status: "OPEN" } : query.status === "handled" ? { status: "HANDLED" } : {}),
     ...(query.mine === "true" && adminId ? { assignedToId: adminId } : {}),
+    ...(query.channel ? { channel: query.channel } : {}),
     ...(query.search
       ? {
           OR: [
@@ -68,6 +75,7 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
           messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true } },
           _count: { select: { messages: true } },
           assignedTo: { select: { id: true, name: true } },
+          draft: { select: { id: true } },
         },
       }),
     () => prisma.conversation.count({ where }),
@@ -84,12 +92,14 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
     preview: (c.messages[0]?.body ?? "").split("\n")[0]!.slice(0, 160),
     messageCount: c._count.messages,
     assignedTo: c.assignedTo,
+    hasDraft: c.draft !== null,
   }));
   return { ...page, items };
 }
 
-function deliveryOf(status: string | undefined): MessageDelivery {
-  if (status === "PROCESSED") return "sent";
+/** A reply sent from outside the Inbox (a PHONE echo) has no outbox row — Meta already delivered it. */
+function deliveryOf(status: string | undefined, externalId: string | null): MessageDelivery {
+  if (status === "PROCESSED" || (status === undefined && externalId)) return "sent";
   if (status === "FAILED") return "failed";
   return "sending";
 }
@@ -101,6 +111,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
       customer: { select: { id: true, name: true } },
       assignedTo: { select: { id: true, name: true } },
       messages: { orderBy: { createdAt: "asc" }, include: { admin: { select: { name: true } } } },
+      draft: { select: { body: true, intent: true, savedAnswerId: true } },
     },
   });
   if (!c) throw AppError.notFound("Conversation not found");
@@ -111,12 +122,14 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
   const byKey = new Map(events.map((e) => [e.eventKey, e]));
   const messages: ConversationMessageRow[] = c.messages.map((m) => {
     const event = m.direction === "OUT" ? byKey.get(m.id) : undefined;
-    const delivery = m.direction === "OUT" ? deliveryOf(event?.status) : null;
+    const delivery = m.direction === "OUT" ? deliveryOf(event?.status, m.externalId) : null;
     return {
       id: m.id,
       direction: m.direction,
       channel: m.channel,
       body: m.body,
+      author: m.author,
+      fromLibrary: m.savedAnswerId !== null,
       createdAt: m.createdAt.toISOString(),
       by: m.admin?.name ?? null,
       delivery,
@@ -136,31 +149,150 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     customer: c.customer,
     assignedTo: c.assignedTo,
     messages,
+    draft: c.draft ? { body: c.draft.body, intent: c.draft.intent, fromLibrary: c.draft.savedAnswerId !== null } : null,
+    replyWindow: replyWindow(c.channel, c.lastInboundAt, new Date()),
+    replyChannels:
+      c.channel === "FB_COMMENT" && !(await privateReplyOpen(prisma, c.id, new Date()))
+        ? replyChannelsFor(c).filter((ch) => ch !== "MESSENGER")
+        : replyChannelsFor(c),
   };
 }
 
 /** Records a reply and its send intent in one transaction; replying marks the conversation handled. */
-export async function replyToConversation(id: string, input: ConversationReplyInput, adminId: string): Promise<ConversationMessageRow> {
+/** Records one reply and its send intent (outbox `conversation-reply`) inside the caller's transaction; the thread
+ * becomes handled and its AI draft, now answered, is removed. Shared by staff replies and the AI's own answers. */
+export async function queueReply(
+  tx: Prisma.TransactionClient,
+  input: {
+    conversationId: string;
+    channel: ReplyChannel;
+    body: string;
+    adminId: string | null;
+    author: "STAFF" | "AI";
+    template?: TemplateSend;
+    /** Sent from the saved-answer library (no AI call). */
+    savedAnswerId?: string;
+  },
+) {
+  const m = await tx.conversationMessage.create({
+    data: {
+      conversationId: input.conversationId,
+      direction: "OUT",
+      channel: input.channel,
+      body: input.body,
+      adminId: input.adminId,
+      author: input.author,
+      ...(input.template ? { template: input.template as unknown as Prisma.InputJsonValue } : {}),
+      ...(input.savedAnswerId ? { savedAnswerId: input.savedAnswerId } : {}),
+    },
+    include: { admin: { select: { name: true } } },
+  });
+  await tx.conversation.update({ where: { id: input.conversationId }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
+  await tx.conversationDraft.deleteMany({ where: { conversationId: input.conversationId } });
+  // A chat reply written fresh (not a template, not the library's own answer) teaches the answer library.
+  const learnable = LEARNING_CHANNELS.has(input.channel) && !input.template && !input.savedAnswerId;
+  await recordOutboxEvents(tx, [
+    {
+      eventType: "conversation.reply_requested.v1",
+      consumer: REPLY_CONSUMER,
+      eventKey: m.id,
+      aggregateType: "conversation",
+      aggregateId: input.conversationId,
+      payload: { messageId: m.id },
+    },
+    ...(learnable
+      ? [{ eventType: "conversation.reply_recorded.v1", consumer: LEARNING_CONSUMER, eventKey: m.id, aggregateType: "conversation", aggregateId: input.conversationId, payload: { messageId: m.id } }]
+      : []),
+  ]);
+  return m;
+}
+
+export const LEARNING_CONSUMER = "answer-learning" as const;
+const LEARNING_CHANNELS: ReadonlySet<ReplyChannel> = new Set(["WHATSAPP", "MESSENGER", "INSTAGRAM", "FB_COMMENT"]);
+
+const WINDOW_CLOSED: Partial<Record<ReplyChannel, string>> = {
+  WHATSAPP: "WhatsApp only allows replies within 24 hours of the customer's last message — reply by SMS instead.",
+  MESSENGER: "Messenger only allows replies within 7 days of the customer's last message.",
+  INSTAGRAM: "Instagram only allows replies within 7 days of the customer's last message.",
+};
+
+/** Serialises replies to one conversation (staff and the AI): whoever comes second sees the first one's reply. NO KEY
+ * UPDATE, so the webhook can still add customer messages meanwhile. */
+export async function lockConversation(tx: Prisma.TransactionClient, id: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Conversation" WHERE "id" = ${id} FOR NO KEY UPDATE`;
+  return rows.length > 0;
+}
+
+const PRIVATE_REPLY_MS = 7 * 24 * 3_600_000;
+
+/** The comment a reply on a FB_COMMENT thread answers: the customer's latest one. */
+export function latestComment(tx: Prisma.TransactionClient | typeof prisma, conversationId: string) {
+  return tx.conversationMessage.findFirst({
+    where: { conversationId, direction: "IN" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, externalId: true, createdAt: true },
+  });
+}
+
+/** Whether the customer's latest comment can still get its one private reply (for the composer's options). */
+async function privateReplyOpen(db: Prisma.TransactionClient | typeof prisma, conversationId: string, now: Date): Promise<boolean> {
+  const comment = await latestComment(db, conversationId);
+  if (!comment || now.getTime() - comment.createdAt.getTime() > PRIVATE_REPLY_MS) return false;
+  return (await db.conversationMessage.count({ where: { conversationId, direction: "OUT", channel: "MESSENGER", createdAt: { gte: comment.createdAt } } })) === 0;
+}
+
+/** Meta allows one private reply per comment, within 7 days of it. */
+async function assertPrivateReplyAllowed(tx: Prisma.TransactionClient, conversationId: string, now: Date) {
+  const comment = await latestComment(tx, conversationId);
+  if (!comment || now.getTime() - comment.createdAt.getTime() > PRIVATE_REPLY_MS) {
+    throw AppError.badRequest("A private message can only be sent within 7 days of the comment — reply publicly instead.", { code: "WINDOW_CLOSED" });
+  }
+  const used = await tx.conversationMessage.count({ where: { conversationId, direction: "OUT", channel: "MESSENGER", createdAt: { gte: comment.createdAt } } });
+  if (used > 0) {
+    throw AppError.badRequest("This comment already got its one private message — reply publicly, or wait for them to write in Messenger.", { code: "PRIVATE_REPLY_USED" });
+  }
+}
+
+export async function replyToConversation(id: string, input: ConversationReply, adminId: string): Promise<ConversationMessageRow> {
+  // A WhatsApp template is looked up before the transaction (it may ask Meta); its text becomes the message body.
+  const template = input.template ? await resolveTemplateReply(input.template) : null;
+  const body = template?.body ?? input.body;
   const message = await prisma.$transaction(async (tx) => {
-    const c = await tx.conversation.findUnique({ where: { id }, select: { id: true, email: true, phone: true } });
+    if (!(await lockConversation(tx, id))) throw AppError.notFound("Conversation not found");
+    const c = await tx.conversation.findUnique({ where: { id }, select: { id: true, channel: true, email: true, phone: true, lastInboundAt: true } });
     if (!c) throw AppError.notFound("Conversation not found");
     if (input.channel === "EMAIL" && !c.email) throw AppError.badRequest("This customer left no email address — reply by SMS", { code: "NO_EMAIL" });
     if (input.channel === "SMS" && !c.phone) throw AppError.badRequest("This customer left no phone number — reply by email", { code: "NO_PHONE" });
-    const m = await tx.conversationMessage.create({
-      data: { conversationId: id, direction: "OUT", channel: input.channel, body: input.body, adminId },
-      include: { admin: { select: { name: true } } },
+    if (!replyChannelsFor(c).includes(input.channel)) {
+      throw AppError.badRequest("This conversation can't be answered on that channel", { code: "WRONG_CHANNEL" });
+    }
+    if (c.channel === "FB_COMMENT") {
+      // A public reply has no window; a private one has Meta's own rule.
+      if (input.channel === "MESSENGER") await assertPrivateReplyAllowed(tx, id, new Date());
+    } else if (!template && !replyWindow(input.channel, c.lastInboundAt, new Date()).open) {
+      // An approved template may be sent any time; free text only inside the window.
+      throw AppError.badRequest(WINDOW_CLOSED[input.channel] ?? "The reply window has closed", { code: "WINDOW_CLOSED" });
+    }
+    // A saved answer's draft sent (nearly) unchanged is the library answering; a rewrite is a correction it learns from.
+    const draft = await tx.conversationDraft.findUnique({ where: { conversationId: id }, select: { body: true, savedAnswerId: true } });
+    const fromLibrary = !template && draft?.savedAnswerId ? await recordDraftOutcome(tx, draft.savedAnswerId, draft.body, body) : false;
+    return queueReply(tx, {
+      conversationId: id,
+      channel: input.channel,
+      body,
+      adminId,
+      author: "STAFF",
+      ...(template ? { template: template.send } : {}),
+      ...(fromLibrary ? { savedAnswerId: draft!.savedAnswerId! } : {}),
     });
-    await tx.conversation.update({ where: { id }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
-    await recordOutboxEvents(tx, [
-      { eventType: "conversation.reply_requested.v1", consumer: REPLY_CONSUMER, eventKey: m.id, aggregateType: "conversation", aggregateId: id, payload: { messageId: m.id } },
-    ]);
-    return m;
   });
   return {
     id: message.id,
     direction: "OUT",
     channel: message.channel,
     body: message.body,
+    author: message.author,
+    fromLibrary: message.savedAnswerId !== null,
     createdAt: message.createdAt.toISOString(),
     by: message.admin?.name ?? null,
     delivery: "sending",
@@ -182,6 +314,11 @@ export async function updateConversation(id: string, input: { status?: "OPEN" | 
   });
 }
 
+/** Staff threw the AI's suggestion away. */
+export async function discardDraft(id: string) {
+  await prisma.conversationDraft.deleteMany({ where: { conversationId: id } });
+}
+
 export async function deleteConversation(id: string) {
   const deleted = await prisma.conversation.deleteMany({ where: { id } });
   if (deleted.count === 0) throw AppError.notFound("Conversation not found");
@@ -192,10 +329,43 @@ export function countOpenConversations() {
   return prisma.conversation.count({ where: { status: "OPEN" } });
 }
 
-/** What the `conversation-reply` consumer needs at send time (read, never written). */
+/** What the `conversation-reply` consumer needs at send time. */
 export function replyFacts(messageId: string) {
   return prisma.conversationMessage.findUnique({
     where: { id: messageId },
-    select: { body: true, channel: true, direction: true, conversation: { select: { subject: true, contactName: true, email: true, phone: true } } },
+    select: {
+      body: true,
+      channel: true,
+      direction: true,
+      author: true,
+      externalId: true,
+      template: true,
+      conversationId: true,
+      conversation: { select: { subject: true, contactName: true, email: true, phone: true, channel: true, externalThreadId: true, lastInboundAt: true } },
+    },
+  });
+}
+
+/**
+ * The consumer's one write: Meta's id for the message it just sent, so the webhook echo of it is a known duplicate.
+ * Never fails on the id being taken — that would retry, i.e. send again — because the echo can win the race:
+ * - stored as a "from the phone" copy (e.g. a private reply's echo lands on a new Messenger thread) → that copy is ours,
+ *   so it goes (with its thread, if nothing else is in it);
+ * - claimed by an identical reply of ours queued alongside → the id is handed over.
+ */
+export async function recordSentExternalId(messageId: string, externalId: string) {
+  await prisma.$transaction(async (tx) => {
+    const holder = await tx.conversationMessage.findUnique({ where: { externalId }, select: { id: true, author: true, conversationId: true } });
+    if (holder && holder.id !== messageId) {
+      if (holder.author === "PHONE") {
+        await tx.conversationMessage.delete({ where: { id: holder.id } });
+        if ((await tx.conversationMessage.count({ where: { conversationId: holder.conversationId } })) === 0) {
+          await tx.conversation.delete({ where: { id: holder.conversationId } });
+        }
+      } else {
+        await tx.conversationMessage.update({ where: { id: holder.id }, data: { externalId: null } });
+      }
+    }
+    await tx.conversationMessage.update({ where: { id: messageId }, data: { externalId } });
   });
 }

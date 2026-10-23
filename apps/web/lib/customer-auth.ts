@@ -12,6 +12,7 @@ import type {
   VerifyOtpInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
+import { pixelForget } from "./pixels";
 
 /** Phase 11: when an existing guest record already holds this email, nothing is signed in — the API emails a link that
  * proves the email (`claimPending: true`). */
@@ -23,7 +24,9 @@ export function confirmCustomerClaim(input: { token: string }) {
   return apiFetch<{ customer: Customer }>("/api/customers/claim/confirm", { method: "POST", body: input });
 }
 
+// Signing out also drops the ad pixels' remembered identity, so the next person on this browser isn't matched as them.
 export function logoutEverywhere() {
+  pixelForget();
   return apiFetch<void>("/api/customers/logout-all", { method: "POST" });
 }
 
@@ -53,6 +56,7 @@ export function enterSignedIn(to?: string | null) {
 }
 
 export function logoutCustomer() {
+  pixelForget();
   return apiFetch<void>("/api/customers/logout", { method: "POST" });
 }
 

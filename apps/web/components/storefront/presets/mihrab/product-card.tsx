@@ -35,7 +35,8 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
   const soldOut = !availability.inStock;
   const totalStock = availability.sellableUnits ?? Number.POSITIVE_INFINITY;
   const shown = productDisplayPrice(product);
-  const badge = getProductBadge(product, totalStock);
+  // As on the classic card, a discount or "low stock" tag on something that can't be bought only teases.
+  const badge = soldOut ? null : getProductBadge(product, totalStock);
   const openQuickView = useQuickViewStore((s) => s.open);
   const toggleCompare = useCompareStore((s) => s.toggle);
   const isComparing = useCompareStore((s) => s.items.some((i) => i.id === product.id));
@@ -68,10 +69,12 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
   }
 
   const href = `/product/${product.slug}`;
-  const hasWas = shown.was !== null && Number(shown.was) > Number(shown.price);
+  const hasWas = !soldOut && shown.was !== null && Number(shown.was) > Number(shown.price);
+  const quickAddLabel = needsChoice ? "Choose options" : "Add to bag";
 
   return (
-    <div className="group">
+    // Pressed on a phone the card sinks (ui-press) and stays dimmed until the product page arrives (navigation-progress).
+    <div data-nav-pending-scope className="ui-press group">
       <div className="relative aspect-[4/5] overflow-hidden rounded-md bg-cream-200">
         <Link href={href} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
@@ -85,6 +88,7 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
                 className={cn(
                   "object-cover transition-[opacity,transform] duration-700 ease-smooth",
                   secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-[1.03]",
+                  soldOut && "opacity-70 saturate-50",
                 )}
               />
               {secondaryImage && (
@@ -105,9 +109,10 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
         {(badge || soldOut) && (
           <span
             className={cn(
-              "absolute left-0 top-3 rounded-r-sm px-2 py-1 text-xs font-medium",
+              "pointer-events-none absolute left-0 top-3 rounded-r-sm px-2 py-1 text-xs font-medium",
               soldOut ? "bg-ink-900 text-cream-50" : badge!.tone === "sale" ? "bg-sale-500 text-white" : "bg-canvas text-fg",
             )}
+            data-testid={soldOut ? "card-sold-out" : undefined}
           >
             {soldOut ? "Sold out" : sentenceCase(badge!.label)}
           </span>
@@ -124,7 +129,7 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
             <button
               type="button"
               onClick={handleQuickAdd}
-              aria-label="Add to bag"
+              aria-label={quickAddLabel}
               data-fab-collision
               className="absolute bottom-2 right-2 z-10 flex h-9 w-9 items-center justify-center rounded-sm bg-canvas text-fg lg:hidden"
             >
@@ -137,7 +142,7 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
                 onClick={handleQuickAdd}
                 className="h-10 min-w-0 flex-1 whitespace-nowrap rounded-sm bg-accent text-sm font-medium text-accent-fg transition-colors duration-200 hover:bg-accent-hover"
               >
-                Add to bag
+                {quickAddLabel}
               </button>
               <button
                 type="button"
@@ -183,7 +188,9 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
           </span>
         )}
         <span className="mt-1.5 flex items-baseline gap-2 tabular-nums">
-          <span className={cn("text-[0.9375rem] font-medium", hasWas ? "text-sale-500" : "text-fg")}><Money value={shown.price} /></span>
+          <span className={cn("text-[0.9375rem] font-medium", soldOut ? "text-fg-muted" : hasWas ? "text-sale-500" : "text-fg")} data-testid="card-price">
+            <Money value={shown.price} />
+          </span>
           {hasWas && <span className="text-sm text-fg-muted line-through"><Money value={shown.was!} /></span>}
         </span>
         {colors.length > 1 && (

@@ -104,8 +104,11 @@ const PUBLIC_ROUTES = [
   "POST /api/analytics/pageview/:id/exit",
   "POST /api/analytics/funnel-event",
   "POST /api/analytics/search-session",
+  "POST /api/analytics/meta-event", // Meta Pixel server copy: forwards one validated event to the Conversions API, stores nothing; own rate limit
   "GET /api/settings/",
   "POST /api/courier/steadfast/webhook",
+  "GET /api/v1/webhooks/meta/", // Social Inbox: Meta's subscription handshake (verify token)
+  "POST /api/v1/webhooks/meta/", // Social Inbox: Meta's message webhook, trusted only through its HMAC signature
   "POST /api/v1/checkout/quote",
   "POST /api/v1/checkout/quote/best-coupon",
   "POST /api/v1/client-errors/", // Site health: browser crash beacon, rate-limited

@@ -242,7 +242,11 @@ export async function importSettlementCsv(input: SettlementCsvInput, actor: Fina
       if (amount === null) continue; // spacer / total row without an amount
       const fee = parseStatementAmount(cell(r.cells, idx.fee));
       const adj = parseStatementAmount(cell(r.cells, idx.adjustment));
-      lines.push({ orderNumber: cell(r.cells, idx.orderNumber) || null, externalRef: cell(r.cells, idx.externalRef) || null, amount: Math.abs(Number(amount)), fee: fee === null ? 0 : Math.abs(Number(fee)), adjustment: adj === null ? 0 : Number(adj) });
+      // A negative amount is money the statement takes back (a reversal, a chargeback) — a deduction from the payout,
+      // never money collected for the parcel.
+      const collected = Number(amount);
+      const adjustment = (adj === null ? 0 : Number(adj)) + (collected < 0 ? -collected : 0);
+      lines.push({ orderNumber: cell(r.cells, idx.orderNumber) || null, externalRef: cell(r.cells, idx.externalRef) || null, amount: Math.max(0, collected), fee: fee === null ? 0 : Math.abs(Number(fee)), adjustment: Math.round(adjustment * 100) / 100 });
     } catch (err) {
       errors.push({ line: r.line, message: err instanceof Error ? err.message : String(err) });
     }
@@ -274,6 +278,25 @@ async function paidBeforeTheBooks(tx: AppTransactionClient, business: FinanceBus
   }
   for (const [orderId, d] of latest) if (d < business.openingDate) out.add(orderId);
   return out;
+}
+
+/**
+ * The goods a parcel sold outside the website took with it, at the owner's cost percent of the cash collected (Finance
+ * Center › Settings) — ESTIMATED: Dr cost of goods, Cr 1690 stock sent outside (a contra to inventory: the site's stock
+ * still counts those units until a count corrects it, and that correction comes off 1690 first). Nothing without a percent.
+ */
+async function outsideSaleCostLines(tx: AppTransactionClient, business: FinanceBusinessInfo, collectedMinor: number, reference: string, actor: FinanceActor): Promise<JournalLineSpec[]> {
+  if (collectedMinor <= 0) return [];
+  const { outsideSaleCostPct } = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { outsideSaleCostPct: true } });
+  const pct = outsideSaleCostPct === null ? 0 : Number(outsideSaleCostPct);
+  const cost = Math.round((collectedMinor * pct) / 100);
+  if (cost <= 0) return [];
+  await ensureOwnerBooksSetupInTx(tx, business, actor);
+  const memo = `Estimated cost of goods sold outside the website (${pct}% of ${toMajorNumber(collectedMinor, business.baseCurrency)}) · ${reference}`.slice(0, 300);
+  return [
+    { accountId: (await resolveMappedAccount(tx, business.id, "cogs.goods")).id, debit: cost, credit: 0, memo, valuationStatus: "ESTIMATED" },
+    { accountId: (await resolveMappedAccount(tx, business.id, "asset.inventory_sent_outside")).id, debit: 0, credit: cost, memo, valuationStatus: "ESTIMATED" },
+  ];
 }
 
 /** Posts a DRAFT settlement: one journal through journal.service; clearing is credited per order line, so the clearing
@@ -326,6 +349,7 @@ async function postSettlementOnly(id: string, actor: FinanceActor) {
         const memo = old ? `${l.externalRef ?? l.orderNumber ?? ""} (paid in before the books started)`.trim() : l.externalRef ?? l.orderNumber;
         lines.push({ accountId: clearing.ledgerAccountId, debit: 0, credit: signed(l.amount, cur), memo, ...(l.orderId && !old ? { partyType: "Order", partyId: l.orderId } : {}) });
       }
+      lines.push(...(await outsideSaleCostLines(tx, business, s.lines.filter((l) => l.outsideSale).reduce((t, l) => t + signed(l.amount, cur), 0), s.reference, actor)));
     } else lines.push({ accountId: clearing.ledgerAccountId, debit: 0, credit: gross, memo: s.reference });
     const { entry } = await postJournalInTx(tx, business, {
       entryDate: businessDateOf(s.settlementDate),

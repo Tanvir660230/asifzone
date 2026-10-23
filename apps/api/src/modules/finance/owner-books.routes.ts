@@ -162,6 +162,7 @@ ownerBooksRouter.post("/quick-refills", requirePermission("manufacturing.approve
 
 // ── profit (§8) and the launch weeks before the books (§9) ──────────────────────────────────────────────────────────
 ownerBooksRouter.get("/profit", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitReport(req.query as never, viewerOf(req)))));
+ownerBooksRouter.get("/profit/daily", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitByDay(req.query as never))));
 ownerBooksRouter.get("/profit/launch", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.launchReport(req.query as never))));
 
 // ── courier claims for lost parcels (§3.5); cancelling a landed cost (§7.1) ─────────────────────────────────────────
@@ -183,8 +184,7 @@ ownerBooksRouter.get("/center/sms", requirePermission("finance.read"), asyncHand
 ownerBooksRouter.post("/center/sms/balance", requirePermission("finance.transact"), validate(smsBalanceSchema), asyncHandler(async (req, res) => res.status(201).json({ id: await center.recordSmsBalance(req.body, await actorOf(req)) })));
 ownerBooksRouter.get("/center/settings", requirePermission("finance.read"), asyncHandler(async (_req, res) => {
   const { business } = await getFinanceContext();
-  const s = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true, smsWarnAt: true } });
-  res.json({ defaultUsdRate: s.defaultUsdRate ? Number(s.defaultUsdRate) : null, smsLowBalance: s.smsWarnAt ? Number(s.smsWarnAt) : null });
+  res.json(center.centerSettingsDto(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: center.CENTER_SETTINGS_SELECT })));
 }));
 ownerBooksRouter.patch("/center/settings", requirePermission("finance.configure"), validate(financeCenterSettingsSchema), asyncHandler(async (req, res) => res.json(await center.updateFinanceCenterSettings(req.body, await actorOf(req)))));
 

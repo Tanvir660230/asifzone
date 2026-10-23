@@ -7,7 +7,7 @@ import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { signAccessToken } from "../../lib/jwt";
 import { checkout, cleanupFixtures, createStockedProduct, ownerId, markOpeningPostedInTx, placeOrder, purgeFinanceTables, RUN, trackOrder } from "../../test-fixtures";
-import { createOrder, updateOrderStatus } from "../../modules/orders/order.service";
+import { createOrder, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { reclassifyPayment, recordManualPayment, recordRefund } from "../../domain/payments/payment-ledger.service";
@@ -62,7 +62,9 @@ async function costedVariant(unitCost: number | null, price = 1000, stock = 50) 
 }
 async function deliver(orderId: string, to: "DELIVERED" | "SHIPPED" = "DELIVERED") {
   const path = ["CONFIRMED", "PROCESSING", "PACKED", "SHIPPED", "DELIVERED"] as const;
-  for (const s of path.slice(0, path.indexOf(to) + 1)) await updateOrderStatus(orderId, { status: s }, admin);
+  // From where the order is now (a paid online order is already confirmed).
+  const at = path.indexOf((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status as (typeof path)[number]);
+  for (const s of path.slice(at + 1, path.indexOf(to) + 1)) await updateOrderStatus(orderId, { status: s }, admin);
 }
 let phoneSeq = 0;
 async function customer() {
@@ -281,10 +283,76 @@ describe("payments, refunds, returns", () => {
     expect(await engine("cogs", o.id)).toBe(350); // 3 sold − 2 returned (both came back into stock first)
     expect(await ledger(o.id, "cogs.inventory_shrinkage", -1)).toBe(350); // the damaged one written off
     expect(await ledger(o.id, "asset.inventory")).toBe(3 * 350 - 2 * 350 + 350); // credit − debit: down by the 2 units kept / written off
-    // Store credit given for both: a liability; the returns settled in credit show as a return, revenue as the dashboard keeps it.
+    // Store credit given for both: a liability. The returned goods are a sales return (what the order no longer charges);
+    // the credit settles what the order then owes the customer back — not a second revenue reduction.
     const credited = await prisma.customerCreditEntry.aggregate({ where: { customerId: cust.id }, _sum: { amount: true } });
     expect(await ledger(o.id, "liability.store_credit")).toBe(Number(credited._sum.amount));
-    expect(await ledger(o.id, "revenue.store_credit_returns", -1)).toBe(Number(credited._sum.amount));
+    expect(await ledger(o.id, "revenue.returns_refunds", -1)).toBe(Number(credited._sum.amount));
+    expect(await ledger(o.id, "revenue.store_credit_returns", -1)).toBe(0);
+    expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
+  });
+
+  it("a partial delivery: what the customer refused is a sales return — revenue is what was kept, and nothing is left owed", async () => {
+    const cust = await customer();
+    const kept = await costedVariant(300, 600);
+    const refused = await costedVariant(200, 400);
+    const o = await orderFor(cust.id, [{ variantId: kept.id, quantity: 1 }, { variantId: refused.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    const items = await prisma.orderItem.findMany({ where: { orderId: o.id } });
+    const refusedItem = items.find((i) => i.variantId === refused.id)!;
+    await reconcilePartialDelivery(o.id, { items: [{ orderItemId: refusedItem.id, returnedQuantity: 1 }] }, admin);
+    // The rider collected what the customer kept, plus delivery.
+    const due = Number(o.total) - 400;
+    await recordManualPayment(o.id, { amount: due, kind: "COD_COLLECTED" }, admin);
+    await projectOrder(o.id);
+    await agrees(o.id);
+    expect(await revenue(o.id)).toBe(600);
+    expect(await ledger(o.id, "revenue.returns_refunds", -1)).toBe(400);
+    expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
+    expect(await ledger(o.id, "cogs.goods", -1)).toBe(300); // the refused unit came back into stock
+  });
+
+  it("a partial delivery where the customer kept nothing: no sale is left and the delivery charge nobody paid is written off", async () => {
+    const cust = await customer();
+    const v = await costedVariant(300, 700);
+    const o = await orderFor(cust.id, [{ variantId: v.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    const [item] = await prisma.orderItem.findMany({ where: { orderId: o.id } });
+    await reconcilePartialDelivery(o.id, { items: [{ orderItemId: item!.id, returnedQuantity: 1 }] }, admin);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe("RETURNED");
+    await projectOrder(o.id);
+    await agrees(o.id);
+    expect(await revenue(o.id)).toBe(0);
+    const shipping = Number(o.total) - 700;
+    expect(await ledger(o.id, "revenue.other_refunds", -1)).toBe(shipping);
+    expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
+    expect(await ledger(o.id, "cogs.goods", -1)).toBe(0);
+  });
+
+  it("a prepaid return then its refund reduces revenue once; a refund recorded before the return isn't counted twice", async () => {
+    const cust = await customer();
+    const v = await costedVariant(300, 500);
+    const o = await paidOnline([{ variantId: v.id, quantity: 2 }], cust.id);
+    await deliver(o.id);
+    const [item] = await prisma.orderItem.findMany({ where: { orderId: o.id } });
+    await recordItemReturn(o.id, { items: [{ orderItemId: item!.id, quantity: 1, restock: true }], reason: "size", compensation: "REFUND" }, admin, `p3-pre-${o.id}`);
+    await prisma.refund.updateMany({ where: { orderId: o.id, status: "REQUESTED" }, data: { status: "COMPLETED", completedAt: new Date() } });
+    await projectOrder(o.id);
+    await agrees(o.id);
+    expect(await revenue(o.id)).toBe(500);
+    expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
+
+    const first = await paidOnline([{ variantId: v.id, quantity: 2 }], cust.id);
+    await deliver(first.id);
+    await recordRefund(first.id, { amount: 500, reason: "refund first", method: "bKash" }, admin, `p3-first-${first.id}`);
+    const [line] = await prisma.orderItem.findMany({ where: { orderId: first.id } });
+    await recordItemReturn(first.id, { items: [{ orderItemId: line!.id, quantity: 1, restock: true }], reason: "came back later", compensation: "NONE" }, admin, `p3-later-${first.id}`);
+    await projectOrder(first.id);
+    await agrees(first.id);
+    expect(await revenue(first.id)).toBe(500);
+    expect(await ledger(first.id, "asset.receivable_trade")).toBe(0);
   });
 });
 
@@ -423,6 +491,12 @@ describe("clearing settlements", () => {
     expect(await ledger(o.id, "clearing.gateway.eps", -1)).toBe(0);
     const fee = await prisma.journalLine.findMany({ where: { accountId: await accountOf("expense.gateway_fees"), entryId: (await prisma.clearingSettlement.findUniqueOrThrow({ where: { id: first.settlement.id } })).journalEntryId! } });
     expect(Number(fee[0]!.debit)).toBe(16);
+
+    // A row the statement takes back (a negative amount) is a deduction from the payout, never money collected.
+    const takeBack = `Txn Id,Gross,Charge\neps_${o.id},500.00,0\neps_${o.id},-200.00,0\n`;
+    const draft = await importSettlementCsv({ ...input, reference: `EPS-back-${RUN}`, adjustmentReason: "Chargeback", csv: takeBack }, OWNER);
+    expect(draft.settlement.lines[1]).toMatchObject({ amount: 0, adjustment: 200 });
+    expect(draft.settlement).toMatchObject({ grossAmount: 500, adjustmentAmount: 200, netAmount: 300 });
   });
 });
 

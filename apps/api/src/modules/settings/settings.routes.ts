@@ -1,5 +1,14 @@
 import { Router } from "express";
-import { createShippingZoneSchema, updateIntegrationsSchema, updateShippingZoneSchema, updateSettingsSchema } from "@clothing-brand/shared";
+import {
+  createShippingZoneSchema,
+  metaHistoryImportSchema,
+  updateIntegrationsSchema,
+  updateShippingZoneSchema,
+  updateSettingsSchema,
+  whatsAppConnectSchema,
+} from "@clothing-brand/shared";
+import { connectWhatsApp } from "./whatsapp-connect.service";
+import { requestPastChatsImport } from "../social-inbox/history-import";
 import { asyncHandler } from "../../lib/async-handler";
 import { createShippingZone, deleteShippingZone, listShippingZones, updateShippingZone } from "./shipping-zones.service";
 import { validate } from "../../middlewares/validate";
@@ -36,6 +45,31 @@ settingsRouter.patch(
     res.locals.auditHandled = true;
     recordAudit({ adminId: req.admin?.adminId ?? null, action: "settings.integrations_update", entityType: "settings", entityId: "integrations", ipAddress: req.ip ?? null, metadata: { keys } });
     res.json(getIntegrationsView());
+  }),
+);
+// Connect WhatsApp (Social Inbox): finishes Meta's Embedded Signup and saves the number, token and account id.
+settingsRouter.post(
+  "/integrations/whatsapp/connect", requireAdmin, requirePermission("settings.manage"), validate(whatsAppConnectSchema),
+  asyncHandler(async (req, res) => {
+    const { phoneNumber, warnings } = await connectWhatsApp(req.body, req.admin?.adminId ?? null);
+    res.locals.auditHandled = true;
+    recordAudit({
+      adminId: req.admin?.adminId ?? null,
+      action: "settings.integrations_update",
+      entityType: "settings",
+      entityId: "integrations",
+      ipAddress: req.ip ?? null,
+      metadata: { keys: ["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_WABA_ID"], whatsappConnect: { coexistence: req.body.coexistence } },
+    });
+    res.json({ view: getIntegrationsView(), phoneNumber, warnings });
+  }),
+);
+// Import past chats (Social Inbox): queues a background copy of recent Messenger / Instagram conversations.
+settingsRouter.post(
+  "/integrations/meta/import-history", requireAdmin, requirePermission("settings.manage"), validate(metaHistoryImportSchema),
+  asyncHandler(async (req, res) => {
+    await requestPastChatsImport(req.body.days);
+    res.status(202).json({ queued: true });
   }),
 );
 settingsRouter.post(

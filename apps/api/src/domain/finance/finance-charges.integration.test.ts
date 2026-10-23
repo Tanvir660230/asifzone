@@ -8,7 +8,11 @@ import { updateOrderStatus } from "../../modules/orders/order.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { financeTransaction } from "./finance-tx";
 import { getFinanceContext } from "./finance-context";
-import { projectOrder, syncCommerce } from "./commerce-accounting.service";
+import { approveCostEstimate, projectOrder, syncCommerce } from "./commerce-accounting.service";
+import { setCostPolicy } from "./chart.service";
+import { adjustVariantStock } from "../../modules/inventory/inventory.service";
+import { PERMISSIONS } from "@clothing-brand/shared";
+import type { FinanceActor } from "./finance-audit";
 
 // Owner's books §3–§4 (docs/FINANCE_OWNER_BOOKS.md): a delivered parcel's courier charge and an online payment's gateway
 // fee are booked as ESTIMATES the day they happen (from the rate card), and replaced by the ACTUAL charge when the payout
@@ -167,6 +171,30 @@ describe("courier charges: estimate on delivery, actual at the payout", () => {
     expect((await owner().post(`/settlements/${r.body.settlement.id}/post`)).status).toBe(200);
     expect(await net("liability.courier_charges_accrued")).toBe(0);
   });
+
+  it("a payout entered late withdraws the estimate on the payout's day — its month never counts the charge twice", async () => {
+    const o = await deliveredParcel(`CN-${RUN}-late`);
+    // Delivered in September (booked with the courier just before).
+    await prisma.order.update({ where: { id: o.id }, data: { courierBookedAt: new Date("2026-09-08T06:00:00Z") } });
+    await prisma.orderStatusHistory.updateMany({ where: { orderId: o.id, status: "DELIVERED" }, data: { createdAt: new Date("2026-09-10T06:00:00Z") } });
+    await projectOrder(o.id);
+    const r = await owner().post("/settlements", {
+      clearingFinancialAccountId: cod, destinationFinancialAccountId: bank, settlementDate: "2026-10-01", reference: `late-${RUN}`,
+      lines: [{ externalRef: `CN-${RUN}-late`, amount: Number(o.total), fee: 70 }],
+    }, key("late"));
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect((await owner().post(`/settlements/${r.body.settlement.id}/post`)).status).toBe(200);
+    const evs = await chargeEvents(o.id);
+    const withdrawal = await prisma.journalEntry.findFirstOrThrow({ where: { financialEventId: evs[evs.length - 1]!.id } }).catch(async () =>
+      prisma.journalEntry.findFirstOrThrow({ where: { reversesEntryId: (await prisma.journalEntry.findFirstOrThrow({ where: { financialEventId: evs[0]!.id } })).id } }),
+    );
+    expect(withdrawal.entryDate.toISOString().slice(0, 10)).toBe("2026-10-01");
+    const october = await prisma.journalLine.findMany({ where: { partyId: o.id, accountId: await accountId("expense.courier_fees"), entry: { status: "POSTED", entryDate: { gte: new Date("2026-10-01T00:00:00Z"), lte: new Date("2026-10-31T00:00:00Z") } } } });
+    const september = await prisma.journalLine.findMany({ where: { partyId: o.id, accountId: await accountId("expense.courier_fees"), entry: { status: "POSTED", entryDate: { lt: new Date("2026-10-01T00:00:00Z") } } } });
+    const sum = (ls: typeof october) => Math.round(ls.reduce((s, l) => s + Number(l.debit) - Number(l.credit), 0) * 100) / 100;
+    expect(sum(september) + sum(october)).toBe(0); // the estimate in September, its withdrawal in October (the actual 70 is on the payout, no party)
+    expect(sum(september)).toBeGreaterThan(0);
+  });
 });
 
 describe("gateway fees", () => {
@@ -187,6 +215,27 @@ describe("gateway fees", () => {
     expect((await owner().post(`/settlements/${r.body.settlement.id}/post`)).status).toBe(200);
     expect(await net("liability.gateway_fees_accrued")).toBe(0);
     expect(await net("expense.gateway_fees")).toBe(fee + 1);
+  });
+
+  it("a settlement that names one of an order's two payments withdraws only that payment's estimate", async () => {
+    const p = await createStockedProduct({ stocks: [20], basePrice: 2000 });
+    const o = await placeOrder([{ variantId: p.variants[0]!.id, quantity: 1 }]);
+    await prisma.order.update({ where: { id: o.id }, data: { paymentMethod: "EPS_PG" } });
+    const ps = await prisma.paymentSession.create({ data: { orderId: o.id, provider: "EPS_PG", status: "ACTIVE", gatewayTransactionRef: `ch2_${o.id}`, expiresAt: new Date(Date.now() + 60_000), amount: o.total } });
+    await settlePaymentSession(ps.gatewayTransactionRef, `eps2a_${o.id}`, Number(o.total));
+    // A second gateway payment on the same order (e.g. a later top-up of a price change).
+    await prisma.payment.create({ data: { orderId: o.id, provider: "EPS_PG", status: "SUCCEEDED", amount: 100, providerTransactionId: `eps2b_${o.id}` } });
+    await projectOrder(o.id);
+    const before = await net("expense.gateway_fees", o.id);
+    const r = await owner().post("/settlements", {
+      clearingFinancialAccountId: eps, destinationFinancialAccountId: bank, settlementDate: "2026-10-18", reference: `eps2-${RUN}`,
+      lines: [{ externalRef: `eps2a_${o.id}`, amount: Number(o.total), fee: 50 }],
+    }, key("eps2"));
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect((await owner().post(`/settlements/${r.body.settlement.id}/post`)).status).toBe(200);
+    // The 100 payment's estimate (2.5%) stays until its own settlement.
+    expect(await net("liability.gateway_fees_accrued", o.id)).toBe(-2.5);
+    expect(before).toBe(Math.round(Number(o.total) * 2.5) / 100 + 2.5);
   });
 });
 
@@ -258,13 +307,34 @@ describe("parcels booked straight on Steadfast (never orders on the site)", () =
     const marked = await owner().post(`/settlements/${s.id}/outside-sales`);
     expect(marked.status, JSON.stringify(marked.body)).toBe(200);
     expect(marked.body).toMatchObject({ unmatchedLines: 0, outsideSaleLines: 1 });
+    // The owner's cost percent for goods sold outside the website: 40% of the cash collected.
+    const set = await owner().patch("/center/settings", { outsideSaleCostPct: 40 });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect((await owner().get("/center/settings")).body).toMatchObject({ outsideSaleCostPct: 40 });
+    const cogsBefore = await net("cogs.goods");
     expect((await owner().post(`/settlements/${s.id}/post`)).status).toBe(200);
     expect(await net("revenue.outside_sales")).toBe(-500);
+    expect(await net("asset.inventory_sent_outside")).toBe(-200); // the goods that left, at their estimated cost
+    expect(Math.round((await net("cogs.goods") - cogsBefore) * 100) / 100).toBe(200);
     const checks = await owner().post("/reconciliation/run", { checks: ["ledger.integrity", "charges.accrued"] });
     expect(checks.body.results.map((x: { status: string }) => x.status)).toEqual(["MATCHED", "MATCHED"]);
     const profit = (await owner().get("/profit?from=2026-01-01&to=2099-12-31")).body;
-    expect(profit.totals.outsideSales).toBe(500);
-    expect(Math.round((profit.totals.contribution + profit.totals.outsideSales - profit.totals.otherCosts) * 100) / 100).toBe(profit.totals.netProfit);
+    expect(profit.totals).toMatchObject({ outsideSales: 500, outsideSalesCost: 200, outsideSaleCostPct: 40 });
+    expect(Math.round((profit.totals.contribution + profit.totals.outsideSales - profit.totals.outsideSalesCost - profit.totals.otherCosts) * 100) / 100).toBe(profit.totals.netProfit);
+
+    // Later the site's stock is corrected for the units that left: that decrease is the goods already costed — it comes off
+    // 1690, not a second cost of goods.
+    const p = await createStockedProduct({ stocks: [10], basePrice: 900 });
+    await prisma.productVariant.update({ where: { id: p.variants[0]!.id }, data: { costPrice: 150 } });
+    await adjustVariantStock(p.variants[0]!.id, -1, "ADJUSTMENT", admin, "counted: one went out by courier");
+    await syncCommerce();
+    const ex = await prisma.financeException.findFirstOrThrow({ where: { kind: "UNVALUED_STOCK_WRITE_OFF", sourceType: "StockMovement", details: { path: ["variantId"], equals: p.variants[0]!.id } } });
+    const actor: FinanceActor = { type: "ADMIN", adminId: admin, label: "owner@test", permissions: [...PERMISSIONS] };
+    await setCostPolicy({ costPolicy: "APPROVED_ESTIMATES", reason: "test" }, actor);
+    const shrinkBefore = await net("cogs.inventory_shrinkage");
+    await approveCostEstimate(ex.id, 150, "counted short — sent outside", actor);
+    expect(await net("asset.inventory_sent_outside")).toBe(-50);
+    expect(await net("cogs.inventory_shrinkage")).toBe(shrinkBefore);
   });
 });
 

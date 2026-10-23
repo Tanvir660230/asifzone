@@ -153,6 +153,10 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   courierIssue: z.enum(["true"]).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  // Daily-pulse drill-down (docs/METRICS_REGISTRY.md §4.5): the orders that reached a step on a business date — e.g. every
+  // parcel sent to the courier on 2026-10-04. Both are needed; the list is exactly the set the pulse counted.
+  opsEvent: z.enum(["confirmed", "booked", "delivered", "partially_delivered", "returned", "cancelled"]).optional(),
+  opsDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional(),
   // Powers the sortable column headers on the admin orders table — restricted to plain scalar
   // columns Prisma can order by directly (no relations/joins).
   sortBy: z.enum(["orderNumber", "customerName", "paymentStatus", "total", "status", "createdAt"]).optional(),

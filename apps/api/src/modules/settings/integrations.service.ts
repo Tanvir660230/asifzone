@@ -14,6 +14,7 @@ import { openIntegrationValue, sealIntegrationValue } from "../../lib/secret-box
 import { captureError } from "../../lib/observability/error-capture";
 import { credentialsNewlyMissing, generatePushKeyPair } from "../../providers/registry";
 import { invalidateSettingsCache } from "./settings.service";
+import { META_WEBHOOK_PATH } from "../social-inbox/meta-webhook.routes";
 
 /**
  * Settings › Integrations — third-party credentials and ids an OWNER manages from the dashboard (catalog and precedence:
@@ -72,6 +73,7 @@ export function getIntegrationsView(): IntegrationsView {
       return { id: integration.id, configured, fields };
     }),
     steadfastWebhookUrl: `${env.apiOrigin.replace(/\/+$/, "")}/api/courier/steadfast/webhook?token=`,
+    metaWebhookUrl: `${env.apiOrigin.replace(/\/+$/, "")}${META_WEBHOOK_PATH}`,
   };
 }
 

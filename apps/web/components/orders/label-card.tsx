@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Order, OrderPaymentSummary, StoreSettings } from "@clothing-brand/shared";
 import { formatPrice, paymentStatusLabel } from "@/lib/format";
+import { siteUrl } from "@/lib/runtime-config";
 import { DETAIL_LEVELS, LABEL_RENDER_SCALE, chooseLevel, pickLayout, searchUnit, unitBounds, type DetailLevel, type FitResult } from "@/lib/label-fit";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { BarcodeSvg } from "./barcode-svg";
@@ -127,37 +128,31 @@ interface LabelView {
   store: StoreSettings | undefined;
   booked: boolean;
   barcodeValue: string;
+  /** What the QR opens: the courier's tracking page once booked, else this store's own Track order page with the
+   * order number filled in (the customer still enters their phone, so nobody else's order shows). */
+  qrValue: string;
   cod: number;
   paidCaption: string;
   areaLine: string;
   pieces: number;
   printed: string;
-  date: string;
 }
 
 function buildView(order: LabelOrder, store: StoreSettings | undefined, printedAt: Date): LabelView {
   const booked = Boolean(order.courierConsignmentId);
   const timeZone = store?.timezone || undefined;
-  const stamp = (d: Date, withTime: boolean) =>
-    new Intl.DateTimeFormat("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "2-digit",
-      ...(withTime ? { hour: "numeric", minute: "2-digit", hour12: true } : {}),
-      timeZone,
-    }).format(d);
   return {
     order,
     store,
     booked,
     barcodeValue: booked && order.trackingNumber ? order.trackingNumber : order.orderNumber,
+    qrValue: order.courierTrackingLink || `${siteUrl()}/track-order?order=${encodeURIComponent(order.orderNumber)}`,
     cod: order.payment.codToCollect,
     paidCaption:
       order.paymentMethod === "COD" ? "Paid — collect nothing" : order.paymentStatus === "PAID" ? "Paid online — collect nothing" : `Online — ${paymentStatusLabel(order.paymentStatus)}`,
     areaLine: [order.shippingArea, order.shippingDistrict, order.shippingDivision].filter(Boolean).join(", "),
     pieces: order.items.reduce((sum, item) => sum + item.quantity, 0),
-    printed: stamp(printedAt, true),
-    date: stamp(new Date(order.courierBookedAt ?? order.createdAt), false),
+    printed: new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "2-digit", hour: "numeric", minute: "2-digit", hour12: true, timeZone }).format(printedAt),
   };
 }
 
@@ -180,27 +175,11 @@ function StackLabel({ view, detail, onBarcodeReady }: PartProps) {
       <Header view={view} logoEm={detail.logo ? 2.5 : 0} />
       <Barcode view={view} heightEm={detail.slimBarcode ? 2.5 : 3.3} digitsEm={1.12} onReady={onBarcodeReady} className="mt-[0.45em]" />
 
-      {detail.infoTable ? (
-        <div className="mt-[0.4em] flex border-y-[0.09em] border-ink-900 py-[0.35em]">
-          {detail.qr !== "none" && order.courierTrackingLink && (
-            <div
-              className="mr-[0.45em] shrink-0 border-r-[0.09em] border-ink-900 pr-[0.45em]"
-              style={{ width: `${qrEm(detail, 5.4)}em`, height: `${qrEm(detail, 5.4)}em` }}
-            >
-              <QrCodeSvg value={order.courierTrackingLink} size={128} fill />
-            </div>
-          )}
-          <InfoTable view={view} />
-        </div>
-      ) : (
-        <CompactInfo view={view} className="mt-[0.4em] border-y-[0.09em] border-ink-900 py-[0.25em]" />
-      )}
-
-      <div className="mt-[0.5em] grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-[0.6em] gap-y-[0.12em]">
+      <div className="mt-[0.5em] grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-[0.6em] gap-y-[0.12em] border-t-[0.09em] border-ink-900 pt-[0.45em]">
         <FieldLabel>Name</FieldLabel>
         <p lang="bn" className="text-[1.3em] font-bold leading-[1.15]">{order.customerName}</p>
         <FieldLabel>Phone</FieldLabel>
-        <p className="text-[1.3em] font-bold leading-[1.15] tabular-nums">{order.customerPhone}</p>
+        <p className="whitespace-nowrap text-[1.3em] font-bold leading-[1.15] tabular-nums">{order.customerPhone}</p>
         <FieldLabel>Address</FieldLabel>
         <p lang="bn" className="text-[1.04em] font-bold leading-[1.28]">
           {order.shippingAddressLine}
@@ -208,7 +187,12 @@ function StackLabel({ view, detail, onBarcodeReady }: PartProps) {
         </p>
       </div>
 
-      <Payment view={view} className="mt-[0.55em]" amountEm={1.75} />
+      {/* Payment with the QR beside it — the owner's layout: no order/parcel/date table; name, phone and address keep
+          the label's full width (a phone number must never break across lines). */}
+      <div className="mt-[0.55em] flex items-stretch gap-[0.6em]">
+        <Payment view={view} className="min-w-0 flex-1 justify-center" amountEm={1.9} stacked />
+        <QrBox view={view} sideEm={qrEm(detail, 5.4)} />
+      </div>
       <CourierNote order={order} className="mt-[0.45em] text-[0.95em]" />
       <Items view={view} detail={detail} className="mt-[0.5em]" />
 
@@ -223,11 +207,11 @@ function WideLabel({ view, detail, onBarcodeReady }: PartProps) {
   const { order } = view;
   return (
     <>
-      <Header view={view} logoEm={detail.logo ? 1.9 : 0} rightText={order.orderNumber} />
+      <Header view={view} logoEm={detail.logo ? 1.9 : 0} />
       <div className="mt-[0.35em] flex gap-[0.6em]">
         <div className="min-w-0 flex-1">
           <p lang="bn" className="text-[1.2em] font-bold leading-[1.15]">{order.customerName}</p>
-          <p className="text-[1.15em] font-bold leading-[1.15] tabular-nums">{order.customerPhone}</p>
+          <p className="whitespace-nowrap text-[1.15em] font-bold leading-[1.15] tabular-nums">{order.customerPhone}</p>
           <p lang="bn" className="mt-[0.15em] text-[0.95em] font-bold leading-[1.25]">
             {order.shippingAddressLine}
             {view.areaLine && <span className="block font-semibold">{view.areaLine}</span>}
@@ -235,13 +219,8 @@ function WideLabel({ view, detail, onBarcodeReady }: PartProps) {
           <CourierNote order={order} className="mt-[0.3em] text-[0.88em]" />
         </div>
         <div className="flex w-[38%] shrink-0 flex-col gap-[0.35em]">
-          <Payment view={view} amountEm={1.45} stacked />
-          {detail.qr !== "none" && order.courierTrackingLink && (
-            <div className="self-center" style={{ width: `${qrEm(detail, 4.6)}em`, height: `${qrEm(detail, 4.6)}em` }}>
-              <QrCodeSvg value={order.courierTrackingLink} size={128} fill />
-            </div>
-          )}
-          {detail.infoTable && <CompactInfo view={view} stacked hideOrder />}
+          <Payment view={view} amountEm={1.45} stacked caption="COD" />
+          <QrBox view={view} sideEm={qrEm(detail, 4.6)} className="self-center" />
         </div>
       </div>
       <Items view={view} detail={detail} className="mt-[0.35em]" />
@@ -252,20 +231,19 @@ function WideLabel({ view, detail, onBarcodeReady }: PartProps) {
   );
 }
 
-/** Logo (or wordmark) left; right: the store's phone — or, on wide labels, the order number (it has no info table
- * row there once space runs out, and the courier asks for it more than the shop's number). `logoEm` 0 = the fit
- * engine dropped the logo image: the wordmark takes its place. */
-function Header({ view, logoEm, rightText }: { view: LabelView; logoEm: number; rightText?: string }) {
+/** Logo (or wordmark) left, the store's phone right. `logoEm` 0 = the fit engine dropped the logo image: the wordmark
+ * takes its place. */
+function Header({ view, logoEm }: { view: LabelView; logoEm: number }) {
   const { store } = view;
   const name = store?.storeName ?? "Store";
   const wordmark = <span className="text-[1.25em] font-bold leading-none">{name}</span>;
-  const right = rightText ?? store?.contactPhone;
+  const right = store?.contactPhone;
   return (
     <div className="flex items-center justify-between gap-[0.6em] border-b-[0.12em] border-ink-900 pb-[0.35em]">
       {store?.logoUrl && logoEm > 0 ? (
         <>
           <StoreLogoImage src={store.logoUrl} alt={name} className="shrink-0 [&_img]:object-left" style={{ height: `${logoEm}em`, width: `${logoEm * 2.4}em` }} fallback={wordmark} />
-          {/* The logo artwork already carries the store name, so only the phone (or order number) sits beside it. */}
+          {/* The logo artwork already carries the store name, so only the phone sits beside it. */}
           {right && <p className="whitespace-nowrap text-right text-[0.9em] font-semibold tabular-nums">{right}</p>}
         </>
       ) : (
@@ -291,39 +269,11 @@ function Barcode({ view, heightEm, digitsEm, onReady, className }: { view: Label
   );
 }
 
-function InfoTable({ view }: { view: LabelView }) {
-  const { order } = view;
-  const rows: Array<[string, string]> = [
-    ["Parcel", order.courierConsignmentId ?? "Not booked yet"],
-    ...(order.carrier ? ([["Courier", order.carrier]] as Array<[string, string]>) : []),
-    ["Date", view.date],
-  ];
-  // No flex-wrap and no auto margins anywhere in here: the capture freezes every computed size (auto margins included)
-  // as px, so a row that "just fit" on screen could tip onto two lines in the image (measured: the date dropped onto
-  // the rule below). A fixed grid has no wrap decision to re-make. The order number — the longest value, and one that
-  // must never break — sits on its own line under its label.
+/** The QR, on every label: the courier's tracking page, or the store's own Track order page before booking. */
+function QrBox({ view, sideEm, className = "" }: { view: LabelView; sideEm: number; className?: string }) {
   return (
-    <dl className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-[0.5em] gap-y-[0.16em] text-[0.84em] leading-tight">
-      <dt className="col-span-2 text-[0.86em] font-semibold uppercase tracking-[0.08em]">Order</dt>
-      <dd className="col-span-2 whitespace-nowrap text-right font-bold tabular-nums">{order.orderNumber}</dd>
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-[0.86em] font-semibold uppercase tracking-[0.08em]">{label}</dt>
-          <dd className="whitespace-nowrap text-right font-bold tabular-nums">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function CompactInfo({ view, className = "", stacked = false, hideOrder = false }: { view: LabelView; className?: string; stacked?: boolean; hideOrder?: boolean }) {
-  const { order } = view;
-  const parcel = order.courierConsignmentId ? `Parcel ${order.courierConsignmentId}` : "Not booked yet";
-  return (
-    // No flex-wrap (see InfoTable): side by side, or stacked — decided by the layout, never by a wrap at capture time.
-    <div className={`${stacked ? "flex flex-col" : "flex justify-between gap-x-[0.6em]"} text-[0.8em] font-bold leading-tight tabular-nums ${className}`}>
-      {!hideOrder && <span className="whitespace-nowrap">{order.orderNumber}</span>}
-      <span className="whitespace-nowrap">{parcel}</span>
+    <div data-label-qr className={`shrink-0 ${className}`} style={{ width: `${sideEm}em`, height: `${sideEm}em` }}>
+      <QrCodeSvg value={view.qrValue} size={128} fill />
     </div>
   );
 }
@@ -332,19 +282,21 @@ function FieldLabel({ children }: { children: string }) {
   return <span className="text-[0.7em] font-semibold uppercase tracking-[0.1em]">{children}</span>;
 }
 
-function Payment({ view, className = "", amountEm, stacked = false }: { view: LabelView; className?: string; amountEm: number; stacked?: boolean }) {
+/** The amount to collect, boxed. `stacked`: caption over the amount (beside the QR, or in a wide label's narrow column,
+ * where `caption` is the short "COD"). */
+function Payment({ view, className = "", amountEm, stacked = false, caption = "Cash on delivery" }: { view: LabelView; className?: string; amountEm: number; stacked?: boolean; caption?: string }) {
   if (view.cod > 0) {
     return (
-      <div className={`flex border-[0.14em] border-ink-900 px-[0.55em] py-[0.28em] ${stacked ? "flex-col" : "items-center justify-between gap-[0.5em]"} ${className}`}>
-        <span className="text-[0.8em] font-bold uppercase leading-tight tracking-[0.12em]">{stacked ? "COD" : "Cash on delivery"}</span>
-        <span className="font-extrabold leading-none tabular-nums" style={{ fontSize: `${amountEm}em` }}>
+      <div className={`flex border-[0.14em] border-ink-900 px-[0.55em] py-[0.28em] ${stacked ? "flex-col gap-[0.15em]" : "items-center justify-between gap-[0.5em]"} ${className}`}>
+        <span className="text-[0.8em] font-bold uppercase leading-tight tracking-[0.12em]">{caption}</span>
+        <span className="whitespace-nowrap font-extrabold leading-none tabular-nums" style={{ fontSize: `${amountEm}em` }}>
           {formatPrice(view.cod)}
         </span>
       </div>
     );
   }
   return (
-    <div className={`border-[0.09em] border-ink-900 px-[0.55em] py-[0.3em] text-[0.95em] font-bold leading-tight ${className}`}>{view.paidCaption}</div>
+    <div className={`flex flex-col border-[0.09em] border-ink-900 px-[0.55em] py-[0.3em] text-[0.95em] font-bold leading-tight ${className}`}>{view.paidCaption}</div>
   );
 }
 

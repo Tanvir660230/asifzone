@@ -34,6 +34,10 @@ export const CAPABILITIES = {
   "refunds.manage": { permission: "refunds.manage" },
   "returns.manage": { permission: "returns.manage" },
   "courier.manage": { permission: "courier.manage", provider: "courier" },
+  // courier cost reconciliation (docs/COURIER_COSTS.md)
+  "courierCosts.view": { permission: "courier_costs.read" },
+  "courierCosts.record": { permission: "courier_costs.record" },
+  "courierCosts.verify": { permission: "courier_costs.verify" },
   // financial core (docs/FINANCE_PHASE_2.md §7) — OWNER-only permissions until a finance role is decided
   "finance.view": { permission: "finance.read" },
   "finance.transact": { permission: "finance.transact" },
@@ -76,6 +80,8 @@ export const CAPABILITIES = {
   /** Inbox replies (R2) — offered only when that provider is set up on this deployment. */
   "inbox.replyEmail": { permission: "customers.message", provider: "email" },
   "inbox.replySms": { permission: "customers.message", provider: "sms" },
+  /** WhatsApp / Messenger / Instagram / comment replies — sent through the store's Meta connection. */
+  "inbox.replySocial": { permission: "customers.message" },
   "content.manage": { permission: "content.manage" },
   // growth
   "promotions.manage": { permission: "promotions.manage" },

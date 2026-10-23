@@ -10,8 +10,8 @@ import type { Customer } from "@clothing-brand/shared";
 
 const QUERY_KEY = ["current-customer"];
 
-/** The signed-in customer's own contact details go to the ad pixels' advanced matching (lib/pixels/ — memory only, and
- * only sent with an event the shopper consented to). Every storefront page that already loads the session reports it,
+/** The signed-in customer's own contact details go to the ad pixels' advanced matching (lib/pixels/ — kept only with
+ * ad-tracking consent, and only sent with an event the shopper consented to). Every storefront page that already loads the session reports it,
  * so no page fetches the customer just for this. */
 function useIdentifyForPixels(customer: Customer | undefined) {
   useEffect(() => {

@@ -211,8 +211,13 @@ export const expenseAllocationSchema = z.object({
 });
 export const smsBalanceSchema = z.object({ balance: financeAmountSchema, takenAt: z.string().datetime({ offset: true }).optional(), note: optionalText(300) });
 export const financeCenterSettingsSchema = z
-  .object({ defaultUsdRate: fxRate.nullable().optional(), smsLowBalance: financeAmountSchema.nullable().optional() })
-  .refine((v) => v.defaultUsdRate !== undefined || v.smsLowBalance !== undefined, "Nothing to change");
+  .object({
+    defaultUsdRate: fxRate.nullable().optional(),
+    smsLowBalance: financeAmountSchema.nullable().optional(),
+    /** Cost of goods as a percent of the cash collected, for a parcel sold outside the website. */
+    outsideSaleCostPct: z.number().min(0).max(100).multipleOf(0.01).nullable().optional(),
+  })
+  .refine((v) => v.defaultUsdRate !== undefined || v.smsLowBalance !== undefined || v.outsideSaleCostPct !== undefined, "Nothing to change");
 
 /** Autopilot (docs/FINANCE_OWNER_BOOKS.md §15). */
 export const financeAutopilotSchema = z

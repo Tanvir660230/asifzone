@@ -67,6 +67,27 @@ describe("Settings › Integrations", () => {
     expect(JSON.stringify(audit?.metadata)).not.toContain(secret);
   });
 
+  it("Social Inbox: Meta and WhatsApp credentials are saved, secrets never returned, and the webhook URL is given", async () => {
+    const owner = await asOwner();
+    const appSecret = "meta-app-secret-VALUE-1d2e";
+    const waToken = "EAAG-whatsapp-token-VALUE-5c6d";
+    const res = await owner.patch("/api/settings/integrations", {
+      values: { META_APP_SECRET: appSecret, META_WEBHOOK_VERIFY_TOKEN: "verify-VALUE-0a0b", WHATSAPP_PHONE_NUMBER_ID: "106540352242922", WHATSAPP_ACCESS_TOKEN: waToken, INBOX_AI_AUTOREPLY: "factual" },
+    });
+    expect(res.status).toBe(200);
+    const raw = JSON.stringify(res.body);
+    expect(raw).not.toContain(appSecret);
+    expect(raw).not.toContain(waToken);
+    const byId = (id: string) => res.body.integrations.find((i: { id: string }) => i.id === id);
+    expect(byId("meta-app").configured).toBe(true);
+    expect(byId("whatsapp").configured).toBe(true);
+    expect(byId("whatsapp").fields.find((f: { key: string }) => f.key === "WHATSAPP_PHONE_NUMBER_ID")).toMatchObject({ value: "106540352242922" });
+    expect(byId("meta-messages").configured).toBe(false);
+    expect(res.body.metaWebhookUrl).toBe(`${env.apiOrigin.replace(/\/+$/, "")}/api/v1/webhooks/meta`);
+    expect(env.metaInbox.appSecret).toBe(appSecret);
+    expect(env.inboxAi.autoReply).toBe("factual");
+  });
+
   it("removing a dashboard value falls back to the environment variable", async () => {
     vi.stubEnv("BULKSMSBD_SENDER_ID", "FromServer");
     const owner = await asOwner();

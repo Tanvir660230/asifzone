@@ -235,6 +235,20 @@ export async function getSteadfastPayment(paymentId: string): Promise<unknown> {
   return data;
 }
 
+/** Courier costs (docs/COURIER_COSTS.md): the merchant's return requests — read only. Checked live 2026-10-21:
+ * { data: [{ id, consignment_id, reason, status, created_at, updated_at, consignment: { …the parcel… } }], links, meta }.
+ * Returned as sent; domain/shipments/courier-evidence.ts reads it defensively. */
+export async function getSteadfastReturnRequests(): Promise<unknown> {
+  requireConfigured();
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/get_return_requests`, { headers: authHeaders() });
+  const { data, rawText } = await readSteadfastResponse(res);
+  if (!res.ok || data === null) {
+    logger.error(`[steadfast] return requests failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
+    throw AppError.badRequest(`Steadfast return requests failed: HTTP ${res.status}`, { status: res.status, body: rawText.slice(0, 2000) });
+  }
+  return data;
+}
+
 export async function getSteadfastBalance(): Promise<number> {
   requireConfigured();
 

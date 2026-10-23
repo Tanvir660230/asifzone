@@ -83,6 +83,10 @@ export interface OrderFact {
   /** Σ value of what came back and is no longer charged (approved returns' lines: item returns, reconciled partial
    * deliveries), minor units — the ledger's `returned`. Position facts only (absent = 0). */
   returnedValue?: number;
+  /** The same approved returns, dated (approval instant) — what the order stops charging, and when (PAYMENT_LEDGER §5c):
+   * a sales return whether or not money went back. `value` is as charged (the line's net, plus exclusive VAT). Absent =
+   * none. */
+  itemReturns?: Array<{ id?: string; at: Date; value: number }>;
   /** Stock-ledger RETURN rows for this order: units back from the customer (return date = `at`). */
   returnMovements: Array<{ id?: string; variantId: string; units: number; at: Date }>;
   /** Original lines of APPROVED EXCHANGE requests (their returned units are not returns — P5-3). */
@@ -186,34 +190,100 @@ export interface RefundAllocation {
   other: number;
 }
 
-/** Splits each COMPLETED refund of the order, in completion order: payment overage first, then merchandise up to the
- * remaining eligible merchandise (nothing before realisation), then non-merchandise. Never pro-rata. */
-export function refundAllocations(o: OrderFact): RefundAllocation[] {
+export interface ReturnAllocation {
+  /** The ReturnRequest row — present only when the facts carry ids. */
+  returnId?: string;
+  at: Date;
+  /** What the return stops charging (as charged). */
+  value: number;
+  /** The part an earlier merchandise refund already took off sales (the money went back before the return was
+   * recorded) — not a second reduction. */
+  covered: number;
+  /** Merchandise as charged, capped at the remaining eligible merchandise (same pool as refunds). */
+  merchandise: number;
+  /** The VAT-exclusive equivalent of `merchandise` — what `realised_net_sales` falls by. */
+  merchandiseExVat: number;
+  /** Exclusive VAT that was charged on top of the returned goods. */
+  exclusiveVat: number;
+  /** Anything beyond the eligible merchandise. */
+  other: number;
+}
+
+/**
+ * Refunds and item returns of the order on one timeline, in time order (a return before a refund at the same instant).
+ *
+ * A return (realised order, before any cancellation) is a sales return: its merchandise comes off the remaining
+ * eligible merchandise, less what earlier merchandise refunds already took (C3 pool shared). It also lowers what the
+ * order charges (`total − returned`, PAYMENT_LEDGER §5c), so a later refund of that money is overpayment first (C4) —
+ * never a second reduction. A refund: payment overage first, then merchandise up to the remaining eligible merchandise
+ * (nothing before realisation), then non-merchandise. Never pro-rata.
+ */
+function chargeAllocations(o: OrderFact): { refunds: RefundAllocation[]; returns: ReturnAllocation[] } {
   const real = realisationOf(o);
   const merchCharged = lineNets(o).reduce((s, n) => s + n, 0);
   const merchExVat = merchCharged - (merchandiseVat(o) ?? 0);
+  const exclusiveTax = o.taxMode === "EXCLUSIVE" ? Math.max(0, (o.taxAmount ?? 0) - (o.shippingTaxAmount ?? 0)) : 0;
   let remCharged = real ? merchCharged : 0;
   let remExVat = real ? merchExVat : 0;
   let overageUsed = 0;
+  let returned = 0;
+  // Merchandise refunded and not yet matched by a return (a refund recorded before its return).
+  let refundedUnmatched = 0;
+  const take = (amount: number) => {
+    const merchandise = Math.min(Math.max(0, amount), remCharged);
+    const exVat = merchandise === remCharged ? remExVat : Math.min(remExVat, Math.round((merchandise * merchExVat) / merchCharged));
+    remCharged -= merchandise;
+    remExVat -= exVat;
+    return { merchandise, exVat };
+  };
+  const counted = (at: Date) => real !== null && at.getTime() >= real.at.getTime();
   const payments = o.payments.filter((p) => p.status === "SUCCEEDED");
-  const refunds = o.refunds
-    .filter((r): r is typeof r & { completedAt: Date } => r.status === "COMPLETED" && r.completedAt !== null)
-    .sort((a, b) => a.completedAt.getTime() - b.completedAt.getTime());
-  return refunds.map((r) => {
-    const paid = payments.reduce((s, p) => (p.settledAt.getTime() <= r.completedAt.getTime() ? s + p.amount : s), 0);
-    const overpayment = Math.min(r.amount, Math.max(0, paid - o.total - overageUsed));
+  type Step = { at: Date; rank: number; refund?: OrderFact["refunds"][number] & { completedAt: Date }; ret?: NonNullable<OrderFact["itemReturns"]>[number] };
+  const steps: Step[] = [
+    ...(o.itemReturns ?? []).map((ret) => ({ at: ret.at, rank: 0, ret })),
+    ...o.refunds
+      .filter((r): r is typeof r & { completedAt: Date } => r.status === "COMPLETED" && r.completedAt !== null)
+      .map((refund) => ({ at: refund.completedAt, rank: 1, refund })),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime() || a.rank - b.rank);
+  const refunds: RefundAllocation[] = [];
+  const returns: ReturnAllocation[] = [];
+  for (const s of steps) {
+    if (s.ret) {
+      const r = s.ret;
+      returned += r.value;
+      if (!counted(r.at)) continue;
+      const exclusiveVat = exclusiveTax > 0 ? Math.round((r.value * exclusiveTax) / (merchCharged + exclusiveTax)) : 0;
+      const merchPart = r.value - exclusiveVat;
+      const covered = Math.min(merchPart, refundedUnmatched);
+      refundedUnmatched -= covered;
+      const { merchandise, exVat } = take(merchPart - covered);
+      const vatLeft = merchPart > 0 ? Math.round((exclusiveVat * (merchPart - covered)) / merchPart) : exclusiveVat;
+      returns.push({
+        ...(r.id ? { returnId: r.id } : {}), at: r.at, value: r.value, covered: r.value - (merchPart - covered) - vatLeft,
+        merchandise, merchandiseExVat: exVat, exclusiveVat: vatLeft, other: merchPart - covered - merchandise,
+      });
+      continue;
+    }
+    const r = s.refund!;
+    const paid = payments.reduce((sum, p) => (p.settledAt.getTime() <= r.completedAt.getTime() ? sum + p.amount : sum), 0);
+    const overpayment = Math.min(r.amount, Math.max(0, paid - (o.total - returned) - overageUsed));
     overageUsed += overpayment;
     const rest = r.amount - overpayment;
-    let merchandise = 0;
-    let merchandiseExVat = 0;
-    if (real && r.completedAt.getTime() >= real.at.getTime() && remCharged > 0) {
-      merchandise = Math.min(rest, remCharged);
-      merchandiseExVat = merchandise === remCharged ? remExVat : Math.min(remExVat, Math.round((merchandise * merchExVat) / merchCharged));
-      remCharged -= merchandise;
-      remExVat -= merchandiseExVat;
-    }
-    return { ...(r.id ? { refundId: r.id } : {}), at: r.completedAt, amount: r.amount, overpayment, merchandise, merchandiseExVat, other: rest - merchandise };
-  });
+    const { merchandise, exVat } = counted(r.completedAt) ? take(rest) : { merchandise: 0, exVat: 0 };
+    refundedUnmatched += merchandise;
+    refunds.push({ ...(r.id ? { refundId: r.id } : {}), at: r.completedAt, amount: r.amount, overpayment, merchandise, merchandiseExVat: exVat, other: rest - merchandise });
+  }
+  return { refunds, returns };
+}
+
+/** Splits each COMPLETED refund of the order (see chargeAllocations). */
+export function refundAllocations(o: OrderFact): RefundAllocation[] {
+  return chargeAllocations(o).refunds;
+}
+
+/** Each approved item return of a realised order as a sales return (see chargeAllocations). */
+export function returnAllocations(o: OrderFact): ReturnAllocation[] {
+  return chargeAllocations(o).returns;
 }
 
 /** Shipping actually charged (§3): the waiver snapshot when known, else the order's own arithmetic. */

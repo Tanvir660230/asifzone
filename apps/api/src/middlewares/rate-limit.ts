@@ -118,6 +118,16 @@ export const vitalsRateLimit = rateLimit({
   message: { error: "Too many requests" },
 });
 
+/** Meta Pixel server copies (POST /api/analytics/meta-event) — a few per page view, so a larger budget than the
+ * first-party beacons above, kept separate so it never eats into theirs. */
+export const metaEventRateLimit = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
+
 /** AI generation calls a real, metered Claude API — already admin-only, but still capped so a
  * compromised admin session or a buggy retry loop can't run up an unbounded bill. */
 export const aiRateLimit = rateLimit({

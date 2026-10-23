@@ -25,10 +25,12 @@ const payload = z.object({
   counterKey: z.enum(["cogs.inventory_shrinkage", "cogs.count_adjustments", "cogs.packaging"]).nullable(),
   costAdjustmentMinor: z.number().int(),
   status: z.enum(FINANCE_VALUATION_STATUSES),
+  /** Of a stock decrease, the part that is goods already costed as sold outside the website (outside-stock.ts). */
+  outsideReleaseMinor: z.number().int().positive().optional(),
 });
 
 /** Inventory up by `amount` (down when negative) against `other`. */
-function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjustments" | "cogs.cost_adjustments" | "cogs.packaging", amount: number, status: PostingRuleLine["valuationStatus"], memo: string): PostingRuleLine[] {
+function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjustments" | "cogs.cost_adjustments" | "cogs.packaging" | "asset.inventory_sent_outside", amount: number, status: PostingRuleLine["valuationStatus"], memo: string): PostingRuleLine[] {
   if (amount === 0) return [];
   const up = amount > 0;
   const a = Math.abs(amount);
@@ -41,8 +43,10 @@ function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjust
 registerPostingRule(INVENTORY_VALUED_EVENT, 1, {
   payload,
   build: (p) => {
+    const release = p.counterKey && p.bookMinor < 0 ? Math.min(p.outsideReleaseMinor ?? 0, -p.bookMinor) : 0;
     const lines = [
-      ...(p.counterKey ? inventoryAgainst(p.counterKey, p.bookMinor, p.status, `Stock ${p.reason.toLowerCase()}`) : []),
+      ...(p.counterKey ? inventoryAgainst(p.counterKey, p.bookMinor + release, p.status, `Stock ${p.reason.toLowerCase()}`) : []),
+      ...(release ? inventoryAgainst("asset.inventory_sent_outside", -release, p.status, "Stock already costed as sold outside the website") : []),
       ...inventoryAgainst("cogs.cost_adjustments", p.costAdjustmentMinor, p.status, "Inventory cost adjustment (valuation vs ledger)"),
     ];
     if (!lines.length) return { ignore: "nothing to post" };

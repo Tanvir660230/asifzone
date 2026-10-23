@@ -59,12 +59,12 @@ export default function MarketingIntelligencePage() {
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Traffic sources (first-touch UTM)</CardTitle>
+            <CardTitle>Traffic sources</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList
               items={toBarItems(sources?.sources, { key: (s) => s.source, label: (s) => s.source, value: (s) => s.sessions, valueLabel: (s) => `${s.sessions} sessions` })}
-              emptyLabel="No tagged traffic yet for this range."
+              emptyLabel="No visits recorded for this range."
             />
           </CardContent>
         </Card>

@@ -3,6 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
+import { META_WEBHOOK_PATH, metaWebhookRouter, type RawBodyRequest } from "./modules/social-inbox/meta-webhook.routes";
+import { savedAnswersRouter } from "./modules/social-inbox/answers/saved-answers.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { categoryRouter } from "./modules/categories/category.routes";
 import { attributeRouter } from "./modules/attributes/attribute.routes";
@@ -48,6 +50,7 @@ import { smsTemplateRouter } from "./modules/sms-templates/sms-template.routes";
 import { aiRouter } from "./modules/ai/ai.routes";
 import { campaignRouter } from "./modules/campaigns/campaign.routes";
 import { courierRouter } from "./modules/courier/courier.routes";
+import { shipmentRouter } from "./modules/shipments/shipment.routes";
 import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { storefrontReadModelRouter } from "./modules/storefront/read-model.routes";
 import { financeRouter } from "./modules/finance/finance.routes";
@@ -72,7 +75,15 @@ app.set("trust proxy", 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: env.webOrigin, credentials: true }));
-app.use(express.json({ limit: "2mb" }));
+app.use(
+  express.json({
+    limit: "2mb",
+    // Meta signs the exact bytes it sent (X-Hub-Signature-256); keep them for the webhook only.
+    verify: (req, _res, buf) => {
+      if (req.url?.startsWith(META_WEBHOOK_PATH)) (req as RawBodyRequest).rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true })); // SSLCommerz posts callbacks as form-encoded
 app.use(cookieParser());
 // Phase 11: correlation ID + one structured line per request (replaces morgan). After the parsers — see the middleware.
@@ -131,6 +142,7 @@ app.use("/api/sms-templates", smsTemplateRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/campaigns", campaignRouter);
 app.use("/api/courier", courierRouter);
+app.use("/api/shipments", shipmentRouter);
 
 // Versioned API (TARGET_ARCHITECTURE §13): new endpoints land under /api/v1; existing /api routes are unchanged.
 app.use("/api/v1/checkout", checkoutV1Router);
@@ -138,6 +150,8 @@ app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/outbox", outboxRouter);
 app.use("/api/v1/admin/conversations", inboxRouter);
+app.use(META_WEBHOOK_PATH, metaWebhookRouter);
+app.use("/api/v1/admin/saved-answers", savedAnswersRouter);
 app.use("/api/v1/admin", adminHomeRouter);
 // Financial Core (docs/FINANCE_PHASE_1.md §6): the books of the business — OWNER-only finance.* permissions.
 app.use("/api/v1/finance", financeRouter);

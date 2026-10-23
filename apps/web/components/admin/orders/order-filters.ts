@@ -35,6 +35,16 @@ export function paymentMethodLabel(method: string): string {
   return method === "COD" ? "Cash on delivery" : method === "SSLCOMMERZ" ? "SSLCommerz" : "EPS";
 }
 
+/** The daily-pulse steps an order can be filtered by (the day is `f.opsDay`). */
+export const ORDER_OPS_EVENT_LABELS = {
+  confirmed: "Confirmed",
+  booked: "Sent to courier",
+  delivered: "Delivered",
+  partially_delivered: "Part delivered",
+  returned: "Refused / returned",
+  cancelled: "Cancelled",
+} as const;
+
 export const ORDER_FILTERS: readonly FilterDefinition[] = [
   { key: "f.queue", label: "Queue", kind: "select", placement: "quick", options: ORDER_QUEUE_IDS.map((id) => ({ value: id, label: ORDER_QUEUE_LABELS[id] })), chip: (label) => label },
   { key: "f.status", label: "Status", kind: "multi", placement: "quick", options: orderStatusEnum.options.map((s) => ({ value: s, label: orderStatusShortLabel(s) })) },
@@ -69,6 +79,14 @@ export const ORDER_FILTERS: readonly FilterDefinition[] = [
   },
   { key: "from", label: "Placed from", kind: "date", chip: (label) => `From ${label}` },
   { key: "to", label: "Placed to", kind: "date", chip: (label) => `To ${label}` },
+  {
+    key: "f.ops",
+    label: "What happened",
+    kind: "select",
+    options: Object.entries(ORDER_OPS_EVENT_LABELS).map(([value, label]) => ({ value, label })),
+    chip: (label) => label,
+  },
+  { key: "f.opsDay", label: "On day", kind: "date", dependsOn: "f.ops", chip: (label) => `on ${label}` },
 ];
 
 /** Deep links that predate the URL-state grammar — the dashboard's Action Center links `?queue=` and `?status=`. */

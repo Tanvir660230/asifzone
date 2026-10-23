@@ -22,7 +22,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { CustomerCreditEntry, FinancialEvent, Prisma } from "@prisma/client";
-import { businessDate, orderContributions, realisationOf, refundAllocations, returnEvents, type OrderFact } from "@clothing-brand/shared";
+import { businessDate, orderContributions, realisationOf, refundAllocations, returnAllocations, returnEvents, type OrderFact } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
 import { loadOrderFacts } from "../metrics/facts.repository";
@@ -36,6 +36,7 @@ import { markEstimateApproved, upsertException, type ExceptionSpec } from "./fin
 import { commerceReadiness, ensureCommerceAccountingInTx } from "./commerce-setup.service";
 import { chargeEstimatesForOrder, loadRateCards } from "./charge-projection";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
+import { OUTSIDE_RELEASE_REASONS, outsideReleaseInTx } from "./outside-stock";
 
 export const PROJECTOR_ACTOR: FinanceActor = { type: "SYSTEM", label: "system:commerce-projector" };
 
@@ -69,11 +70,13 @@ export interface OrderExtras {
   estimates: Map<string, number>;
   /** Current catalog cost per variant (minor) — only ever a suggestion on an exception, never booked. */
   suggested: Map<string, number>;
+  /** When an order that is RETURNED now became so (its last move to RETURNED); null otherwise. */
+  returnedAt?: Date | null;
 }
 
 async function loadExtras(o: OrderFact, ctx: FinanceContext): Promise<OrderExtras> {
   const cur = ctx.business.baseCurrency;
-  const [refunds, rrs, credits, estimates, variants] = await Promise.all([
+  const [refunds, rrs, credits, estimates, variants, returned] = await Promise.all([
     prisma.refund.findMany({ where: { orderId: o.id }, select: { id: true, payment: { select: { provider: true } } } }),
     prisma.returnRequest.findMany({ where: { orderId: o.id, type: "RETURN", status: "APPROVED" }, select: { id: true, lines: true, reviewedAt: true, createdAt: true } }),
     prisma.customerCreditEntry.findMany({ where: { orderId: o.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
@@ -82,8 +85,10 @@ async function loadExtras(o: OrderFact, ctx: FinanceContext): Promise<OrderExtra
       select: { key: true, estimatedUnitCost: true },
     }),
     prisma.productVariant.findMany({ where: { id: { in: o.lines.map((l) => l.variantId) } }, select: { id: true, costPrice: true, product: { select: { costPrice: true } } } }),
+    o.status === "RETURNED" ? prisma.orderStatusHistory.findFirst({ where: { orderId: o.id, status: "RETURNED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }) : null,
   ]);
   return {
+    returnedAt: returned?.createdAt ?? null,
     refundPayment: new Map(refunds.map((r) => [r.id, r.payment?.provider ?? null])),
     returnRequests: rrs
       .filter((r) => Array.isArray(r.lines))
@@ -178,6 +183,28 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
     });
   }
 
+  // Item returns — what the order no longer charges (PAYMENT_LEDGER §5c): a sales return, money back or not. The part an
+  // earlier refund already took off sales is not posted again (the engine's own allocation).
+  const salesReturns: Array<{ returnRequestId: string; at: Date; revenue: { merchandiseExVat: number; vat: number; other: number } }> = [];
+  for (const a of returnAllocations(o)) {
+    if (!a.returnId || !real || a.at.getTime() >= cut) continue;
+    const revenue = { merchandiseExVat: a.merchandiseExVat, vat: a.merchandise - a.merchandiseExVat + a.exclusiveVat, other: a.other };
+    if (revenue.merchandiseExVat + revenue.vat + revenue.other <= 0) continue;
+    salesReturns.push({ returnRequestId: a.returnId, at: a.at, revenue });
+    events.push({
+      semanticKey: `${base}:sales_return:${a.returnId}`, type: COMMERCE_EVENT_TYPES.salesReturn, at: a.at, entityType: "ReturnRequest", entityId: a.returnId,
+      payload: { returnRequestId: a.returnId, value: a.value, exchange, revenue },
+    });
+  }
+  const engineSalesReturns = sum(orderContributions(o, "merchReturns").filter((c) => c.at!.getTime() < cut && c.amount > 0).map((c) => c.amount));
+  const projectedSalesReturns = sum(salesReturns.map((r) => r.revenue.merchandiseExVat));
+  if (engineSalesReturns !== projectedSalesReturns) {
+    exceptions.push({
+      kind: "ENGINE_MISMATCH", key: `engine:sales_returns:${o.id}`, at: new Date(), sourceType: "Order", sourceId: o.id, orderId: o.id, orderNumber: o.orderNumber,
+      title: `Order ${o.orderNumber}: returned merchandise differs from the dashboard engine`, details: { engine: engineSalesReturns, projected: projectedSalesReturns },
+    });
+  }
+
   // Returns into stock — at the recorded cost, counted exactly when the dashboard's cogs counts them.
   const returnsCounted: Array<{ movementId: string; cost: number; status: "KNOWN" | "ESTIMATED" }> = [];
   for (const e of returnEvents(o)) {
@@ -212,7 +239,8 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
   if (real?.reversedAt && recognition) {
     events.push({
       semanticKey: `${base}:reversal`, type: COMMERCE_EVENT_TYPES.reversed, at: real.reversedAt, entityType: "Order", entityId: o.id,
-      payload: { recognition, exchange, refunds: refundRevenue, returns: returnsCounted },
+      // `salesReturns` only when there are any, so reversals recorded before they existed keep their fingerprint.
+      payload: { recognition, exchange, refunds: refundRevenue, returns: returnsCounted, ...(salesReturns.length ? { salesReturns: salesReturns.map(({ returnRequestId, revenue }) => ({ returnRequestId, revenue })) } : {}) },
     });
   }
 
@@ -251,16 +279,37 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
   // timeline, so it is deterministic. Spends (ORDER_PAYMENT) and releases move the reserved balance.
   type Step = { at: number; rank: number; apply: () => void };
   const steps: Step[] = [];
+  // R: the receivable as posted. C: what the order still charges (recognised less every revenue reduction posted).
   let R = 0;
-  if (recognition) steps.push({ at: real!.at.getTime(), rank: 0, apply: () => (R += recognition!.receivable) });
+  let C = 0;
+  if (recognition) steps.push({ at: real!.at.getTime(), rank: 0, apply: () => { R += recognition!.receivable; C += recognition!.receivable; } });
   for (const p of o.payments) if (p.status === "SUCCEEDED" && p.amount > 0) steps.push({ at: p.settledAt.getTime(), rank: 1, apply: () => (R -= p.amount) });
   for (const a of allocations) {
     const rev = refundRevenue.find((r) => r.refundId === a.refundId)?.revenue;
-    steps.push({ at: a.at.getTime(), rank: 2, apply: () => (R += a.amount - (rev ? rev.merchandiseExVat + rev.merchandiseVat + rev.other : 0)) });
+    const revTotal = rev ? rev.merchandiseExVat + rev.merchandiseVat + rev.other : 0;
+    steps.push({ at: a.at.getTime(), rank: 2, apply: () => { R += a.amount - revTotal; C -= revTotal; } });
   }
+  const returnTotal = (r: (typeof salesReturns)[number]) => r.revenue.merchandiseExVat + r.revenue.vat + r.revenue.other;
+  // A return before a refund at the same instant (the engine's order).
+  for (const r of salesReturns) steps.push({ at: r.at.getTime(), rank: 1.5, apply: () => { R -= returnTotal(r); C -= returnTotal(r); } });
   if (real?.reversedAt && recognition) {
-    const back = sum(refundRevenue.map((r) => r.revenue.merchandiseExVat + r.revenue.merchandiseVat + r.revenue.other));
+    const back = sum(refundRevenue.map((r) => r.revenue.merchandiseExVat + r.revenue.merchandiseVat + r.revenue.other)) + sum(salesReturns.map(returnTotal));
     steps.push({ at: real.reversedAt.getTime(), rank: 3, apply: () => (R += back - recognition!.receivable) });
+  }
+  // A realised order that ended RETURNED charges nothing more (the payment position: a returned order owes nothing and
+  // everything received is owed back). What it still charged — delivery, a refused partial's remainder — is written off
+  // at that moment: it never sits in receivables, and money the customer did pay shows as owed back.
+  if (recognition && real && !real.reversedAt && x.returnedAt && x.returnedAt.getTime() >= real.at.getTime()) {
+    const at = x.returnedAt;
+    steps.push({
+      at: at.getTime(), rank: 5,
+      apply: () => {
+        if (C <= 0) return;
+        events.push({ semanticKey: `${base}:uncollected`, type: COMMERCE_EVENT_TYPES.uncollected, at, entityType: "Order", entityId: o.id, payload: { amount: C } });
+        R -= C;
+        C = 0;
+      },
+    });
   }
   for (const c of x.credits) {
     steps.push({
@@ -276,6 +325,7 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
         }
         const receivablePart = Math.min(c.amount, Math.max(0, -R));
         R += receivablePart;
+        C -= c.amount - receivablePart;
         events.push(creditEvent(base, c, exchange, receivablePart, c.amount - receivablePart));
       },
     });
@@ -312,8 +362,10 @@ export function desiredForCustomerCredit(c: OrderExtras["credits"][number]): { e
 
 const revisionOf = (key: string) => Number(/#r(\d+)$/.exec(key)?.[1] ?? 0);
 
-/** Records the revisions that bring the facts under `prefix` to the desired state; returns the recorded event ids. */
-async function applyDesired(tx: AppTransactionClient, ctx: FinanceContext, prefix: string, meta: { orderId: string | null; orderNumber: string | null }, desired: Desired[], exceptions: DatedException[]) {
+/** Records the revisions that bring the facts under `prefix` to the desired state; returns the recorded event ids. A fact
+ * that vanished is withdrawn on the day `withdrawnAt` names for it (an estimate a payout replaced: the payout's day),
+ * else now. */
+async function applyDesired(tx: AppTransactionClient, ctx: FinanceContext, prefix: string, meta: { orderId: string | null; orderNumber: string | null }, desired: Desired[], exceptions: DatedException[], withdrawnAt: Map<string, Date> = new Map()) {
   const tz = ctx.business.timezone;
   const opening = ctx.business.openingDate!;
   const inBooks = (at: Date) => businessDate(at, tz) >= opening;
@@ -340,7 +392,7 @@ async function applyDesired(tx: AppTransactionClient, ctx: FinanceContext, prefi
       const fp = fingerprint(d);
       if (!(live && latestPayload.fp === fp)) record = { d, isVoid: false };
     } else if (live) {
-      const at = new Date();
+      const at = withdrawnAt.get(sk) ?? new Date();
       // A void carries the revision it withdraws (the rule only reverses it).
       record = { d: { semanticKey: sk, type: live.eventType, at, entityType: live.sourceEntityType, entityId: live.sourceEntityId, payload: live.payload as Record<string, unknown> }, isVoid: true };
     }
@@ -397,10 +449,11 @@ export async function projectOrder(orderId: string, opts: { process?: boolean; r
   const extras = await loadExtras(o, ctx);
   const { events, exceptions } = desiredForOrder(o, extras);
   // Owner's books §3.3 / §4: the courier charge and gateway fee estimates of the order, until their payout replaces them.
-  events.push(...(await chargeEstimatesForOrder(o.id, ctx, opts.rates)));
+  const charges = await chargeEstimatesForOrder(o.id, ctx, opts.rates);
+  events.push(...charges.events);
   const recorded = await financeTransaction(async (tx) => {
     await lockScope(tx, `order:${o.id}`);
-    return applyDesired(tx, ctx, `order:${o.id}:`, { orderId: o.id, orderNumber: o.orderNumber }, events, exceptions);
+    return applyDesired(tx, ctx, `order:${o.id}:`, { orderId: o.id, orderNumber: o.orderNumber }, events, exceptions, charges.withdrawnAt);
   });
   return { recorded, outcomes: opts.process === false ? {} : await processAll(recorded) };
 }
@@ -425,15 +478,27 @@ export async function projectCustomerCredit(entry: CustomerCreditEntry, opts: { 
 /** Stock movements outside orders (restocks, imports, adjustments, damage, loss) change inventory the books can't value
  * yet — purchasing and its costs are a later phase. Each becomes an exception (never a guessed posting); a damaged unit
  * from an item return is not one (its write-off is posted at the line's recorded cost). */
+const STOCK_PAGE = 2000;
+
 async function scanStock(tx: AppTransactionClient, ctx: FinanceContext, since: Date | null) {
   const openingStart = new Date(`${ctx.business.openingDate}T00:00:00.000Z`);
   const from = since && since > openingStart ? since : openingStart;
-  const moves = await tx.stockMovement.findMany({
-    where: { orderId: null, reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT", "DAMAGED", "LOST", "PACKAGING_USE"] }, createdAt: { gte: from } },
-    select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, valuationEntry: { select: { valuationStatus: true } }, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
-    orderBy: { createdAt: "asc" },
-    take: 2000,
-  });
+  // Every movement since `from`, page by page: the sweep's cursor moves past all of them, so none may be left unread.
+  const page = (after: { id: string; createdAt: Date } | null) =>
+    tx.stockMovement.findMany({
+      where: {
+        orderId: null, reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT", "DAMAGED", "LOST", "PACKAGING_USE"] }, createdAt: { gte: from },
+        ...(after ? { OR: [{ createdAt: { gt: after.createdAt } }, { createdAt: after.createdAt, id: { gt: after.id } }] } : {}),
+      },
+      select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, valuationEntry: { select: { valuationStatus: true } }, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: STOCK_PAGE,
+    });
+  const moves: Awaited<ReturnType<typeof page>> = [];
+  for (let rows = await page(null); ; rows = await page(rows.at(-1)!)) {
+    moves.push(...rows);
+    if (rows.length < STOCK_PAGE) break;
+  }
   let n = 0;
   for (const m of moves) {
     if (m.change === 0 || businessDate(m.createdAt, ctx.business.timezone) < ctx.business.openingDate!) continue;
@@ -492,14 +557,14 @@ const RENEW_EVERY = 25;
  */
 async function takeSweepLease(businessId: string): Promise<string | null> {
   const token = randomUUID();
-  await prisma.$executeRaw`INSERT INTO "FinanceSyncState" ("businessId", "updatedAt") VALUES (${businessId}, now()) ON CONFLICT ("businessId") DO NOTHING`;
+  await prisma.$executeRaw`INSERT INTO "FinanceSyncState" ("businessId", "updatedAt") VALUES (${businessId}, (now() AT TIME ZONE 'UTC')) ON CONFLICT ("businessId") DO NOTHING`;
   const taken = await prisma.$executeRaw`
-    UPDATE "FinanceSyncState" SET "leaseToken" = ${token}, "leaseUntil" = now() + make_interval(secs => ${LEASE_MS / 1000}), "updatedAt" = now()
-    WHERE "businessId" = ${businessId} AND ("leaseUntil" IS NULL OR "leaseUntil" < now())`;
+    UPDATE "FinanceSyncState" SET "leaseToken" = ${token}, "leaseUntil" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${LEASE_MS / 1000}), "updatedAt" = (now() AT TIME ZONE 'UTC')
+    WHERE "businessId" = ${businessId} AND ("leaseUntil" IS NULL OR "leaseUntil" < (now() AT TIME ZONE 'UTC'))`;
   return taken === 1 ? token : null;
 }
 const renewSweepLease = (businessId: string, token: string) =>
-  prisma.$executeRaw`UPDATE "FinanceSyncState" SET "leaseUntil" = now() + make_interval(secs => ${LEASE_MS / 1000}) WHERE "businessId" = ${businessId} AND "leaseToken" = ${token}`;
+  prisma.$executeRaw`UPDATE "FinanceSyncState" SET "leaseUntil" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${LEASE_MS / 1000}) WHERE "businessId" = ${businessId} AND "leaseToken" = ${token}`;
 const releaseSweepLease = (businessId: string, token: string) =>
   prisma.$executeRaw`UPDATE "FinanceSyncState" SET "leaseToken" = NULL, "leaseUntil" = NULL WHERE "businessId" = ${businessId} AND "leaseToken" = ${token}`;
 
@@ -616,9 +681,11 @@ export async function approveCostEstimate(exceptionId: string, unitCost: number,
   const ex = await prisma.financeException.findFirst({ where: { id: exceptionId, businessId: ctx.business.id } });
   if (!ex) throw financeError(404, "EXCEPTION_NOT_FOUND", "Exception not found");
   if (ex.kind === "UNVALUED_STOCK_WRITE_OFF") {
-    const details = ex.details as { movementId: string; variantId: string; change: number; at: string };
+    const details = ex.details as { movementId: string; variantId: string; change: number; reason?: string; at: string };
     const units = Math.abs(details.change);
     const eventId = await financeTransaction(async (tx) => {
+      // A count correction or loss is first the goods already costed as sold outside the website (outside-stock.ts).
+      const outsideReleaseMinor = details.reason && OUTSIDE_RELEASE_REASONS.has(details.reason) ? await outsideReleaseInTx(tx, ctx.business.id, cur, unitMinor * units) : 0;
       const { event } = await recordFinancialEvent(tx, {
         contract: "finance.event",
         contractVersion: 1,
@@ -631,6 +698,7 @@ export async function approveCostEstimate(exceptionId: string, unitCost: number,
         payload: {
           semanticKey: `stock:${details.movementId}:writeoff`, fp: "estimate", supersedes: null, void: false, orderId: null, orderNumber: null,
           exceptionId: ex.id, movementId: details.movementId, variantId: details.variantId, units, cost: unitMinor * units, reason: note,
+          ...(outsideReleaseMinor > 0 ? { outsideReleaseMinor } : {}),
         },
       });
       await markEstimateApproved(tx, ctx.business, ex.id, unitMinor, note, actor, event.id);

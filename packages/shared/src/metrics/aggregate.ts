@@ -20,6 +20,7 @@ import {
   realisationOf,
   realisedAt,
   refundAllocations,
+  returnAllocations,
   returnEvents,
   shippingCharged,
   type InventoryVariantFact,
@@ -101,6 +102,13 @@ const P = {
         .filter((a) => a.merchandiseExVat > 0)
         .map((a) => one(a.at, a.merchandiseExVat, o)),
     ),
+  /** VAT-exclusive merchandise of approved item returns (PAYMENT_LEDGER §5c): no longer charged, money back or not. */
+  merchReturns: (o: OrderFact) =>
+    realised(o, () =>
+      returnAllocations(o)
+        .filter((a) => a.merchandiseExVat > 0)
+        .map((a) => one(a.at, a.merchandiseExVat, o)),
+    ),
   /** Overpayment part of completed refunds (any order): cash only, never a sales reduction. */
   overpaymentRefunds: (o: OrderFact) =>
     refundAllocations(o)
@@ -143,7 +151,7 @@ const P = {
 /** The engine's own producers for ONE order, for consumers that must post exactly what a metric counts (the Financial
  * Core, docs/FINANCE_PHASE_3.md §2) — never a second definition. Contributions carry the instant and signed amount the
  * metric uses (realised-basis producers include the cancellation reversal). */
-export const ORDER_PRODUCERS = ["realisedMerch", "merchRefunds", "cogsSold", "cogsReturned"] as const;
+export const ORDER_PRODUCERS = ["realisedMerch", "merchRefunds", "merchReturns", "cogsSold", "cogsReturned"] as const;
 export type OrderProducer = (typeof ORDER_PRODUCERS)[number];
 export function orderContributions(o: OrderFact, producer: OrderProducer): Contribution[] {
   return P[producer](o);
@@ -174,8 +182,9 @@ const ADDITIVE: Record<string, Term[]> = {
   net_sales: [[1, P.gross], [-1, P.discountLines], [1, P.shipping], [1, P.adjustments], [-1, P.returnsValue]],
   merchandise_vat: [[1, P.merchVat]],
   merchandise_refunds: [[1, P.merchRefunds]],
+  merchandise_returns: [[1, P.merchReturns]],
   overpayment_refunds: [[1, P.overpaymentRefunds]],
-  realised_net_sales: [[1, P.realisedMerch], [-1, P.merchRefunds]],
+  realised_net_sales: [[1, P.realisedMerch], [-1, P.merchRefunds], [-1, P.merchReturns]],
   refunds: [[1, P.refunds]],
   refund_count: [[1, P.refundCount]],
   payments_received: [[1, P.payments]],

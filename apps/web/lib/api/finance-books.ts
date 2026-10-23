@@ -27,6 +27,7 @@ export const booksKeys = {
   refills: () => ["finance", "books", "refills"] as const,
   profit: (q: { from?: string; to?: string }) => ["finance", "books", "profit", q] as const,
   launch: (q: { from?: string; to?: string }) => ["finance", "books", "launch", q] as const,
+  profitDaily: (q: { from?: string; to?: string }) => ["finance", "books", "profit-daily", q] as const,
 };
 
 // ── money map & custody ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -160,13 +161,18 @@ export const quickRefill = (body: { variantId: string; quantity: number; used?: 
 
 export interface ProfitReport {
   period: { from: string; to: string };
-  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; otherCosts: number; netProfit: number };
+  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; outsideSalesCost: number; outsideSaleCostPct: number | null; otherCosts: number; netProfit: number };
   orders: Array<{ orderId: string; orderNumber: string; date: string; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number }>;
   products: Array<{ name: string; units: number; sales: number; costs: number; contribution: number; marginPct: number | null }>;
 }
 export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitReport>(`${BASE}/profit${qs(q)}`);
 export interface LaunchReport { period: { from: string; to: string }; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
+/** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts. */
+export interface ProfitDay { date: string; orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; profit: number }
+export type ProfitTotals = Omit<ProfitDay, "date"> & { marginPct: number | null; salesPerAdTaka: number | null };
+export interface ProfitByDay { currency: string; today: string; booksStartedOn: string | null; period: { from: string; to: string }; prior: { from: string; to: string }; days: ProfitDay[]; totals: ProfitTotals; priorTotals: ProfitTotals }
+export const getProfitByDay = (q: { from?: string; to?: string }) => apiFetch<ProfitByDay>(`${BASE}/profit/daily${qs(q)}`);
 
 // ── courier claims; cancelling a landed cost ──────────────────────────────────────────────────────────────────────────
 
@@ -218,7 +224,7 @@ export interface SmsStatus {
   usedPerDay: number | null; daysLeft: number | null; runsOutOn: string | null; monthlyUsage: Array<{ month: string; used: number }>;
   recharges: Array<{ id: string; date: string; amount: number; payee: string | null; description: string }>; readings: Array<{ at: string; balance: number; source: string; note: string | null }>; smsAccountId: string | null;
 }
-export interface CenterSettings { defaultUsdRate: number | null; smsLowBalance: number | null }
+export interface CenterSettings { defaultUsdRate: number | null; smsLowBalance: number | null; outsideSaleCostPct: number | null }
 export const getCenterSummary = () => apiFetch<CenterSummary>(`${BASE}/center/summary`);
 export const listVerifications = (status?: EntryVerification) => apiFetch<{ items: VerificationItem[]; totals: CenterSummary["verification"] }>(`${BASE}/center/verifications${qs({ status })}`);
 export const setVerification = (body: { entityType: VerifiableType; entityId: string; status: EntryVerification; source?: string | null; note?: string | null }) => apiFetch<{ status: EntryVerification }>(`${BASE}/center/verifications`, { method: "PUT", body });

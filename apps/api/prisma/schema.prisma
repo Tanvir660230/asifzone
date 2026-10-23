@@ -1210,6 +1210,11 @@ model Order {
   /// Prisma requires a matching relation field on both sides.
   exchangeReturnRequests ReturnRequest[]      @relation("ReturnRequestExchangeOrder")
   courierLossEvents      CourierLossEvent[]
+  /// Courier cost reconciliation (docs/COURIER_COSTS.md): every physical leg of this order — its delivery, the parcel coming
+  /// back, an exchange's replacement. `parcelShipments`: the legs whose parcel was booked against THIS order (an exchange
+  /// order's replacement leg belongs to the original order but its parcel is the exchange order's).
+  shipments              Shipment[]           @relation("ShipmentOrder")
+  parcelShipments        Shipment[]           @relation("ShipmentParcelOrder")
   modifications          OrderModification[]
   paymentLinks           PaymentLink[]
   notes                  String?
@@ -1377,6 +1382,8 @@ model ReturnRequest {
   /// createExchangeOrder in return-request.service.ts. Null until approved (or always, for RETURN).
   exchangeOrderId        String?
   exchangeOrder          Order?              @relation("ReturnRequestExchangeOrder", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
+  /// The legs of this return / exchange (the parcel coming back, the replacement) — docs/COURIER_COSTS.md.
+  shipments              Shipment[]
   // At most one PENDING request per order is also enforced at the DB level by a raw partial unique
   // index (see migrations/..._return_request_one_pending_per_order) — Prisma's schema DSL can't
   // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
@@ -1806,6 +1813,188 @@ model CourierLossEvent {
   @@index([createdAt])
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// COURIER COST RECONCILIATION (docs/COURIER_COSTS.md) — one row per physical shipment leg, with what the courier
+// actually charged for it and what the customer paid the rider toward that charge. An operational and reconciliation
+// record: it posts nothing to the ledger, and a customer's contribution is never revenue or cash received.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+enum ShipmentType {
+  /// The order's own delivery (refused / partly delivered parcels included — the courier bills the trip on that consignment).
+  OUTBOUND
+  /// The parcel coming back after delivery (a return, or the item collected for an exchange).
+  RETURN
+  /// An exchange's replacement parcel.
+  REPLACEMENT
+}
+
+enum ShipmentOperationalStatus {
+  BOOKED
+  IN_TRANSIT
+  DELIVERED
+  PARTIALLY_DELIVERED
+  RETURN_REQUESTED
+  RETURN_IN_TRANSIT
+  RETURNED
+  CANCELLED
+}
+
+enum ShipmentChargeStatus {
+  MISSING
+  /// Entered (or derived from a source we can't prove) — provisional, never a confirmed expense.
+  ENTERED
+  /// Checked by an admin holding courier_costs.verify.
+  VERIFIED
+  /// Proven by the courier's own figures (a payout whose charges add up to it).
+  COURIER_CONFIRMED
+}
+
+enum ShipmentContributionStatus {
+  NOT_RECORDED
+  REPORTED
+  VERIFIED
+  /// Checked and could not be confirmed: kept on record, never counted against the charge.
+  UNVERIFIED
+}
+
+enum ShipmentUncoveredTreatment {
+  UNDECIDED
+  /// A business-borne expense.
+  ABSORBED
+  /// Genuinely owed by the customer or another party.
+  RECEIVABLE
+  RECOVERED
+}
+
+enum ShipmentExcessTreatment {
+  UNDECIDED
+  REFUND_DUE
+  REFUNDED
+  KEPT_BY_COURIER
+  OTHER_INCOME
+  /// Applied to the other legs of the same exchange.
+  ALLOCATED_WITHIN_EXCHANGE
+}
+
+enum ShipmentFinancialStatus {
+  NOT_DUE
+  AWAITING_ACTUAL_CHARGE
+  AWAITING_CONTRIBUTION
+  EXCESS_REVIEW
+  NOT_COVERED
+  PARTIALLY_COVERED
+  FULLY_COVERED
+  RECONCILED
+  NEEDS_REVIEW
+}
+
+/// One physical parcel leg. Written only by domain/shipments/shipment.service.ts. A leg booked through the courier
+/// integration mirrors its Order's consignment (trackedByCourier); legs the system can't see (a parcel the customer sends
+/// back, a manual carrier) are added by staff. Charges are kept apart by kind — standard rate, estimate, quote, actual —
+/// and the actual counts as an expense only once VERIFIED or COURIER_CONFIRMED. Every change to a figure is an event
+/// (ShipmentCostEvent) with the previous and new value; saves are guarded by `version`.
+///
+/// Raw partial unique indexes (migration 20261121100000_courier_costs): one leg per (courier, consignment, type); one
+/// untracked outbound / replacement leg per parcel order; one RETURN leg per return request.
+model Shipment {
+  id                            String                     @id @default(cuid())
+  /// The order the customer placed — every leg of its return or exchange points back here.
+  orderId                       String
+  order                         Order                      @relation("ShipmentOrder", fields: [orderId], references: [id], onDelete: Cascade)
+  /// The order the parcel was booked against: the exchange order for a REPLACEMENT leg, the order itself otherwise.
+  parcelOrderId                 String?
+  parcelOrder                   Order?                     @relation("ShipmentParcelOrder", fields: [parcelOrderId], references: [id], onDelete: SetNull)
+  returnRequestId               String?
+  returnRequest                 ReturnRequest?             @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
+  type                          ShipmentType
+  /// "Steadfast", or the manual carrier's name.
+  courier                       String
+  consignmentId                 String?
+  trackingCode                  String?
+  /// The courier's own status word, as last read.
+  courierStatus                 String?
+  courierSyncedAt               DateTime?
+  operationalStatus             ShipmentOperationalStatus
+  /// True when the courier integration owns operationalStatus (the order's booked consignment).
+  trackedByCourier              Boolean                    @default(false)
+  /// The rate zone (e.g. "Inside Dhaka") — from the courier rate card or the shipping zone.
+  deliveryZone                  String?
+  /// Only ever entered by staff: the courier's API does not report weight.
+  weightKg                      Decimal?                   @db.Decimal(8, 3)
+  bookedAt                      DateTime?
+  /// When the leg finished (delivered, returned, cancelled) — the report's date.
+  completedAt                   DateTime?
+  /// From the courier's payout: the COD the parcel was booked for, the payout it was in, and — only when the payout's
+  /// totals pin it down — the cash the courier collected on it.
+  bookedCodAmount               Decimal?                   @db.Decimal(10, 2)
+  courierPayoutRef              String?
+  courierCollected              Decimal?                   @db.Decimal(10, 2)
+  /// The tariff for the zone (rate card, else Settings) and the estimate for the outcome — reference figures only.
+  standardCharge                Decimal?                   @db.Decimal(10, 2)
+  standardChargeSource          String?
+  estimatedCharge               Decimal?                   @db.Decimal(10, 2)
+  /// What the courier quoted, when staff record one. Never treated as the final charge.
+  quotedCharge                  Decimal?                   @db.Decimal(10, 2)
+  actualCharge                  Decimal?                   @db.Decimal(10, 2)
+  chargeStatus                  ShipmentChargeStatus       @default(MISSING)
+  chargeSource                  String?
+  chargeReference               String?
+  chargeVerifiedByAdminId       String?
+  chargeVerifiedAt              DateTime?
+  /// Paid by the customer straight to the rider toward the courier charge — not money the business received.
+  contributionReported          Decimal?                   @db.Decimal(10, 2)
+  contributionVerified          Decimal?                   @db.Decimal(10, 2)
+  contributionStatus            ShipmentContributionStatus @default(NOT_RECORDED)
+  contributionSource            String?
+  contributionReference         String?
+  contributionVerifiedByAdminId String?
+  contributionVerifiedAt        DateTime?
+  uncoveredTreatment            ShipmentUncoveredTreatment @default(UNDECIDED)
+  excessTreatment               ShipmentExcessTreatment    @default(UNDECIDED)
+  /// Derived (packages/shared courier-costs.ts) and stored on every write so the report can filter on it.
+  financialStatus               ShipmentFinancialStatus    @default(NOT_DUE)
+  uncoveredAmount               Decimal?                   @db.Decimal(10, 2)
+  excessAmount                  Decimal?                   @db.Decimal(10, 2)
+  /// Set by the system when the courier's figures disagree with the record; cleared by an admin with a note.
+  reviewReason                  String?
+  reconciledAt                  DateTime?
+  reconciledByAdminId           String?
+  note                          String?
+  version                       Int                        @default(0)
+  idempotencyKey                String?                    @unique
+  createdByAdminId              String?
+  createdAt                     DateTime                   @default(now())
+  updatedAt                     DateTime                   @updatedAt
+  events                        ShipmentCostEvent[]
+
+  @@index([orderId])
+  @@index([parcelOrderId])
+  @@index([returnRequestId])
+  @@index([financialStatus])
+  @@index([completedAt])
+  @@index([consignmentId])
+}
+
+/// Append-only history of a shipment's money record: what changed (previous → new), who, when, why and on what evidence.
+/// adminId null = the system (courier sync, payout check).
+model ShipmentCostEvent {
+  id         String   @id @default(cuid())
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  /// CREATED | SYNCED | UPDATED | RECONCILED | REOPENED | COURIER_CONFIRMED | REVIEW_FLAGGED | REVIEW_CLEARED
+  action     String
+  /// { field: { from, to } } — money in major units.
+  changes    Json     @default("{}")
+  reason     String?
+  note       String?
+  source     String?
+  reference  String?
+  adminId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([shipmentId, createdAt])
+}
+
 model FlashSale {
   id             String          @id @default(cuid())
   name           String
@@ -1934,6 +2123,17 @@ enum ConversationChannel {
   SMS
   WHATSAPP
   MESSENGER
+  INSTAGRAM
+  /// A comment on a Facebook post or ad; a reply goes back as a comment (or as a private Messenger reply).
+  FB_COMMENT
+}
+
+/// Who wrote a message. PHONE = staff replying outside the Inbox (WhatsApp app / Page inbox), seen as a webhook echo.
+enum MessageAuthor {
+  CUSTOMER
+  STAFF
+  AI
+  PHONE
 }
 
 enum ConversationStatus {
@@ -1965,15 +2165,24 @@ model Conversation {
   createdAt     DateTime              @default(now())
   /// The Feedback row this thread was backfilled from (provenance only).
   feedbackId    String?               @unique
+  /// The thread's id at Meta: WhatsApp number (wa_id), Messenger PSID, Instagram IGSID, or the top-level comment id.
+  externalThreadId String?
+  /// The customer's last message — Meta's reply window counts from it (shared replyWindow()).
+  lastInboundAt DateTime?
+  /// FB_COMMENT: the post (or ad post) the comment is on.
+  postId        String?
   messages      ConversationMessage[]
+  draft         ConversationDraft?
 
+  @@unique([channel, externalThreadId])
   @@index([status, lastMessageAt])
   @@index([lastMessageAt])
   @@index([assignedToId])
 }
 
 /// One message in a conversation. An OUT message is sent by the `conversation-reply` outbox consumer (eventKey = this id);
-/// its delivery state is that outbox row's status — never written here.
+/// its delivery state is that outbox row's status. The consumer writes back only `externalId` (Meta's id for what it
+/// sent), so the webhook echo of our own send is recognised as a duplicate.
 model ConversationMessage {
   id             String              @id @default(cuid())
   conversationId String
@@ -1984,9 +2193,85 @@ model ConversationMessage {
   body           String
   adminId        String?
   admin          AdminUser?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  author         MessageAuthor       @default(CUSTOMER)
+  /// Meta's message id (wamid / mid / comment id): a webhook delivered twice is stored once.
+  externalId     String?             @unique
+  /// A WhatsApp template reply (outside the 24-hour window): { name, language, params, named }. `body` holds its text.
+  template       Json?
+  /// Sent from the saved-answer library (no AI call) — counted as "answered without AI".
+  savedAnswerId  String?
   createdAt      DateTime            @default(now())
 
   @@index([conversationId, createdAt])
+  @@index([savedAnswerId, createdAt])
+}
+
+enum SavedAnswerStatus {
+  /// Learned from repeated replies; waits for a person to approve it.
+  SUGGESTED
+  /// Answers matching questions without the AI.
+  APPROVED
+  DISMISSED
+}
+
+/// The Inbox's answer library: a question customers keep asking and the reply that answers it. Learned from replies staff
+/// (and the AI) send again and again; once approved it answers the same question — however it is typed — without an AI
+/// call. `answer` may hold live placeholders ({delivery_charges}, {delivery_time}, {cod}, {website}, {store_name}, {name}).
+model SavedAnswer {
+  id           String            @id @default(cuid())
+  status       SavedAnswerStatus @default(SUGGESTED)
+  /// A representative question, shown as the answer's name.
+  title        String
+  answer       String
+  /// Send on its own (still subject to the Inbox AI's auto-send switch and guards); otherwise a draft for staff.
+  autoSend     Boolean           @default(false)
+  /// Times it answered (sent automatically, or its draft was sent unchanged).
+  hits         Int               @default(0)
+  /// Times staff rewrote its draft before sending — enough of these pauses auto-send.
+  corrections  Int               @default(0)
+  lastHitAt    DateTime?
+  /// Set when corrections paused auto-send by themselves.
+  autoPausedAt DateTime?
+  approvedAt   DateTime?
+  approvedById String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  examples     AnswerExample[]
+
+  @@index([status])
+}
+
+/// One customer question and the reply that answered it (the material saved answers are learned from).
+model AnswerExample {
+  id            String        @id @default(cuid())
+  question      String
+  /// The question's canonical words (answers/text-match.ts normalizeQuestion), space-separated.
+  normalized    String
+  answer        String
+  source        MessageAuthor
+  /// The reply message this was learned from.
+  messageId     String        @unique
+  savedAnswerId String?
+  savedAnswer   SavedAnswer?  @relation(fields: [savedAnswerId], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now())
+
+  @@index([savedAnswerId])
+  @@index([createdAt])
+}
+
+/// The AI's suggested reply to a conversation's latest message (one per conversation; a newer one replaces it).
+/// Staff send it as-is or edit it; any reply removes it.
+model ConversationDraft {
+  id               String       @id @default(cuid())
+  conversationId   String       @unique
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  body             String
+  /// What the customer asked, as the AI classified it (price, stock, delivery_charge, order_status, how_to_order, other).
+  intent           String
+  basedOnMessageId String
+  /// The draft came from a saved answer (not the AI) — staff rewriting it counts as a correction.
+  savedAnswerId    String?
+  createdAt        DateTime     @default(now())
 }
 
 model WishlistItem {
@@ -2985,6 +3270,9 @@ model FinanceBusiness {
   defaultUsdRate              Decimal?                  @db.Decimal(18, 6)
   /// Finance Center: warn when the SMS balance falls to this (BDT). Null = no warning.
   smsWarnAt                   Decimal?                  @db.Decimal(18, 2)
+  /// Finance Center: the cost of goods, as a percent of the cash collected, booked (ESTIMATED) for a parcel sold outside
+  /// the website (a courier-panel parcel with no order). Null = not set (no cost is booked; the profit page says so).
+  outsideSaleCostPct          Decimal?                  @db.Decimal(5, 2)
   /// Autopilot (docs/FINANCE_OWNER_BOOKS.md §15): the money account Steadfast pays into — set = new payouts are brought
   /// in every night (and posted when every parcel is accounted for); null = off.
   autoPayoutAccountId         String?
@@ -3410,25 +3698,25 @@ enum LandedCostMethod {
 /// carry it (their average rises); the share of units already sold goes to cost adjustments (5150). Paid through
 /// Treasury (Dr landed costs to allocate / Cr the money account); the allocation clears that account into inventory.
 model LandedCost {
-  id               String           @id @default(cuid())
-  businessId       String
-  business         FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  number           Int
-  costDate         DateTime         @db.Date
-  description      String
-  payee            String?
-  method           LandedCostMethod
-  amount           Decimal          @db.Decimal(18, 2)
-  goodsReceiptIds  String[]
+  id                String           @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  number            Int
+  costDate          DateTime         @db.Date
+  description       String
+  payee             String?
+  method            LandedCostMethod
+  amount            Decimal          @db.Decimal(18, 2)
+  goodsReceiptIds   String[]
   /// [{ variantId, sku, qty, amount }] — what each variant received (major units).
-  allocations      Json
-  movementId       String           @unique
-  movement         TreasuryMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
-  createdByAdminId String?
-  createdAt        DateTime         @default(now())
+  allocations       Json
+  movementId        String           @unique
+  movement          TreasuryMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  createdByAdminId  String?
+  createdAt         DateTime         @default(now())
   /// Cancelled: its payment reversed, the goods' value taken back off, its posting reversed — all in one step.
-  reversedAt       DateTime?
-  reversalReason   String?
+  reversedAt        DateTime?
+  reversalReason    String?
   reversedByAdminId String?
 
   @@unique([businessId, number])

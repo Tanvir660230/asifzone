@@ -124,6 +124,8 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/settings/integrations",
   "PATCH /api/settings/integrations",
   "POST /api/settings/integrations/webpush/generate-keys",
+  "POST /api/settings/integrations/whatsapp/connect",
+  "POST /api/settings/integrations/meta/import-history",
   "GET /api/sms-settings/",
   "PATCH /api/sms-settings/",
   "POST /api/ai/generate",
@@ -289,6 +291,10 @@ const OWNER_ONLY_ROUTES = [
   "DELETE /api/v1/finance/rate-cards/gateway/:id",
   "GET /api/v1/finance/courier/reconciliation",
   "POST /api/v1/finance/courier/payouts/import",
+  // Courier costs (docs/COURIER_COSTS.md): STAFF records what was reported; verifying-only actions stay with the owner.
+  "POST /api/shipments/:id/reconcile",
+  "POST /api/shipments/:id/reopen",
+  "POST /api/shipments/:id/clear-review",
   "GET /api/v1/finance/ads/campaigns",
   "POST /api/v1/finance/ads/campaigns",
   "PATCH /api/v1/finance/ads/campaigns/:id",
@@ -306,6 +312,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/landed-costs",
   "POST /api/v1/finance/quick-refills",
   "GET /api/v1/finance/profit",
+  "GET /api/v1/finance/profit/daily",
   "GET /api/v1/finance/profit/launch",
   "GET /api/v1/finance/courier/claims",
   "POST /api/v1/finance/courier/claims",
@@ -496,7 +503,11 @@ describe("the role matrix — every admin route, every identity", () => {
     // +7: owner & partners with monthly profit shares (docs/FINANCE_EQUITY.md §8); +1: ad spend for a period; +3: autopilot (§15)
     // +1: the owner's home (docs/FINANCE_OWNER_HOME.md)
     // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
-    expect(routes).toHaveLength(669);
+    // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
+    // +9: courier costs (docs/COURIER_COSTS.md) — shipments, legs, cost events, rider contributions, verify, report
+    // +1: profit by day (docs/FINANCE_PROFIT_DASHBOARD.md)
+    // +10: smart analytics (docs/SMART_ANALYTICS_PLAN.md) — ops pulse + daily, channels, delivery outcomes, order risk, anomalies + brief, product to-do, why it changed, ad returns, ops-event order ids
+    expect(routes).toHaveLength(697);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

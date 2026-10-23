@@ -11,7 +11,7 @@
  * The other directives list what the app actually loads (docs/MASTER_SYSTEM_INVENTORY.md SEC-03):
  *   - connect: our API, the pixel/heatmap/live-chat beacons, Google sign-in;
  *   - frame: product videos (youtube-nocookie / Vimeo, the only embeds toVideoEmbed builds), Google sign-in, Tawk,
- *     same-origin (Product Builder preview) and blob: (label PDF printing);
+ *     same-origin (Product Builder preview), blob: (label PDF printing) and Facebook (Connect WhatsApp's sign-up);
  *   - img / media allow any https host: product descriptions, logos, banners and direct .mp4/.webm product videos are
  *     admin-authored and may point at any host. Images and media can't run script.
  *   - style keeps 'unsafe-inline': React style props, framer-motion and the Google/Tawk widgets set inline styles.
@@ -36,6 +36,8 @@ const TRACKING_CONNECT = [
 const LIVE_CHAT = ["https://*.tawk.to", "wss://*.tawk.to"];
 const GOOGLE_SIGN_IN = "https://accounts.google.com";
 const VIDEO_EMBEDS = ["https://www.youtube-nocookie.com", "https://player.vimeo.com"];
+/** Settings › Integrations › Connect WhatsApp: the Facebook SDK's helper frames and API calls for Meta's sign-up. */
+const META_SIGNUP = ["https://www.facebook.com", "https://web.facebook.com", "https://staticxx.facebook.com", "https://graph.facebook.com"];
 
 export function buildContentSecurityPolicy({ nonce, apiOrigin, isDev }: CspOptions): string {
   const directives: Record<string, string[]> = {
@@ -44,8 +46,8 @@ export function buildContentSecurityPolicy({ nonce, apiOrigin, isDev }: CspOptio
     "style-src": ["'self'", "'unsafe-inline'", GOOGLE_SIGN_IN],
     "img-src": ["'self'", "data:", "blob:", "https:", apiOrigin],
     "font-src": ["'self'", "data:", "https://*.tawk.to"],
-    "connect-src": ["'self'", apiOrigin, ...TRACKING_CONNECT, ...LIVE_CHAT, GOOGLE_SIGN_IN, ...(isDev ? ["ws:"] : [])],
-    "frame-src": ["'self'", "blob:", ...VIDEO_EMBEDS, GOOGLE_SIGN_IN, "https://*.tawk.to"],
+    "connect-src": ["'self'", apiOrigin, ...TRACKING_CONNECT, ...LIVE_CHAT, GOOGLE_SIGN_IN, ...META_SIGNUP, ...(isDev ? ["ws:"] : [])],
+    "frame-src": ["'self'", "blob:", ...VIDEO_EMBEDS, GOOGLE_SIGN_IN, "https://*.tawk.to", ...META_SIGNUP],
     "media-src": ["'self'", "blob:", "https:", apiOrigin],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { pixelPageView } from "@/lib/pixels";
+import { pixelForget, pixelPageView } from "@/lib/pixels";
 import { onAdTrackingConsentChange } from "@/lib/pixels/consent";
 
 /** Renders nothing — fires the ad-pixel PageView (Meta, TikTok) for the first load and every client-side route change.
@@ -22,8 +22,12 @@ export function AdPixels() {
   useEffect(
     () =>
       onAdTrackingConsentChange((decision) => {
-        if (decision === "granted") pixelPageView(window.location.pathname);
-        else if (window.fbq || window.ttq || (window as unknown as { clarity?: unknown }).clarity) window.location.reload();
+        if (decision === "granted") {
+          pixelPageView(window.location.pathname);
+          return;
+        }
+        pixelForget();
+        if (window.fbq || window.ttq || (window as unknown as { clarity?: unknown }).clarity) window.location.reload();
       }),
     [],
   );
