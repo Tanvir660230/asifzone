@@ -43,6 +43,7 @@ export * from "./schemas/finance-purchasing";
 export * from "./schemas/finance-books";
 export * from "./schemas/shipment";
 export * from "./schemas/manufacturing";
+export * from "./schemas/stock";
 export * from "./schemas/campaign";
 export * from "./schemas/push";
 export * from "./search-synonyms";

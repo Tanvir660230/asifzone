@@ -423,7 +423,9 @@ export async function planProductImport(csv: string): Promise<{ report: ProductI
       vNumber("variant_price", "price", { min: 0.01 });
       vNumber("variant_compare_at_price", "compareAtPrice", { min: 0.01 });
       vNumber("variant_cost_price", "costPrice", { min: 0 });
-      vNumber("variant_stock", "stock", { min: 0, int: true });
+      // A fill-to-order variant sold beyond its filled bottles is below zero; an exported sheet repeats that figure and must
+      // still import (the save refuses any count that would actually set stock below zero).
+      vNumber("variant_stock", "stock", { min: Math.min(0, bySku.get(sku)?.stock ?? 0), int: true });
       vNumber("variant_weight", "weight", { min: 0 });
       if (cell(r, "variant_active")) {
         const parsed = parseBoolean(cell(r, "variant_active"));

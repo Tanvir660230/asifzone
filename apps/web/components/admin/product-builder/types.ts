@@ -9,6 +9,9 @@ import type { StagedImage } from "@/components/admin/image-uploader";
 export interface WizardState extends ProductFormState {
   stagedImages: StagedImage[];
   onStagedChange: (next: StagedImage[]) => void;
+  /** Stock costing is live and the product tracks stock: its stock changes only on the Stock page (docs/STOCK_HUB.md),
+   * so the form shows it read-only and never sends it. */
+  stockLocked: boolean;
 }
 
 /** What the Final Review, Publish and SEO steps can ask the wizard to do. */

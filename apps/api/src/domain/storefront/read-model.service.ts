@@ -17,12 +17,14 @@
  * same guard, and a full rebuild + drift report exist for reconciliation.
  */
 import { Prisma } from "@prisma/client";
-import { PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
 import { getCurrency } from "../config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
+import { applyCapacity, fillCapacity } from "../stock/fill-capacity.service";
+import { invalidateProductDetailCache, triggerStorefrontRevalidation } from "../../modules/products/product.cache";
 
 type Db = AppDb;
 
@@ -121,6 +123,64 @@ export async function ensureFreshReadModels(now: Date = new Date(), db: Db = pri
   }
 }
 
+/** Stock hub (docs/STOCK_HUB.md §3): what a fill-to-order product sells follows its materials' stock, so after a stock
+ * movement (receipt, issue, count, packaging, an order) every fill-to-order product whose approved recipe uses one of
+ * these variants — or that owns one — gets the refresh a product save gives (API cache, projection row, storefront tags).
+ * A fill-to-order variant's own stock reserves (or, cancelled, frees) its recipe's materials, so the products sharing those
+ * materials are refreshed too. Call after commit, fire-and-forget (inventory.service `notifyStockMoved`). One query when
+ * nothing is fill-to-order. Returns the fill-to-order products it refreshed. */
+export async function refreshProductsUsingMaterials(materialVariantIds: string[], db: Db = prisma): Promise<string[]> {
+  const ids = [...new Set(materialVariantIds)];
+  if (!ids.length) return [];
+  const usingOrOwning = (variantIds: string[]) =>
+    db.product.findMany({
+      where: {
+        fillToOrder: true,
+        deletedAt: null,
+        OR: [
+          { variants: { some: { id: { in: variantIds } } } },
+          { billsOfMaterials: { some: { status: "APPROVED", lines: { some: { suppliedBy: "BUSINESS", materialVariantId: { in: variantIds } } } } } },
+        ],
+      },
+      select: {
+        id: true,
+        slug: true,
+        billsOfMaterials: { where: { status: "APPROVED" }, orderBy: { version: "desc" }, take: 1, select: { lines: { where: { suppliedBy: "BUSINESS" }, select: { materialVariantId: true } } } },
+      },
+    });
+  const rows = await usingOrOwning(ids);
+  if (!rows.length) return [];
+  const seen = new Set(ids);
+  const shared = [...new Set(rows.flatMap((r) => r.billsOfMaterials[0]?.lines.map((l) => l.materialVariantId) ?? []))].filter((id) => !seen.has(id));
+  const affected = new Map([...rows, ...(shared.length ? await usingOrOwning(shared) : [])].map((r) => [r.id, r.slug]));
+  const productIds = [...affected.keys()];
+  // Only these products' cached detail (never the whole product cache — this runs on every attar stock move). The detail
+  // read overlays live stock and capacity anyway; dropping the entry just keeps it in step with a product save.
+  await invalidateProductDetailCache([...affected.values()]);
+  await refreshReadModels(productIds, new Date(), db);
+  void triggerStorefrontRevalidation({ productIds }).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
+  return productIds;
+}
+
+// Tests flag products fill to order directly in the database, many times a run: they always ask.
+const FILL_TO_ORDER_EXISTS_TTL_MS = process.env.VITEST ? 0 : 30_000;
+let fillToOrderExists: { value: boolean; at: number } | null = null;
+
+/** Whether any product sells fill to order — remembered for 30 s in this process, so a shop without attar pays nothing per
+ * stock movement. A product just switched to fill to order is refreshed by its own save; its materials' moves reach the
+ * storefront within the 30 s (the product page reads capacity live meanwhile). */
+export async function hasFillToOrderProducts(db: Db = prisma): Promise<boolean> {
+  if (fillToOrderExists && Date.now() - fillToOrderExists.at < FILL_TO_ORDER_EXISTS_TTL_MS) return fillToOrderExists.value;
+  const value = (await db.product.count({ where: { fillToOrder: true, deletedAt: null }, take: 1 })) > 0;
+  fillToOrderExists = { value, at: Date.now() };
+  return value;
+}
+
+/** Forgets the remembered answer of `hasFillToOrderProducts` (tests; a product switched to or from fill to order). */
+export function fillToOrderExistenceChanged(): void {
+  fillToOrderExists = null;
+}
+
 /** Full rebuild (deploy backfill, reconciliation repair): every non-trashed product, deterministic for `now`. */
 export async function rebuildAllReadModels(now: Date = new Date(), db: Db = prisma): Promise<number> {
   const ids = (await db.product.findMany({ where: { deletedAt: null }, select: { id: true }, orderBy: { id: "asc" } })).map((p) => p.id);
@@ -183,10 +243,14 @@ export interface StorefrontPresentable extends PriceableProduct {
   lowStockThreshold: number;
   /** "Show as sold out" (withMarkedSoldOut) — absent on selects that predate it, which then sell on stock alone. */
   markedSoldOut?: boolean;
+  /** Fill to order (docs/STOCK_HUB.md §3) — absent on selects that don't carry it, which then sell on stock alone. */
+  fillToOrder?: boolean;
   variants: Array<{ id: string; price: unknown; compareAtPrice?: unknown; isActive?: boolean; stock: number; markedSoldOut?: boolean }>;
 }
 
-export type StorefrontProduct<T> = T & {
+/** `fillToOrder` is read to present the product but never leaves the API: whether a product is made to order is the shop's
+ * business, not the shopper's (docs/STOCK_HUB.md §3). */
+export type StorefrontProduct<T> = Omit<T, "fillToOrder"> & {
   pricing: ProductPricingDto;
   availability: ProductAvailability;
   activeFlashSale: {
@@ -204,14 +268,25 @@ export type StorefrontProduct<T> = T & {
  * checks, recommendations and the flash-sale feed all return products through this one function. */
 export async function presentStorefrontProducts<T extends StorefrontPresentable>(products: T[], now: Date = new Date()): Promise<StorefrontProduct<T>[]> {
   const pricing = await priceProductsForDisplay(products, now);
+  // Fill to order: one capacity read for the whole batch, and only when it holds a fill-to-order product.
+  const filling = products.filter((p) => p.fillToOrder === true && p.trackInventory);
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)), cached: true }) : null;
   return products.map((raw) => {
     const p = pricing.get(raw.id)!;
-    // A product or variant the shop marked sold out reaches every shopper-facing reader with no stock to sell — its real
-    // stock stays in the database and in the admin.
-    const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, raw.variants);
+    // A fill-to-order variant sells its filled bottles plus what can still be made — shown at most MAX_LINE_QUANTITY (the
+    // most one line may hold), so the page never tells a shopper how much oil or how many bottles are left; the quote and
+    // checkout keep the exact limit. Then a product or variant the shop marked sold out reaches every shopper-facing
+    // reader with no stock to sell (marked wins) — its real stock stays in the database and in the admin.
+    const variants =
+      made && raw.fillToOrder === true && raw.trackInventory
+        ? applyCapacity(made, raw.variants).map((v) => (v.stock > MAX_LINE_QUANTITY ? { ...v, stock: MAX_LINE_QUANTITY } : v))
+        : raw.variants;
+    const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, variants);
     const product = forSale.variants === raw.variants ? raw : { ...raw, trackInventory: forSale.trackInventory, variants: forSale.variants };
+    const { fillToOrder: _fillToOrder, ...shown } = product;
+    void _fillToOrder;
     return {
-      ...product,
+      ...shown,
       pricing: p,
       availability: productAvailability({ trackInventory: product.trackInventory, lowStockThreshold: product.lowStockThreshold, variants: product.variants }),
       activeFlashSale: p.flash

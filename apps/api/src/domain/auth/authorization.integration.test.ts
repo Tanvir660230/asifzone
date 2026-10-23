@@ -507,7 +507,10 @@ describe("the role matrix — every admin route, every identity", () => {
     // +9: courier costs (docs/COURIER_COSTS.md) — shipments, legs, cost events, rider contributions, verify, report
     // +1: profit by day (docs/FINANCE_PROFIT_DASHBOARD.md)
     // +10: smart analytics (docs/SMART_ANALYTICS_PLAN.md) — ops pulse + daily, channels, delivery outcomes, order risk, anomalies + brief, product to-do, why it changed, ad returns, ops-event order ids
-    expect(routes).toHaveLength(697);
+    // +2: stock hub Bought — record a purchase, list recent ones (docs/STOCK_HUB.md); +1: Counted; +1: the overview
+    // +2: stock hub — one purchase, finishing a purchase stuck mid-way
+    // +1: the catalog stock policy the product form reads (fill to order, costing live)
+    expect(routes).toHaveLength(704);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

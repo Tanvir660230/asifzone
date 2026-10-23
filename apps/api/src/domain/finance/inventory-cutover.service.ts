@@ -7,7 +7,10 @@
  *     1. every stock-tracked variant is row-locked (the lock inventory.service's stock updates take);
  *     2. each gets its first valuation entry — a CUTOVER of its physical stock AT POST × the approved unit cost (MISSING
  *        lines are held unvalued, never at zero) — through costing.service, the only valuation writer;
- *     3. the inventory account is trued up to `valuation + in-transit` (inventoryLedgerBridge) by ONE adjustment journal:
+ *        A fill-to-order variant below zero (bottles ordered, not filled) starts with an UNBOOKED deficit at its recipe's
+ *        standard cost at the batch's approved material costs (costing.service header; docs/STOCK_HUB.md §3);
+ *     3. the inventory account is trued up to `valuation + in-transit − unbooked deficit` (inventoryLedgerBridge) by ONE
+ *        adjustment journal:
  *        the difference goes to 5150 Inventory cost adjustments, except the part the owner attributes to a proven
  *        opening-balance error (3900) — locked decision 3;
  *     4. costing is activated (one-way).
@@ -22,7 +25,7 @@ import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "./fi
 import { resolveMappedAccount } from "./chart.service";
 import { journalDto, postJournalInTx, type JournalLineSpec } from "./journal.service";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
-import { activateInventoryCostingInTx, recordValuationsInTx, type ValuationInput } from "./costing.service";
+import { activateInventoryCostingInTx, fillToOrderRecipeLines, recipeStandardCosts, recordValuationsInTx, type ValuationInput } from "./costing.service";
 import { COMMERCE_EVENT_TYPES } from "./commerce-posting-rules";
 
 type Db = AppTransactionClient | typeof prisma;
@@ -41,6 +44,10 @@ export interface InventoryLedgerBridge {
   /** Inventory-account movement booked at approved ESTIMATES (units with no recorded cost) since `estimatedSince` —
    * the valuation never held those units, so it explains a ledger below the valuation. */
   estimatedSinceMinor: number;
+  /** Value of the unbooked deficit layers (fill-to-order bottles sold or ordered before they were filled, at their
+   * provisional recipe cost): the order lines carry that cost in in-transit, but the materials that will fill them are
+   * still in the valuation — the books hold it once, so it is subtracted (costing.service header). */
+  unbookedDeficitMinor: number;
 }
 
 /**
@@ -114,6 +121,10 @@ export async function inventoryLedgerBridge(db: Db, business: Pick<FinanceBusine
         AND (fe."eventType" LIKE 'commerce.%' OR fe."eventType" = ${COMMERCE_EVENT_TYPES.stockWriteOff})`;
     estimatedSinceMinor = toMinor(est!.c, cur) - toMinor(est!.d, cur);
   }
+  const [unbooked] = await db.$queryRaw<Array<{ v: bigint }>>`
+    SELECT COALESCE(SUM((l->>'qty')::bigint * (l->>'unitCostMinor')::bigint), 0)::bigint AS v
+    FROM "InventoryCostState" s, jsonb_array_elements(s."deficitLayers") l
+    WHERE s."businessId" = ${business.id} AND (l->>'unbooked')::boolean IS TRUE`;
   const unitsOutMinor = Number(transit!.out);
   const creditedMinor = toMinor(transit!.credited, cur);
   return {
@@ -122,6 +133,7 @@ export async function inventoryLedgerBridge(db: Db, business: Pick<FinanceBusine
     inTransitMinor: unitsOutMinor - creditedMinor,
     inTransit: { unitsOutMinor, creditedMinor, orders: transit!.orders },
     estimatedSinceMinor,
+    unbookedDeficitMinor: Number(unbooked!.v),
   };
 }
 
@@ -207,11 +219,16 @@ export async function getCutover() {
   if (batch.status !== "POSTED") {
     const bridge = await inventoryLedgerBridge(prisma, business);
     const valuation = toMinor(summary.draftValuation, cur);
-    const adjustment = valuation + bridge.inTransitMinor - bridge.ledgerMinor;
+    const lines = await prisma.inventoryCutoverLine.findMany({ where: { batchId: batch.id }, select: { variantId: true, draftQuantity: true, unitCost: true } });
+    const short = await unfilledAtRecipeCost(prisma, lines.map((l) => ({ variantId: l.variantId, qty: l.draftQuantity })), lines, cur);
+    const unfilled = [...short.values()].reduce((s, x) => s + x.qty * x.unitMinor, 0);
+    const adjustment = valuation + bridge.inTransitMinor - unfilled - bridge.ledgerMinor;
     preview = {
       ledger: toMajorNumber(bridge.ledgerMinor, cur),
       valuation: summary.draftValuation,
       inTransit: toMajorNumber(bridge.inTransitMinor, cur),
+      unfilledAtRecipeCost: toMajorNumber(unfilled, cur),
+      unfilledUnits: [...short.values()].reduce((s, x) => s + x.qty, 0),
       inTransitOrders: bridge.inTransit.orders,
       adjustment: toMajorNumber(adjustment, cur),
     };
@@ -257,6 +274,25 @@ function proposal(v: TrackedVariant, opening: Map<string, Prisma.Decimal>, cur: 
     return { unitCost: cost, valuationStatus: "ESTIMATED", costSource: v.variantCost !== null ? "CATALOG_VARIANT" : "CATALOG_PRODUCT", evidence: "Typed catalog cost price — not purchase-verified" };
   }
   return { unitCost: null, valuationStatus: "MISSING", costSource: "NONE", evidence: null };
+}
+
+/**
+ * Fill-to-order variants below zero on the cutover (ordered, not filled): units short and the recipe's standard cost at
+ * the batch's approved material unit costs (the materials are cut over in the same batch). A variant whose recipe has a
+ * material without an approved cost is left out (its deficit starts with no cost, as before).
+ */
+async function unfilledAtRecipeCost(db: Db, stock: Array<{ variantId: string; qty: number }>, lines: Array<{ variantId: string; unitCost: Prisma.Decimal | null }>, cur: string): Promise<Map<string, { qty: number; unitMinor: number }>> {
+  const short = stock.filter((x) => x.qty < 0);
+  const out = new Map<string, { qty: number; unitMinor: number }>();
+  if (!short.length) return out;
+  const recipe = await fillToOrderRecipeLines(db, short.map((x) => x.variantId).sort());
+  const cost = new Map(lines.map((l) => [l.variantId, l.unitCost]));
+  const unit = recipeStandardCosts(recipe, (id) => cost.get(id) ?? null, cur);
+  for (const x of short) {
+    const u = unit.get(x.variantId);
+    if (u != null) out.set(x.variantId, { qty: -x.qty, unitMinor: u });
+  }
+  return out;
 }
 
 async function lockBatch(tx: AppTransactionClient, businessId: string) {
@@ -469,6 +505,7 @@ export async function postCutover(actor: FinanceActor) {
     const skipped = all.filter((l) => !stock.has(l.variantId)).map((l) => l.variantId);
 
     // 3. the first valuation entry of each variant, through the one valuation writer (refuses a variant that already has one)
+    const unfilled = await unfilledAtRecipeCost(tx, toCut.map((l) => ({ variantId: l.variantId, qty: stock.get(l.variantId)!.stock })), all, cur);
     const inputs: ValuationInput[] = toCut.map((l) => {
       const qty = stock.get(l.variantId)!.stock;
       const unit = l.unitCost === null ? null : toMinor(l.unitCost, cur);
@@ -481,7 +518,7 @@ export async function postCutover(actor: FinanceActor) {
         sourceId: batch.id,
         financialDate: today,
         note: `Valuation cutover (${l.costSource})`,
-        op: { type: "CUTOVER", qty, valueMinor: unit !== null && qty > 0 ? unit * qty : null, status: l.valuationStatus === "KNOWN" ? "KNOWN" : "ESTIMATED" },
+        op: { type: "CUTOVER", qty, valueMinor: unit !== null && qty > 0 ? unit * qty : null, status: l.valuationStatus === "KNOWN" ? "KNOWN" : "ESTIMATED", deficitUnitCostMinor: unfilled.get(l.variantId)?.unitMinor ?? null },
       };
     });
     let results: Awaited<ReturnType<typeof recordValuationsInTx>>;
@@ -499,9 +536,10 @@ export async function postCutover(actor: FinanceActor) {
         WHERE l.id = x.id`;
     }
 
-    // 4. the ledger true-up: inventory account → valuation + in-transit; the owner's opening-error share → 3900, the rest → 5150
+    // 4. the ledger true-up: inventory account → valuation + in-transit − unbooked deficit (bottles ordered, not filled: their
+    //    cost is in in-transit, their materials in the valuation); the owner's opening-error share → 3900, the rest → 5150
     const bridge = await inventoryLedgerBridge(tx, business);
-    const target = bridge.valuationMinor + bridge.inTransitMinor;
+    const target = bridge.valuationMinor + bridge.inTransitMinor - bridge.unbookedDeficitMinor;
     const adjustment = target - bridge.ledgerMinor;
     const openingError = toMinor(batch.openingErrorAmount, cur);
     if (openingError !== 0 && (Math.sign(openingError) !== Math.sign(adjustment) || Math.abs(openingError) > Math.abs(adjustment))) {
@@ -517,7 +555,7 @@ export async function postCutover(actor: FinanceActor) {
       const side = (amount: number) => (amount > 0 ? { debit: amount, credit: 0 } : { debit: 0, credit: -amount });
       const rest = adjustment - openingError;
       const jl: JournalLineSpec[] = [
-        { accountId: inventory.id, ...side(adjustment), brandId: brand.id, memo: `Valuation cutover: inventory account to valuation ${toMajorNumber(bridge.valuationMinor, cur)} + in-transit ${toMajorNumber(bridge.inTransitMinor, cur)}` },
+        { accountId: inventory.id, ...side(adjustment), brandId: brand.id, memo: `Valuation cutover: inventory account to valuation ${toMajorNumber(bridge.valuationMinor, cur)} + in-transit ${toMajorNumber(bridge.inTransitMinor, cur)}${bridge.unbookedDeficitMinor ? ` − unfilled ${toMajorNumber(bridge.unbookedDeficitMinor, cur)}` : ""}` },
         ...(openingError ? [{ accountId: equity.id, ...side(-openingError), brandId: brand.id, memo: `Proven opening-balance error: ${batch.openingErrorReason}` }] : []),
         ...(rest ? [{ accountId: adjustments.id, ...side(-rest), brandId: brand.id, memo: "Valuation cutover difference (unexplained drift since the opening count)" }] : []),
       ];
@@ -550,6 +588,8 @@ export async function postCutover(actor: FinanceActor) {
       valuation: toMajorNumber(bridge.valuationMinor, cur),
       inTransit: toMajorNumber(bridge.inTransitMinor, cur),
       inTransitOrders: bridge.inTransit.orders,
+      unfilledAtRecipeCost: toMajorNumber(bridge.unbookedDeficitMinor, cur),
+      unfilledUnits: [...unfilled.values()].reduce((n, x) => n + x.qty, 0),
       adjustment: toMajorNumber(adjustment, cur),
       toOpeningBalanceEquity: toMajorNumber(openingError, cur),
       toCostAdjustments: toMajorNumber(adjustment - openingError, cur),

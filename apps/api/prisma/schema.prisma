@@ -487,6 +487,9 @@ model Product {
   /// Shown and sold as sold out whatever its stock (a parcel on its way back, stock held for another channel…). Stock
   /// itself is untouched; storefront and checkout treat every variant as having none (shared withMarkedSoldOut).
   markedSoldOut      Boolean                  @default(false)
+  /// Filled to order (attar, docs/STOCK_HUB.md): a variant's stock is filled bottles and may go negative (ordered, not yet
+  /// filled); the shop sells max(0, stock) + what the approved recipe can still make from free materials (fill-capacity).
+  fillToOrder        Boolean                  @default(false)
   /// CourierNoteRule ids ticked on this product ("perfume — don't open", "fragile") — on top of its category's. No FK, same
   /// as Category.courierNoteRuleIds. Read when a courier is booked (modules/courier/courier-note.ts).
   courierNoteRuleIds String[]                 @default([])
@@ -3309,7 +3312,8 @@ model FinanceBusiness {
   smsBalanceSnapshots         SmsBalanceSnapshot[]
   stockCounts                 StockCount[]
   materialRolls               MaterialRoll[]
-  landedCosts                 LandedCost[]
+  stockHubEntries             StockHubEntry[]
+  landedCosts                LandedCost[]
   courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
   suppliers                   Supplier[]
@@ -6097,10 +6101,13 @@ model StockCount {
   variant          ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
   countDate        DateTime        @db.Date
   counted          Int
-  /// The site's stock when the count was recorded.
+  /// The site's stock when the count was recorded — for a stock hub count, what should have been on the shelf then
+  /// (stock + units on orders not yet handed to the courier), so `counted − siteStock` is the true difference.
   siteStock        Int
   note             String?
   countedByAdminId String?
+  /// The stock hub count line that recorded it (`<entry id>:<line>`): a retry finds it instead of counting twice.
+  sourceId         String?         @unique
   createdAt        DateTime        @default(now())
 
   @@index([variantId, countDate])
@@ -6124,6 +6131,40 @@ model MaterialRoll {
   updatedAt         DateTime        @updatedAt
 
   @@index([materialVariantId, openedOn])
+}
+
+enum StockHubEntryKind {
+  PURCHASE
+  COUNT
+}
+
+/// Stock hub (docs/STOCK_HUB.md): one Bought or Counted entry made on /admin/stock, keyed by its Idempotency-Key. Each
+/// entry composes existing documents (receipt, bill, payment, landed cost; counts and adjustments); `steps` records what
+/// each step made, so a retry after a mid-way failure resumes where it stopped and a replay writes nothing. `leaseUntil`:
+/// only one request works on an entry at a time (a double tap can't write twice).
+model StockHubEntry {
+  id               String            @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  kind             StockHubEntryKind
+  /// `purchase:<key>` / `count:<key>`.
+  idempotencyKey   String
+  /// The request it was made for: the same key with a different request is refused.
+  fingerprint      String
+  entryDate        DateTime          @db.Date
+  /// The request and what each step made (ids, amounts, who paid) — the hub's history reads it.
+  steps            Json              @default("{}")
+  completedAt      DateTime?
+  leaseUntil       DateTime?
+  /// Who holds the lease: every save, completion and release is conditional on it, so a request that outlived its
+  /// lease can't write over the retry that took the entry over.
+  leaseToken       String?
+  createdByAdminId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, kind, createdAt])
 }
 
 enum PartnerRole {

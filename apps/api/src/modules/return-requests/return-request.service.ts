@@ -18,7 +18,8 @@ import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { generateOrderNumber } from "../../lib/order-number";
 import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.service";
-import { recordSale, releaseOrderLines } from "../inventory/inventory.service";
+import { notifyStockMoved, recordSale, releaseOrderLines } from "../inventory/inventory.service";
+import { fillMoved, fillToOrderFloors, withFillToOrder } from "../../domain/stock/fill-capacity.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
 import { issueStoreCreditFromOrder, recordExchangeCovered, requestRefund, summarizeOrderPayments } from "../../domain/payments/payment-ledger.service";
@@ -147,6 +148,7 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
   const request = await getReturnRequestById(id);
   if (request.status !== "PENDING") throw AppError.conflict("This return request has already been reviewed");
 
+  let moved: string[] = [];
   const outcome = await prisma.$transaction(async (tx) => {
     // Conditional on status still being PENDING — two admins reviewing at once: only one claim wins.
     const result = await tx.returnRequest.updateMany({
@@ -159,7 +161,7 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
     // Courier costs (docs/COURIER_COSTS.md): the parcel coming back is a shipment leg of its own, with its own charge.
     await openReturnLeg(tx, request, adminId);
     if (request.type === "EXCHANGE") {
-      await createExchangeOrder(tx, request, adminId, input.compensation);
+      moved = (await createExchangeOrder(tx, request, adminId, input.compensation)).moved;
       return null;
     }
     const outcome = await applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
@@ -184,6 +186,7 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
     return outcome;
   });
   if (outcome) await runTransitionSideEffects(outcome);
+  notifyStockMoved(moved);
 
   return prisma.returnRequest.findUnique({ where: { id }, include });
 }
@@ -247,7 +250,9 @@ async function priceExchange(db: Prisma.TransactionClient | typeof prisma, reque
   const refundDue = clampNonNegative(subtract(paidValue, newValue));
   const credit = subtract(newValue, amountDue); // what the returned item's value covers (the new order's discount)
   const tax = computeTax(await loadTaxConfig(db as Prisma.TransactionClient), amountDue, zero(cur), DEFAULT_ROUNDING_POLICY);
-  const stockAvailable = !requestedVariant.product.trackInventory || requestedVariant.stock >= originalItem.quantity;
+  // A fill-to-order replacement sells its filled bottles plus what can still be made (docs/STOCK_HUB.md §3).
+  const [forSale] = await withFillToOrder(db, requestedVariant.product, [requestedVariant]);
+  const stockAvailable = !requestedVariant.product.trackInventory || forSale!.stock >= originalItem.quantity;
   return { originalOrder, originalItem, requestedVariant, quote, line, cur, newValue, paidValue, amountDue, refundDue, credit, tax, stockAvailable };
 }
 
@@ -368,13 +373,19 @@ async function createExchangeOrder(
     },
   });
 
-  // Same "stock changed underneath us" guard checkout uses — a 409 here rolls the whole approval back.
+  // Same "stock changed underneath us" guard checkout uses — a 409 here rolls the whole approval back. A fill-to-order
+  // replacement may take its stock below zero by what can still be made: the checkout's floors, under the materials' locks.
   const replacementLines = await tx.orderItem.findMany({ where: { orderId: exchangeOrder.id }, select: { id: true } });
+  const fill =
+    requestedVariant.product.fillToOrder && requestedVariant.product.trackInventory
+      ? await fillToOrderFloors(tx, [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], [originalItem.variantId]) // + the original coming back: one id order
+      : null;
   try {
     await recordSale(tx, exchangeOrder.id, [{ variantId: requestedVariant.id, quantity: originalItem.quantity, orderItemIds: replacementLines.map((l) => l.id) }], {
       adminId,
       note: "Exchange shipment",
       untrackedVariantIds: requestedVariant.product.trackInventory ? undefined : new Set([requestedVariant.id]),
+      floors: fill?.floors,
     });
   } catch (err) {
     if (err instanceof AppError && err.statusCode === 409) {
@@ -429,5 +440,6 @@ async function createExchangeOrder(
     data: { exchangeOrderId: exchangeOrder.id, compensation: settled.kind, compensationAmount: settled.amount },
   });
 
-  return exchangeOrder;
+  // For notifyStockMoved after commit: the replacement (and its materials) left, the original came back.
+  return { exchangeOrder, moved: [...fillMoved(fill), ...released.map((r) => r.variantId)] };
 }

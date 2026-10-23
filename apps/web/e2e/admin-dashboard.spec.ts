@@ -44,7 +44,7 @@ test.describe("admin dashboard", () => {
     await page.keyboard.type("inventory");
     await expect(dialog.getByRole("option", { name: /Inventory/ }).first()).toBeVisible();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/admin\/inventory/, NAV);
+    await expect(page).toHaveURL(/\/admin\/stock/, NAV); // Inventory opens on the stock hub (docs/STOCK_HUB.md)
   });
 
   test("Create menu offers a new order", async ({ page }) => {

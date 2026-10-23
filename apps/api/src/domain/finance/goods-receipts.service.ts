@@ -17,7 +17,7 @@ import type { GoodsReceiptStatus, Prisma } from "@prisma/client";
 import type { GoodsReceiptCreateInput } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
-import { notifyReplenished, recordDocumentMovements } from "../../modules/inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordDocumentMovements } from "../../modules/inventory/inventory.service";
 import { actorCan, recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
@@ -202,9 +202,10 @@ export async function postGoodsReceipt(id: string, input: { overReceiptReason?: 
     const after = await load(tx, business.id, r.id);
     const dto = goodsReceiptDto(after, cur);
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "goods_receipt.post", entityType: "GoodsReceipt", entityId: r.id, before: { status: r.status }, after: { status: after.status, total: dto.total, overReceiptReason: after.overReceiptReason, direct: dto.direct } });
-    return { receipt: dto, replayed: false, replenished: moved.replenished };
+    return { receipt: dto, replayed: false, replenished: moved.replenished, moved: accepted.map((l) => l.variantId) };
   });
   if (result.replenished.length) notifyReplenished(result.replenished);
+  notifyStockMoved(result.moved ?? []);
   return { receipt: result.receipt, replayed: result.replayed };
 }
 
@@ -213,7 +214,8 @@ export async function postGoodsReceipt(id: string, input: { overReceiptReason?: 
 export async function reverseGoodsReceipt(id: string, reason: string, actor: FinanceActor) {
   const { business, brand } = await getFinanceContext();
   const cur = business.baseCurrency;
-  return financeTransaction(async (tx) => {
+  let movedIds: string[] = [];
+  const result = await financeTransaction(async (tx) => {
     const r = await lockReceipt(tx, business.id, id);
     if (r.status === "REVERSED") return { receipt: goodsReceiptDto(r, cur), replayed: true };
     if (r.status !== "POSTED") throw financeError(409, "RECEIPT_NOT_POSTED", "Only a posted receipt can be reversed — delete a draft");
@@ -226,6 +228,7 @@ export async function reverseGoodsReceipt(id: string, reason: string, actor: Fin
     if (accepted.length) {
       const moved = await recordDocumentMovements(tx, accepted.map((l) => ({ variantId: l.variantId, change: -l.qtyAccepted, reason: "PURCHASE_RETURN" as const, basis: { kind: "SNAPSHOT" as const, unitCostMinor: toMinor(l.unitCost, cur) } })), { adminId: adminOf(actor), note: `${docNumber("GRN", r.number)} reversed: ${reason}` });
       for (const [i, l] of accepted.entries()) await tx.goodsReceiptLine.update({ where: { id: l.id }, data: { reversalMovementId: moved.lines[i]!.movement.id } });
+      movedIds = accepted.map((l) => l.variantId);
     }
     const original = await tx.financialEvent.findUnique({ where: { sourceInstallId_eventKey: { sourceInstallId: installId, eventKey: `grn:${r.id}#r0` } } });
     await recordFinancialEvent(tx, {
@@ -241,6 +244,8 @@ export async function reverseGoodsReceipt(id: string, reason: string, actor: Fin
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "goods_receipt.reverse", entityType: "GoodsReceipt", entityId: r.id, reason, before: { status: r.status }, after: { status: after.status } });
     return { receipt: goodsReceiptDto(after, cur), replayed: false };
   });
+  notifyStockMoved(movedIds);
+  return result;
 }
 
 export async function getGoodsReceipt(id: string) {

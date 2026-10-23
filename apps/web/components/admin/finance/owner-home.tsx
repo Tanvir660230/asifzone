@@ -198,7 +198,7 @@ function Money({ money }: { money: Home["money"] }) {
     { label: "Steadfast will pay you", value: money.owedToUs.courier, href: "/admin/finance/courier" },
     { label: "Payment gateways will pay you", value: money.owedToUs.gateways, href: "/admin/finance/settlements" },
     { label: "Customers still owe", value: money.owedToUs.customers, href: "/admin/finance/sales" },
-    { label: "Goods in stock, at cost", value: money.inBusiness.stock, href: "/admin/finance/stock-check" },
+    { label: "Goods in stock, at cost", value: money.inBusiness.stock, href: "/admin/stock" },
     { label: "Paid in advance", hint: "hosting, domain, setup", value: money.inBusiness.prepaid, href: "/admin/finance/prepaid" },
     { label: "Cash, bank and bKash", value: money.withUs.total, href: "/admin/finance/accounts" },
   ].filter((r) => Math.abs(r.value) >= 1 || r.label.startsWith("Cash"));

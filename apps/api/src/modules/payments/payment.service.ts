@@ -23,7 +23,7 @@ import {
 } from "../../domain/payments/payment-ledger.service";
 import { releaseSessionReservation, sessionReserveKey, spendCredit, storeCreditBalance } from "../../domain/credit/customer-credit.service";
 import { getCurrency } from "../../domain/config/commerce-settings";
-import { notifyReplenished } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved } from "../inventory/inventory.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
@@ -86,6 +86,7 @@ async function settleExistingOrder(
   links: { paymentLinkId: string | null; orderModificationId: string | null } = { paymentLinkId: null, orderModificationId: null },
 ): Promise<{ becamePaid: boolean; confirmed: boolean; overpaid: boolean; modificationNotApplied?: string }> {
   let replenished: string[] = [];
+  let moved: string[] = [];
   const result = await prisma.$transaction(async (tx) => {
     const before = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { paymentStatus: true, orderNumber: true } });
     // Case A (docs/ORDER_ADJUSTMENTS.md §3): the change this payment was for is applied first, in this same transaction,
@@ -99,6 +100,7 @@ async function settleExistingOrder(
     if (links.orderModificationId) {
       const applied = await applyPaidModification(tx, links.orderModificationId, settlement.paymentSessionId);
       replenished = applied.replenished;
+      moved = applied.moved;
       if (!applied.applied) modificationNotApplied = applied.reason;
     }
     const { position } = await recordGatewaySettlement(tx, { orderId, ...settlement });
@@ -127,6 +129,7 @@ async function settleExistingOrder(
     return { becamePaid, confirmed: true, overpaid: false, modificationNotApplied };
   });
   notifyReplenished(replenished);
+  notifyStockMoved(moved);
   return result;
 }
 

@@ -14,7 +14,8 @@
  *                  paid and verified; the payment's settlement transaction applies the plan (Case A)
  *                - same → applied now, no money moves (Case C)
  *   stock      new units are taken first (guarded — 409 if gone), then removed units go back, all in one transaction: a
- *              failure leaves the order exactly as it was
+ *              failure leaves the order exactly as it was. A fill-to-order unit may take its stock below zero by what can
+ *              still be made — the checkout's floors (docs/STOCK_HUB.md §3)
  *   audit      every change is an OrderModification row: what the order was, what it became, what that did to the money
  */
 import crypto from "crypto";
@@ -41,7 +42,8 @@ import { getCurrency } from "../../domain/config/commerce-settings";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { keptLineKey, quoteOrderModification, type KeptUnits } from "../../domain/pricing/pricing.service";
 import { issueStoreCreditFromOrder, lockedPosition, refreshPaymentStatus, requestRefund, summarizeOrderPayments } from "../../domain/payments/payment-ledger.service";
-import { notifyReplenished, recordSale, releaseModifiedUnits, stockShortfalls } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordSale, releaseModifiedUnits, stockShortfalls } from "../inventory/inventory.service";
+import { fillMoved, fillToOrderFloorsFor, type FillFloors } from "../../domain/stock/fill-capacity.service";
 import { closeOpenPaymentRequests } from "../payments/payment-requests";
 import { claimFlashUnits, toItemSnapshots, type OrderItemSnapshot } from "./order.service";
 
@@ -429,14 +431,25 @@ export async function previewOrderModification(orderId: string, input: OrderModi
   return built.preview;
 }
 
+/** Units of `plan.reserve` that can be sold beyond filled stock: their floors, under the materials' locks (null: none). */
+const reserveFloors = (tx: Tx, plan: ModificationPlan) =>
+  fillToOrderFloorsFor(
+    tx,
+    plan.reserve.filter((r) => !plan.untrackedVariantIds.includes(r.variantId)),
+    // Every variant the change moves is locked with the materials: one id order for the whole transaction.
+    [...plan.reserve, ...plan.release].map((r) => r.variantId),
+  );
+
 /** Writes a priced plan onto the order (stock, lines, totals, coupon usage, address, revision), closes stale payment
- * requests and settles the money difference. The caller holds the order row lock and owns the transaction. */
+ * requests and settles the money difference. The caller holds the order row lock and owns the transaction. Returns the
+ * variants back in stock (`notifyReplenished`) and every variant it moved (`notifyStockMoved`), both for after commit.
+ * `ctx.fill`: the fill-to-order floors the caller already took (a paid settlement checks them first). */
 export async function applyPlan(
   tx: Tx,
   order: OrderRow,
   plan: ModificationPlan,
-  ctx: { modificationId: string; sequence: number; adminId?: string | null; note: string; keepSessionId?: string },
-): Promise<string[]> {
+  ctx: { modificationId: string; sequence: number; adminId?: string | null; note: string; keepSessionId?: string; fill?: FillFloors | null },
+): Promise<{ replenished: string[]; moved: string[] }> {
   const currency = await getCurrency();
   const actor = { adminId: ctx.adminId ?? null, note: `Order modified (#${ctx.sequence})` };
   // Released units come back at the recorded cost of the lines they leave (several lines of one variant may differ) — read
@@ -472,14 +485,16 @@ export async function applyPlan(
     });
   }
 
-  // Stock: secure the new units first (guarded — throws 409 and rolls everything back), then put removed units back.
+  // Stock: secure the new units first (guarded — throws 409 and rolls everything back), then put removed units back. A
+  // fill-to-order unit may go below zero by what can still be made, decided under the materials' locks like the checkout.
+  const fill = ctx.fill !== undefined ? ctx.fill : plan.reserve.length ? await reserveFloors(tx, plan) : null;
   if (plan.reserve.length) {
     try {
       await recordSale(
         tx,
         order.id,
         plan.reserve.map((r) => ({ ...r, orderItemIds: added.filter((l) => l.variantId === r.variantId).map((l) => l.id) })),
-        { ...actor, untrackedVariantIds: new Set(plan.untrackedVariantIds) },
+        { ...actor, untrackedVariantIds: new Set(plan.untrackedVariantIds), floors: fill?.floors },
       );
     } catch (err) {
       if (err instanceof AppError && err.statusCode === 409) {
@@ -567,7 +582,7 @@ export async function applyPlan(
     }
   }
   await refreshPaymentStatus(tx, order.id, currency);
-  return replenished;
+  return { replenished, moved: [...fillMoved(fill), ...plan.release.map((r) => r.variantId)] };
 }
 
 function describe(preview: OrderModificationPreview): string {
@@ -601,6 +616,7 @@ export async function applyOrderModification(orderId: string, input: OrderModifi
   }
   const currency = await getCurrency();
   let replenished: string[] = [];
+  let moved: string[] = [];
   try {
     const result = await prisma.$transaction(
       async (tx) => {
@@ -657,17 +673,18 @@ export async function applyOrderModification(orderId: string, input: OrderModifi
         const mod = await tx.orderModification.create({
           data: { ...base, status: "APPLIED", appliedAt: new Date(), amountCredited: built.preview.amountCredited, amountDue: built.preview.amountToPay },
         });
-        replenished = await applyPlan(tx, order, built.plan, {
+        ({ replenished, moved } = await applyPlan(tx, order, built.plan, {
           modificationId: mod.id,
           sequence,
           adminId,
           note: `Order modified (#${sequence}${actor.type === "CUSTOMER" ? ", by the customer" : ""}): ${describe(built.preview)}`,
-        });
+        }));
         return { mod, preview: built.preview };
       },
       { timeout: 20_000 },
     );
     notifyReplenished(replenished);
+    notifyStockMoved(moved);
     return {
       modification: { id: result.mod.id, sequence: result.mod.sequence, status: result.mod.status, amountDue: Number(result.mod.amountDue), amountCredited: Number(result.mod.amountCredited) },
       preview: result.preview,
@@ -693,33 +710,41 @@ function replay(mod: { id: string; sequence: number; status: string; amountDue: 
  * transaction (payment.service settleExistingOrder). Applies the plan when it is still valid — the order hasn't moved on,
  * it can still be edited, and every new unit is in stock right now (checked under row locks BEFORE anything is written, so
  * nothing is oversold). Otherwise the modification is marked CANCELLED and the payment — already taken — is left to surface
- * as money owed back, which the caller moves to the customer's store balance.
+ * as money owed back, which the caller moves to the customer's store balance. A fill-to-order unit counts what can still be
+ * made (the checkout's floors). `replenished`/`moved`: for notifyReplenished / notifyStockMoved after commit.
  */
-export async function applyPaidModification(tx: Tx, modificationId: string, paymentSessionId: string): Promise<{ applied: boolean; reason?: string; replenished: string[] }> {
+export async function applyPaidModification(
+  tx: Tx,
+  modificationId: string,
+  paymentSessionId: string,
+): Promise<{ applied: boolean; reason?: string; replenished: string[]; moved: string[] }> {
   const mod = await tx.orderModification.findUnique({ where: { id: modificationId } });
-  if (!mod) return { applied: false, reason: "Modification not found", replenished: [] };
+  if (!mod) return { applied: false, reason: "Modification not found", replenished: [], moved: [] };
   const { order: locked } = await lockedPosition(tx, mod.orderId);
   const order = await loadOrder(tx, mod.orderId);
   const plan = mod.plan as unknown as ModificationPlan;
   const fail = async (reason: string) => {
     await tx.orderModification.updateMany({ where: { id: mod.id, status: { in: ["AWAITING_PAYMENT", "EXPIRED"] } }, data: { status: "CANCELLED", statusReason: reason } });
-    return { applied: false, reason, replenished: [] as string[] };
+    return { applied: false, reason, replenished: [] as string[], moved: [] as string[] };
   };
   if (mod.status !== "AWAITING_PAYMENT" && mod.status !== "EXPIRED") return fail(`The change was already ${mod.status.toLowerCase()}`);
   if (order.revision !== mod.baseRevision) return fail("The order changed after this change was priced");
   const blocker = orderModificationBlocker({ ...order, status: locked.status as OrderStatus }, "ADMIN");
   if (blocker) return fail(blocker);
-  const short = await stockShortfalls(tx, plan.reserve, new Set(plan.untrackedVariantIds));
+  // Fill-to-order floors first (materials, then those variants, in id order — the checkout's lock order), then the check.
+  const fill = plan.reserve.length ? await reserveFloors(tx, plan) : null;
+  const short = await stockShortfalls(tx, plan.reserve, new Set(plan.untrackedVariantIds), fill?.floors);
   if (short.length) return fail("An added item sold out before the payment completed");
   await tx.orderModification.update({ where: { id: mod.id }, data: { status: "APPLIED", appliedAt: new Date(), statusReason: null } });
-  const replenished = await applyPlan(tx, order, plan, {
+  const { replenished, moved } = await applyPlan(tx, order, plan, {
     modificationId: mod.id,
     sequence: mod.sequence,
     adminId: mod.adminId,
     note: `Order modified (#${mod.sequence}) — difference paid online`,
     keepSessionId: paymentSessionId,
+    fill,
   });
-  return { applied: true, replenished };
+  return { applied: true, replenished, moved };
 }
 
 /** Cancels a change that is still waiting for payment (customer cancel, admin, or a superseding change). */
