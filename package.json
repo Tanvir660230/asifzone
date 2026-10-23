@@ -19,7 +19,8 @@
   },
   "pnpm": {
     "overrides": {
-      "proxy-addr": "^2.0.8"
+      "proxy-addr": "^2.0.8",
+      "dompurify": "^3.4.17"
     }
   }
 }
