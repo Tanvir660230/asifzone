@@ -108,6 +108,17 @@ function stillToPay(s: PurchaseSteps, cur: string): number {
   return (s.paymentMovementId ? 0 : toMinor(s.goods, cur)) + (s.landedCostId !== undefined ? 0 : toMinor(s.extras, cur));
 }
 
+/** Under the claimed lease, before any step runs: the actor may pay the way the entry now stores (a resumed entry runs its
+ * stored `paidFrom`, which /finish may have set to the owner's own money). Refused → the lease is released, nothing written. */
+async function assertCanRunStored(lease: Lease, steps: PurchaseSteps, actor: FinanceActor) {
+  try {
+    assertCan(actor, steps.request.paidFrom.kind === "OWNER");
+  } catch (err) {
+    await releaseEntry(lease);
+    throw err;
+  }
+}
+
 function assertCan(actor: FinanceActor, ownerPocket: boolean) {
   const missing = [...NEEDS, ...(ownerPocket ? (["finance.sensitive"] as const) : [])].filter((p) => !actorCan(actor, p));
   if (!missing.length) return;
@@ -239,6 +250,8 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
   const extrasMinor = input.extras.reduce((s, e) => s + toMinor(e.amount, cur), 0);
   if (existing) {
     const s = existing.steps as unknown as PurchaseSteps;
+    // What runs is the stored way of paying — /finish may have switched it to the owner's own money since.
+    assertCan(actor, s.request.paidFrom.kind === "OWNER");
     if (s.supplierId) await assertSupplierUsable(s.supplierId);
     else await supplierByName(business.id, s.request.supplierName);
     await assertBooksOpen(business, businessDateOf(existing.entryDate), actor);
@@ -266,6 +279,7 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
   };
   const { entry, done, lease } = await claimEntry({ businessId: business.id, kind: "PURCHASE", key, fingerprint, entryDate: date, steps: initial as never, actor });
   if (done || !lease) return outcome(entry.id, entry.steps as unknown as PurchaseSteps, true, entry);
+  await assertCanRunStored(lease, entry.steps as unknown as PurchaseSteps, actor);
   return runSteps(lease, entry, key, actor);
 }
 
@@ -297,6 +311,7 @@ export async function finishPurchase(id: string, raw: StockPurchaseFinishInput, 
   const { entry, done, lease } = await claimEntryById(business.id, "PURCHASE", id);
   if (done || !lease) return outcome(entry.id, entry.steps as unknown as PurchaseSteps, true, entry);
   const steps = entry.steps as unknown as PurchaseSteps;
+  if (!changes) await assertCanRunStored(lease, steps, actor);
   if (changes) {
     if (moneyMoved(steps)) {
       await releaseEntry(lease);

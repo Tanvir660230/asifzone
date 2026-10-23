@@ -22,7 +22,7 @@ import { createMaterial } from "../manufacturing/materials.service";
 import { changePeriodStatus } from "../finance/periods.service";
 import { createSupplier, setSupplierStatus } from "../finance/suppliers.service";
 import { financeError } from "../finance/finance-values";
-import { listPurchases, recordPurchase } from "./purchase.service";
+import { finishPurchase, listPurchases, recordPurchase } from "./purchase.service";
 
 // Test seams: run something just before the purchase creates its receipt / pays its bill (the real call follows).
 const hooks = vi.hoisted(() => ({ beforeReceipt: null as null | (() => Promise<void>), beforePayment: null as null | (() => Promise<void>) }));
@@ -395,6 +395,29 @@ describe("Bought — review fixes", () => {
     expect(await counts()).toMatchObject({ movements: before.movements + 1 });
     expect((await api().post(`/stock/purchases/missing-${RUN}/finish`, {})).status).toBe(404);
     await booksMatch();
+  });
+
+  it("a retry by staff of a purchase the owner switched to his own money is refused: 403, nothing written", async () => {
+    const body = { supplierName: "Owner Switch Traders", lines: [{ variantId: cap, quantity: 1, amount: 200 }], paidFrom: { financialAccountId: bkash } };
+    hooks.beforePayment = async () => {
+      throw financeError(409, "INSUFFICIENT_FUNDS", "bKash was emptied meanwhile");
+    };
+    const stuck = await api().post("/stock/purchases", body, `sp-switch-${RUN}`);
+    expect(stuck.status, JSON.stringify(stuck.body)).toBe(409);
+    // /finish by the owner stored "his own money" as how it is paid (and stopped before paying, e.g. the funding awaits approval)
+    const entry = await prisma.stockHubEntry.findFirstOrThrow({ where: { idempotencyKey: `purchase:sp-switch-${RUN}` } });
+    const steps = entry.steps as { request: { paidFrom: unknown } };
+    await prisma.stockHubEntry.update({ where: { id: entry.id }, data: { steps: { ...steps, request: { ...steps.request, paidFrom: { kind: "OWNER", financialAccountId: cashBox, name: "Owner — own money" } } } as never } });
+
+    const before = await counts();
+    const noSensitive: FinanceActor = { type: "ADMIN", adminId: admin, label: "manager@test", permissions: PERMISSIONS.filter((p) => p !== "finance.sensitive") };
+    // the same request again (its own body says bKash) — but what would run is the stored owner's money
+    await expect(recordPurchase(body as never, noSensitive, `sp-switch-${RUN}`)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(finishPurchase(entry.id, {} as never, noSensitive)).rejects.toMatchObject({ statusCode: 403 });
+    expect(await counts()).toEqual(before);
+    const after = await prisma.stockHubEntry.findUniqueOrThrow({ where: { id: entry.id } });
+    expect(after.completedAt).toBeNull();
+    expect((after.steps as { paymentMovementId?: string }).paymentMovementId).toBeUndefined();
   });
 
   it("the list reads the payment's status live and shows amounts only with costing.read", async () => {
