@@ -149,125 +149,34 @@ jobs:
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    # Runs directly on the VPS via a self-hosted runner instead of SSHing in from a hosted
-    # runner — Hostinger's network-level DDoS protection was silently dropping connections from
-    # GitHub's hosted-runner (Azure) IP ranges, so ssh-keyscan timed out on every deploy. Running
-    # on-box removes that network hop entirely. Only the push-to-main-gated `deploy` job uses this
+    # Runs directly on the VPS via a self-hosted runner (vps-asifzone, /opt/actions-runner) — Hostinger's DDoS
+    # protection drops connections from GitHub's hosted-runner IP ranges. Only this push-to-main-gated job uses the
     # label; `test` stays on a hosted runner so PRs (including from forks) never execute on it.
+    #
+    # Both stores are installations of this one codebase on the same VPS (/opt/asifzone, /opt/nasihamart), each with
+    # its own docker/.env kept on the server — the source of truth for its settings since the VPS move. The job does
+    # exactly the manual deploy: fast-forward the install's checkout to this commit, then docker/deploy.sh (backup,
+    # migrate, switch, readiness gate). It never writes docker/.env: rebuilding it from GitHub secrets would overwrite
+    # the live settings with older or empty values.
     runs-on: [self-hosted, vps]
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify required secrets are set
+      - name: Deploy Asif Zone
+        working-directory: /opt/asifzone
         run: |
-          missing=""
-          for name in JWT_ACCESS_SECRET JWT_CUSTOMER_ACCESS_SECRET JWT_CUSTOMER_REFRESH_SECRET POSTGRES_PASSWORD REDIS_PASSWORD; do
-            eval "value=\${${name}}"
-            if [ -z "$value" ]; then missing="$missing $name"; fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Refusing to deploy — missing/empty GitHub secrets:$missing"
-            exit 1
-          fi
+          git fetch origin main
+          git merge --ff-only "$DEPLOY_SHA"
+          bash docker/deploy.sh
         env:
-          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
-          JWT_CUSTOMER_ACCESS_SECRET: ${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}
-          JWT_CUSTOMER_REFRESH_SECRET: ${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          DEPLOY_SHA: ${{ github.sha }}
 
-      - name: Write docker/.env
+      - name: Deploy Nasihamart
+        working-directory: /opt/nasihamart
         run: |
-          : > docker/.env
-          echo "JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}" >> docker/.env
-          echo "JWT_CUSTOMER_ACCESS_SECRET=${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}" >> docker/.env
-          echo "JWT_CUSTOMER_REFRESH_SECRET=${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}" >> docker/.env
-          echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker/.env
-          echo "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> docker/.env
-          echo "NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
-          # Optional — the api container skips the on-demand revalidate call entirely when this is
-          # empty (see product.cache.ts's triggerStorefrontRevalidation), falling back to the
-          # storefront's normal ~60s ISR window, so this isn't in the required-secrets check above.
-          echo "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}" >> docker/.env
-          # Optional — empty keeps the whole Meta integration inert (the storefront pixel in
-          # apps/web/lib/meta-pixel.ts and, since docker-compose.yml reuses this value as the api's
-          # META_PIXEL_ID, the server-side Conversions API too), so none of these are in the
-          # required-secrets check above. META_ACCESS_TOKEN is server-only — never NEXT_PUBLIC_.
-          # META_TEST_EVENT_CODE routes every server event to Events Manager's Test Events tab
-          # instead of real reporting: set it only while testing, then delete it.
-          echo "NEXT_PUBLIC_META_PIXEL_ID=${{ secrets.NEXT_PUBLIC_META_PIXEL_ID }}" >> docker/.env
-          echo "META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }}" >> docker/.env
-          echo "META_API_VERSION=${{ secrets.META_API_VERSION }}" >> docker/.env
-          echo "META_TEST_EVENT_CODE=${{ secrets.META_TEST_EVENT_CODE }}" >> docker/.env
-          # Optional — empty keeps the TikTok Pixel inert (apps/web/lib/pixels/tiktok.ts). Public id,
-          # baked into the web image at build time (docker-compose.yml build args).
-          echo "NEXT_PUBLIC_TIKTOK_PIXEL_ID=${{ secrets.NEXT_PUBLIC_TIKTOK_PIXEL_ID }}" >> docker/.env
-          # Optional — docker-compose.yml already defaults both to empty, which keeps the Google
-          # button/One Tap prompt hidden on both admin and customer login (GoogleButton renders
-          # nothing without a client ID) rather than failing, so neither is in the required-secrets
-          # check above. GOOGLE_CLIENT_ID (api) and NEXT_PUBLIC_GOOGLE_CLIENT_ID (web build arg)
-          # must be the same value — see apps/api/.env.example.
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> docker/.env
-          echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}" >> docker/.env
-          # Same public domain as NEXT_PUBLIC_SITE_URL — everything lives behind one nginx host in
-          # this deploy, and this is what the API embeds into category/banner/logo/editor image
-          # URLs. No separate secret to maintain; reusing NEXT_PUBLIC_SITE_URL keeps it from ever
-          # drifting out of sync with the domain the site actually runs on.
-          echo "API_ORIGIN=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
-          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker/.env
-          # Phase 12 per-store deployment inputs (non-secret repository variables; docker/deploy.sh refuses to
-          # start without SERVER_NAME / SERVER_ALIASES / CERT_NAME / GDRIVE_REMOTE).
-          # Phase 1: this installation's id (Redis/queue namespace, cache tags) — required; set it as a repository variable.
-          echo "INSTALL_ID=${{ vars.INSTALL_ID }}" >> docker/.env
-          echo "SERVER_NAME=${{ vars.SERVER_NAME }}" >> docker/.env
-          echo "SERVER_ALIASES=${{ vars.SERVER_ALIASES }}" >> docker/.env
-          echo "CERT_NAME=${{ vars.CERT_NAME }}" >> docker/.env
-          echo "GDRIVE_REMOTE=${{ vars.GDRIVE_REMOTE }}" >> docker/.env
-          echo "COMPOSE_PROJECT_NAME=${{ vars.COMPOSE_PROJECT_NAME }}" >> docker/.env
-          echo "POSTGRES_DB=${{ vars.POSTGRES_DB }}" >> docker/.env
-          echo "PAYMENT_GATEWAYS=${{ vars.PAYMENT_GATEWAYS }}" >> docker/.env
-          echo "SMS_PROVIDER=${{ vars.SMS_PROVIDER }}" >> docker/.env
-          echo "EMAIL_PROVIDER=${{ vars.EMAIL_PROVIDER }}" >> docker/.env
-          echo "COURIER_PROVIDER=${{ vars.COURIER_PROVIDER }}" >> docker/.env
-          echo "PUSH_PROVIDER=${{ vars.PUSH_PROVIDER }}" >> docker/.env
-          echo "REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}" >> docker/.env
-          # Optional — docker-compose.yml falls back to a no-op dev mailer (writes to disk instead
-          # of sending) when this is empty, so it's not in the required-secrets check above.
-          echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" >> docker/.env
-          echo "RESEND_FROM_ADDRESS=${{ secrets.RESEND_FROM_ADDRESS }}" >> docker/.env
-          echo "BULKSMSBD_API_KEY=${{ secrets.BULKSMSBD_API_KEY }}" >> docker/.env
-          echo "BULKSMSBD_SENDER_ID=${{ secrets.BULKSMSBD_SENDER_ID }}" >> docker/.env
-          # Optional — the web push opt-in toggle (both sending from the api and subscribing from
-          # the web build's NEXT_PUBLIC_VAPID_PUBLIC_KEY, see docker-compose.yml) stays hidden while
-          # this is empty. Generate a pair with `npx web-push generate-vapid-keys`.
-          echo "WEB_PUSH_PUBLIC_KEY=${{ secrets.WEB_PUSH_PUBLIC_KEY }}" >> docker/.env
-          echo "WEB_PUSH_PRIVATE_KEY=${{ secrets.WEB_PUSH_PRIVATE_KEY }}" >> docker/.env
-          echo "WEB_PUSH_CONTACT_EMAIL=${{ secrets.WEB_PUSH_CONTACT_EMAIL }}" >> docker/.env
-          # Optional — docker-compose.yml already defaults STEADFAST_BASE_URL and falls back to a
-          # clear "not configured" error on the other two when empty, so none of these are in the
-          # required-secrets check above. Without them, "Book with Steadfast" would silently never
-          # work in production even though docker-compose.yml has always been wired to accept them.
-          echo "STEADFAST_API_KEY=${{ secrets.STEADFAST_API_KEY }}" >> docker/.env
-          echo "STEADFAST_SECRET_KEY=${{ secrets.STEADFAST_SECRET_KEY }}" >> docker/.env
-          echo "STEADFAST_BASE_URL=${{ secrets.STEADFAST_BASE_URL }}" >> docker/.env
-          echo "STEADFAST_WEBHOOK_TOKEN=${{ secrets.STEADFAST_WEBHOOK_TOKEN }}" >> docker/.env
-          # Optional — docker-compose.yml already defaults these to empty/false, and the checkout
-          # option stays hidden until the admin flips it on in Settings, so neither gateway is in
-          # the required-secrets check above. Without them, enabling the toggle would fail every
-          # checkout with "could not start the payment session" instead of actually working.
-          echo "SSLCOMMERZ_STORE_ID=${{ secrets.SSLCOMMERZ_STORE_ID }}" >> docker/.env
-          echo "SSLCOMMERZ_STORE_PASSWORD=${{ secrets.SSLCOMMERZ_STORE_PASSWORD }}" >> docker/.env
-          echo "SSLCOMMERZ_IS_LIVE=${{ secrets.SSLCOMMERZ_IS_LIVE }}" >> docker/.env
-          echo "EPS_USERNAME=${{ secrets.EPS_USERNAME }}" >> docker/.env
-          echo "EPS_PASSWORD=${{ secrets.EPS_PASSWORD }}" >> docker/.env
-          echo "EPS_HASH_KEY=${{ secrets.EPS_HASH_KEY }}" >> docker/.env
-          echo "EPS_MERCHANT_ID=${{ secrets.EPS_MERCHANT_ID }}" >> docker/.env
-          echo "EPS_STORE_ID=${{ secrets.EPS_STORE_ID }}" >> docker/.env
-          echo "EPS_SANDBOX=${{ secrets.EPS_SANDBOX }}" >> docker/.env
-
-      # Phase 11 (BD-11.5, docs/DEPLOYMENT.md): backup → verify → build → migrate (before new code serves) → switch →
-      # readiness gate (120 s) → restart nginx. Any failing step fails the job with rollback instructions.
-      - name: Deploy (backup, migrate, switch, readiness gate)
-        run: bash docker/deploy.sh
+          git fetch origin main
+          git merge --ff-only "$DEPLOY_SHA"
+          bash docker/deploy.sh
         env:
           DEPLOY_SHA: ${{ github.sha }}
