@@ -149,7 +149,7 @@ export default function ProfitPage() {
 /** One line of the bridge. With `of` (the sales total) a line also shows its share of sales — a thin bar and the percent —
  * so the costs that matter stand out without reading every figure. */
 function Line({ label, value: raw, strong, href, of }: { label: string; value: number; strong?: boolean; href?: string; of?: number }) {
-  const value = raw === 0 ? 0 : raw; // −0 (a negated zero cost) reads as "−৳0"
+  const value = raw === 0 ? 0 : raw; // −0 (a negated zero cost) would read as minus zero
   // The sales line is the 100% every other line is measured against — no bar of its own.
   const pct = of && of > 0 && value !== of ? (Math.abs(value) / of) * 100 : null;
   return (

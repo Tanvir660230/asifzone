@@ -136,7 +136,7 @@ function Summary({ onView }: { onView: (v: View) => void }) {
 }
 
 function SumLine({ label, value: raw, strong }: { label: string; value: number; strong?: boolean }) {
-  const value = raw === 0 ? 0 : raw; // −0 reads as "−৳0"
+  const value = raw === 0 ? 0 : raw; // −0 would read as minus zero
   return (
     <div className={cn("flex items-baseline justify-between gap-3 py-2", strong && "font-semibold text-fg")}>
       <dt className={strong ? "text-fg" : "text-fg-muted"}>{label}</dt>
