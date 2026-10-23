@@ -159,7 +159,9 @@ request under it is refused (409 `IDEMPOTENCY_KEY_REUSED`).
 
 ## 6. Go-live on Asif Zone
 
-Run it off-peak: the cutover locks every stock-tracked variant while it posts, so checkouts wait for a few seconds.
+Run it off-peak; checkout does **not** need to be paused. Each variant's stock is set in one transaction under its row lock
+(the lock every sale takes), with the units waiting on unbooked orders read inside it, so an order placed meanwhile is
+counted exactly once; the cutover locks every stock-tracked variant while it posts, so checkouts wait a few seconds.
 
 1. **Merge and deploy** the stock hub (the normal deploy; it runs the migrations).
 2. **Count the shelf** that day (waiting attar orders may stay unfilled: they are held at recipe cost) and write
@@ -175,7 +177,8 @@ Run it off-peak: the cutover locks every stock-tracked variant while it posts, s
    NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' $(docker compose -f docker/docker-compose.yml --env-file docker/.env ps -q api))
    GOLIVE="docker run --rm --env-file /tmp/api.env --network $NET -w /repo/apps/api -v /tmp/counts.json:/tmp/counts.json asifzone-api-tools npx tsx scripts/finance/asif-zone-stock-golive.ts --as <owner admin email> --counts /tmp/counts.json"
    $GOLIVE                                  # dry run: read every number (and how many attar units wait to be filled)
-   $GOLIVE --apply                          # add --accept-caps-difference only if the dry run asks and the numbers are right
+   $GOLIVE --apply --expect-trueup <the projected true-up the dry run printed>
+                                            # add --accept-caps-difference only if the dry run asks and the numbers are right
    $GOLIVE --apply                          # must print "nothing to write (already live)"
    rm /tmp/api.env
    ```
@@ -183,5 +186,9 @@ Run it off-peak: the cutover locks every stock-tracked variant while it posts, s
 4. **Check**: the run ends with every `inventory.*` check MATCHED (exit code 0); Finance › Reconciliation shows the
    same; `/admin/stock` shows the materials and what each attar can make; the shop sells attar up to that number.
 
+`--apply` refuses to run without `--expect-trueup` matching the true-up it projects (within ৳1): a mistyped count shows
+up there as a figure nobody expected. Every count is printed next to the site's current figure for that item.
+
 If `--apply` stops half way (an error is printed), fix the cause and run it again: each step finds what an earlier run
-made. Once the cutover has posted, stock is no longer set from the file — later counts go through Stock › Counted.
+made. Stock is set once per item: if the counts file differs from what an earlier run already set, the run lists the
+differences and stops unless `--keep-earlier-counts` (correct those items under Stock › Counted after go-live). Once the cutover has posted, stock is no longer set from the file — later counts go through Stock › Counted.

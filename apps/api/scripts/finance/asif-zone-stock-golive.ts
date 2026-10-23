@@ -24,7 +24,7 @@
  *   7. The finance checks; with --apply the run fails if an inventory check isn't MATCHED.
  *
  *   npx tsx scripts/finance/asif-zone-stock-golive.ts --as <owner admin email> --counts <counts.json>
- *       [--apply] [--accept-caps-difference]
+ *       [--apply --expect-trueup <the dry run's projected true-up>] [--accept-caps-difference] [--keep-earlier-counts]
  *   Production: docs/STOCK_HUB.md §6.
  */
 import { readFileSync } from "node:fs";
@@ -44,7 +44,7 @@ import { openRoll } from "../../src/domain/finance/stock-check.service";
 import { syncCommerce } from "../../src/domain/finance/commerce-accounting.service";
 import { acknowledgeException } from "../../src/domain/finance/finance-exceptions.service";
 import { RECONCILIATION_CHECKS, RECONCILIATION_CHECK_KEYS } from "../../src/domain/finance/reconciliation.service";
-import { adjustVariantStock, stockMovedSettled } from "../../src/modules/inventory/inventory.service";
+import { adjustVariantStockInTx, afterAdjustment, lockVariantStock, stockMovedSettled } from "../../src/modules/inventory/inventory.service";
 import { reservedNotDispatched } from "../../src/domain/stock/count.service";
 import { fillCapacityChanged, withFillToOrder } from "../../src/domain/stock/fill-capacity.service";
 import { readModelDrift, refreshReadModels } from "../../src/domain/storefront/read-model.service";
@@ -86,7 +86,7 @@ type Counts = z.infer<typeof countsSchema>;
 const args = process.argv.slice(2);
 const flag = (f: string) => args.includes(f);
 const value = (f: string) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
-const KNOWN_FLAGS = new Set(["--apply", "--accept-caps-difference", "--as", "--counts"]);
+const KNOWN_FLAGS = new Set(["--apply", "--accept-caps-difference", "--keep-earlier-counts", "--as", "--counts", "--expect-trueup"]);
 const APPLY = flag("--apply");
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const taka = (n: number) => `৳${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -112,6 +112,32 @@ function materialSpecs(c: Counts, attar: Record<Fragrance, { name: string }>): R
 /** The frozen summary a posted cutover keeps (inventory-cutover.service postCutover). */
 interface CutoverSummary { ledgerBefore: number; valuation: number; inTransit: number; unfilledAtRecipeCost?: number; unfilledUnits?: number; adjustment: number; toOpeningBalanceEquity: number; toCostAdjustments: number; deficitUnits: number; unvaluedUnits: number }
 
+/** The count an earlier run's go-live movement was made from, from the note it wrote (materials: "owner count <date> — <n>
+ * <unit>"; attar: "<n> filled bottle(s) counted <date>"). */
+function countInNote(note: string | null): { count: number; on: string } | null {
+  const material = /owner count (\d{4}-\d{2}-\d{2}) — (\d+) /.exec(note ?? "");
+  if (material) return { count: Number(material[2]), on: material[1]! };
+  const attar = /— (\d+) filled bottle\(s\) counted (\d{4}-\d{2}-\d{2})/.exec(note ?? "");
+  return attar ? { count: Number(attar[1]), on: attar[2]! } : null;
+}
+
+/** Sets one variant's stock to a target, once (the movement carries SOURCE_TYPE and the variant as its source). The stock and
+ * the units waiting on orders not yet booked with the courier are read under the variant's row lock — the lock every sale
+ * takes — in the adjustment's own transaction, so an order placed meanwhile can't leave a phantom unit. Null: nothing to do. */
+async function setStockOnce(variantId: string, adminId: string, plan: (waiting: number) => { target: number; note: string }) {
+  const done = await prisma.$transaction(async (tx) => {
+    const current = await lockVariantStock(tx, variantId);
+    if (current === null) throw new Error(`Variant ${variantId} not found`);
+    const waiting = (await reservedNotDispatched(tx, [variantId])).get(variantId) ?? 0;
+    const { target, note } = plan(waiting);
+    if (current === target) return null;
+    const adjusted = await adjustVariantStockInTx(tx, variantId, target - current, "ADJUSTMENT", adminId, note, { source: { type: SOURCE_TYPE, id: variantId }, floor: Math.max(0, -target) });
+    return { from: current, to: target, adjusted };
+  });
+  if (done) afterAdjustment(done.adjusted);
+  return done;
+}
+
 function sizeOf(raw: string): Size | null {
   const m = /^\s*(6|12)\s*ml\s*$/i.exec(raw);
   return m ? (`${m[1]}ml` as Size) : null;
@@ -122,7 +148,7 @@ const lineKey = (l: { materialVariantId: string; finishedVariantId: string | nul
   `${l.materialVariantId}|${l.finishedVariantId ?? "*"}|${Number(l.qtyPerUnit)}|${Number(l.wastagePct)}|${l.suppliedBy}`;
 
 async function main() {
-  const unknown = args.filter((a, i) => a.startsWith("--") && !KNOWN_FLAGS.has(a) && !(i > 0 && (args[i - 1] === "--as" || args[i - 1] === "--counts")));
+  const unknown = args.filter((a, i) => a.startsWith("--") && !KNOWN_FLAGS.has(a) && !(i > 0 && ["--as", "--counts", "--expect-trueup"].includes(args[i - 1]!)));
   if (unknown.length) throw new Error(`Unknown option(s): ${unknown.join(" ")}`);
   const email = value("--as");
   if (!email) throw new Error("Pass --as <owner admin email>");
@@ -185,16 +211,28 @@ async function main() {
     if (v.product.kind !== "MATERIAL") throw new Error(`SKU ${sku} is taken by ${v.product.name}, which isn't a material`);
     if (v.product.stockUnit !== spec.unit) throw new Error(`Material ${sku} counts in ${v.product.stockUnit}, not ${spec.unit}`);
   }
-  const goneLive = new Set((await prisma.stockMovement.findMany({ where: { sourceType: SOURCE_TYPE }, select: { variantId: true } })).map((m) => m.variantId));
+  // What an earlier run already set (one movement per variant, ever) and from which count — read from the note it wrote.
+  const earlierMoves = await prisma.stockMovement.findMany({ where: { sourceType: SOURCE_TYPE }, select: { variantId: true, note: true } });
+  const goneLive = new Set(earlierMoves.map((m) => m.variantId));
+  const earlierCount = new Map(earlierMoves.map((m) => [m.variantId, countInNote(m.note)]));
 
   // recipe cost per attar variant (৳): oil × ml + bottle + box + sticker, at the counted rates
   const recipeCost = (f: Fragrance, size: Size) => r2(counts.oil[f].rate * ML[size] + counts.emptyBottles[size].rate + counts.boxes.rate + counts.stickers.rate);
 
   say("");
   say(`1. Materials (stock set to the count${costingOn ? " — already live, not changed" : ""})`);
+  // A re-run after a partial failure keeps what the earlier run set; a different count in this file is shown and stops --apply
+  // unless --keep-earlier-counts (so a corrected or wrong file never goes half-applied without anyone noticing).
+  const keptDifferences: string[] = [];
+  const earlierDiffers = (variantId: string, label: string, now: number, unit: string) => {
+    const e = earlierCount.get(variantId);
+    if (!goneLive.has(variantId) || !e || e.count === now) return "";
+    keptDifferences.push(`${label}: set from ${e.count} ${unit} (count of ${e.on}); this file says ${now}`);
+    return ` ⚠ earlier run used ${e.count} (${e.on})`;
+  };
   for (const s of Object.values(specs)) {
     const ex = existingMaterials.get(s.sku);
-    const now = ex ? `${ex.stock} ${s.unit} on record${goneLive.has(ex.id) ? " (set at go-live)" : ""}` : "new";
+    const now = ex ? `${ex.stock} ${s.unit} on record${goneLive.has(ex.id) ? " (set at go-live)" : ""}${earlierDiffers(ex.id, s.sku, s.qty, s.unit)}` : "new";
     say(`   ${s.sku.padEnd(16)} ${s.name}: ${s.qty.toLocaleString("en-IN")} ${s.unit} × ${taka(s.rate)} = ${taka(r2(s.qty * s.rate))}  [${now}]`);
   }
   say("2. Recipes (per size; wastage 0; supplied by the business; approved)");
@@ -207,7 +245,14 @@ async function main() {
     const filled = counts.filledBottles[a.f][a.size];
     const waiting = reserved.get(a.v.id) ?? 0;
     attarTarget.set(a.v.id, filled - waiting);
-    say(`   ${a.v.sku.padEnd(16)} ${a.product.name} ${a.size}: ${filled} filled − ${waiting} waiting = ${filled - waiting} (website number now ${a.v.stock})${goneLive.has(a.v.id) ? " — set at go-live" : ""}`);
+    say(`   ${a.v.sku.padEnd(16)} ${a.product.name} ${a.size}: ${filled} filled − ${waiting} waiting = ${filled - waiting} (website number now ${a.v.stock})${goneLive.has(a.v.id) ? " — set at go-live" : ""}${earlierDiffers(a.v.id, `${a.v.sku} filled bottles`, filled, "bottle(s)")}`);
+  }
+  if (keptDifferences.length) {
+    say(`   ⚠ An earlier run already set ${keptDifferences.length} item(s) from different counts — stock is set once, so those keep the earlier figures:`);
+    for (const d of keptDifferences) say(`     ${d}`);
+    if (APPLY && !costingOn && !flag("--keep-earlier-counts")) {
+      throw new Error("Counts differ from what an earlier run already set (above). Use the earlier counts file, or correct those items under Stock › Counted after go-live and re-run with --keep-earlier-counts");
+    }
   }
   const capWebsite = caps.reduce((s, c) => s + c.stock, 0);
   const capWaiting = caps.reduce((s, c) => s + (reserved.get(c.id) ?? 0), 0);
@@ -267,6 +312,7 @@ async function main() {
   const missing = projected.filter((l) => l.valuationStatus === "MISSING");
   say(`4. Valuation cutover: materials at the counted rates, attar at recipe cost, caps at ${taka(counts.caps.rate)} (KNOWN); ${others.length} other tracked variant(s) at cost price (ESTIMATED)${missing.length ? `, ${missing.length} MISSING (held unvalued): ${missing.map((l) => tracked.find((v) => v.id === l.variantId)?.sku).join(", ")}` : ""}`);
   const cutover = await getCutover();
+  let projectedTrueUp: number | null = null;
   if (cutover.batch?.status === "POSTED") {
     const s = cutover.batch.summary as unknown as CutoverSummary;
     say(`   posted ${cutover.batch.cutoverDate}: ledger before ${taka(s.ledgerBefore)}, valuation ${taka(s.valuation)}, in-transit ${taka(s.inTransit)}, unfilled at recipe cost ${taka(s.unfilledAtRecipeCost ?? 0)}, adjustment ${taka(s.adjustment)} (3900 ${taka(s.toOpeningBalanceEquity)}, 5150 ${taka(s.toCostAdjustments)})`);
@@ -277,15 +323,25 @@ async function main() {
     const waiting = r2(unfilled.minor / factor);
     say(`   inventory account (1610) ${taka(ledger)}`);
     say(`   projected valuation ${taka(projValuation)} + in-transit ${taka(transit)} (now ${taka(inTransit)} + lines given a cost ${taka(uncostedMinor / factor)}) − unfilled at recipe cost ${taka(waiting)} = ${taka(r2(projValuation + transit - waiting))}`);
-    say(`   projected true-up ${taka(r2(projValuation + transit - waiting - ledger))} → opening-balance correction (3900) "Stock counted ${counts.countedOn} for go-live"; nothing else to profit (5150)`);
+    projectedTrueUp = r2(projValuation + transit - waiting - ledger);
+    say(`   projected true-up ${taka(projectedTrueUp)} → opening-balance correction (3900) "Stock counted ${counts.countedOn} for go-live"; nothing else to profit (5150)`);
   }
   say("5. Packaging: black poly ×1 on every parcel (packing rule, from now on); bubble poly: one roll opened today (not a packing rule)");
 
   if (!APPLY) {
     say("");
     await printChecks(false);
-    say("Dry run only. Run again with --apply to write this.");
+    say(`Dry run only. Run again with --apply${projectedTrueUp !== null ? ` --expect-trueup ${projectedTrueUp}` : ""} to write this.`);
     return 0;
+  }
+  // The operator confirms the true-up the dry run showed: a mistyped count (an extra zero) shows up there as a figure nobody
+  // expected, and the run doesn't go ahead on a number nobody looked at.
+  if (projectedTrueUp !== null) {
+    const typed = value("--expect-trueup");
+    if (typed === undefined) throw new Error(`Pass --expect-trueup <the projected true-up the dry run printed> (it is ${projectedTrueUp} now)`);
+    const expected = Number(typed.replace(/[৳,\s]/g, ""));
+    if (!Number.isFinite(expected)) throw new Error(`--expect-trueup "${typed}" isn't a number`);
+    if (Math.abs(expected - projectedTrueUp) > 1) throw new Error(`The projected true-up is ${taka(projectedTrueUp)}, not ${taka(expected)} — run the dry run again and check what changed`);
   }
 
   // ── 0. manufacturing accounts (quick refill — "Filled" — needs them) ─────────────────────────────────────────────
@@ -307,10 +363,9 @@ async function main() {
     }
     materialId[key] = v.id;
     if (!costingOn && !goneLive.has(v.id)) {
-      const current = (await prisma.productVariant.findUniqueOrThrow({ where: { id: v.id }, select: { stock: true } })).stock;
-      if (current !== s.qty) {
-        await adjustVariantStock(v.id, s.qty - current, "ADJUSTMENT", admin.id, `Stock go-live: owner count ${counts.countedOn} — ${s.qty} ${s.unit}`, { source: { type: SOURCE_TYPE, id: v.id } });
-        say(`1. ${s.sku}: stock ${current} → ${s.qty} ${s.unit}`);
+      const set = await setStockOnce(v.id, admin.id, () => ({ target: s.qty, note: `Stock go-live: owner count ${counts.countedOn} — ${s.qty} ${s.unit}` }));
+      if (set) {
+        say(`1. ${s.sku}: stock ${set.from} → ${set.to} ${s.unit}`);
         wrote = true;
       }
     }
@@ -343,15 +398,19 @@ async function main() {
     wrote = true;
   }
   if (!costingOn) {
-    const live = await reservedNotDispatched(prisma, attarVariants.map((a) => a.v.id)); // again: orders may have come in
     for (const a of attarVariants) {
       if (goneLive.has(a.v.id)) continue;
-      const target = counts.filledBottles[a.f][a.size] - (live.get(a.v.id) ?? 0);
-      const current = (await prisma.productVariant.findUniqueOrThrow({ where: { id: a.v.id }, select: { stock: true } })).stock;
-      if (current === target) continue;
-      await adjustVariantStock(a.v.id, target - current, "ADJUSTMENT", admin.id, `Stock go-live: fill to order — ${counts.filledBottles[a.f][a.size]} filled bottle(s) counted ${counts.countedOn} less ${live.get(a.v.id) ?? 0} on orders not yet booked with the courier`, { source: { type: SOURCE_TYPE, id: a.v.id }, floor: Math.max(0, -target) });
-      say(`3. ${a.v.sku} ${a.product.name} ${a.size}: stock ${current} → ${target}`);
-      wrote = true;
+      const filled = counts.filledBottles[a.f][a.size];
+      // Units waiting are read under the variant's lock, in the adjustment's transaction: an order placed meanwhile either
+      // committed before (its units are waiting, and in the stock) or waits for this to commit — never half of each.
+      const set = await setStockOnce(a.v.id, admin.id, (waiting) => ({
+        target: filled - waiting,
+        note: `Stock go-live: fill to order — ${filled} filled bottle(s) counted ${counts.countedOn} less ${waiting} on orders not yet booked with the courier`,
+      }));
+      if (set) {
+        say(`3. ${a.v.sku} ${a.product.name} ${a.size}: stock ${set.from} → ${set.to}`);
+        wrote = true;
+      }
     }
   }
   await stockMovedSettled();
