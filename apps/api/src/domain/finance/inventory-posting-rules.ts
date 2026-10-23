@@ -24,6 +24,9 @@ const payload = z.object({
   bookMinor: z.number().int(),
   counterKey: z.enum(["cogs.inventory_shrinkage", "cogs.count_adjustments", "cogs.packaging"]).nullable(),
   costAdjustmentMinor: z.number().int(),
+  /** Of the adjustment, the change of the unbooked fill-to-order deficit (costing.service header): held off the inventory
+   * account, so it is not posted — the ledger moves costAdjustment − this. */
+  unbookedDeficitChangeMinor: z.number().int().optional(),
   status: z.enum(FINANCE_VALUATION_STATUSES),
 });
 
@@ -43,7 +46,7 @@ registerPostingRule(INVENTORY_VALUED_EVENT, 1, {
   build: (p) => {
     const lines = [
       ...(p.counterKey ? inventoryAgainst(p.counterKey, p.bookMinor, p.status, `Stock ${p.reason.toLowerCase()}`) : []),
-      ...inventoryAgainst("cogs.cost_adjustments", p.costAdjustmentMinor, p.status, "Inventory cost adjustment (valuation vs ledger)"),
+      ...inventoryAgainst("cogs.cost_adjustments", p.costAdjustmentMinor - (p.unbookedDeficitChangeMinor ?? 0), p.status, "Inventory cost adjustment (valuation vs ledger)"),
     ];
     if (!lines.length) return { ignore: "nothing to post" };
     return { description: `Inventory valuation — ${p.reason.toLowerCase()} (entry ${p.entryId})`, reference: p.movementId, lines };

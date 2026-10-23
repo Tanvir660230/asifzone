@@ -26,8 +26,9 @@ Nothing is typed over. Once stock costing is live, the product form no longer ed
 - **Packaging per parcel**, when a parcel leaves: one black poly on every parcel (a packing rule; the material leaves
   stock into packaging cost). Bubble poly is cut from a roll, so it is tracked as a roll (Finance › Stock check: open a
   roll, finish it with the parcels it wrapped), not per parcel.
-- **Sale costs**: every order line takes its cost from the moving average (a fill-to-order line sold before filling is
-  the costing deficit, settled when the bottle is filled).
+- **Sale costs**: every order line takes its cost from the moving average. A fill-to-order bottle sold before any of
+  its variant was ever valued takes its **recipe's standard cost** (§3) — the line is costed (`INVENTORY_PROVISIONAL`),
+  recognised at delivery like any sale, and the fill settles the difference.
 - **Low-stock warnings**: days left from the last 30 days' use; low at 10 days or less, or when a fill-to-order
   product can make 10 or fewer.
 
@@ -49,6 +50,22 @@ reserve 60 ml → 98. A material shared by several fragrances (the 12 ml bottle)
 the website; checkout locks the materials, so the last bottle is sold exactly once. Without an approved recipe a
 fill-to-order product sells only filled bottles — never unlimited. The engine is `packages/shared/src/engines/fill-capacity.ts`.
 
+**Cost of a bottle sold before it is filled.** When the variant has no average yet (nothing of it ever valued), the
+exit cost is the recipe's standard cost:
+
+```
+standard cost   = Σ over the approved recipe's lines (supplied by the business) of
+                  qtyPerUnit × (1 + wastage% / 100) × the material's moving average     (rounded once, half to even)
+```
+
+(no average for some material → no cost, as before: `NONE` and a missing-cost note at delivery). The order line carries
+it (`INVENTORY_PROVISIONAL`) and the costing deficit is an **unbooked** layer at that cost (`costing.service` header):
+nothing is posted when it is sold, the cost of goods is booked at delivery from the line, and the fill that covers the
+units posts only *actual − standard* to 5150 (0 when prices haven't moved). A cancel before the fill nets the layer at
+the same cost with nothing posted. The inventory account check reads `ledger = valuation + in-transit − unbooked deficit`
+(the bottles' cost is on the way to the customer while their materials are still on the shelf). Once a variant has an
+average (after its first fill), a sale beyond its filled bottles is an ordinary provisional deficit at that average.
+
 ## 4. Go-live order
 
 A one-off script (`apps/api/scripts/finance/asif-zone-stock-golive.ts`) reads a **fresh count taken on go-live day**
@@ -65,19 +82,18 @@ finds before it creates, so a second `--apply` writes nothing.
 3. **Attar**: `fillToOrder = true`; each variant's stock = filled bottles counted − units on orders not yet booked with
    the courier (negative = ordered, not filled). Caps keep their per-colour stock; the website total + caps on unbooked
    orders is compared with the counted caps, and a difference stops `--apply` unless `--accept-caps-difference`.
-   Two corrections so that nothing is costed twice or not at all:
-   - **Open orders** not yet in the books (not delivered, not paid online) whose lines carry no cost, or the old typed
-     catalog cost (attar at ৳610), get today's cost price as the checkout records it (`CATALOG`). Their delivery is then
-     costed, and the cutover counts them as on the way to customers.
-   - **Attar ordered and not filled**: after go-live, such a sale is booked at its cost and the costing engine sets the
-     cost aside (Dr inventory / Cr 5150) until the bottle is filled (Dr 5150, the real cost). Orders taken before go-live
-     never had that entry, so the script makes it once (`stock-golive:unfilled:<date>`). Without it, filling them would
-     cost them twice (the fill to 5150 and the delivery to cost of goods). The amount is in 5150 on go-live day and is
-     used up as those orders are filled; it stops `--apply` unless `--accept-unfilled-orders`. Better: fill and bag
-     every waiting attar order before counting — they then count as filled bottles and nothing is set aside.
-4. **Valuation cutover**: materials at the counted rates, attar at recipe cost, caps at the owner's cost (KNOWN), any
-   other tracked variant at its cost price (ESTIMATED) or MISSING (acknowledged). The whole true-up goes to the
-   opening-balance correction (3900, "Stock counted <date> for go-live"), so no profit changes. Costing switches on.
+   Open orders not yet in the books (not delivered, not paid online) whose lines carry no cost, or the old typed
+   catalog cost (attar at ৳610), get today's cost as the checkout records it (`CATALOG`; attar: its recipe cost at the
+   counted rates). Their delivery is then costed, and the cutover counts them as on the way to customers.
+   **Attar ordered and not filled** needs nothing special: the cutover starts each such variant's deficit at its recipe
+   cost (from the batch's approved material costs), unbooked, so those bottles count once in the true-up (on the way to
+   customers, not again as materials) and their fill posts only the difference. The run prints how many units are
+   waiting to be filled.
+4. **Valuation cutover**: materials at the counted rates, attar at recipe cost (bottles ordered and not filled: an
+   unbooked deficit at recipe cost), caps at the owner's cost (KNOWN), any other tracked variant at its cost price
+   (ESTIMATED) or MISSING (acknowledged). True-up = valuation + in-transit − unfilled at recipe cost − the inventory
+   account; it all goes to the opening-balance correction (3900, "Stock counted <date> for go-live"), so no profit
+   changes. Costing switches on.
    The pre-go-live adjustments' "stock without a value" notes are closed as valued by the cutover.
 5. **Packaging**: black poly ×1 per parcel on every parcel (a packing rule, from now on). Bubble poly: one roll is
    opened on go-live day if the count has a roll and none is open.
@@ -88,27 +104,26 @@ finds before it creates, so a second `--apply` writes nothing.
 
 ### Rehearsal (2026-10-23, copy of `stock_qa` = production 2026-10-20 + the 2026-10-22 count correction)
 
-Example counts file (0 filled bottles), `--accept-caps-difference` (website 45 + 2 waiting vs 43 counted),
-`--accept-unfilled-orders`:
+Example counts file (0 filled bottles), `--accept-caps-difference` (website 45 + 2 waiting vs 43 counted):
 
 | | ৳ |
 |---|---:|
 | Inventory account (1610) before | 2,13,739.29 |
-| Unfilled attar set aside (68 units, Cr 5150) | +25,180.00 |
-| Ledger at the cutover | 2,38,919.29 |
 | Valuation (materials 1,26,512.50 incl. polys + caps 45 × 587) | 1,52,927.50 |
-| In-transit (open orders at cost; +13,676 from 174 lines given today's cost price) | 64,306.00 |
+| In-transit (open orders at cost; +13,676 from 174 lines given today's cost) | 64,306.00 |
+| Unfilled attar at recipe cost (68 units, unbooked deficit) | −25,180.00 |
 | True-up → 3900 opening-balance correction (5150: 0) | −21,685.79 |
-| 1610 after = valuation + in-transit | 2,17,233.50 |
+| 1610 after = valuation + in-transit − unfilled | 1,92,053.50 |
 
-The true-up is the count script's 2026-10-22 pipeline holding the unfilled attar a second time (−25,180), plus caps
-on the website above the count (+1,174), the polys now held as stock (+2,336) and the sticker rate in whole paisa
-(−15.74). Every inventory check MATCHED; the two pre-existing differences of that copy (`commerce.receivables`,
-`cost.completeness`) were there before. A second `--apply` changed no table (pg_stat insert/update/delete counters
-identical). October profit: +25,180 in 5150 on go-live day only; after the 68 waiting bottles were filled (quick refill)
-5150 was back to 0 for them, so the month's profit is what it was without the go-live. Website after go-live: Azhaar
-6 ml 71, 12 ml 35; Royal 6 ml 145, 12 ml 98; Sweet 6 ml 37, 12 ml 18; Zayan 6 ml 120, 12 ml 60 (all made, none filled);
-a checkout of one Azhaar 6 ml succeeded (stock −21 → −22, sells 71 → 70) and one above what can be made was refused.
+The true-up is the 2026-10-22 count's pipeline already holding the unfilled attar (−25,180: their materials are counted
+too), plus caps on the website above the count (+1,174), the polys now held as stock (+2,336) and the sticker rate in
+whole paisa (−15.74). Every inventory check MATCHED; the two pre-existing differences of that copy
+(`commerce.receivables`, `cost.completeness`) were there before. A second `--apply` changed no table (pg_stat
+insert/update/delete counters identical). October: 5100 208,243.00 and 5150 0 before and after the go-live. Then a new
+order of one Azhaar 6 ml (stock −21 → −22) was costed at its recipe cost ৳328.50 (`INVENTORY_PROVISIONAL`, unbooked
+deficit 22 at 328.50); filling all 22 left 5150 at 0; delivering it booked 5100 +328.50 once, no missing-cost note;
+every inventory check MATCHED after each step. Website after go-live: Azhaar 6 ml 71, 12 ml 35; Royal 6 ml 145, 12 ml
+98; Sweet 6 ml 37, 12 ml 18; Zayan 6 ml 120, 12 ml 60 (all made, none filled).
 
 ## 5. API and safeguards
 
@@ -142,7 +157,7 @@ request under it is refused (409 `IDEMPOTENCY_KEY_REUSED`).
 Run it off-peak: the cutover locks every stock-tracked variant while it posts, so checkouts wait for a few seconds.
 
 1. **Merge and deploy** the stock hub (the normal deploy; it runs the migrations).
-2. **Count the shelf** that day — preferably right after filling and bagging every waiting attar order — and write
+2. **Count the shelf** that day (waiting attar orders may stay unfilled: they are held at recipe cost) and write
    the counts file from `apps/api/scripts/finance/asif-zone-stock-golive.counts.example.json` (every number, plus
    `countedOn` = today). Copy it to the server, e.g. `scp counts.json root@187.77.137.12:/tmp/counts.json`.
 3. On the server:
@@ -151,13 +166,11 @@ Run it off-peak: the cutover locks every stock-tracked variant while it posts, s
    cd /opt/asifzone
    bash docker/backup.sh                                       # database + uploads backup first
    docker build -f apps/api/Dockerfile --target build -t asifzone-api-tools .   # tools image of the deployed code
-   COMPOSE="docker compose -f docker/docker-compose.yml --env-file docker/.env"
-   API=$($COMPOSE ps -q api)
-   docker exec "$API" printenv | grep -Ev '^(PATH|HOSTNAME|HOME|NODE_VERSION|YARN_VERSION)=' > /tmp/api.env
-   NET=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$API")
+   docker compose -f docker/docker-compose.yml --env-file docker/.env exec -T api env > /tmp/api.env
+   NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' $(docker compose -f docker/docker-compose.yml --env-file docker/.env ps -q api))
    GOLIVE="docker run --rm --env-file /tmp/api.env --network $NET -w /repo/apps/api -v /tmp/counts.json:/tmp/counts.json asifzone-api-tools npx tsx scripts/finance/asif-zone-stock-golive.ts --as <owner admin email> --counts /tmp/counts.json"
-   $GOLIVE                                  # dry run: read every number
-   $GOLIVE --apply                          # add --accept-caps-difference / --accept-unfilled-orders only if the dry run asks and the numbers are right
+   $GOLIVE                                  # dry run: read every number (and how many attar units wait to be filled)
+   $GOLIVE --apply                          # add --accept-caps-difference only if the dry run asks and the numbers are right
    $GOLIVE --apply                          # must print "nothing to write (already live)"
    rm /tmp/api.env
    ```

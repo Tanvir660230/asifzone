@@ -12,10 +12,10 @@
  *      with the courier (negative = ordered, not filled). Caps keep their stock; the website total is compared with the
  *      count (a difference stops the run unless --accept-caps-difference).
  *      Open orders not yet in the books whose lines carry no cost, or an old catalog cost, get today's cost price (as the
- *      checkout records it) — so their delivery is costed and the cutover counts them as on the way to customers.
- *      Attar ordered and not filled: its cost is set aside (Dr inventory / Cr 5150), as the costing engine does for such a
- *      sale after go-live, so that filling it later (5150 Dr, its real cost) doesn't cost it twice. The run stops unless
- *      --accept-unfilled-orders; better, fill and bag the waiting orders before counting (nothing is then set aside).
+ *      checkout records it; attar: its recipe cost at the counted rates) — so their delivery is costed and the cutover
+ *      counts them as on the way to customers.
+ *      Attar ordered and not filled: the cutover starts its deficit at the recipe cost, held off the inventory account
+ *      (costing.service header), so nothing is set aside and nothing reaches 5150; each fill posts only actual − recipe.
  *   4. Valuation cutover: materials at the counted rates, attar at recipe cost, caps at the owner's cost (all KNOWN), any
  *      other tracked variant at its cost price (ESTIMATED) or MISSING; the whole true-up is booked as an opening-balance
  *      correction (3900, "Stock counted <date> for go-live") so no profit changes; costing switches on.
@@ -24,7 +24,7 @@
  *   7. The finance checks; with --apply the run fails if an inventory check isn't MATCHED.
  *
  *   npx tsx scripts/finance/asif-zone-stock-golive.ts --as <owner admin email> --counts <counts.json>
- *       [--apply] [--accept-caps-difference] [--accept-unfilled-orders]
+ *       [--apply] [--accept-caps-difference]
  *   Production: docs/STOCK_HUB.md §6.
  */
 import { readFileSync } from "node:fs";
@@ -45,9 +45,7 @@ import { syncCommerce } from "../../src/domain/finance/commerce-accounting.servi
 import { acknowledgeException } from "../../src/domain/finance/finance-exceptions.service";
 import { RECONCILIATION_CHECKS, RECONCILIATION_CHECK_KEYS } from "../../src/domain/finance/reconciliation.service";
 import { adjustVariantStock, stockMovedSettled } from "../../src/modules/inventory/inventory.service";
-import { ON_SHELF_STATUSES, reservedNotDispatched } from "../../src/domain/stock/count.service";
-import { resolveMappedAccount } from "../../src/domain/finance/chart.service";
-import { createDraftJournal, postDraftJournal } from "../../src/domain/finance/journal.service";
+import { reservedNotDispatched } from "../../src/domain/stock/count.service";
 import { fillCapacityChanged, withFillToOrder } from "../../src/domain/stock/fill-capacity.service";
 import { readModelDrift, refreshReadModels } from "../../src/domain/storefront/read-model.service";
 import { invalidateProductCache, triggerStorefrontRevalidation } from "../../src/modules/products/product.cache";
@@ -88,7 +86,7 @@ type Counts = z.infer<typeof countsSchema>;
 const args = process.argv.slice(2);
 const flag = (f: string) => args.includes(f);
 const value = (f: string) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
-const KNOWN_FLAGS = new Set(["--apply", "--accept-caps-difference", "--accept-unfilled-orders", "--as", "--counts"]);
+const KNOWN_FLAGS = new Set(["--apply", "--accept-caps-difference", "--as", "--counts"]);
 const APPLY = flag("--apply");
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const taka = (n: number) => `৳${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -112,7 +110,7 @@ function materialSpecs(c: Counts, attar: Record<Fragrance, { name: string }>): R
 }
 
 /** The frozen summary a posted cutover keeps (inventory-cutover.service postCutover). */
-interface CutoverSummary { ledgerBefore: number; valuation: number; inTransit: number; adjustment: number; toOpeningBalanceEquity: number; toCostAdjustments: number; deficitUnits: number; unvaluedUnits: number }
+interface CutoverSummary { ledgerBefore: number; valuation: number; inTransit: number; unfilledAtRecipeCost?: number; unfilledUnits?: number; adjustment: number; toOpeningBalanceEquity: number; toCostAdjustments: number; deficitUnits: number; unvaluedUnits: number }
 
 function sizeOf(raw: string): Size | null {
   const m = /^\s*(6|12)\s*ml\s*$/i.exec(raw);
@@ -226,7 +224,8 @@ async function main() {
   // at ৳610 before the owner's list). Neither is in the books yet; they get today's cost price, as the checkout records
   // it (CATALOG) — the cost the 2026-10-22 count put into the inventory account for them.
   const factor = 10 ** minorDigits(business.baseCurrency);
-  const uncosted = costingOn ? [] : await uncostedOpenLines(factor);
+  const attarCost = attarVariants.map((a) => ({ id: a.v.id, cost: Math.round(recipeCost(a.f, a.size) * factor) }));
+  const uncosted = costingOn ? [] : await uncostedOpenLines(factor, attarCost);
   const uncostedMinor = uncosted.reduce((s, l) => s + l.units * (l.cost - (l.old ?? 0)), 0);
   say(`   Open orders, lines without today's cost price: ${uncosted.length} line(s), ${uncosted.reduce((s, l) => s + l.units, 0)} unit(s); on the way to customers ${uncostedMinor >= 0 ? "+" : ""}${taka(uncostedMinor / factor)}`);
   const bySku = new Map<string, { units: number; from: Set<string>; to: number }>();
@@ -238,19 +237,14 @@ async function main() {
   }
   for (const [sku, g] of bySku) say(`     ${sku.padEnd(22)} ${g.units} unit(s): ${[...g.from].join(" / ")} → ${taka(g.to / factor)}`);
 
-  // Unfilled: attar sold before go-live and not filled yet. After go-live a sale like that is booked at its cost, which the
-  // costing engine sets aside (inventory up, 5150 down) until the bottle is filled (5150 up by the real cost). Before
-  // go-live there was no such entry, so the go-live makes it — otherwise filling these orders would cost them twice.
-  const backfill = new Map(uncosted.map((l) => [l.id, l.cost]));
-  const unfilled = costingOn ? { minor: 0, units: 0 } : await unfilledCost(attarVariants.map((a) => ({ id: a.v.id, stock: attarTarget.get(a.v.id)!, fallback: Math.round(recipeCost(a.f, a.size) * factor) })), backfill);
-  if (unfilled.units) {
-    say(`   Unfilled: ${unfilled.units} attar unit(s) ordered and not filled, cost ${taka(unfilled.minor / factor)} — set aside until filled (Dr inventory, Cr 5150; each fill then books its real cost to 5150)`);
-    if (!flag("--accept-unfilled-orders")) {
-      const hint = "fill and bag the waiting attar orders before counting (they then count as filled bottles), or add --accept-unfilled-orders";
-      if (APPLY) throw new Error(`${unfilled.units} attar unit(s) are ordered and not filled: ${hint}`);
-      say(`   ⚠ --apply will stop here: ${hint}`);
-    }
-  }
+  // Unfilled: attar sold before go-live and not filled yet. The cutover starts each such variant's deficit at its recipe cost,
+  // held off the inventory account (their cost is on the way to customers, their materials are on the shelf — counted
+  // once); each fill then posts only what the bottles really cost beyond the recipe. Nothing is set aside, nothing to 5150.
+  const unfilled = attarVariants.reduce((acc, a) => {
+    const short = Math.max(0, -attarTarget.get(a.v.id)!);
+    return { units: acc.units + short, minor: acc.minor + short * Math.round(recipeCost(a.f, a.size) * factor) };
+  }, { units: 0, minor: 0 });
+  if (unfilled.units) say(`   Waiting to be filled: ${unfilled.units} attar unit(s) ordered and not filled (recipe cost ${taka(unfilled.minor / factor)}) — the cutover holds them at recipe cost; fill them under Stock › Filled`);
 
   // projected valuation (dry run; the post values the stock at that moment)
   const tracked = await prisma.productVariant.findMany({ where: { product: { trackInventory: true } }, select: { id: true, sku: true, stock: true, costPrice: true, product: { select: { costPrice: true, kind: true } } } });
@@ -275,15 +269,15 @@ async function main() {
   const cutover = await getCutover();
   if (cutover.batch?.status === "POSTED") {
     const s = cutover.batch.summary as unknown as CutoverSummary;
-    say(`   posted ${cutover.batch.cutoverDate}: ledger before ${taka(s.ledgerBefore)}, valuation ${taka(s.valuation)}, in-transit ${taka(s.inTransit)}, adjustment ${taka(s.adjustment)} (3900 ${taka(s.toOpeningBalanceEquity)}, 5150 ${taka(s.toCostAdjustments)})`);
+    say(`   posted ${cutover.batch.cutoverDate}: ledger before ${taka(s.ledgerBefore)}, valuation ${taka(s.valuation)}, in-transit ${taka(s.inTransit)}, unfilled at recipe cost ${taka(s.unfilledAtRecipeCost ?? 0)}, adjustment ${taka(s.adjustment)} (3900 ${taka(s.toOpeningBalanceEquity)}, 5150 ${taka(s.toCostAdjustments)})`);
   } else {
     const bridge = await inventoryLedgerBridge(prisma, business);
     const ledger = bridge.ledgerMinor / factor, inTransit = bridge.inTransitMinor / factor;
     const transit = r2(inTransit + uncostedMinor / factor);
-    const book = r2(ledger + unfilled.minor / factor);
-    say(`   inventory account (1610) ${taka(ledger)}${unfilled.minor ? ` + unfilled set aside ${taka(unfilled.minor / factor)} = ${taka(book)}` : ""}`);
-    say(`   projected valuation ${taka(projValuation)} + in-transit ${taka(transit)} (now ${taka(inTransit)} + lines given a cost ${taka(uncostedMinor / factor)}) = ${taka(r2(projValuation + transit))}`);
-    say(`   projected true-up ${taka(r2(projValuation + transit - book))} → opening-balance correction (3900) "Stock counted ${counts.countedOn} for go-live"; nothing else to profit (5150)`);
+    const waiting = r2(unfilled.minor / factor);
+    say(`   inventory account (1610) ${taka(ledger)}`);
+    say(`   projected valuation ${taka(projValuation)} + in-transit ${taka(transit)} (now ${taka(inTransit)} + lines given a cost ${taka(uncostedMinor / factor)}) − unfilled at recipe cost ${taka(waiting)} = ${taka(r2(projValuation + transit - waiting))}`);
+    say(`   projected true-up ${taka(r2(projValuation + transit - waiting - ledger))} → opening-balance correction (3900) "Stock counted ${counts.countedOn} for go-live"; nothing else to profit (5150)`);
   }
   say("5. Packaging: black poly ×1 on every parcel (packing rule, from now on); bubble poly: one roll opened today (not a packing rule)");
 
@@ -364,7 +358,7 @@ async function main() {
 
   if (!costingOn) {
     // 3b. open orders' lines → today's cost price (read again: orders may have come in)
-    const lines = await uncostedOpenLines(factor);
+    const lines = await uncostedOpenLines(factor, attarCost);
     if (lines.length) {
       const n = await prisma.$executeRaw`
         UPDATE "OrderItem" i SET "unitCostSnapshot" = x.cost, "unitCostSource" = 'CATALOG'
@@ -372,27 +366,6 @@ async function main() {
         WHERE i.id = x.id AND i."unitCostSnapshot" IS NOT DISTINCT FROM x.old AND i."costMovementId" IS NULL`;
       say(`3. ${n} open order line(s) given today's cost price (on the way to customers ${taka(lines.reduce((s, l) => s + l.units * (l.cost - (l.old ?? 0)), 0) / factor)})`);
       wrote = true;
-    }
-    // 3c. unfilled attar: set aside its cost until filled
-    const key = `stock-golive:unfilled:${counts.countedOn}`;
-    const already = await prisma.journalEntry.findFirst({ where: { businessId: business.id, idempotencyKey: { contains: key } }, select: { id: true, number: true } });
-    if (already) say(`3. unfilled attar already set aside (journal ${already.number ?? already.id})`);
-    else {
-      const now = await prisma.productVariant.findMany({ where: { id: { in: attarVariants.map((a) => a.v.id) } }, select: { id: true, stock: true } });
-      const u = await unfilledCost(attarVariants.map((a) => ({ id: a.v.id, stock: now.find((x) => x.id === a.v.id)!.stock, fallback: Math.round(recipeCost(a.f, a.size) * factor) })), new Map());
-      if (u.minor) {
-        const [inventory, adjustments] = await Promise.all([resolveMappedAccount(prisma, business.id, "asset.inventory"), resolveMappedAccount(prisma, business.id, "cogs.cost_adjustments")]);
-        const amount = u.minor / factor;
-        const memo = `${u.units} attar bottle(s) ordered before go-live and not filled yet: their cost, set aside until filled (each fill books its real cost)`;
-        const { journal: j } = await createDraftJournal({
-          entryDate: today,
-          description: `Stock go-live: attar sold before go-live, not yet filled (${u.units} unit(s))`,
-          lines: [{ accountId: inventory.id, debit: amount, credit: 0, memo }, { accountId: adjustments.id, debit: 0, credit: amount, memo }],
-        }, actor, key);
-        if (j.status !== "POSTED") await postDraftJournal(j.id, actor);
-        say(`3. unfilled attar: ${u.units} unit(s), ${taka(amount)} set aside (Dr inventory / Cr 5150)`);
-        wrote = true;
-      }
     }
   }
 
@@ -422,7 +395,7 @@ async function main() {
       }
     }
     const s = posted!.batch.summary as unknown as CutoverSummary;
-    say(`4. cutover POSTED: ledger before ${taka(s.ledgerBefore)}, valuation ${taka(s.valuation)}, in-transit ${taka(s.inTransit)}, adjustment ${taka(s.adjustment)} → 3900 ${taka(s.toOpeningBalanceEquity)}, 5150 ${taka(s.toCostAdjustments)}; ${s.deficitUnits} unit(s) ordered not filled, ${s.unvaluedUnits} unvalued; journal ${posted!.journal?.number ?? "none (no true-up)"}`);
+    say(`4. cutover POSTED: ledger before ${taka(s.ledgerBefore)}, valuation ${taka(s.valuation)}, in-transit ${taka(s.inTransit)}, unfilled at recipe cost ${taka(s.unfilledAtRecipeCost ?? 0)}, adjustment ${taka(s.adjustment)} → 3900 ${taka(s.toOpeningBalanceEquity)}, 5150 ${taka(s.toCostAdjustments)}; ${s.deficitUnits} unit(s) ordered not filled, ${s.unvaluedUnits} unvalued; journal ${posted!.journal?.number ?? "none (no true-up)"}`);
     if (s.toCostAdjustments !== 0) say(`   NOTE: ${taka(s.toCostAdjustments)} went to 5150 — stock moved between the approval and the post`);
     wrote = true;
   }
@@ -478,42 +451,24 @@ async function main() {
 
 /** Lines of open orders (not trashed, not delivered, returned or cancelled, not paid online — so not yet in the books)
  * whose recorded cost is missing or a catalog figure other than today's cost price; `cost` / `old` in minor units. */
-async function uncostedOpenLines(factor: number) {
+async function uncostedOpenLines(factor: number, fixed: Array<{ id: string; cost: number }>) {
+  // Today's cost: attar its recipe cost (`fixed`, minor units), anything else its catalog cost price.
   return prisma.$queryRaw<Array<{ id: string; sku: string; units: number; cost: number; old: number | null }>>`
-    SELECT i.id, v.sku, (i.quantity - i."restockedQuantity")::int AS units, ROUND(COALESCE(v."costPrice", p."costPrice") * ${factor})::int AS cost, i."unitCostSnapshot" AS old
-    FROM "OrderItem" i JOIN "Order" o ON o.id = i."orderId" JOIN "ProductVariant" v ON v.id = i."variantId" JOIN "Product" p ON p.id = v."productId"
-    WHERE i."costMovementId" IS NULL AND o."deletedAt" IS NULL
-      AND (i."unitCostSnapshot" IS NULL OR (i."unitCostSource" = 'CATALOG' AND i."unitCostSnapshot" <> ROUND(COALESCE(v."costPrice", p."costPrice") * ${factor})::int))
-      AND o.status IN ('PENDING', 'CONFIRMED', 'PROCESSING', 'PACKED', 'SHIPPED')
-      AND COALESCE(v."costPrice", p."costPrice") > 0
-      AND NOT EXISTS (SELECT 1 FROM "Payment" pm WHERE pm."orderId" = o.id AND pm.status = 'SUCCEEDED')
-      AND NOT EXISTS (SELECT 1 FROM "FinanceException" fe WHERE fe."orderId" = o.id AND fe.kind = 'MISSING_COST')
-    ORDER BY v.sku, i.id`;
-}
-
-/** The cost of attar ordered and not filled: per variant with stock below zero, that many units of its waiting lines,
- * newest first, at each line's recorded cost (or the cost it is about to get, or the recipe cost). Minor units. */
-async function unfilledCost(variants: Array<{ id: string; stock: number; fallback: number }>, pending: Map<string, number>) {
-  let minor = 0, units = 0;
-  for (const v of variants) {
-    let left = Math.max(0, -v.stock);
-    if (!left) continue;
-    const lines = await prisma.orderItem.findMany({
-      where: { variantId: v.id, order: { deletedAt: null, courierConsignmentId: null, status: { in: [...ON_SHELF_STATUSES] } } },
-      select: { id: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true },
-      orderBy: [{ order: { createdAt: "desc" } }, { id: "desc" }],
-    });
-    for (const l of lines) {
-      const take = Math.min(left, l.quantity - l.restockedQuantity);
-      if (take <= 0) continue;
-      minor += take * (pending.get(l.id) ?? l.unitCostSnapshot ?? v.fallback);
-      units += take;
-      left -= take;
-      if (!left) break;
-    }
-    if (left) { minor += left * v.fallback; units += left; }
-  }
-  return { minor, units };
+    WITH f AS (SELECT * FROM jsonb_to_recordset(${JSON.stringify(fixed)}::jsonb) AS x(id text, cost int)),
+    l AS (
+      SELECT i.id, v.sku, (i.quantity - i."restockedQuantity")::int AS units, COALESCE(f.cost, ROUND(COALESCE(v."costPrice", p."costPrice") * ${factor})::int) AS cost,
+             i."unitCostSnapshot" AS old, i."unitCostSource" AS source, i."costMovementId", o.id AS "orderId", o."deletedAt", o.status
+      FROM "OrderItem" i JOIN "Order" o ON o.id = i."orderId" JOIN "ProductVariant" v ON v.id = i."variantId" JOIN "Product" p ON p.id = v."productId"
+      LEFT JOIN f ON f.id = v.id
+    )
+    SELECT l.id, l.sku, l.units, l.cost, l.old FROM l
+    WHERE l."costMovementId" IS NULL AND l."deletedAt" IS NULL
+      AND (l.old IS NULL OR (l.source = 'CATALOG' AND l.old <> l.cost))
+      AND l.status IN ('PENDING', 'CONFIRMED', 'PROCESSING', 'PACKED', 'SHIPPED')
+      AND l.cost > 0
+      AND NOT EXISTS (SELECT 1 FROM "Payment" pm WHERE pm."orderId" = l."orderId" AND pm.status = 'SUCCEEDED')
+      AND NOT EXISTS (SELECT 1 FROM "FinanceException" fe WHERE fe."orderId" = l."orderId" AND fe.kind = 'MISSING_COST')
+    ORDER BY l.sku, l.id`;
 }
 
 /** Every finance check, read only (not recorded as a run). Inventory checks must be MATCHED once costing is live. */

@@ -27,6 +27,7 @@ import { quoteCart } from "../../domain/pricing/pricing.service";
 import { deleteOrder, deriveOrderPricing, insertOrderRecord, restoreOrder, updateOrderStatus } from "./order.service";
 import { quickRefill } from "../../domain/manufacturing/quick-refill.service";
 import { processFinancialEvent } from "../../domain/finance/events.service";
+import { projectOrder } from "../../domain/finance/commerce-accounting.service";
 import { runReconciliation } from "../../domain/finance/reconciliation.service";
 
 // Stock hub Task 4 (docs/STOCK_HUB.md §3): a fill-to-order variant sells max(0, stock) + makeable on the website, in the
@@ -138,7 +139,7 @@ describe("fill to order", () => {
     const state = await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: azhaar.variant } });
     expect(state.deficitQty).toBe(2); // the costing deficit, settled when the bottles are filled
     const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id }, select: { costMovementId: true, unitCostSource: true } });
-    expect(line).toMatchObject({ costMovementId: expect.any(String), unitCostSource: "NONE" }); // costed like any exit (no average yet → no unit cost)
+    expect(line).toMatchObject({ costMovementId: expect.any(String), unitCostSource: "INVENTORY_PROVISIONAL" }); // no average yet → the recipe's standard cost, provisional
     expect(await sells(azhaar.variant)).toBe(106); // 12 ml of oil reserved: 638 / 6
     await assertInventoryInvariants(azhaar.variant);
   });
@@ -427,5 +428,91 @@ describe("fill to order — costing and edges", () => {
       details: { code: "STOCK_VIA_HUB" },
     });
     expect(await stockOf(a.variant)).toBe(0);
+  });
+});
+
+// A fill-to-order bottle sold before any was ever filled carries its recipe's standard cost (materials' averages) from the
+// sale: the line is costed, the deficit is an unbooked layer at that cost, the fill posts only actual − provisional, and
+// the delivery books the cost of goods once — no "missing cost", nothing costed twice.
+describe("fill to order — the recipe cost at sale time", () => {
+  let key = 0;
+  const RECIPE = 6 * 38 + 50; // 6 ml oil at 38 + one 6 ml bottle at 50
+  const refill = (variantId: string, quantity: number) => quickRefill({ variantId, quantity }, OWNER, `fto-recipe-${RUN}-${++key}`);
+  async function postPending() {
+    for (let round = 0; round < 10; round++) {
+      const waiting = await prisma.financialEvent.findMany({ where: { status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true } });
+      if (!waiting.length) return;
+      for (const e of waiting) await processFinancialEvent(e.id);
+    }
+  }
+  async function balance(mappingKey: string, partyId?: string) {
+    const { business } = await getFinanceContext();
+    const accountId = (await prisma.accountMapping.findUniqueOrThrow({ where: { businessId_key: { businessId: business.id, key: mappingKey } } })).accountId;
+    const lines = await prisma.journalLine.findMany({ where: { accountId, entry: { status: "POSTED", businessId: business.id }, ...(partyId ? { partyId } : {}) } });
+    return Math.round(lines.reduce((s, l) => s + Number(l.debit) - Number(l.credit), 0) * 100) / 100;
+  }
+  async function checks() {
+    await postPending();
+    const r = await runReconciliation({ checks: ["inventory.valuation_vs_ledger", "inventory.quantity_vs_valuation", "inventory.valuation_postings", "inventory.order_cost_links", "manufacturing.wip", "ledger.integrity", "events.unposted"] }, OWNER);
+    return Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]));
+  }
+  const ALL_MATCHED = {
+    "inventory.valuation_vs_ledger": "MATCHED", "inventory.quantity_vs_valuation": "MATCHED", "inventory.valuation_postings": "MATCHED", "inventory.order_cost_links": "MATCHED",
+    "manufacturing.wip": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED",
+  };
+  async function deliver(orderId: string) {
+    for (const s of ["CONFIRMED", "PROCESSING", "PACKED", "SHIPPED", "DELIVERED"] as const) await updateOrderStatus(orderId, { status: s }, admin);
+    await projectOrder(orderId);
+    await postPending();
+  }
+
+  it("order 2 unfilled → costed at the recipe; fill 2 → 5150 unchanged; deliver → cost of goods once, no missing cost; checks match", async () => {
+    const oud = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await postPending();
+    const adjBefore = await balance("cogs.cost_adjustments");
+    const order = await placeOrder([{ variantId: oud.variant, quantity: 2 }], { customerPhone: "01712000031" });
+    const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id }, select: { unitCostSnapshot: true, unitCostSource: true, costMovementId: true } });
+    expect(line).toMatchObject({ unitCostSnapshot: RECIPE * 100, unitCostSource: "INVENTORY_PROVISIONAL", costMovementId: expect.any(String) });
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: oud.variant } })).toMatchObject({ deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: RECIPE * 100, unbooked: true }] });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore); // nothing set aside at the sale
+
+    await refill(oud.variant, 2);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: oud.variant } })).toMatchObject({ deficitQty: 0, deficitLayers: [], valuedQty: 0 });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore); // actual − provisional = 0 at unchanged prices
+
+    await deliver(order.id);
+    expect(-(await balance("asset.inventory", order.id))).toBe(2 * RECIPE);
+    expect(await balance("cogs.goods", order.id)).toBe(2 * RECIPE); // once
+    expect(await prisma.financeException.count({ where: { orderId: order.id, kind: "MISSING_COST" } })).toBe(0);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    expect(await checks()).toEqual(ALL_MATCHED);
+    await assertInventoryInvariants(oud.variant);
+  });
+
+  it("a fill at a different cost posts only the difference to 5150", async () => {
+    const cedar = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await postPending();
+    const adjBefore = await balance("cogs.cost_adjustments");
+    await placeOrder([{ variantId: cedar.variant, quantity: 1 }], { customerPhone: "01712000032" });
+    // Really used 7 ml for the bottle: 1 ml of oil (38) more than the recipe.
+    await quickRefill({ variantId: cedar.variant, quantity: 1, used: [{ materialVariantId: oil, quantity: 7 }, { materialVariantId: bottle6, quantity: 1 }] }, OWNER, `fto-recipe-${RUN}-${++key}`);
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore + 38);
+  });
+
+  it("cancel before the fill: the deficit nets at the same provisional cost, nothing posted, the next fill is stock", async () => {
+    const teak = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await postPending();
+    const adjBefore = await balance("cogs.cost_adjustments");
+    const order = await placeOrder([{ variantId: teak.variant, quantity: 2 }], { customerPhone: "01712000033" });
+    await updateOrderStatus(order.id, { status: "CANCELLED" }, admin);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: teak.variant } })).toMatchObject({ deficitQty: 0, deficitLayers: [], unvaluedQty: 0, valuedQty: 0 });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    await refill(teak.variant, 1);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: teak.variant } })).toMatchObject({ valuedQty: 1, deficitQty: 0 });
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
   });
 });

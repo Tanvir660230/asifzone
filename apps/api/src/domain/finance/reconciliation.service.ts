@@ -478,14 +478,17 @@ export const RECONCILIATION_CHECKS = {
       const active = await prisma.financeBusiness.findUnique({ where: { id: ctx.business.id }, select: { inventoryCostingActivatedAt: true } });
       if (!active?.inventoryCostingActivatedAt) return { status: "NOT_APPLICABLE", details: { reason: "inventory costing is not active (activated by the 4C valuation cutover)" } };
       const cur = ctx.business.baseCurrency;
-      const rows = await prisma.$queryRaw<Array<{ entryId: string; adjustment: Prisma.Decimal; eventStatus: string | null; payloadAdjustment: number | null }>>`
-        SELECT e.id AS "entryId", e."costAdjustment" AS adjustment, fe.status::text AS "eventStatus", (fe.payload->>'costAdjustmentMinor')::bigint::int AS "payloadAdjustment"
+      const rows = await prisma.$queryRaw<Array<{ entryId: string; adjustment: Prisma.Decimal; eventStatus: string | null; payloadAdjustment: number | null; posts: boolean }>>`
+        SELECT e.id AS "entryId", e."costAdjustment" AS adjustment, fe.status::text AS "eventStatus", (fe.payload->>'costAdjustmentMinor')::bigint::int AS "payloadAdjustment",
+               COALESCE((fe.payload->>'bookMinor')::bigint <> 0 OR (fe.payload->>'costAdjustmentMinor')::bigint <> COALESCE((fe.payload->>'unbookedDeficitChangeMinor')::bigint, 0), TRUE) AS posts
         FROM "InventoryValuationEntry" e
         LEFT JOIN "FinancialEvent" fe ON fe."businessId" = e."businessId" AND fe."eventKey" = 'valuation:' || e.id
         WHERE e."businessId" = ${ctx.business.id} AND (e."costAdjustment" <> 0 OR fe.id IS NOT NULL)`;
       const problems = rows
-        .map((r) => ({ entryId: r.entryId, adjustment: toMinor(r.adjustment, cur), eventStatus: r.eventStatus, posted: r.payloadAdjustment }))
-        .filter((r) => r.eventStatus !== "POSTED" || r.posted !== r.adjustment);
+        .map((r) => ({ entryId: r.entryId, adjustment: toMinor(r.adjustment, cur), eventStatus: r.eventStatus, posted: r.payloadAdjustment, posts: r.posts }))
+        // An unbooked fill-to-order deficit's issue / cover at the same cost moves nothing in the ledger: its event is IGNORED.
+        .filter((r) => !(r.eventStatus === "POSTED" || (r.eventStatus === "IGNORED" && !r.posts)) || r.posted !== r.adjustment)
+        .map(({ posts: _posts, ...r }) => r);
       return { status: problems.length ? "DIFFERENCE" : "MATCHED", details: { entriesWithPostings: rows.length, problems: problems.slice(0, 50) } };
     },
   },
@@ -737,13 +740,13 @@ export const RECONCILIATION_CHECKS = {
   // ── Phase 4C: the valuation cutover set the inventory account equal to valuation + in-transit ──────────────────────
   "inventory.valuation_vs_ledger": {
     label: "Inventory account = valuation",
-    description: "The inventory account's balance equals the valuation ledger's total value, plus the cost of units already out to orders whose cost of sales is not booked yet (in transit), less inventory booked at approved estimates since the cutover (units the valuation never held a cost for).",
+    description: "The inventory account's balance equals the valuation ledger's total value, plus the cost of units already out to orders whose cost of sales is not booked yet (in transit), less inventory booked at approved estimates since the cutover (units the valuation never held a cost for), less fill-to-order bottles ordered and not yet filled at their recipe cost (their materials are still in the valuation).",
     async run(ctx) {
       const active = await prisma.financeBusiness.findUnique({ where: { id: ctx.business.id }, select: { inventoryCostingActivatedAt: true } });
       if (!active?.inventoryCostingActivatedAt) return { status: "NOT_APPLICABLE", details: { reason: "inventory costing is not active (activated by the 4C valuation cutover)" } };
       const cur = ctx.business.baseCurrency;
       const b = await inventoryLedgerBridge(prisma, ctx.business, { estimatedSince: active.inventoryCostingActivatedAt });
-      const expected = b.valuationMinor + b.inTransitMinor - b.estimatedSinceMinor;
+      const expected = b.valuationMinor + b.inTransitMinor - b.estimatedSinceMinor - b.unbookedDeficitMinor;
       return {
         status: expected === b.ledgerMinor ? "MATCHED" : "DIFFERENCE",
         expected,
@@ -753,6 +756,7 @@ export const RECONCILIATION_CHECKS = {
           inTransit: toMajorNumber(b.inTransitMinor, cur),
           inTransitOrders: b.inTransit.orders,
           estimatedSinceCutover: toMajorNumber(b.estimatedSinceMinor, cur),
+          unfilledAtRecipeCost: toMajorNumber(b.unbookedDeficitMinor, cur),
         },
       };
     },

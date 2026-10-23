@@ -10,6 +10,14 @@
  * zero — PHASE_6_AUDIT "missing cost is not zero"); `deficitQty` units issued beyond stock (negative inventory, §15), with
  * the provisional cost each was issued at. Physical units = valuedQty + unvaluedQty − deficitQty.
  *
+ * A deficit layer is BOOKED (the default: its issue posted the provisional cost as a cost adjustment, Dr inventory /
+ * Cr 5150, and its cover posts the whole covered value back, so 5150 nets to actual − provisional) or UNBOOKED (a
+ * fill-to-order bottle sold before it is filled, at its recipe's standard cost, or ordered-not-filled at the cutover —
+ * docs/STOCK_HUB.md §3): its provisional cost is held OFF the inventory account, so its issue posts nothing and its cover
+ * posts only actual − provisional. Every entry states `unbookedDeficitChange` (the change of the unbooked layers' value);
+ * the ledger posts `costAdjustment − unbookedDeficitChange`, and the ledger bridge subtracts the unbooked deficit's value
+ * (inventory-cutover.service inventoryLedgerBridge), so ledger = valuation + in-transit − unbooked deficit throughout.
+ *
  * Every entry states `valueChange` (what the valuation moved) and `bookValue` (what the ledger's inventory account moves for
  * the same fact, posted by that fact's owner: Phase 3 for order-linked units at the line snapshot, Phase 4 documents
  * otherwise). `costAdjustment = valueChange − bookValue` is posted to inventory against 5150 Inventory cost adjustments, so
@@ -61,6 +69,8 @@ export interface DeficitLayer {
   qty: number;
   /** Provisional unit cost the units were issued at (minor units); null = issued with no cost known. */
   unitCostMinor: number | null;
+  /** The provisional cost is held off the inventory account (see the header); absent = booked. */
+  unbooked?: true;
 }
 
 export interface CostPosition {
@@ -90,13 +100,15 @@ export type CostOperation =
        * held unvalued; `valueMinor` is the value of the other units. */
       unvaluedQty?: number;
     }
-  /** Units out. SNAPSHOT: an order line's own unit cost (null = the line has none); AVERAGE: at the running average. */
-  | { type: "OUTFLOW"; qty: number; basis: { kind: "SNAPSHOT"; unitCostMinor: number | null } | { kind: "AVERAGE" } }
+  /** Units out. SNAPSHOT: an order line's own unit cost (null = the line has none); AVERAGE: at the running average.
+   * `unbooked`: the units issued beyond stock are an unbooked layer (a fill-to-order recipe cost — see the header). */
+  | { type: "OUTFLOW"; qty: number; basis: { kind: "SNAPSHOT"; unitCostMinor: number | null; unbooked?: boolean } | { kind: "AVERAGE" } }
   /** A value change (late invoice difference, landed cost) for `qty` units received earlier: the share still held revalues
    * the stock, the rest (sold) becomes a cost adjustment. */
   | { type: "REVALUE"; deltaMinor: number; qty: number }
-  /** The one-time cutover: the variant's first entry. qty = its physical stock (may be ≤ 0); valueMinor null = no cost. */
-  | { type: "CUTOVER"; qty: number; valueMinor: number | null; status?: Extract<FinanceValuationStatus, "KNOWN" | "ESTIMATED"> };
+  /** The one-time cutover: the variant's first entry. qty = its physical stock (may be ≤ 0); valueMinor null = no cost.
+   * `deficitUnitCostMinor`: units short (qty < 0) of a fill-to-order variant start as an unbooked layer at this cost. */
+  | { type: "CUTOVER"; qty: number; valueMinor: number | null; status?: Extract<FinanceValuationStatus, "KNOWN" | "ESTIMATED">; deficitUnitCostMinor?: number | null };
 
 export interface CostEntryFigures {
   kind: InventoryValuationKind;
@@ -113,6 +125,9 @@ export interface CostEntryFigures {
   /** Of a covering inflow: the provisional value the covered units had been issued at, and how many had none. */
   coveredProvisional: bigint;
   coveredWithoutCost: number;
+  /** Change of the unbooked deficit layers' value (minor units): + when issued, − when covered. The ledger posts
+   * `costAdjustment − unbookedDeficitChange`. */
+  unbookedDeficitChange: bigint;
 }
 
 const WORST: FinanceValuationStatus[] = ["KNOWN", "ESTIMATED", "MISSING"];
@@ -132,7 +147,7 @@ function withAverage(p: CostPosition, scale: bigint): CostPosition {
 /** Applies one operation to a position — the whole costing method. Pure and deterministic. */
 export function applyCostOperation(pos: CostPosition, op: CostOperation, currency: string): { next: CostPosition; entry: CostEntryFigures } {
   const scale = avgScale(currency);
-  const base = { coveredQty: 0, coveredProvisional: 0n, coveredWithoutCost: 0, deficitQtyChange: 0, unvaluedQtyChange: 0 };
+  const base = { coveredQty: 0, coveredProvisional: 0n, coveredWithoutCost: 0, deficitQtyChange: 0, unvaluedQtyChange: 0, unbookedDeficitChange: 0n };
 
   if (op.type === "CUTOVER") {
     if (pos !== EMPTY_POSITION && (pos.valuedQty || pos.unvaluedQty || pos.deficitQty || pos.value || pos.avgScaled !== null)) throw new Error("a cutover is only a variant's first valuation");
@@ -140,6 +155,11 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
     if (op.valueMinor !== null) assertMinor(op.valueMinor, "cutover value");
     if (op.qty <= 0 && op.valueMinor) throw new Error("a cutover with no units on hand carries no value");
     if (op.valueMinor !== null && op.valueMinor < 0) throw new Error("a cutover value can't be negative");
+    const short = op.qty < 0 ? (op.deficitUnitCostMinor ?? null) : null;
+    if (short !== null) {
+      assertMinor(short, "cutover deficit unit cost");
+      if (short < 0) throw new Error("a unit cost can't be negative");
+    }
     const valued = op.qty > 0 && op.valueMinor !== null;
     const next = withAverage({
       valuedQty: valued ? op.qty : 0,
@@ -147,7 +167,7 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
       avgScaled: null,
       unvaluedQty: op.qty > 0 && !valued ? op.qty : 0,
       deficitQty: op.qty < 0 ? -op.qty : 0,
-      deficitLayers: op.qty < 0 ? [{ qty: -op.qty, unitCostMinor: null }] : [],
+      deficitLayers: op.qty < 0 ? [short === null ? { qty: -op.qty, unitCostMinor: null } : { qty: -op.qty, unitCostMinor: short, unbooked: true as const }] : [],
     }, scale);
     const valueChange = next.value;
     return {
@@ -155,8 +175,9 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
       entry: {
         ...base, kind: "CUTOVER", qtyChange: op.qty, valueChange, bookValue: valueChange, costAdjustment: 0n,
         unitCostScaled: next.avgScaled, costBasis: "CUTOVER",
-        valuationStatus: op.qty > 0 && !valued ? "MISSING" : op.qty < 0 ? "MISSING" : (op.status ?? "KNOWN"),
+        valuationStatus: op.qty > 0 && !valued ? "MISSING" : op.qty < 0 ? (short === null ? "MISSING" : "ESTIMATED") : (op.status ?? "KNOWN"),
         deficitQtyChange: next.deficitQty, unvaluedQtyChange: next.unvaluedQty,
+        unbookedDeficitChange: short === null ? 0n : BigInt(short) * BigInt(-op.qty),
       },
     };
   }
@@ -177,6 +198,7 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
         deficitQtyChange: n.entry.deficitQtyChange + r.entry.deficitQtyChange,
         coveredQty: n.entry.coveredQty + r.entry.coveredQty,
         coveredWithoutCost: n.entry.coveredWithoutCost + r.entry.coveredWithoutCost,
+        unbookedDeficitChange: n.entry.unbookedDeficitChange + r.entry.unbookedDeficitChange,
       },
     };
   }
@@ -217,6 +239,7 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
     const coveredValue = covered === op.qty ? V : divRound(V * BigInt(covered), q);
     let left = covered;
     let coveredProvisional = 0n;
+    let coveredUnbooked = 0n;
     let coveredWithoutCost = 0;
     const layers: DeficitLayer[] = [];
     for (const l of pos.deficitLayers) {
@@ -225,7 +248,8 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
       left -= take;
       if (l.unitCostMinor === null) coveredWithoutCost += take;
       else coveredProvisional += BigInt(l.unitCostMinor) * BigInt(take);
-      if (l.qty > take) layers.push({ qty: l.qty - take, unitCostMinor: l.unitCostMinor });
+      if (l.unbooked && l.unitCostMinor !== null) coveredUnbooked += BigInt(l.unitCostMinor) * BigInt(take);
+      if (l.qty > take) layers.push({ ...l, qty: l.qty - take });
     }
     const rest = op.qty - covered;
     const next = withAverage({ ...pos, valuedQty: pos.valuedQty + rest, value: pos.value + (V - coveredValue), deficitQty: pos.deficitQty - covered, deficitLayers: layers }, scale);
@@ -235,7 +259,7 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
       entry: {
         ...base, kind: "INFLOW", qtyChange: op.qty, valueChange, bookValue: V, costAdjustment: valueChange - V,
         unitCostScaled: divRound(V * scale, q), costBasis: op.basis, valuationStatus: op.status ?? "KNOWN",
-        deficitQtyChange: -covered, coveredQty: covered, coveredProvisional, coveredWithoutCost,
+        deficitQtyChange: -covered, coveredQty: covered, coveredProvisional, coveredWithoutCost, unbookedDeficitChange: -coveredUnbooked,
       },
     };
   }
@@ -260,7 +284,8 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
     }
     const avgMinor = pos.avgScaled === null ? null : Number(divRound(pos.avgScaled, scale));
     const provisional = op.basis.kind === "SNAPSHOT" ? snapshot ?? null : avgMinor;
-    const layers = d > 0 ? [...pos.deficitLayers, { qty: d, unitCostMinor: provisional }] : pos.deficitLayers;
+    const unbooked = op.basis.kind === "SNAPSHOT" && op.basis.unbooked === true && provisional !== null;
+    const layers = d > 0 ? [...pos.deficitLayers, unbooked ? { qty: d, unitCostMinor: provisional, unbooked: true as const } : { qty: d, unitCostMinor: provisional }] : pos.deficitLayers;
     const next = withAverage({ ...pos, valuedQty: pos.valuedQty - v, value: pos.value - outV, unvaluedQty: pos.unvaluedQty - u, deficitQty: pos.deficitQty + d, deficitLayers: layers }, scale);
     const valueChange = -outV;
     // What the ledger moves: an order line is credited at its snapshot for every unit (Phase 3); a write-off / supplier
@@ -277,7 +302,7 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
         ...base, kind: "OUTFLOW", qtyChange: -op.qty, valueChange, bookValue, costAdjustment: valueChange - bookValue,
         unitCostScaled: op.basis.kind === "SNAPSHOT" ? (snapshot === null ? null : BigInt(snapshot!) * scale) : pos.avgScaled,
         costBasis: op.basis.kind === "SNAPSHOT" ? "SNAPSHOT" : "AVERAGE", valuationStatus: status,
-        deficitQtyChange: d, unvaluedQtyChange: -u,
+        deficitQtyChange: d, unvaluedQtyChange: -u, unbookedDeficitChange: unbooked ? BigInt(provisional!) * BigInt(d) : 0n,
       },
     };
   }
@@ -508,9 +533,55 @@ async function readVariantCosting(tx: AppTransactionClient, variantIds: string[]
  * INVENTORY_PROVISIONAL when some leave beyond valued stock (a provisional cost, trued up through 5150 later), NONE when no
  * cost was ever known (never zero, never the catalog).
  */
-function exitCost(position: CostPosition, qty: number, currency: string): { unitCostMinor: number | null; source: LineCostSource } {
+function exitCost(position: CostPosition, qty: number, currency: string, recipeMinor?: number | null): { unitCostMinor: number | null; source: LineCostSource; unbooked: boolean } {
   const unit = averageUnitCostMinor(position, currency);
-  return { unitCostMinor: unit, source: unit === null ? "NONE" : qty > position.valuedQty ? "INVENTORY_PROVISIONAL" : "INVENTORY" };
+  // A fill-to-order bottle sold before any was ever valued: its recipe's standard cost, provisional and unbooked (the fill
+  // that covers it posts only the difference) — so the sale carries a cost and nothing is costed twice.
+  if (unit === null && recipeMinor != null && position.unvaluedQty === 0) return { unitCostMinor: recipeMinor, source: "INVENTORY_PROVISIONAL", unbooked: true };
+  return { unitCostMinor: unit, source: unit === null ? "NONE" : qty > position.valuedQty ? "INVENTORY_PROVISIONAL" : "INVENTORY", unbooked: false };
+}
+
+/** One line of a fill-to-order variant's recipe (latest APPROVED bill of materials, lines the business supplies). */
+export interface RecipeCostLine { variantId: string; materialVariantId: string; qtyPerUnit: Prisma.Decimal; wastagePct: Prisma.Decimal }
+
+/** The recipe lines of the given variants whose product is fill to order (docs/STOCK_HUB.md §3; the same recipe the
+ * capacity engine reads). A line without a finished variant applies to every variant of the product. */
+export async function fillToOrderRecipeLines(db: AppTransactionClient | typeof prisma, variantIds: string[]): Promise<RecipeCostLine[]> {
+  if (!variantIds.length) return [];
+  return db.$queryRaw<RecipeCostLine[]>`
+    SELECT v.id AS "variantId", l."materialVariantId", l."qtyPerUnit", l."wastagePct"
+    FROM "ProductVariant" v
+    JOIN "Product" p ON p.id = v."productId" AND p."fillToOrder"
+    JOIN LATERAL (SELECT b.id FROM "BillOfMaterials" b WHERE b."productId" = p.id AND b.status = 'APPROVED' ORDER BY b.version DESC LIMIT 1) b ON TRUE
+    JOIN "BillOfMaterialsLine" l ON l."bomId" = b.id AND l."suppliedBy" = 'BUSINESS' AND (l."finishedVariantId" IS NULL OR l."finishedVariantId" = v.id)
+    WHERE v.id IN (${Prisma.join(variantIds)})`;
+}
+
+/**
+ * The recipe standard cost per unit, minor units: Σ qtyPerUnit × (1 + wastage% / 100) × the material's unit cost (major
+ * units), rounded half to even once. null for a variant with no recipe line, or when any of its materials has no cost.
+ */
+export function recipeStandardCosts(lines: RecipeCostLine[], materialCost: (materialVariantId: string) => Prisma.Decimal | null, currency: string): Map<string, number | null> {
+  const sums = new Map<string, Prisma.Decimal | null>();
+  for (const l of lines) {
+    if (sums.has(l.variantId) && sums.get(l.variantId) === null) continue;
+    const unit = materialCost(l.materialVariantId);
+    if (unit === null) { sums.set(l.variantId, null); continue; }
+    const need = new Prisma.Decimal(l.qtyPerUnit).mul(new Prisma.Decimal(1).add(new Prisma.Decimal(l.wastagePct).div(100)));
+    sums.set(l.variantId, (sums.get(l.variantId) ?? new Prisma.Decimal(0)).add(need.mul(unit)));
+  }
+  const factor = new Prisma.Decimal(10).pow(minorDigits(currency));
+  return new Map([...sums].map(([id, v]) => [id, v === null ? null : v.mul(factor).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_EVEN).toNumber()]));
+}
+
+/** Recipe standard costs at the materials' current moving averages (null where a material has none). */
+async function recipeCostsAtAverage(tx: AppTransactionClient, variantIds: string[], currency: string): Promise<Map<string, number | null>> {
+  const lines = await fillToOrderRecipeLines(tx, variantIds);
+  if (!lines.length) return new Map();
+  const mats = [...new Set(lines.map((l) => l.materialVariantId))];
+  const states = await tx.inventoryCostState.findMany({ where: { variantId: { in: mats } }, select: { variantId: true, avgUnitCost: true } });
+  const avg = new Map(states.map((s) => [s.variantId, s.avgUnitCost]));
+  return recipeStandardCosts(lines, (id) => avg.get(id) ?? null, currency);
 }
 
 /** Who books the movement's own value in the ledger. ORDER: the order's accounting (Phase 3, at the line's snapshot, when
@@ -537,12 +608,12 @@ export interface MovementToValue {
 
 const COUNTER_FOR_REASON: Record<string, AccountMappingKey> = { DAMAGED: "cogs.inventory_shrinkage", LOST: "cogs.inventory_shrinkage", PACKAGING_USE: "cogs.packaging" };
 
-function opFor(m: MovementToValue, position: CostPosition, currency: string): { op: CostOperation; unitCostMinor: number | null; lineSource?: LineCostSource } {
+function opFor(m: MovementToValue, position: CostPosition, currency: string, recipeMinor?: number | null): { op: CostOperation; unitCostMinor: number | null; lineSource?: LineCostSource } {
   const qty = Math.abs(m.movement.change);
   if (m.basis.kind === "ORDER_EXIT") {
     if (!m.basis.orderItemIds.length) throw new Error(`COSTING_EXIT_UNLINKED: stock of costed variant ${m.movement.variantId} left for an order without the order lines to cost`);
-    const c = exitCost(position, qty, currency);
-    return { op: { type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor: c.unitCostMinor } }, unitCostMinor: c.unitCostMinor, lineSource: c.source };
+    const c = exitCost(position, qty, currency, recipeMinor);
+    return { op: { type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor: c.unitCostMinor, ...(c.unbooked ? { unbooked: true } : {}) } }, unitCostMinor: c.unitCostMinor, lineSource: c.source };
   }
   if (m.basis.kind === "DOCUMENT") {
     if (m.movement.change < 0) throw new Error("a document value is an inflow; outflows leave at the average or a snapshot");
@@ -592,6 +663,10 @@ export async function valueStockMovementsInTx(
   const cur = scope.business.baseCurrency;
   const positions = new Map<string, CostPosition>();
   for (const [id, v] of facts) if (inScope(v, scope)) positions.set(id, positionOf(v.position, cur));
+  // Order exits of variants never valued (no average): a fill-to-order one takes its recipe's standard cost.
+  const neverValued = [...new Set(movements.filter((m) => m.basis.kind === "ORDER_EXIT" && m.movement.change < 0).map((m) => m.movement.variantId))]
+    .filter((id) => { const p = positions.get(id); return p !== undefined && p.avgScaled === null && p.unvaluedQty === 0; });
+  const recipe = neverValued.length ? await recipeCostsAtAverage(tx, neverValued.sort(), cur) : new Map<string, number | null>();
 
   // A variant appears at most once per persisted batch (its next movement needs the position this one produces).
   let batch: Array<{ m: MovementToValue; input: ValuationInput }> = [];
@@ -610,7 +685,7 @@ export async function valueStockMovementsInTx(
     if (m.movement.change === 0 || !positions.has(m.movement.variantId)) continue;
     if (batch.some((b) => b.m.movement.variantId === m.movement.variantId)) await flush();
     const position = positions.get(m.movement.variantId)!;
-    const { op, unitCostMinor, lineSource } = opFor(m, position, cur);
+    const { op, unitCostMinor, lineSource } = opFor(m, position, cur, recipe.get(m.movement.variantId));
     const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
     batch.push({
       m,
@@ -639,7 +714,8 @@ export async function valueStockMovementsInTx(
 async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: MovementToValue, result: ValuationResult) {
   const bookMinor = m.ledger === "MOVEMENT" ? Number(result.figures.bookValue) : 0;
   const adjustmentMinor = Number(result.figures.costAdjustment);
-  if (bookMinor === 0 && adjustmentMinor === 0) return;
+  const unbookedMinor = Number(result.figures.unbookedDeficitChange);
+  if (bookMinor === 0 && adjustmentMinor === 0 && unbookedMinor === 0) return;
   const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
   await recordFinancialEvent(tx, {
     contract: "finance.event",
@@ -659,6 +735,7 @@ async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: M
       bookMinor,
       counterKey: m.ledger === "MOVEMENT" ? (COUNTER_FOR_REASON[m.movement.reason] ?? "cogs.count_adjustments") : null,
       costAdjustmentMinor: adjustmentMinor,
+      ...(unbookedMinor ? { unbookedDeficitChangeMinor: unbookedMinor } : {}),
       status: result.figures.valuationStatus,
     },
   });

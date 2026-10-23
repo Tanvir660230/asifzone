@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { applyCostOperation, averageUnitCostMinor, divRound, EMPTY_POSITION, type CostOperation, type CostPosition } from "./costing.service";
+import { Prisma } from "@prisma/client";
+import { applyCostOperation, averageUnitCostMinor, divRound, EMPTY_POSITION, recipeStandardCosts, type CostOperation, type CostPosition } from "./costing.service";
 
 // Financial Core Phase 4A (docs/FINANCE_PHASE_4.md §13): the moving weighted-average method, figure by figure. Every
 // expected value below is computed by hand (BDT: 2 minor digits; the average is major units × 10^6).
@@ -216,5 +217,79 @@ describe("every entry obeys the adjustment rule and keeps physical units consist
     expect(() => run([receipt(1, -1)])).toThrow();
     expect(() => run([receipt(1, 10.5)])).toThrow();
     expect(() => run([sale(1, -5)])).toThrow();
+  });
+});
+
+// Fill to order (docs/STOCK_HUB.md §3): a bottle sold before it is filled leaves at its recipe's standard cost, and the
+// bottles ordered-not-filled at the cutover start at it. That provisional cost is held OFF the inventory account (no
+// adjustment when issued): the order credits it at delivery and the fill, which covers the units, posts only the
+// difference between what the bottles really cost and the provisional cost.
+describe("unbooked provisional deficits (fill to order)", () => {
+  const unfilled = (qty: number, unitCostMinor: number): CostOperation => ({ type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor, unbooked: true } });
+  /** What the ledger posts for an entry: the adjustment less what the unbooked deficit absorbs. */
+  const posted = (e: { costAdjustment: bigint; unbookedDeficitChange: bigint }) => e.costAdjustment - e.unbookedDeficitChange;
+
+  it("a sale before any fill: an unbooked layer at the recipe cost, nothing posted", () => {
+    const r = run([unfilled(2, 27_800)]);
+    expect(r.pos).toMatchObject({ deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: 27_800, unbooked: true }], valuedQty: 0, value: 0n });
+    ruleHolds(r.last);
+    expect(r.last).toMatchObject({ costAdjustment: 55_600n, unbookedDeficitChange: 55_600n, valuationStatus: "ESTIMATED", unitCostScaled: 278_000_000n });
+    expect(posted(r.last)).toBe(0n);
+  });
+
+  it("the fill covers it: only actual − provisional is posted (0 at the same prices)", () => {
+    const same = run([unfilled(2, 27_800), receipt(2, 55_600)]);
+    expect(same.pos).toMatchObject({ deficitQty: 0, deficitLayers: [], valuedQty: 0, value: 0n });
+    ruleHolds(same.last);
+    expect(same.last).toMatchObject({ coveredQty: 2, costAdjustment: -55_600n, unbookedDeficitChange: -55_600n });
+    expect(posted(same.last)).toBe(0n);
+    const dearer = run([unfilled(2, 27_800), receipt(3, 90_000)]); // 300 a bottle now
+    expect(dearer.pos).toMatchObject({ deficitQty: 0, valuedQty: 1, value: 30_000n });
+    expect(dearer.last).toMatchObject({ costAdjustment: -60_000n, unbookedDeficitChange: -55_600n });
+    expect(posted(dearer.last)).toBe(-4_400n); // 2 × (300 − 278) to 5150
+  });
+
+  it("a cancel before the fill nets the deficit at the same provisional cost, nothing posted", () => {
+    const r = run([unfilled(2, 27_800), { type: "INFLOW", qty: 2, valueMinor: 55_600, basis: "SNAPSHOT" }]);
+    expect(r.pos).toMatchObject({ deficitQty: 0, deficitLayers: [], unvaluedQty: 0, valuedQty: 0, value: 0n });
+    expect(r.last).toMatchObject({ coveredQty: 2, unbookedDeficitChange: -55_600n });
+    expect(posted(r.last)).toBe(0n);
+    // An inflow with no cost never settles a layer that has one.
+    expect(run([unfilled(1, 27_800), receipt(1, null)]).pos).toMatchObject({ deficitQty: 1, unvaluedQty: 1 });
+  });
+
+  it("booked layers (ordinary provisional deficits) are unchanged and covered in order", () => {
+    const ordinary = run([receipt(1, 10_000), sale(3, 10_000)]);
+    expect(ordinary.last).toMatchObject({ costAdjustment: 20_000n, unbookedDeficitChange: 0n });
+    expect(ordinary.pos.deficitLayers).toEqual([{ qty: 2, unitCostMinor: 10_000 }]);
+    const mixed = run([unfilled(1, 27_800), sale(1, 27_800), receipt(2, 60_000)], EMPTY_POSITION);
+    expect(mixed.last).toMatchObject({ coveredQty: 2, costAdjustment: -60_000n, unbookedDeficitChange: -27_800n });
+  });
+
+  it("the cutover starts unfilled bottles at the recipe cost, unbooked; a fill then posts the difference only", () => {
+    const c = run([{ type: "CUTOVER", qty: -3, valueMinor: null, deficitUnitCostMinor: 27_800 }]);
+    expect(c.pos).toMatchObject({ deficitQty: 3, deficitLayers: [{ qty: 3, unitCostMinor: 27_800, unbooked: true }] });
+    expect(c.last).toMatchObject({ costAdjustment: 0n, unbookedDeficitChange: 83_400n, valuationStatus: "ESTIMATED" });
+    const f = run([receipt(3, 83_400)], c.pos);
+    expect(posted(f.last)).toBe(0n);
+    // Without a recipe cost the cutover is as before (a no-cost deficit).
+    expect(run([{ type: "CUTOVER", qty: -2, valueMinor: null, deficitUnitCostMinor: null }]).last).toMatchObject({ valuationStatus: "MISSING", unbookedDeficitChange: 0n });
+  });
+});
+
+describe("recipe standard cost", () => {
+  const D = (n: string) => new Prisma.Decimal(n);
+  const lines = [
+    { variantId: "v6", materialVariantId: "oil", qtyPerUnit: D("6"), wastagePct: D("10") },
+    { variantId: "v6", materialVariantId: "btl", qtyPerUnit: D("1"), wastagePct: D("0") },
+    { variantId: "vx", materialVariantId: "oil", qtyPerUnit: D("12"), wastagePct: D("0") },
+    { variantId: "vx", materialVariantId: "none", qtyPerUnit: D("1"), wastagePct: D("0") },
+  ];
+  it("Σ qty × (1 + wastage) × material cost, rounded once; null when a material has no cost", () => {
+    const cost = (id: string) => (id === "oil" ? D("38.125") : id === "btl" ? D("50") : null);
+    const r = recipeStandardCosts(lines, cost, BDT);
+    expect(r.get("v6")).toBe(30_162); // 6.6 × 38.125 = 251.625 + 50 = 301.625 → 301.62 (half to even)
+    expect(r.get("vx")).toBeNull();
+    expect(r.has("other")).toBe(false);
   });
 });
