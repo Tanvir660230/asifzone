@@ -260,8 +260,10 @@ export const NAV_NODES: readonly NavNode[] = [
 
   // Inventory groups stock with production (docs/MANUFACTURING.md): materials, bills of materials and production orders
   // are the stock that is made rather than bought — kept within the 12 primary modules.
-  { id: "inventory", label: term("inventory"), kind: "module", index: "/admin/inventory", activeFor: ["/admin/manufacturing"], domain: "operate", icon: "inventory", capability: "inventory.view", order: 30, mobile: "primary", goKey: "i", keywords: ["stock", "production", "manufacturing"] },
-  { id: "inventory.stock", label: "Stock", kind: "page", parent: "inventory", domain: "operate", route: "/admin/inventory", capability: "inventory.view", order: 0, keywords: ["stock", "adjust", "movements"] },
+  { id: "inventory", label: term("inventory"), kind: "module", index: "/admin/stock", activeFor: ["/admin/manufacturing", "/admin/stock"], domain: "operate", icon: "inventory", capability: "inventory.view", order: 30, mobile: "primary", goKey: "i", keywords: ["stock", "production", "manufacturing"] },
+  // The stock hub (docs/STOCK_HUB.md): Bought · Filled · Counted — first, the page the owner works from.
+  { id: "inventory.hub", label: "Stock", kind: "page", parent: "inventory", domain: "operate", route: "/admin/stock", capability: "inventory.view", order: -1, keywords: ["stock", "bought", "purchase", "filled", "refill", "attar", "counted", "count", "materials", "oil", "bottle", "caps"] },
+  { id: "inventory.stock", label: "Stock levels", kind: "page", parent: "inventory", domain: "operate", route: "/admin/inventory", capability: "inventory.view", order: 0, keywords: ["stock", "adjust", "movements", "levels"] },
   { id: "inventory.production", label: "Production", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
   { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 2, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
   { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },

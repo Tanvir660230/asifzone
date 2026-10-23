@@ -40,6 +40,10 @@ export interface StockHubItem {
   productId: string;
   sku: string;
   name: string;
+  /** The product's name and the variant's own size and colour (as entered), so the page can group colours × sizes. */
+  productName: string;
+  size: string | null;
+  color: string | null;
   unit: string;
   stock: number;
   reserved: number;
@@ -94,7 +98,7 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
     const window = useWindowDays(firstOf.get(v.id) ?? null, now);
     const daysLeft = used > 0 ? Math.floor((left * window) / used) : null;
     groups[key].push({
-      variantId: v.id, productId: v.product.id, sku: v.sku, name: variantLabel(v), unit: unitOf(v.product),
+      variantId: v.id, productId: v.product.id, sku: v.sku, name: variantLabel(v), productName: v.product.name, size: v.size, color: v.color, unit: unitOf(v.product),
       stock: v.stock, reserved: waiting, expectedOnShelf: expectedOnShelf(v.stock, waiting), makeable,
       avgCost: viewer.canSeeCost && v.costState?.avgUnitCost != null ? Number(v.costState.avgUnitCost) : null,
       value: valueMinor === null ? null : toMajorNumber(valueMinor, cur),
