@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { useDiscardGuard } from "@/components/ui/discard-guard";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
@@ -87,6 +88,10 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
     },
   });
 
+  // Typed counts aren't lost to a stray Escape, the close button or Cancel: those ask first.
+  const dirty = Object.values(counted).some((v) => v.trim() !== "") || Object.values(reason).some(Boolean);
+  const guard = useDiscardGuard(dirty, onClose, "Discard these counts?");
+
   if (result) {
     return (
       <Modal open onClose={onClose} title="Counted" description={`Recorded for ${formatBookDate(result.date)}.`} widthClassName="max-w-2xl" footer={<Button onClick={onClose} data-testid="counted-close">Done</Button>}>
@@ -113,20 +118,20 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={guard.requestClose}
       title="Counted"
       description="Enter what is on the shelf. Leave a line empty if you didn't count it."
       widthClassName="max-w-2xl"
-      footer={
+      footer={guard.prompt ?? (
         <>
           <p className="mr-auto self-center text-sm text-fg-muted max-sm:order-last" aria-live="polite">
             {num(entered.length)} counted{differ ? ` · ${num(differ)} differ` : ""}
             {tried && problems.length > 0 && <span className="text-danger-700"> · {num(problems.length)} to fix</span>}
           </p>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={guard.requestClose}>Cancel</Button>
           <Button type="submit" form="stock-counted-form" loading={save.isPending} data-testid="counted-save">Record count</Button>
         </>
-      }
+      )}
     >
       <form id="stock-counted-form" className="space-y-4" onSubmit={(e) => {
         e.preventDefault();

@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { useDiscardGuard } from "@/components/ui/discard-guard";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { Table } from "@/components/ui/table";
@@ -146,6 +147,10 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
     },
   });
 
+  // Typed work isn't lost to a stray Escape, the close button or Cancel: those ask first.
+  const dirty = lines.length > 0 || extras.some((e) => e.description.trim() || e.amount.trim()) || supplier.trim() !== "";
+  const guard = useDiscardGuard(dirty, onClose, "Discard this purchase?");
+
   const submit = () => {
     setTried(true);
     if (valid) return save.mutate();
@@ -160,17 +165,17 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={guard.requestClose}
       title="Bought"
       description="What arrived, what you paid and who paid it."
       widthClassName="max-w-3xl"
-      footer={
+      footer={guard.prompt ?? (
         <>
           <p className="mr-auto self-center text-sm text-fg-muted max-sm:order-last" aria-live="polite">Total <span className="font-semibold tabular-nums text-fg">{formatPrice(totalMinor / 100)}</span></p>
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>
           <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">Record purchase</Button>
         </>
-      }
+      )}
     >
       <form id="stock-bought-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
         {problem && <div ref={errorRef}><ProblemAlert problem={problem} /></div>}
@@ -319,19 +324,20 @@ function QtyGrid({ line, onChange }: { line: Line; onChange: (p: Partial<Line>) 
   const colors = [...new Set(items.map((i) => colorOf(i) ?? ""))];
   const at = new Map(items.map((i) => [`${colorOf(i) ?? ""}|${sizeOf(i) ?? ""}`, i]));
   return (
-    <div className="-mx-1 mt-2 overflow-x-auto px-1 pb-1">
+    <div className="mt-2 overflow-x-auto pb-1">
       <Table data-no-stack="" className="w-auto border-separate border-spacing-1 text-sm" data-testid="bought-grid">
         <caption className="sr-only">How many of each colour and size</caption>
         <thead>
           <tr>
-            <th scope="col"><span className="sr-only">Colour</span></th>
+            <th scope="col" className="sticky left-0 z-10 bg-surface"><span className="sr-only">Colour</span></th>
             {sizes.map((s) => <th key={s} scope="col" className="px-1 text-center text-xs font-medium text-fg-muted">{s || "—"}</th>)}
           </tr>
         </thead>
         <tbody>
           {colors.map((c) => (
             <tr key={c}>
-              <th scope="row" className="pr-2 text-left text-xs font-medium text-fg">{c || "—"}</th>
+              {/* Pinned while the sizes scroll sideways on a phone, on a solid surface so inputs pass under it, never cut. */}
+              <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-surface pr-2 text-left text-xs font-medium text-fg">{c || "—"}</th>
               {sizes.map((s) => {
                 const v = at.get(`${c}|${s}`);
                 if (!v) return <td key={s} />;

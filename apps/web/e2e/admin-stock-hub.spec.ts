@@ -20,7 +20,7 @@ async function login(page: Page) {
   await page.goto("/admin/login?next=%2Fadmin%2Fstock");
   await page.getByLabel("Email").fill(OWNER.email);
   await page.getByLabel("Password").fill(OWNER.password);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/stock/, NAV);
 }
 
@@ -91,6 +91,27 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   const afterCount = await overview(page);
   expect(itemOf(afterCount, oil!.variantId).stock).toBe(oilNow.stock - 1);
   await expect(page.getByTestId("stock-summary")).toContainText("Last counted");
+});
+
+test("a sheet with typed counts asks before it closes; an empty one closes at once", async ({ page }) => {
+  await login(page);
+  await expect(page.getByTestId("stock-action-counted")).toBeVisible(NAV);
+  test.skip(!(await overview(page)).costingActive, "stock costing isn't live on this database (run it on a go-live rehearsal copy)");
+  await page.getByTestId("stock-action-counted").click();
+  const counted = page.getByRole("dialog", { name: "Counted" });
+  await counted.getByRole("button", { name: "Cancel" }).click();
+  await expect(counted).toBeHidden();
+
+  await page.getByTestId("stock-action-counted").click();
+  const field = counted.getByTestId("count-line").first().getByRole("textbox");
+  await field.fill("7");
+  await page.keyboard.press("Escape");
+  await expect(counted.getByTestId("discard-prompt")).toContainText("Discard these counts?");
+  await counted.getByRole("button", { name: "Keep editing" }).click();
+  await expect(field).toHaveValue("7");
+  await counted.getByRole("button", { name: "Cancel" }).click();
+  await counted.getByTestId("discard-confirm").click();
+  await expect(counted).toBeHidden();
 });
 
 test("the owner's home links goods in stock to the Stock page", async ({ page }) => {
