@@ -18,7 +18,7 @@ import { ensureManufacturingSetup } from "../../domain/manufacturing/manufacturi
 import { createMaterial } from "../../domain/manufacturing/materials.service";
 import { approveBom, createBom } from "../../domain/manufacturing/boms.service";
 import { fillCapacity, fillToOrderFloors, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
-import { recordSale, stockMovedSettled, stockShortfalls } from "../inventory/inventory.service";
+import { adjustVariantStock, recordSale, stockMovedSettled, stockShortfalls } from "../inventory/inventory.service";
 import { getProductBySlug, listProducts, updateProduct } from "../products/product.service";
 import { getCategoryStockMap, getCategoryStockOverview } from "../categories/category.service";
 import { createReturnRequest, previewExchange, reviewReturnRequest } from "../return-requests/return-request.service";
@@ -332,8 +332,38 @@ describe("fill to order beyond the checkout", () => {
     expect(variantOf(plain.product.id).sellable).toBeUndefined(); // an ordinary product sells its stock
   });
 
+  it("filled bottles crossing zero don't email shoppers waiting on a fill-to-order variant (it was for sale all along)", async () => {
+    const p = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await stockMovedSettled();
+    expect(await sells(p.variant)).toBeGreaterThan(0);
+    const customer = await prisma.customer.create({ data: { name: "VT attar filled", email: `vt-fto-filled-${RUN}@example.com` } });
+    const alert = await prisma.stockAlert.create({ data: { customerId: customer.id, variantId: p.variant } });
+    try {
+      await adjustVariantStock(p.variant, 2, "RESTOCK", admin, "two bottles filled"); // 0 → 2: a back-in-stock crossing for an ordinary product
+      await stockMovedSettled();
+      await new Promise((r) => setTimeout(r, 300));
+      expect((await prisma.stockAlert.findUniqueOrThrow({ where: { id: alert.id } })).notifiedAt).toBeNull();
+      await adjustVariantStock(p.variant, -2, "ADJUSTMENT", admin, "test: back to 0");
+      await stockMovedSettled();
+    } finally {
+      await prisma.stockAlert.delete({ where: { id: alert.id } });
+      await prisma.customer.delete({ where: { id: customer.id } });
+    }
+  });
+
   it("one cart, two fragrances short of a shared bottle together: a specific 409", async () => {
+    // Both fragrances sell nothing now (the shared 12 ml bottle went to the order above) — a shopper waits for Sweet.
+    await stockMovedSettled();
+    expect(await sells(sweet.variant)).toBe(0);
+    const customer = await prisma.customer.create({ data: { name: "VT attar waiting", email: `vt-fto-waiting-${RUN}@example.com` } });
+    const alert = await prisma.stockAlert.create({ data: { customerId: customer.id, variantId: sweet.variant } });
+    const notifiedAt = async () => (await prisma.stockAlert.findUniqueOrThrow({ where: { id: alert.id } })).notifiedAt;
     await buy(bottle12, 2, 52); // 3 bottles, 1 reserved by the unfilled 12 ml order above → each fragrance reads 2
+    // Bottles bought: Sweet can be made again, so the shopper is told it is back in stock.
+    await stockMovedSettled();
+    await expect.poll(notifiedAt, { timeout: 3000 }).not.toBeNull();
+    await prisma.stockAlert.delete({ where: { id: alert.id } });
+    await prisma.customer.delete({ where: { id: customer.id } });
     expect(await shown(royal.slug)).toBe(2);
     expect(await shown(sweet.slug)).toBe(2);
     const err = await placeOrder([{ variantId: royal.variant, quantity: 1 }, { variantId: sweet.variant, quantity: 2 }], { customerPhone: "01712000014" }).catch((e: unknown) => e);

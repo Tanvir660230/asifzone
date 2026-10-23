@@ -128,10 +128,10 @@ export async function ensureFreshReadModels(now: Date = new Date(), db: Db = pri
  * these variants — or that owns one — gets the refresh a product save gives (API cache, projection row, storefront tags).
  * A fill-to-order variant's own stock reserves (or, cancelled, frees) its recipe's materials, so the products sharing those
  * materials are refreshed too. Call after commit, fire-and-forget (inventory.service `notifyStockMoved`). One query when
- * nothing is fill-to-order. */
-export async function refreshProductsUsingMaterials(materialVariantIds: string[], db: Db = prisma): Promise<void> {
+ * nothing is fill-to-order. Returns the fill-to-order products it refreshed. */
+export async function refreshProductsUsingMaterials(materialVariantIds: string[], db: Db = prisma): Promise<string[]> {
   const ids = [...new Set(materialVariantIds)];
-  if (!ids.length) return;
+  if (!ids.length) return [];
   const usingOrOwning = (variantIds: string[]) =>
     db.product.findMany({
       where: {
@@ -149,7 +149,7 @@ export async function refreshProductsUsingMaterials(materialVariantIds: string[]
       },
     });
   const rows = await usingOrOwning(ids);
-  if (!rows.length) return;
+  if (!rows.length) return [];
   const seen = new Set(ids);
   const shared = [...new Set(rows.flatMap((r) => r.billsOfMaterials[0]?.lines.map((l) => l.materialVariantId) ?? []))].filter((id) => !seen.has(id));
   const affected = new Map([...rows, ...(shared.length ? await usingOrOwning(shared) : [])].map((r) => [r.id, r.slug]));
@@ -159,6 +159,26 @@ export async function refreshProductsUsingMaterials(materialVariantIds: string[]
   await invalidateProductDetailCache([...affected.values()]);
   await refreshReadModels(productIds, new Date(), db);
   void triggerStorefrontRevalidation({ productIds }).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
+  return productIds;
+}
+
+// Tests flag products fill to order directly in the database, many times a run: they always ask.
+const FILL_TO_ORDER_EXISTS_TTL_MS = process.env.VITEST ? 0 : 30_000;
+let fillToOrderExists: { value: boolean; at: number } | null = null;
+
+/** Whether any product sells fill to order — remembered for 30 s in this process, so a shop without attar pays nothing per
+ * stock movement. A product just switched to fill to order is refreshed by its own save; its materials' moves reach the
+ * storefront within the 30 s (the product page reads capacity live meanwhile). */
+export async function hasFillToOrderProducts(db: Db = prisma): Promise<boolean> {
+  if (fillToOrderExists && Date.now() - fillToOrderExists.at < FILL_TO_ORDER_EXISTS_TTL_MS) return fillToOrderExists.value;
+  const value = (await db.product.count({ where: { fillToOrder: true, deletedAt: null }, take: 1 })) > 0;
+  fillToOrderExists = { value, at: Date.now() };
+  return value;
+}
+
+/** Forgets the remembered answer of `hasFillToOrderProducts` (tests; a product switched to or from fill to order). */
+export function fillToOrderExistenceChanged(): void {
+  fillToOrderExists = null;
 }
 
 /** Full rebuild (deploy backfill, reconciliation repair): every non-trashed product, deterministic for `now`. */

@@ -1,13 +1,13 @@
 import { Prisma } from "@prisma/client";
-import type { ManualStockReason, StockMovementListQuery } from "@clothing-brand/shared";
+import { sellable, type ManualStockReason, type StockMovementListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { randomUUID } from "node:crypto";
-import { refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
-import { fillCapacityChanged, fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
+import { hasFillToOrderProducts, refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
+import { fillCapacity, fillCapacityChanged, fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
 import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
@@ -71,29 +71,86 @@ async function value(tx: Tx, items: Array<{ movement: MovementRow; basis: Moveme
   return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger })), scope, known);
 }
 
-/** Fire-and-forget back-in-stock emails for variants that just went from 0 to positive. Call after commit. */
+/** Fire-and-forget back-in-stock emails for variants whose stock just went from 0 to positive. Call after commit.
+ * A fill-to-order variant is left out: its filled bottles crossing zero says nothing about whether it can be bought (it sells
+ * what can still be made) — its shoppers are emailed when what it can sell goes from nothing to something (`flushStockMoved`). */
 export function notifyReplenished(variantIds: string[]): void {
-  for (const id of new Set(variantIds)) {
-    notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
-  }
+  const ids = [...new Set(variantIds)];
+  if (!ids.length) return;
+  void prisma.productVariant
+    .findMany({ where: { id: { in: ids }, product: { fillToOrder: true } }, select: { id: true } })
+    .then((filled) => {
+      const skip = new Set(filled.map((v) => v.id));
+      for (const id of ids) if (!skip.has(id)) notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
+    })
+    .catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
 }
 
+/** Trailing debounce for the fill-to-order refresh: an attar sale (or a burst of them) refreshes the products that share its
+ * materials once, after the moves stop for this long — at most MAX_WAIT after the first. In-process. */
+const STOCK_MOVED_DEBOUNCE_MS = 2_000;
+const STOCK_MOVED_MAX_WAIT_MS = 5_000;
+const pendingMoved = new Set<string>();
+let pendingSince = 0;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 const refreshing = new Set<Promise<void>>();
+/** What each fill-to-order variant could sell when last refreshed here — to spot "nothing → something" (back in stock). */
+const lastSellable = new Map<string, number>();
 
 /** Fire-and-forget after commit: these variants' stock moved, so the shop's memoised fill capacity is dropped (this
- * process; others within its TTL) and every fill-to-order product whose recipe uses one of them (a material) — or that
- * owns one — is refreshed for the storefront (docs/STOCK_HUB.md §3). One query otherwise. */
+ * process; others within its TTL) and — coalesced (STOCK_MOVED_DEBOUNCE_MS) — every fill-to-order product whose recipe uses
+ * one of them (a material), or that owns one, is refreshed for the storefront (docs/STOCK_HUB.md §3). Nothing at all when
+ * no product is fill to order. */
 export function notifyStockMoved(variantIds: string[]): void {
   if (!variantIds.length) return;
   fillCapacityChanged();
-  const run: Promise<void> = refreshProductsUsingMaterials(variantIds)
+  for (const id of variantIds) pendingMoved.add(id);
+  const now = Date.now();
+  if (!pendingTimer) pendingSince = now;
+  else clearTimeout(pendingTimer);
+  const wait = Math.max(0, Math.min(STOCK_MOVED_DEBOUNCE_MS, pendingSince + STOCK_MOVED_MAX_WAIT_MS - now));
+  pendingTimer = setTimeout(flushStockMoved, wait);
+  pendingTimer.unref?.();
+}
+
+/** Runs the coalesced refresh now (the debounce timer, or `stockMovedSettled`). */
+function flushStockMoved(): void {
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = null;
+  const ids = [...pendingMoved];
+  pendingMoved.clear();
+  if (!ids.length) return;
+  const run: Promise<void> = (async () => {
+    if (!(await hasFillToOrderProducts())) return;
+    const productIds = await refreshProductsUsingMaterials(ids);
+    await notifySellableAgain(productIds);
+  })()
     .catch((err) => captureError(err, { msg: "[read-model] fill-to-order refresh failed:" }))
     .finally(() => refreshing.delete(run));
   refreshing.add(run);
 }
 
-/** Resolves once every refresh `notifyStockMoved` started so far has finished (tests; a graceful shutdown). */
+/** Back in stock for fill to order: a variant of these products that could sell nothing at its last refresh (in this
+ * process) and can now — materials bought, an order cancelled — emails its waiting shoppers. The first refresh only
+ * records (nothing known before it). */
+async function notifySellableAgain(productIds: string[]): Promise<void> {
+  if (!productIds.length) return;
+  const variants = await prisma.productVariant.findMany({ where: { productId: { in: productIds }, product: { fillToOrder: true, trackInventory: true } }, select: { id: true, stock: true } });
+  if (!variants.length) return;
+  const made = await fillCapacity(prisma, { variantIds: variants.map((v) => v.id) });
+  const again: string[] = [];
+  for (const v of variants) {
+    const now = sellable(v.stock, made.get(v.id) ?? 0);
+    if (lastSellable.get(v.id) === 0 && now > 0) again.push(v.id);
+    lastSellable.set(v.id, now);
+  }
+  for (const id of again) notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
+}
+
+/** Runs any refresh still waiting for its debounce, then resolves once every refresh `notifyStockMoved` started so far has
+ * finished (tests; a graceful shutdown; the go-live script). */
 export async function stockMovedSettled(): Promise<void> {
+  flushStockMoved();
   while (refreshing.size) await Promise.allSettled([...refreshing]);
 }
 
