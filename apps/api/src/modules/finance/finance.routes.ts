@@ -64,6 +64,7 @@ import {
   profitShareRunSchema,
   profitSharePaySchema,
   ownerMoneySchema,
+  partnerCapitalSchema,
   payoutsTakenSchema,
   partnerActivityQuerySchema,
   equityQuerySchema,
@@ -305,6 +306,10 @@ financeRouter.post("/equity/profit-shares/run", SENSITIVE, validate(profitShareR
 financeRouter.get("/equity/partners/:id/activity", SENSITIVE, validate(partnerActivityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await partnerProfit.partnerActivity(id(req), req.query as never))));
 financeRouter.post("/equity/partners/:id/pay", SENSITIVE, validate(profitSharePaySchema), asyncHandler(async (req, res) => {
   const r = await partnerProfit.payPartner(id(req), req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/equity/partners/:id/capital", SENSITIVE, validate(partnerCapitalSchema), asyncHandler(async (req, res) => {
+  const r = await partnerProfit.partnerCapital(id(req), req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 financeRouter.post("/equity/owner/money", SENSITIVE, validate(ownerMoneySchema), asyncHandler(async (req, res) => {

@@ -312,6 +312,15 @@ export const profitSharePaySchema = z.object({
   /** Paid in advance, beyond what is owed (an advance against future shares): the owner's reason. */
   advanceReason: z.string().trim().min(3).max(300).optional(),
 });
+/** A partner's capital — put in (CONTRIBUTE, to their capital account) or taken back (RETURN, at most what is in it). */
+export const partnerCapitalSchema = z.object({
+  kind: z.enum(["CONTRIBUTE", "RETURN"]),
+  financialAccountId: id,
+  amount: financeAmountSchema.refine((v) => v > 0, "More than zero"),
+  date: businessDate.optional(),
+  method: z.enum(PAYMENT_METHODS).optional(),
+  note: optionalText(300),
+});
 /** The owner putting money in (INVEST, to owner capital) or taking it out (WITHDRAW, to drawings), through a money account. */
 export const ownerMoneySchema = z.object({
   kind: z.enum(["INVEST", "WITHDRAW"]),

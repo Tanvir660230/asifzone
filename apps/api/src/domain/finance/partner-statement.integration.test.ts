@@ -188,6 +188,28 @@ describe("the owner — net capital and drawings, the same everywhere", () => {
     expect([eq.balances.capital, -eq.balances.current]).toEqual([100_000, 25_000]);
   });
 
+  it("T18 an investor's capital: put in, returned, never below zero; separate from what they are owed", async () => {
+    const r = await api().post("/equity/partners", { name: `Capital investor ${RUN}`, joinedOn: "2026-08-01", role: "INVESTOR", agreedSharePct: 30 });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const id = r.body.id;
+    const capital = (kind: "CONTRIBUTE" | "RETURN", amount: number) => api().post(`/equity/partners/${id}/capital`, { kind, financialAccountId: bank, amount, date: "2026-09-01", method: "BANK" }, key("cap"));
+    expect((await capital("CONTRIBUTE", 50_000)).status).toBe(201);
+    expect((await capital("RETURN", 20_000)).status).toBe(201);
+    const over = await capital("RETURN", 40_000);
+    expect(over.status).toBe(409);
+    expect(over.body.details).toMatchObject({ code: "CAPITAL_RETURN_EXCEEDS", capital: 30_000, available: 30_000 });
+    const o = (await api().get("/equity/profit-shares")).body.partners.find((x: { partnerId: string }) => x.partnerId === id);
+    expect(o.balances.capital).toEqual({ contributed: 50_000, returned: 20_000, net: 30_000 });
+    expect(o.balances.postedPayable).toBe(0);
+    const s = (await api().get(`/equity/partners/${id}/statement`)).body;
+    expect(s.capital).toMatchObject({ closing: 30_000, reconciled: true });
+    const items = (await api().get(`/equity/partners/${id}/activity`)).body.items.map((i: { kind: string }) => i.kind);
+    expect(items).toEqual(["CAPITAL_BACK", "PUT_IN"]);
+    // the owner's money is not a partner's capital
+    const owner = (await api().get("/equity")).body.partners.find((p: { role: string }) => p.role === "OWNER");
+    if (owner) expect((await api().post(`/equity/partners/${owner.id}/capital`, { kind: "CONTRIBUTE", financialAccountId: bank, amount: 1 }, key("cap"))).status).toBe(400);
+  });
+
   it("ownership % and profit-share % are separate fields", async () => {
     const r = await api().post("/equity/partners", { name: `Investor ${RUN}`, joinedOn: "2026-08-01", role: "INVESTOR", agreedSharePct: 30, profitSharePct: 10, shareFrom: "2026-08-01" });
     expect(r.status, JSON.stringify(r.body)).toBe(201);

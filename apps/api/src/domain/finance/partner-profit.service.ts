@@ -251,6 +251,28 @@ export async function ownerMoney(input: { kind: "INVEST" | "WITHDRAW"; financial
   );
 }
 
+/**
+ * A partner's capital (31xx) — not their profit share: money they put in (a deposit to their capital account) or take back
+ * (a withdrawal from it). A return is at most what is in it, less returns waiting for approval (partner-payable.ts), so
+ * capital never goes below zero. The owner's own money goes through ownerMoney.
+ */
+export async function partnerCapital(partnerId: string, input: { kind: "CONTRIBUTE" | "RETURN"; financialAccountId: string; amount: number; date?: string; method?: PaymentMethod; note?: string | null }, actor: FinanceActor, key: string | null) {
+  const { business } = await getFinanceContext();
+  const p = await prisma.partner.findFirst({ where: { id: partnerId, businessId: business.id } });
+  if (!p) throw financeError(404, "PARTNER_NOT_FOUND", "Partner not found");
+  if (isBusinessOwner(p.role)) throw financeError(400, "OWNER_CAPITAL", "The owner's money in and out is recorded as owner money");
+  const how = input.method ? ` (${METHOD_LABEL[input.method]})` : "";
+  const date = input.date ?? businessToday(business);
+  const note = input.note ? ` — ${input.note}` : "";
+  return requestMovement(
+    input.kind === "CONTRIBUTE"
+      ? { kind: "DEPOSIT", movementDate: date, amount: input.amount, toFinancialAccountId: input.financialAccountId, counterAccountId: p.capitalAccountId, reference: partnerNumber(p.number), description: `Capital put in by ${p.name}${how}${note}`.slice(0, 300) }
+      : { kind: "WITHDRAWAL", movementDate: date, amount: input.amount, fromFinancialAccountId: input.financialAccountId, counterAccountId: p.capitalAccountId, reference: partnerNumber(p.number), description: `Capital returned to ${p.name}${how}${note}`.slice(0, 300) },
+    actor,
+    key ? `partner-capital:${key}` : null,
+  );
+}
+
 const tookKey = (settlementId: string) => `owner-took-payout:${settlementId}`;
 
 /** Posted courier / gateway payouts and whether the owner's taking of each is recorded. */

@@ -42,6 +42,7 @@ const firstName = (name: string) => name.split(" ")[0] ?? name;
 /** A partner role, not the admin's role: the owner keeps what is left, everyone else shares. */
 const isOwnerRole = (r: PartnerRole) => r === "OWNER";
 const isWorkingRole = (r: PartnerRole) => r === "WORKING";
+const isInvestorRole = (r: PartnerRole) => r === "INVESTOR";
 
 /** The owner and the partners (docs/FINANCE_EQUITY.md): what the owner put in and took out, and each working partner's
  * monthly share of the profit — earned, paid and owed — with every movement in date order. Owner-only. */
@@ -266,6 +267,7 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
   const activity = useQuery({ queryKey: financeApi.partnerKeys.activity(partner.id), queryFn: () => financeApi.getPartnerActivity(partner.id) });
   const qc = useQueryClient();
   const [paying, setPaying] = useState(false);
+  const [capital, setCapital] = useState<"CONTRIBUTE" | "RETURN" | null>(null);
   const run = useMutation({
     mutationFn: () => financeApi.runProfitShares(),
     onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.shared.length ? `Shared ${r.shared.length} month${r.shared.length === 1 ? "" : "s"}` : "Nothing to share yet"); },
@@ -332,6 +334,23 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
         )}
       </div>
 
+      {/* Capital is not profit: what the partner put in and took back, on their capital account — its own figures. */}
+      {b && (isInvestorRole(partner.role) || b.capital.contributed !== 0 || b.capital.returned !== 0) && (
+        <div className="space-y-3 border-t border-line-subtle px-5 py-4 sm:px-6" data-testid="partner-capital">
+          <p className="text-[15px] font-semibold text-fg">Capital</p>
+          <Figures>
+            <Figure label="Put in" value={b.capital.contributed} />
+            <Figure label="Returned" value={b.capital.returned} />
+            <Figure label="Net capital" value={b.capital.net} strong />
+          </Figures>
+          {canAct && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => setCapital("CONTRIBUTE")} data-testid="capital-in"><ArrowDownLeft className="h-4 w-4" /> Capital put in</Button>
+              {b.capital.net > 0 && <Button size="sm" variant="outline" onClick={() => setCapital("RETURN")} data-testid="capital-back"><ArrowUpRight className="h-4 w-4" /> Capital returned</Button>}
+            </div>
+          )}
+        </div>
+      )}
       {s && s.shares.length > 0 && (
         <div className="border-t border-line-subtle px-5 py-4 sm:px-6">
           <p className="mb-2 text-[15px] font-semibold text-fg">Month by month</p>
@@ -354,7 +373,44 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
       <Timeline items={activity.data?.items ?? []} loading={activity.isLoading} empty="No shares or payments yet." name={partner.name} />
       {/* What can be paid now; a negative figure means already paid that much in advance. */}
       {paying && s && <PayModal partner={partner} owed={s.balances.paidInAdvance > 0 ? -s.balances.paidInAdvance : s.balances.availableToPay} onClose={() => setPaying(false)} />}
+      {capital && b && <PartnerCapitalModal kind={capital} partner={partner} net={b.capital.net} onClose={() => setCapital(null)} />}
     </Card>
+  );
+}
+
+/** Capital in (to the partner's capital account) or back (at most what is in it — the API checks it again). */
+function PartnerCapitalModal({ kind, partner, net, onClose }: { kind: "CONTRIBUTE" | "RETURN"; partner: Partner; net: number; onClose: () => void }) {
+  const qc = useQueryClient();
+  const accounts = useMoneyAccounts();
+  const [amount, setAmount] = useState("");
+  const [account, setAccount] = useState("");
+  const [method, setMethod] = useState<PaymentMethod>("BANK");
+  const [date, setDate] = useState(today());
+  const [note, setNote] = useState("");
+  const n = Number(amount);
+  const back = kind === "RETURN";
+  const body = { kind, financialAccountId: account, amount: n, date, method, note: note.trim() || null };
+  const valid = Boolean(account) && n > 0 && (!back || n <= net) && Boolean(date) && date <= today();
+  const scope = `partner-capital-${partner.id}-${kind}`;
+  const save = useMutation({
+    mutationFn: () => financeApi.partnerCapital(partner.id, body, idempotencyKeyFor(scope, body)),
+    onSuccess: (r) => { settleIdempotencyKey(scope); void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.movement.status === "POSTED" ? "Saved" : "Saved — waits for approval"); onClose(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Couldn't save")),
+  });
+  return (
+    <Modal open onClose={onClose} title={back ? `Capital returned to ${partner.name}` : `Capital put in by ${partner.name}`}
+      description={back ? `At most ${formatPrice(net)} — the capital ${partner.name} has in the business.` : "Money the partner puts into the business as capital — not a profit share."} widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-capital">Save</Button></>}>
+      <div className="space-y-4">
+        <Field htmlFor="pc-amount" label="Amount" required error={back && n > net ? `At most ${formatPrice(net)}` : undefined}><Input id="pc-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
+        <div className="space-y-1.5"><p className="text-sm font-medium text-fg">How</p><SegmentedControl aria-label="Method" value={method} onChange={setMethod} options={METHODS} /></div>
+        <Field htmlFor="pc-acc" label={back ? "From" : "Into"} required>
+          <Select id="pc-acc" value={account} onChange={(e) => setAccount(e.target.value)}><option value="">Choose…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>
+        </Field>
+        <Field htmlFor="pc-date" label="Date" required><Input id="pc-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field htmlFor="pc-note" label="Note"><Input id="pc-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} /></Field>
+      </div>
+    </Modal>
   );
 }
 

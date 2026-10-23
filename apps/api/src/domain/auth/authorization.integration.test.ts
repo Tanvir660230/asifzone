@@ -225,6 +225,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/equity/owner/payouts-taken",
   "GET /api/v1/finance/equity/partners/:id/statement",
   "GET /api/v1/finance/equity/owner/summary",
+  "POST /api/v1/finance/equity/partners/:id/capital",
   "GET /api/v1/finance/events",
   "POST /api/v1/finance/events/:id/retry",
   "GET /api/v1/finance/opening-balances",
@@ -512,8 +513,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +2: stock hub Bought — record a purchase, list recent ones (docs/STOCK_HUB.md); +1: Counted; +1: the overview
     // +2: stock hub — one purchase, finishing a purchase stuck mid-way
     // +1: the catalog stock policy the product form reads (fill to order, costing live)
-    // +2: a partner's statement and the owner's summary (partner finance phase 2, owner-only)
-    expect(routes).toHaveLength(706);
+    // +2: a partner's statement and the owner's summary (partner finance phase 2, owner-only); +1: a partner's capital (phase 4)
+    expect(routes).toHaveLength(707);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
