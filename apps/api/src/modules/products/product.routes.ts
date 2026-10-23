@@ -82,6 +82,7 @@ productRouter.post("/import/commit", requireAdmin, requirePermission("products.i
 // Both of these return full records (costPrice included, isActive/deletedAt unfiltered) and are
 // only ever called from the admin console — the storefront uses GET /storefront and GET /slug/:slug.
 productRouter.get("/", requireAdmin, requirePermission("catalog.read"), validate(productListQuerySchema, "query"), productController.list);
+productRouter.get("/stock-policy", requireAdmin, requirePermission("catalog.read"), productController.stockPolicy);
 productRouter.get("/:id", requireAdmin, requirePermission("catalog.read"), productController.getOne);
 productRouter.get("/:id/history", requireAdmin, requirePermission("catalog.read"), productController.history);
 productRouter.get("/:id/sales-summary", requireAdmin, requirePermission("catalog.read"), productController.salesSummary);

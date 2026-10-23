@@ -600,6 +600,13 @@ export async function listProducts(query: ProductListQuery) {
   };
 }
 
+/** What every catalog editor's product form needs to know about stock: whether a tracked product's stock now changes only on
+ * the Stock page (inventory costing is live — the save refuses a stock edit then, STOCK_VIA_HUB). Readable with catalog.read,
+ * so the form doesn't depend on finance permissions to show stock read-only. */
+export async function getStockPolicy(): Promise<{ stockViaHub: boolean }> {
+  return { stockViaHub: (await prisma.$transaction((tx) => activeCostingInTx(tx))) !== null };
+}
+
 export async function getProductById(id: string) {
   const product = await prisma.product.findUnique({ where: { id }, include: detailInclude });
   if (!product) throw AppError.notFound("Product not found");

@@ -388,6 +388,8 @@ export async function setVariantStockFromForm(tx: Tx, variantId: string, desired
       `Stock for this variant changed since the form was loaded (now ${current}). Reload the product, or use Inventory → Adjust to add or remove units.`,
     );
   }
+  // Only sales take a (fill-to-order) variant below zero; an edit never does — the schema lets an unchanged negative through.
+  if (desired < 0) throw AppError.badRequest("Stock can't be set below 0");
   const delta = desired - current;
   await applyDelta(tx, variantId, delta, true);
   const mv = await tx.stockMovement.create({ data: movement(variantId, delta, "ADJUSTMENT", actor) });
@@ -401,6 +403,7 @@ export async function setVariantStockCount(tx: Tx, variantId: string, counted: n
   if (current === null) throw AppError.notFound("Variant not found");
   const delta = counted - current;
   if (delta === 0) return 0;
+  if (counted < 0) throw AppError.badRequest("A stock count can't be below 0");
   await applyDelta(tx, variantId, delta, false);
   const mv = await tx.stockMovement.create({ data: movement(variantId, delta, reason, actor) });
   await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);

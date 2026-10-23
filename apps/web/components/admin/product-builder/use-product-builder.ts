@@ -8,8 +8,6 @@ import { useProductFormState } from "@/components/admin/product-form-state";
 import type { StagedImage } from "@/components/admin/image-uploader";
 import * as productsApi from "@/lib/api/products";
 import * as catalogApi from "@/lib/api/catalog";
-import * as purchasingApi from "@/lib/api/purchasing";
-import { useCapabilities } from "@/hooks/use-capability";
 import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { resolvePreviewProduct } from "@/lib/wizard/resolve-preview";
@@ -103,9 +101,9 @@ export function useProductBuilder({ categories, initial }: UseProductBuilderOpti
   const { form, selectedConfig, resolvedSections, completeness, withPrunedAttributes, withStockExpectations, acknowledgeSavedStock } = formState;
   // Once stock costing is live, a tracked product's stock changes only as Bought, Filled or Counted on the Stock page —
   // the API refuses a form edit (409 STOCK_VIA_HUB), so the form shows stock read-only and leaves it out of the payload.
-  const { can } = useCapabilities();
-  const costing = useQuery({ queryKey: purchasingApi.purchasingKeys.status(), queryFn: purchasingApi.purchasingOverview, enabled: can("purchasing.view"), staleTime: 60_000 });
-  const stockLocked = Boolean(costing.data?.costingActive) && form.watch("trackInventory") !== false;
+  // Read from the catalog's own stock policy (catalog.read), so an editor without finance access gets the same lock.
+  const policy = useQuery({ queryKey: ["products", "stock-policy"], queryFn: productsApi.getStockPolicy, staleTime: 60_000 });
+  const stockLocked = Boolean(policy.data?.stockViaHub) && form.watch("trackInventory") !== false;
   const state: WizardState = { ...formState, stagedImages, onStagedChange: setStagedImages, stockLocked };
 
   /** With stock locked: existing variants send no stock (nothing to change), new ones start at 0. */

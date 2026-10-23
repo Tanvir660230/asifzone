@@ -74,6 +74,21 @@ describe("product form and CSV stock — before go-live", () => {
     await updateProduct(tracked.product.id, { variants: [variantRow(v0(), 6, 7), variantRow(v1(), 3, 3)] } as UpdateProductInput, admin, undefined, { stockMode: "count" });
     expect(await stock(v0().id)).toBe(6);
   });
+
+  it("a form edit or CSV count to below zero is refused (only fill to order goes negative, through sales)", async () => {
+    const r = await patch(tracked.product.id, { variants: [variantRow(v0(), -1, 6), variantRow(v1(), 3, 3)] });
+    expect(r.status, String(r.body.error)).toBe(400);
+    await expect(
+      updateProduct(tracked.product.id, { variants: [variantRow(v0(), -1, 6), variantRow(v1(), 3, 3)] } as UpdateProductInput, admin, undefined, { stockMode: "count" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(await stock(v0().id)).toBe(6);
+  });
+
+  it("the admin can read the stock policy: not via the hub before go-live", async () => {
+    const r = await request(app).get("/api/products/stock-policy").set("Cookie", [`access_token=${signAccessToken({ adminId: admin, role: "OWNER" })}`]);
+    expect(r.status, String(r.body.error)).toBe(200);
+    expect(r.body).toEqual({ stockViaHub: false });
+  });
 });
 
 describe("product form and CSV stock — after go-live", () => {
@@ -128,6 +143,29 @@ describe("product form and CSV stock — after go-live", () => {
     const p = await createProduct(input(`VT-HUB-P2-${RUN}`, 0), admin);
     made.push(p.id);
     expect(p.variants[0]!.stock).toBe(0);
+  });
+
+  it("the stock policy says stock moves via the hub after go-live", async () => {
+    const r = await request(app).get("/api/products/stock-policy").set("Cookie", [`access_token=${signAccessToken({ adminId: admin, role: "OWNER" })}`]);
+    expect(r.status, String(r.body.error)).toBe(200);
+    expect(r.body).toEqual({ stockViaHub: true });
+  });
+
+  it("a fill-to-order product sold below zero (−2) still saves a price change, from the form and from a CSV", async () => {
+    const attar = await createStockedProduct({ stocks: [0] });
+    const v = attar.variants[0]!;
+    await prisma.product.update({ where: { id: attar.product.id }, data: { fillToOrder: true } });
+    await prisma.$executeRaw`UPDATE "ProductVariant" SET stock = -2 WHERE id = ${v.id}`;
+    try {
+      const r = await patch(attar.product.id, { basePrice: 777, variants: [variantRow(v, -2, -2)] });
+      expect(r.status, String(r.body.error)).toBe(200);
+      expect(Number((await prisma.product.findUniqueOrThrow({ where: { id: attar.product.id } })).basePrice)).toBe(777);
+      expect(await stock(v.id)).toBe(-2);
+      await updateProduct(attar.product.id, { variants: [variantRow(v, -2, -2)] } as UpdateProductInput, admin, undefined, { stockMode: "count" });
+      expect(await stock(v.id)).toBe(-2);
+    } finally {
+      await prisma.$executeRaw`UPDATE "ProductVariant" SET stock = 0 WHERE id = ${v.id}`;
+    }
   });
 
   it("an untracked product's stock is not costed and stays editable", async () => {
