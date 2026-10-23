@@ -16,11 +16,12 @@
 import type { Prisma } from "@prisma/client";
 import { stockCountsSchema, type StockCountReason, type StockCountsInput } from "@clothing-brand/shared";
 import { prisma, type Db } from "../../config/prisma";
-import { adjustVariantStock } from "../../modules/inventory/inventory.service";
+import { adjustVariantStockInTx, afterAdjustment, lockVariantStock } from "../../modules/inventory/inventory.service";
 import type { FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { businessDateOf, financeError } from "../finance/finance-values";
-import { recordStockCount } from "../finance/stock-check.service";
+import { recordStockCountInTx } from "../finance/stock-check.service";
+import { financeTransaction } from "../finance/finance-tx";
 import { claimEntry, completeEntry, fingerprintOf, releaseEntry, renewLease, saveSteps, unitOf, variantLabel } from "./hub-entry";
 
 /** Order statuses whose units are still on the shelf (packed at most; not yet handed to the courier). */
@@ -121,40 +122,34 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
   try {
     for (const [i, line] of steps.lines.entries()) {
       if (line.done) continue;
-      if (!line.stockCountId) {
-        await renewLease(lease);
-        const sourceId = countSource(entry.id, i);
-        // Recorded before a crash: its expectation stands (the stock has not been adjusted for it yet).
-        const seen = await prisma.stockCount.findUnique({ where: { sourceId }, select: { id: true, siteStock: true } });
-        if (seen) {
-          line.expected = seen.siteStock;
-          line.difference = line.counted - seen.siteStock;
-          line.stockCountId = seen.id;
-        } else {
-          // What should be there now, read fresh: an order placed since the form opened changes the expectation.
-          const [now] = await prisma.productVariant.findMany({ where: { id: line.variantId }, select: { stock: true } });
-          const waiting = (await reservedNotDispatched(prisma, [line.variantId])).get(line.variantId) ?? 0;
-          line.expected = expectedOnShelf(now?.stock ?? 0, waiting);
-          line.difference = line.counted - line.expected;
-          const problem = reasonProblem(line.name, line.difference, line.reason);
-          if (problem) throw financeError(409, "COUNT_REASON", `${problem} (stock moved while counting)`, { lines: [problem] });
-          // kept with what should have been on the shelf, so Finance → Stock check shows the true difference
-          line.stockCountId = (await recordStockCount({ variantId: line.variantId, counted: line.counted, countDate: date, note: line.note, expected: line.expected, sourceId }, actor)).id;
-        }
-        await saveSteps(lease, steps as never);
-      }
       await renewLease(lease);
-      line.movementId = null;
-      if (line.difference) {
-        const reason: StockCountReason = line.reason ?? "FOUND";
-        const note = `Stock count ${date}: ${REASON_WORD[reason]}${line.note ? ` — ${line.note}` : ""}`.slice(0, 300);
-        const source = lineSource(entry.id, i);
-        const waiting = line.fillToOrder ? (await reservedNotDispatched(prisma, [line.variantId])).get(line.variantId) ?? 0 : 0;
-        await adjustVariantStock(line.variantId, line.difference, MOVEMENT_REASON[reason], actor.adminId, note, { source, floor: waiting });
-        const mv = await prisma.stockMovement.findFirstOrThrow({ where: { variantId: line.variantId, sourceType: source.type, sourceId: source.id }, select: { id: true } });
-        line.movementId = mv.id;
-      }
-      line.done = true;
+      const sourceId = countSource(entry.id, i);
+      const reason: StockCountReason = line.reason ?? "FOUND";
+      const note = `Stock count ${date}: ${REASON_WORD[reason]}${line.note ? ` — ${line.note}` : ""}`.slice(0, 300);
+      const source = lineSource(entry.id, i);
+      // One transaction per line, under the variant's row lock (the lock every sale takes): the expectation (stock + units
+      // waiting on orders), the count kept with it and the adjustment can't be split by an order placed in between.
+      const booked = await financeTransaction(async (tx) => {
+        const stock = await lockVariantStock(tx, line.variantId);
+        if (stock === null) throw financeError(400, "VARIANT_NOT_FOUND", `${line.name}: item not found`);
+        const waiting = (await reservedNotDispatched(tx, [line.variantId])).get(line.variantId) ?? 0;
+        // Recorded on an earlier attempt: its expectation stands (any adjustment made for it is found by its source).
+        const seen = await tx.stockCount.findUnique({ where: { sourceId }, select: { id: true, siteStock: true } });
+        const expected = seen ? seen.siteStock : expectedOnShelf(stock, waiting);
+        const difference = line.counted - expected;
+        if (!seen) {
+          const problem = reasonProblem(line.name, difference, line.reason);
+          if (problem) throw financeError(409, "COUNT_REASON", `${problem} (stock moved while counting)`, { lines: [problem] });
+        }
+        // kept with what should have been on the shelf, so Finance → Stock check shows the true difference
+        const stockCountId = seen ? seen.id : (await recordStockCountInTx(tx, business, { variantId: line.variantId, counted: line.counted, countDate: date, note: line.note, expected, sourceId }, actor)).id;
+        if (!difference) return { expected, difference, stockCountId, movementId: null, adjusted: null };
+        const adjusted = await adjustVariantStockInTx(tx, line.variantId, difference, MOVEMENT_REASON[reason], actor.adminId, note, { source, floor: line.fillToOrder ? waiting : 0 });
+        const mv = await tx.stockMovement.findFirstOrThrow({ where: { variantId: line.variantId, sourceType: source.type, sourceId: source.id }, select: { id: true } });
+        return { expected, difference, stockCountId, movementId: mv.id, adjusted };
+      });
+      if (booked.adjusted) afterAdjustment(booked.adjusted);
+      Object.assign(line, { expected: booked.expected, difference: booked.difference, stockCountId: booked.stockCountId, movementId: booked.movementId, done: true });
       await saveSteps(lease, steps as never);
     }
     await completeEntry(lease, steps as never);

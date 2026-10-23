@@ -453,30 +453,57 @@ export async function recordPackagingUse(tx: Tx, orderId: string, items: Array<{
  * `source`: the document line the adjustment is for (a stock hub count line) — written on the movement, and an adjustment
  * already made for it is not made again (a retry). `floor`: how far below zero stock may go (a fill-to-order variant whose
  * unfilled orders already took it below zero, docs/STOCK_HUB.md §3); 0 otherwise. */
-export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null, opts: { source?: { type: string; id: string }; floor?: number } = {}) {
+export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null, opts: AdjustOptions = {}) {
+  const result = await prisma.$transaction((tx) => adjustVariantStockInTx(tx, variantId, delta, reason, adminId, note, opts));
+  afterAdjustment(result);
+  return result.variant;
+}
+
+export interface AdjustOptions {
+  source?: { type: string; id: string };
+  floor?: number;
+}
+export interface AdjustResult {
+  variant: Prisma.ProductVariantGetPayload<object>;
+  /** Went from 0 or below to above 0 (a back-in-stock crossing). */
+  replenished: boolean;
+  /** A movement was written (false: the source's adjustment was already made). */
+  moved: boolean;
+}
+
+/** `adjustVariantStock` inside the caller's transaction — for a caller that must read something (units waiting on orders, an
+ * expectation) under the same variant row lock the adjustment takes, so no sale can slip in between (lock it first with
+ * `lockVariantStock`). The caller hands the result to `afterAdjustment` once its transaction has committed. */
+export async function adjustVariantStockInTx(tx: Tx, variantId: string, delta: number, reason: ManualStockReason, adminId: string | null, note?: string | null, opts: AdjustOptions = {}): Promise<AdjustResult> {
   if (delta === 0) throw AppError.badRequest("Delta cannot be zero");
   if ((reason === "DAMAGED" || reason === "LOST") && delta > 0) throw AppError.badRequest("Damaged or lost stock must be a negative change");
   if (reason === "RESTOCK" && delta < 0) throw AppError.badRequest("A restock must add stock");
   const source = opts.source ? { sourceType: opts.source.type, sourceId: opts.source.id } : null;
+  if (source && (await tx.stockMovement.findFirst({ where: { variantId, ...source }, select: { id: true } }))) {
+    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: false, moved: false };
+  }
+  const after = await applyDelta(tx, variantId, delta, true, Math.max(0, opts.floor ?? 0));
+  if (after === null) {
+    const exists = await tx.productVariant.count({ where: { id: variantId } });
+    throw exists ? AppError.conflict("Stock cannot go below zero") : AppError.notFound("Variant not found");
+  }
+  const mv = await tx.stockMovement.create({ data: { ...movement(variantId, delta, reason, { adminId, note }), ...source } });
+  // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
+  // known) and booked against shrinkage / count adjustments — never as a purchase.
+  await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
+  return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0, moved: true };
+}
 
-  const { variant, replenished, moved } = await prisma.$transaction(async (tx) => {
-    if (source && (await tx.stockMovement.findFirst({ where: { variantId, ...source }, select: { id: true } }))) {
-      return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: false, moved: false };
-    }
-    const after = await applyDelta(tx, variantId, delta, true, Math.max(0, opts.floor ?? 0));
-    if (after === null) {
-      const exists = await tx.productVariant.count({ where: { id: variantId } });
-      throw exists ? AppError.conflict("Stock cannot go below zero") : AppError.notFound("Variant not found");
-    }
-    const mv = await tx.stockMovement.create({ data: { ...movement(variantId, delta, reason, { adminId, note }), ...source } });
-    // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
-    // known) and booked against shrinkage / count adjustments — never as a purchase.
-    await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
-    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0, moved: true };
-  });
-  if (replenished) notifyReplenished([variantId]);
-  if (moved) notifyStockMoved([variantId]);
-  return variant;
+/** After commit: back-in-stock emails and the storefront refresh for an adjustment made with `adjustVariantStockInTx`. */
+export function afterAdjustment(result: Pick<AdjustResult, "variant" | "replenished" | "moved">): void {
+  if (result.replenished) notifyReplenished([result.variant.id]);
+  if (result.moved) notifyStockMoved([result.variant.id]);
+}
+
+/** Row-locked read of a variant's stock (null if it doesn't exist) — the lock every stock change takes, held to the end of
+ * the caller's transaction. */
+export async function lockVariantStock(tx: Tx, variantId: string): Promise<number | null> {
+  return lockStock(tx, variantId);
 }
 
 export async function listStockMovements(query: StockMovementListQuery) {

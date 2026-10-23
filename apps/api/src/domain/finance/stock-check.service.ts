@@ -13,7 +13,7 @@
  * from the parcels booked with the courier between opening and finishing a roll.
  */
 import { addDays, businessDayStartUtc } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
+import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
@@ -198,22 +198,31 @@ export async function recordStockCount(
   actor: FinanceActor,
 ) {
   const { business } = await getFinanceContext();
+  return financeTransaction((tx) => recordStockCountInTx(tx, business, input, actor));
+}
+
+/** `recordStockCount` in the caller's transaction (the stock hub's Counted: the count, its expectation and the adjustment
+ * under one variant lock). */
+export async function recordStockCountInTx(
+  tx: AppTransactionClient,
+  business: { id: string; timezone: string },
+  input: { variantId: string; counted: number; countDate?: string; note?: string | null; expected?: number; sourceId?: string },
+  actor: FinanceActor,
+) {
   const date = input.countDate ?? businessToday(business);
   if (date > businessToday(business)) throw financeError(400, "STOCK_COUNT_FUTURE", "A count can't be dated in the future");
-  return financeTransaction(async (tx) => {
-    if (input.sourceId) {
-      const seen = await tx.stockCount.findUnique({ where: { sourceId: input.sourceId }, select: { id: true, counted: true, siteStock: true } });
-      if (seen) return { id: seen.id, siteStock: seen.siteStock, difference: seen.counted - seen.siteStock, existed: true };
-    }
-    const v = await tx.productVariant.findUnique({ where: { id: input.variantId }, select: { id: true, stock: true, sku: true } });
-    if (!v) throw financeError(404, "VARIANT_NOT_FOUND", "That product or material wasn't found");
-    const siteStock = input.expected ?? v.stock;
-    const c = await tx.stockCount.create({
-      data: { businessId: business.id, variantId: v.id, countDate: dateColumn(date), counted: input.counted, siteStock, note: input.note ?? null, countedByAdminId: adminOf(actor), sourceId: input.sourceId ?? null },
-    });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "stock_count.record", entityType: "StockCount", entityId: c.id, before: null, after: { sku: v.sku, date, counted: input.counted, siteStock, stock: v.stock, sourceId: input.sourceId ?? null } });
-    return { id: c.id, siteStock, difference: input.counted - siteStock, existed: false };
+  if (input.sourceId) {
+    const seen = await tx.stockCount.findUnique({ where: { sourceId: input.sourceId }, select: { id: true, counted: true, siteStock: true } });
+    if (seen) return { id: seen.id, siteStock: seen.siteStock, difference: seen.counted - seen.siteStock, existed: true };
+  }
+  const v = await tx.productVariant.findUnique({ where: { id: input.variantId }, select: { id: true, stock: true, sku: true } });
+  if (!v) throw financeError(404, "VARIANT_NOT_FOUND", "That product or material wasn't found");
+  const siteStock = input.expected ?? v.stock;
+  const c = await tx.stockCount.create({
+    data: { businessId: business.id, variantId: v.id, countDate: dateColumn(date), counted: input.counted, siteStock, note: input.note ?? null, countedByAdminId: adminOf(actor), sourceId: input.sourceId ?? null },
   });
+  await recordFinanceAudit(tx, { businessId: business.id, actor, action: "stock_count.record", entityType: "StockCount", entityId: c.id, before: null, after: { sku: v.sku, date, counted: input.counted, siteStock, stock: v.stock, sourceId: input.sourceId ?? null } });
+  return { id: c.id, siteStock, difference: input.counted - siteStock, existed: false };
 }
 
 /** Parcels booked with the courier on the days a roll was in use (both ends included). */
