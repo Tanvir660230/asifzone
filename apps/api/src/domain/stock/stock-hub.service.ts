@@ -62,7 +62,7 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
   const variants = await prisma.productVariant.findMany({
     where: { product: { deletedAt: null, trackInventory: true }, OR: [{ isActive: true }, { stock: { not: 0 } }] },
     select: {
-      id: true, sku: true, size: true, color: true, stock: true,
+      id: true, sku: true, size: true, color: true, stock: true, createdAt: true,
       product: { select: { id: true, name: true, kind: true, stockUnit: true, fillToOrder: true } },
       costState: { select: { avgUnitCost: true, value: true } },
     },
@@ -70,17 +70,20 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
   });
   const ids = variants.map((v) => v.id);
   const since = new Date(Date.now() - USE_WINDOW_DAYS * 86_400_000);
-  const [reserved, made, use, first, biz, last, rolls] = await Promise.all([
+  const [reserved, made, use, biz, last, rolls] = await Promise.all([
     reservedNotDispatched(prisma),
     variants.some((v) => v.product.fillToOrder) ? fillCapacity(prisma) : Promise.resolve(new Map<string, number>()),
     prisma.stockMovement.groupBy({ by: ["variantId"], where: { variantId: { in: ids }, createdAt: { gte: since }, reason: { in: [...USE_REASONS] } }, _sum: { change: true } }),
-    // when each variant first moved: an item younger than the window divides its use by the days it has existed
-    prisma.stockMovement.groupBy({ by: ["variantId"], where: { variantId: { in: ids } }, _min: { createdAt: true } }),
     prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { inventoryCostingActivatedAt: true } }),
     prisma.stockCount.findFirst({ where: { businessId: business.id }, orderBy: [{ countDate: "desc" }, { createdAt: "desc" }], select: { countDate: true } }),
     listRolls({ openOnly: true }),
   ]);
   const usedOf = new Map(use.map((u) => [u.variantId, Math.max(0, -(u._sum.change ?? 0))]));
+  // An item younger than the window divides its use by the days it has existed, from its first movement (history may be
+  // back-dated before the row was made). Only an item created inside the window and used in it can be younger — the rest
+  // divide by the whole window — so only their movements are scanned, not every movement on every load.
+  const young = variants.filter((v) => v.createdAt >= since && (usedOf.get(v.id) ?? 0) > 0).map((v) => v.id);
+  const first = young.length ? await prisma.stockMovement.groupBy({ by: ["variantId"], where: { variantId: { in: young } }, _min: { createdAt: true } }) : [];
   const firstOf = new Map(first.map((m) => [m.variantId, m._min.createdAt]));
   const now = Date.now();
 
@@ -95,7 +98,7 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
     const used = usedOf.get(v.id) ?? 0;
     // What lasts: filled bottles plus what can still be made for a fill-to-order variant; the shelf otherwise.
     const left = makeable !== null ? sellable(v.stock, makeable) : Math.max(0, v.stock);
-    const window = useWindowDays(firstOf.get(v.id) ?? null, now);
+    const window = v.createdAt < since ? USE_WINDOW_DAYS : useWindowDays(firstOf.get(v.id) ?? v.createdAt, now);
     const daysLeft = used > 0 ? Math.floor((left * window) / used) : null;
     groups[key].push({
       variantId: v.id, productId: v.product.id, sku: v.sku, name: variantLabel(v), productName: v.product.name, size: v.size, color: v.color, unit: unitOf(v.product),
