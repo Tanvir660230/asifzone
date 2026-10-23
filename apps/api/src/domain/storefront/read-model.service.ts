@@ -228,7 +228,9 @@ export interface StorefrontPresentable extends PriceableProduct {
   variants: Array<{ id: string; price: unknown; compareAtPrice?: unknown; isActive?: boolean; stock: number; markedSoldOut?: boolean }>;
 }
 
-export type StorefrontProduct<T> = T & {
+/** `fillToOrder` is read to present the product but never leaves the API: whether a product is made to order is the shop's
+ * business, not the shopper's (docs/STOCK_HUB.md §3). */
+export type StorefrontProduct<T> = Omit<T, "fillToOrder"> & {
   pricing: ProductPricingDto;
   availability: ProductAvailability;
   activeFlashSale: {
@@ -261,8 +263,10 @@ export async function presentStorefrontProducts<T extends StorefrontPresentable>
         : raw.variants;
     const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, variants);
     const product = forSale.variants === raw.variants ? raw : { ...raw, trackInventory: forSale.trackInventory, variants: forSale.variants };
+    const { fillToOrder: _fillToOrder, ...shown } = product;
+    void _fillToOrder;
     return {
-      ...product,
+      ...shown,
       pricing: p,
       availability: productAvailability({ trackInventory: product.trackInventory, lowStockThreshold: product.lowStockThreshold, variants: product.variants }),
       activeFlashSale: p.flash

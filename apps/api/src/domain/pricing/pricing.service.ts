@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { Prisma } from "@prisma/client";
 import {
   DEFAULT_ROUNDING_POLICY,
+  MAX_LINE_QUANTITY,
   buildQuote,
   couponValue,
   evaluateCoupon,
@@ -353,9 +354,15 @@ export async function quoteOrderModification(req: ModificationQuoteRequest, db: 
   return { quote, token: quoteToken(quote), rows };
 }
 
+/** The quote as the shopper's browser sees it. A fill-to-order line's `stock` is what can still be made — exact inside the
+ * quote (its checks), but shown at most MAX_LINE_QUANTITY (the most one line may hold), like the storefront read model, so the
+ * public quote never tells anyone how much oil or how many bottles are left (docs/STOCK_HUB.md §3). */
 export function toQuoteDto(priced: PricedQuote, now: Date = new Date()): QuoteDto {
+  const lines = priced.quote.lines.map((l) =>
+    l.stock > MAX_LINE_QUANTITY && priced.rows.get(l.variantId)?.product.fillToOrder ? { ...l, stock: MAX_LINE_QUANTITY } : l,
+  );
   return {
-    ...(quoteMoneyToMajor(priced.quote) as Omit<QuoteDto, "token" | "expiresAt">),
+    ...(quoteMoneyToMajor({ ...priced.quote, lines }) as Omit<QuoteDto, "token" | "expiresAt">),
     token: priced.token,
     expiresAt: new Date(now.getTime() + QUOTE_TTL_MS).toISOString(),
   };

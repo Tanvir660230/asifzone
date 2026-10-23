@@ -23,7 +23,7 @@ import { getProductBySlug, listProducts, updateProduct } from "../products/produ
 import { getCategoryStockMap, getCategoryStockOverview } from "../categories/category.service";
 import { createReturnRequest, previewExchange, reviewReturnRequest } from "../return-requests/return-request.service";
 import { applyOrderModification } from "./order-modification.service";
-import { quoteCart } from "../../domain/pricing/pricing.service";
+import { quoteCart, toQuoteDto } from "../../domain/pricing/pricing.service";
 import { deleteOrder, deriveOrderPricing, insertOrderRecord, restoreOrder, updateOrderStatus } from "./order.service";
 import { quickRefill } from "../../domain/manufacturing/quick-refill.service";
 import { processFinancialEvent } from "../../domain/finance/events.service";
@@ -133,6 +133,11 @@ describe("fill to order", () => {
     expect(await shown(azhaar.slug)).toBe(MAX_LINE_QUANTITY); // the website never shows more than one line may hold (no material counts leak)
     const quote = await quoteCart({ items: [{ variantId: azhaar.variant, quantity: 2 }] });
     expect(quote.quote.warnings.filter((w) => w.code === "INSUFFICIENT_STOCK")).toEqual([]);
+    // The public quote shows the same capped figure — never the exact capacity (108) the check above used internally.
+    expect(quote.quote.lines[0]!.stock).toBe(108);
+    expect(toQuoteDto(quote).lines[0]!.stock).toBe(MAX_LINE_QUANTITY);
+    // …and no storefront product payload says the product is filled to order.
+    expect(await getProductBySlug(azhaar.slug)).not.toHaveProperty("fillToOrder");
     const order = await placeOrder([{ variantId: azhaar.variant, quantity: 2 }]);
     firstOrder = order.id;
     expect(await stockOf(azhaar.variant)).toBe(-2);
