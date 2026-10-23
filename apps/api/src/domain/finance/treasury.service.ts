@@ -26,6 +26,7 @@ import { postJournalInTx, reverseJournalInTx, type JournalLineSpec } from "./jou
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
 import { moneyBalanceAt } from "./ledger.service";
+import { assertAdvanceAllowed, assertMayTouchPartner, assertPartnerDebit, debitsCounter, isPartnerAdvance, partnerAccountOf, PARTNER_ADVANCE_ACTION } from "./partner-payable";
 
 export interface MovementRequest {
   kind: TreasuryMovementKind;
@@ -48,6 +49,9 @@ export interface MovementRequest {
   refundOfCreditNoteId?: string | null;
   /** TRANSFER only (owner's books §2): the person holding the destination cash — the handover waits until they confirm. */
   receiverAdminId?: string | null;
+  /** WITHDRAWAL to a non-owner partner's current account only: paid in advance, beyond what they are owed — the owner's
+   * reason (partner-payable.ts). */
+  partnerAdvanceReason?: string | null;
 }
 
 /** Kinds of money account whose balance can't go below zero (an overdraft exists only at a bank or a gateway). */
@@ -106,6 +110,7 @@ function fingerprintOf(r: MovementRequest, currency: string): string {
     r.counterAccountId ?? null, r.reference ?? null, r.description, r.bankTransactionId ?? null, ...(r.supplierId ? [r.supplierId] : []),
     ...(r.kind === "SUPPLIER_REFUND" ? [r.refundOfPaymentId ?? null, r.refundOfCreditNoteId ?? null] : []),
     ...(r.receiverAdminId ? [r.receiverAdminId] : []),
+    ...(r.partnerAdvanceReason ? ["advance", r.partnerAdvanceReason] : []),
   ]);
 }
 
@@ -234,6 +239,12 @@ const DESCRIPTION: Record<TreasuryMovementKind, string> = {
 };
 
 async function postMovement(tx: AppTransactionClient, business: FinanceBusinessInfo, m: TreasuryMovement, x: Resolved, actor: FinanceActor, approval: boolean) {
+  // Money out to a partner is checked again as it posts (an approval may come after the balance changed); lock order:
+  // movement / key → partner → money accounts.
+  const pa = await partnerAccountOf(tx, business.id, m.counterAccountId);
+  if (pa && debitsCounter(m.kind, m.direction) && !(pa.side === "cur" && (await isPartnerAdvance(tx, business.id, m.id)))) {
+    await assertPartnerDebit(tx, business, { pa, amountMinor: toMinor(m.amount, business.baseCurrency), excludeMovementId: m.id });
+  }
   await lockMoneyAccounts(tx, [m.fromFinancialAccountId, m.toFinancialAccountId]);
   await assertNoOverdraft(tx, business, outgoing(m, x, false), toMinor(m.amount, business.baseCurrency));
   const { entry } = await postJournalInTx(tx, business, {
@@ -284,6 +295,15 @@ export async function requestMovementInTx(tx: AppTransactionClient, business: Fi
     return { movement: existing, replayed: true };
   }
   const x = await resolve(tx, business, r);
+  // A non-owner partner's accounts: the owner's to move, and money out must fit in what is there less what is pending.
+  const pa = await partnerAccountOf(tx, business.id, x.counter?.id);
+  const advance = r.partnerAdvanceReason?.trim() ?? "";
+  if (r.partnerAdvanceReason != null) assertAdvanceAllowed(actor, pa, r.kind, advance);
+  if (pa) {
+    const debits = debitsCounter(r.kind, r.direction);
+    assertMayTouchPartner(actor, pa, debits);
+    if (debits && !advance) await assertPartnerDebit(tx, business, { pa, amountMinor: toMinor(r.amount, business.baseCurrency) });
+  }
   if (r.kind === "OPENING_FUNDING") {
     const live = await tx.treasuryMovement.count({ where: { toFinancialAccountId: r.toFinancialAccountId!, kind: "OPENING_FUNDING", status: { in: ["PENDING_APPROVAL", "POSTED"] } } });
     if (live) throw financeError(409, "OPENING_FUNDING_EXISTS", "This account already has an opening balance; correct it with an adjustment");
@@ -327,6 +347,9 @@ export async function requestMovementInTx(tx: AppTransactionClient, business: Fi
     businessId: business.id, actor, action: "movement.request", entityType: "TreasuryMovement", entityId: created.id, after: movementDto(created),
     reason: r.reason ?? null, sourceType: "Idempotency-Key", sourceRef: key,
   });
+  if (advance) {
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: PARTNER_ADVANCE_ACTION, entityType: "TreasuryMovement", entityId: created.id, after: { partnerId: pa!.partner.id, amount: r.amount }, reason: advance });
+  }
   if (needsApproval) return { movement: created, replayed: false };
   return { movement: await postMovement(tx, business, created, x, actor, false), replayed: false };
 }
@@ -374,6 +397,8 @@ export async function approveMovement(id: string, actor: FinanceActor) {
     if (highValue && m.requestedByAdminId && m.requestedByAdminId === adminId(actor)) {
       throw financeError(409, "SAME_PERSON_APPROVAL", "A movement above the approval threshold must be approved by someone other than the person who requested it");
     }
+    const pa = await partnerAccountOf(tx, business.id, m.counterAccountId);
+    if (pa) assertMayTouchPartner(actor, pa, debitsCounter(m.kind, m.direction));
     return { movement: movementDto(await postMovement(tx, business, m, x, actor, true)), alreadyPosted: false };
   });
 }
@@ -406,6 +431,18 @@ export async function reverseMovementInTx(tx: AppTransactionClient, business: Fi
     const matched = await tx.bankTransactionMatch.count({ where: { status: "ACTIVE", journalLine: { entryId: m.journalEntryId! } } });
     if (matched) throw financeError(409, "MOVEMENT_MATCHED", "A statement line is matched to this movement — unmatch it before reversing");
     const x = await resolvedOf(tx, m);
+    // On a partner's account a reversal is the owner's either way. Undoing a movement that CREDITED the account (a deposit)
+    // debits it, so it must fit in what is there now; the direction comes from the original journal, not the kind.
+    const pa = await partnerAccountOf(tx, business.id, m.counterAccountId);
+    if (pa) {
+      assertMayTouchPartner(actor, pa, true);
+      const lines = await tx.journalLine.findMany({ where: { entryId: m.journalEntryId!, accountId: m.counterAccountId! }, select: { debit: true, credit: true } });
+      const credited = lines.reduce((s, l) => s + toMinor(l.credit, business.baseCurrency) - toMinor(l.debit, business.baseCurrency), 0) > 0;
+      if (credited === debitsCounter(m.kind, m.direction)) {
+        throw financeError(409, "REVERSAL_DIRECTION_MISMATCH", "This movement's journal doesn't match its kind — it needs a look before it can be reversed", { movementId: m.id });
+      }
+      if (credited) await assertPartnerDebit(tx, business, { pa, amountMinor: toMinor(m.amount, business.baseCurrency), reversal: true });
+    }
     await lockMoneyAccounts(tx, [m.fromFinancialAccountId, m.toFinancialAccountId]);
     await assertNoOverdraft(tx, business, outgoing(m, x, true), toMinor(m.amount, business.baseCurrency));
     const date = input.reversalDate ?? (businessToday(business) < businessDateOf(m.movementDate) ? businessDateOf(m.movementDate) : businessToday(business));

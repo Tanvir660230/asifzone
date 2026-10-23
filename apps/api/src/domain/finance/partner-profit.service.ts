@@ -202,18 +202,23 @@ export async function profitShareOverview() {
 
 // ── money: paying a partner, the owner putting in / taking out ─────────────────────────────────────────────────────────
 
-export async function payPartner(partnerId: string, input: { fromFinancialAccountId: string; amount: number; paymentDate?: string; method: PaymentMethod; note?: string | null }, actor: FinanceActor, key: string | null) {
+export async function payPartner(partnerId: string, input: { fromFinancialAccountId: string; amount: number; paymentDate?: string; method: PaymentMethod; note?: string | null; advanceReason?: string | null }, actor: FinanceActor, key: string | null) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const p = await prisma.partner.findFirst({ where: { id: partnerId, businessId: business.id } });
   if (!p) throw financeError(404, "PARTNER_NOT_FOUND", "Partner not found");
   if (isBusinessOwner(p.role)) throw financeError(400, "OWNER_NOT_PAID", "The owner takes money out as a withdrawal");
-  const lines = await prisma.journalLine.aggregate({ where: { accountId: p.currentAccountId, entry: { status: "POSTED" } }, _sum: { debit: true, credit: true } });
-  const owed = toMinor(lines._sum.credit ?? 0, cur) - toMinor(lines._sum.debit ?? 0, cur);
-  if (toMinor(input.amount, cur) > owed) throw financeError(400, "PAY_MORE_THAN_OWED", `${p.name} is owed ${toMajorNumber(Math.max(0, owed), cur)} — pay at most that`, { owed: toMajorNumber(owed, cur) });
+  // The quick answer for more than is owed at all; the real check (owed less payments waiting for approval, under the
+  // partner's lock) runs inside the movement (partner-payable.ts). An advance skips both, on the owner's stated reason.
+  if (!input.advanceReason) {
+    const lines = await prisma.journalLine.aggregate({ where: { accountId: p.currentAccountId, entry: { status: "POSTED" } }, _sum: { debit: true, credit: true } });
+    const owed = toMinor(lines._sum.credit ?? 0, cur) - toMinor(lines._sum.debit ?? 0, cur);
+    if (toMinor(input.amount, cur) > owed) throw financeError(400, "PAY_MORE_THAN_OWED", `${p.name} is owed ${toMajorNumber(Math.max(0, owed), cur)} — pay at most that, or pay the rest as an advance`, { owed: toMajorNumber(owed, cur) });
+  }
   return requestMovement({
+    partnerAdvanceReason: input.advanceReason ?? null,
     kind: "WITHDRAWAL", movementDate: input.paymentDate ?? businessToday(business), amount: input.amount, fromFinancialAccountId: input.fromFinancialAccountId, counterAccountId: p.currentAccountId,
-    reference: `${partnerNumber(p.number)} ${METHOD_LABEL[input.method]}`, description: `Profit share paid to ${p.name} (${METHOD_LABEL[input.method]})${input.note ? ` — ${input.note}` : ""}`.slice(0, 300),
+    reference: `${partnerNumber(p.number)} ${METHOD_LABEL[input.method]}`, description: `${input.advanceReason ? "Advance paid to" : "Profit share paid to"} ${p.name} (${METHOD_LABEL[input.method]})${input.note ? ` — ${input.note}` : ""}`.slice(0, 300),
   }, actor, key ? `partner-pay:${key}` : null);
 }
 

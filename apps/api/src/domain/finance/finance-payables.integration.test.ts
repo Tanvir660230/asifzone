@@ -823,16 +823,21 @@ describe("partners & equity, foundation (E11) — balances come from the ledger;
     const bank = (await createFinancialAccount({ kind: "BANK", name: `Equity bank ${Date.now() % 100000}` } as never, OWNER)).id;
     await requestMovement({ kind: "DEPOSIT", movementDate: "2026-10-01", amount: 100_000, toFinancialAccountId: bank, counterAccountId: asif.capitalAccount.id, description: "Capital — Asif" }, OWNER, "equity-asif-in");
     await requestMovement({ kind: "DEPOSIT", movementDate: "2026-10-01", amount: 50_000, toFinancialAccountId: bank, counterAccountId: nadia.capitalAccount.id, description: "Capital — Nadia" }, OWNER, "equity-nadia-in");
+    // taking out more than the current account holds is refused — a partner's account never goes below zero unasked
+    // (partner-payable.ts); what is credited to it can be drawn
+    await expect(requestMovement({ kind: "WITHDRAWAL", movementDate: "2026-10-05", amount: 8_000, fromFinancialAccountId: bank, counterAccountId: asif.currentAccount.id, description: "Drawing — Asif" }, OWNER, "equity-asif-over"))
+      .rejects.toMatchObject({ statusCode: 409, details: { code: "PAY_MORE_THAN_AVAILABLE", available: 0 } });
+    await requestMovement({ kind: "DEPOSIT", movementDate: "2026-10-03", amount: 10_000, toFinancialAccountId: bank, counterAccountId: asif.currentAccount.id, description: "Lent by Asif" }, OWNER, "equity-asif-lent");
     await requestMovement({ kind: "WITHDRAWAL", movementDate: "2026-10-05", amount: 8_000, fromFinancialAccountId: bank, counterAccountId: asif.currentAccount.id, description: "Drawing — Asif" }, OWNER, "equity-asif-out");
 
     const today = businessToday(business);
     const e = await equityOverview({ asOf: today });
-    expect(e.partners.map((p) => [p.number, p.balances.capital, p.balances.current, p.balances.total])).toEqual([["PT-01", 100_000, -8_000, 92_000], ["PT-02", 50_000, 0, 50_000]]);
-    expect(e.totals).toMatchObject({ capital: 150_000, current: -8_000, total: 142_000, agreedSharesPct: 100 });
+    expect(e.partners.map((p) => [p.number, p.balances.capital, p.balances.current, p.balances.total])).toEqual([["PT-01", 100_000, 2_000, 102_000], ["PT-02", 50_000, 0, 50_000]]);
+    expect(e.totals).toMatchObject({ capital: 150_000, current: 2_000, total: 152_000, agreedSharesPct: 100 });
     const bs = await balanceSheet({ asOf: today });
     expect(e.equity.total).toBe(bs.sections.find((x) => x.key === "equity")!.total);
     const line = (id: string) => e.equity.lines.find((l) => l.accountId === id)?.amount;
-    expect([line(asif.capitalAccount.id), line(asif.currentAccount.id)]).toEqual([100_000, -8_000]);
+    expect([line(asif.capitalAccount.id), line(asif.currentAccount.id)]).toEqual([100_000, 2_000]);
 
     // a rename renames both accounts; a partner keeps their accounts and is never deleted
     const renamed = await updatePartner(nadia.id, { name: "Nadia Islam Chowdhury" }, OWNER);

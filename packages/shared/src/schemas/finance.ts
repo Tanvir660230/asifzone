@@ -309,6 +309,8 @@ export const profitSharePaySchema = z.object({
   paymentDate: businessDate.optional(),
   method: z.enum(PAYMENT_METHODS),
   note: optionalText(300),
+  /** Paid in advance, beyond what is owed (an advance against future shares): the owner's reason. */
+  advanceReason: z.string().trim().min(3).max(300).optional(),
 });
 /** The owner putting money in (INVEST, to owner capital) or taking it out (WITHDRAW, to drawings), through a money account. */
 export const ownerMoneySchema = z.object({

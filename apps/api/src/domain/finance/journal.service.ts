@@ -129,6 +129,12 @@ async function validateSpec(tx: AppTransactionClient, business: FinanceBusinessI
     if (!a.isPostable) throw financeError(400, "ACCOUNT_NOT_POSTABLE", `${a.code} ${a.name} is a group account; post to one of its children`);
     if (!a.isActive) throw financeError(400, "ACCOUNT_INACTIVE", `${a.code} ${a.name} is archived`);
   }
+  // A non-owner partner's accounts move only through shares and Treasury, where what they are owed is checked — never by
+  // a hand-written journal (drafted, edited, posted or a correction).
+  if (spec.kind === "MANUAL" || spec.kind === "CORRECTION") {
+    const owned = await tx.partner.findFirst({ where: { businessId: business.id, role: { not: "OWNER" }, OR: [{ currentAccountId: { in: accountIds } }, { capitalAccountId: { in: accountIds } }] }, select: { name: true } });
+    if (owned) throw financeError(409, "PARTNER_ACCOUNT_OWNED", `${owned.name}'s accounts change only through profit shares and money movements, not a journal`);
+  }
   const brandIds = [...new Set([spec.brandId, ...spec.lines.map((l) => l.brandId)].filter((b): b is string => Boolean(b)))];
   if (brandIds.length) {
     const found = await tx.financeBrand.count({ where: { id: { in: brandIds }, businessId: business.id } });
