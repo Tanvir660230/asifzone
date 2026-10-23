@@ -296,6 +296,8 @@ const partnerBase = {
   shareFrom: businessDate.optional().nullable(),
   lossRule: z.enum(PROFIT_SHARE_LOSS_RULES).optional(),
   shareConfirmedNote: optionalText(300),
+  /** YYYY-MM a changed profit-share % starts from — never a month already shared (default: the first one that isn't). */
+  rateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "A month as YYYY-MM").optional().nullable(),
 };
 export const partnerCreateSchema = z.object(partnerBase);
 export const partnerUpdateSchema = z.object(partnerBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
@@ -311,6 +313,29 @@ export const profitSharePaySchema = z.object({
   note: optionalText(300),
   /** Paid in advance, beyond what is owed (an advance against future shares): the owner's reason. */
   advanceReason: z.string().trim().min(3).max(300).optional(),
+});
+/** A partner's profit-share rate from a month on (null = no share from then). */
+export const shareRateSchema = z.object({ pct: z.coerce.number().gt(0).max(100).nullable(), from: yearMonth, note: optionalText(300) });
+/** Verifying a month: the person types its profit, which must be the books' figure. */
+export const sharePeriodVerifySchema = z.object({ confirmProfit: z.coerce.number().finite() }); // a loss is negative
+export const sharePeriodParamSchema = z.object({ period: yearMonth });
+/** A duplicate or wrong posting on a partner's account, with its journal as evidence. */
+export const adjustmentProposeSchema = z.object({
+  kind: z.enum(["DUPLICATE_POSTING", "INVALID_POSTING"]),
+  partnerId: id,
+  relatedEntryId: id,
+  reason: z.string().trim().min(3).max(500),
+});
+export const adjustmentRejectSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+export const adjustmentDetectSchema = z.object({ period: yearMonth.optional() });
+/** A partner's capital — put in (CONTRIBUTE, to their capital account) or taken back (RETURN, at most what is in it). */
+export const partnerCapitalSchema = z.object({
+  kind: z.enum(["CONTRIBUTE", "RETURN"]),
+  financialAccountId: id,
+  amount: financeAmountSchema.refine((v) => v > 0, "More than zero"),
+  date: businessDate.optional(),
+  method: z.enum(PAYMENT_METHODS).optional(),
+  note: optionalText(300),
 });
 /** The owner putting money in (INVEST, to owner capital) or taking it out (WITHDRAW, to drawings), through a money account. */
 export const ownerMoneySchema = z.object({
@@ -329,7 +354,9 @@ export const partnerActivityQuerySchema = z.object({ from: businessDate.optional
 export const monthEndQuerySchema = z.object({ month: budgetMonth.optional() });
 export const cashForecastQuerySchema = z.object({ weeks: z.coerce.number().int().min(1).max(52).optional() });
 
-export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+/** `acknowledgeShares`: reopening a month whose profit is already shared with partners — those shares stay final; a
+ * change is flagged as a correction, never applied to them. */
+export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500), acknowledgeShares: z.boolean().optional() });
 
 export const OPENING_BALANCE_CATEGORIES = [
   "CASH", "BANK", "MOBILE_WALLET", "PAYMENT_ACCOUNT", "INVENTORY", "RECEIVABLE", "PAYABLE", "LOAN", "FIXED_ASSET", "CAPITAL", "OTHER_ASSET", "OTHER_LIABILITY", "OTHER_EQUITY",

@@ -19,6 +19,7 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
+import { Corrections, MonthlySharing, StatementModal } from "@/components/admin/finance/partner-sharing";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -33,10 +34,16 @@ const METHODS: Array<{ value: PaymentMethod; label: string }> = [
 ];
 const ROLE_LABEL: Record<PartnerRole, string> = { OWNER: "Owner", WORKING: "Working partner", INVESTOR: "Investor partner" };
 const monthLabel = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-const KIND_LABEL: Record<PartnerActivityItem["kind"], string> = { PUT_IN: "Put in", CAPITAL_BACK: "Capital returned", PROFIT_SHARE: "Profit share", CREDITED: "Credited", TAKEN_OUT: "Taken out", PAID: "Paid" };
+const KIND_LABEL: Record<PartnerActivityItem["kind"], string> = {
+  PUT_IN: "Put in", PUT_IN_REVERSED: "Put in, reversed", CAPITAL_BACK: "Capital returned", CAPITAL_BACK_REVERSED: "Capital return reversed",
+  PROFIT_SHARE: "Profit share", SHARE_REVERSED: "Profit share reversed", SHARE_CORRECTED: "Profit share correction", CREDITED: "Credited", TAKEN_OUT: "Taken out", PAID: "Paid",
+  PAYMENT_REVERSED: "Payment reversed", RECEIVED: "Received from partner", RECEIVED_REVERSED: "Receipt reversed", OTHER: "Other entry",
+};
 const firstName = (name: string) => name.split(" ")[0] ?? name;
 /** A partner role, not the admin's role: the owner keeps what is left, everyone else shares. */
 const isOwnerRole = (r: PartnerRole) => r === "OWNER";
+const isWorkingRole = (r: PartnerRole) => r === "WORKING";
+const isInvestorRole = (r: PartnerRole) => r === "INVESTOR";
 
 /** The owner and the partners (docs/FINANCE_EQUITY.md): what the owner put in and took out, and each working partner's
  * monthly share of the profit — earned, paid and owed — with every movement in date order. Owner-only. */
@@ -70,6 +77,7 @@ export default function EquityPage() {
       />
       {(overview.isLoading || shares.isLoading) && <div className="space-y-3"><Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></div>}
       {overview.isError && <Alert variant="danger" title="Couldn't load the owner and partners" action={<Button size="sm" variant="outline" onClick={() => overview.refetch()}>Retry</Button>}>{getErrorMessage(overview.error, "")}</Alert>}
+      {shares.isError && <Alert variant="danger" title="Couldn't load what each partner is owed" action={<Button size="sm" variant="outline" onClick={() => shares.refetch()}>Retry</Button>}>{getErrorMessage(shares.error, "")}</Alert>}
       {shares.data && !shares.data.booksStarted && (
         <Alert variant="warning" title="The books haven't started">Profit — and so each partner&apos;s share — is known only from the books&apos; opening date. Set it in <Link href="/admin/finance/opening" className="font-medium underline underline-offset-2">Start the books</Link>.</Alert>
       )}
@@ -89,6 +97,8 @@ export default function EquityPage() {
           {others.length === 0 && owner && (
             <p className="text-sm text-fg-muted">No partners yet. A working partner who shares the profit is added with <span className="font-medium text-fg">Add partner</span>.</p>
           )}
+          {others.some((p) => p.profitSharePct !== null) && <MonthlySharing />}
+          {others.length > 0 && <Corrections partnerNames={new Map(others.map((p) => [p.id, p.name]))} />}
 
           <Card className="p-0">
             <button type="button" onClick={() => setShowEquity((v) => !v)} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left" aria-expanded={showEquity}>
@@ -126,7 +136,6 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
     onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(`${r.taken.length} payout${r.taken.length === 1 ? "" : "s"} recorded as taken by ${owner.name}`); },
     onError: (e) => toast.error(getErrorMessage(e, "Couldn't record the payouts")),
   });
-  const t = activity.data?.totals;
   return (
     <Card className="overflow-hidden p-0" data-testid="owner-card">
       <div className="space-y-5 p-5 sm:p-6">
@@ -140,10 +149,11 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
           </div>
           <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
         </div>
-        <Figures>
-          <Figure label="Put in" value={t?.putIn} tone="in" loading={activity.isLoading} hint="Money and costs paid from his own pocket" />
-          <Figure label="Taken out" value={t?.takenOut} loading={activity.isLoading} hint="Payouts kept and money withdrawn" />
-          <Figure label="Net invested" value={t ? t.net : undefined} loading={activity.isLoading} strong hint="Put in − taken out" />
+        {/* The same two figures as the Finance home, side by side and never added up: capital is what the owner has in
+            the business, drawings what has been taken out for themselves (partner-statement.service ownerSummary). */}
+        <Figures cols={2}>
+          <Figure label="Net capital" value={owner.balances.capital} hint="Owner capital: money and costs paid in, less any returned" />
+          <Figure label="Drawings" value={-owner.balances.current} hint="Payouts kept and money taken out" />
         </Figures>
         {canAct && (
           <div className="flex flex-wrap gap-2">
@@ -179,9 +189,9 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
   );
 }
 
-/** Three figures as one grouped panel: side by side from `sm`, a label/value list on a phone so no amount is cut short. */
-function Figures({ children }: { children: ReactNode }) {
-  return <dl className="grid overflow-hidden rounded-xl border border-line-subtle max-sm:divide-y max-sm:divide-line-subtle sm:grid-cols-3 sm:divide-x sm:divide-line-subtle">{children}</dl>;
+/** Figures as one grouped panel: side by side from `sm`, a label/value list on a phone so no amount is cut short. */
+function Figures({ children, cols = 3 }: { children: ReactNode; cols?: 2 | 3 }) {
+  return <dl className={cn("grid overflow-hidden rounded-xl border border-line-subtle max-sm:divide-y max-sm:divide-line-subtle sm:divide-x sm:divide-line-subtle", cols === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>{children}</dl>;
 }
 
 function Figure({ label, value, tone, strong, loading, hint }: { label: string; value: number | undefined; tone?: "in"; strong?: boolean; loading?: boolean; hint?: string }) {
@@ -258,14 +268,11 @@ function Timeline({ items, loading, empty, name }: { items: PartnerActivityItem[
 
 function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner; shares: PartnerShares | null; canAct: boolean; onEdit: () => void }) {
   const activity = useQuery({ queryKey: financeApi.partnerKeys.activity(partner.id), queryFn: () => financeApi.getPartnerActivity(partner.id) });
-  const qc = useQueryClient();
   const [paying, setPaying] = useState(false);
-  const run = useMutation({
-    mutationFn: () => financeApi.runProfitShares(),
-    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.shared.length ? `Shared ${r.shared.length} month${r.shared.length === 1 ? "" : "s"}` : "Nothing to share yet"); },
-    onError: (e) => toast.error(getErrorMessage(e, "Couldn't share the profit")),
-  });
+  const [capital, setCapital] = useState<"CONTRIBUTE" | "RETURN" | null>(null);
+  const [statement, setStatement] = useState(false);
   const s = shares;
+  const b = s?.balances;
   const name = firstName(partner.name);
   return (
     <Card className="overflow-hidden p-0" data-testid="partner-card">
@@ -277,6 +284,9 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-semibold tracking-tight text-fg">
                 {partner.name}
                 {partner.profitSharePct !== null && <Badge variant={partner.shareConfirmed ? "success" : "warning"}>{partner.profitSharePct}% of monthly profit</Badge>}
+                {s?.status === "LEFT" && <Badge variant="neutral">Left {partner.leftOn ? formatBookDate(partner.leftOn) : ""}</Badge>}
+                {s?.status === "NO_CURRENT_SHARE" && <Badge variant="neutral">No profit share now</Badge>}
+                {partner.ownershipPct !== null && <Badge variant="neutral">Owns {partner.ownershipPct}%</Badge>}
               </p>
               <p className="text-sm text-fg-muted">{ROLE_LABEL[partner.role]} since {formatBookDate(partner.joinedOn)}{partner.phone ? ` · ${partner.phone}` : ""}{partner.email ? ` · ${partner.email}` : ""}</p>
             </div>
@@ -284,13 +294,23 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
           <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
         </div>
         {partner.profitSharePct !== null && (
-          <p className="text-sm text-fg-muted">Shares {partner.profitSharePct}% of each month&apos;s net profit, from {formatBookDate(partner.shareFrom ?? partner.joinedOn)}. A loss month shares nothing and the next month&apos;s whole profit is shared — {name} puts in no capital and bears no loss.</p>
+          <p className="text-sm text-fg-muted">
+            Shares {partner.profitSharePct}% of each month&apos;s net profit, from {formatBookDate(partner.shareFrom ?? partner.joinedOn)}. A loss month shares nothing.
+            {isWorkingRole(partner.role) ? ` ${name} puts in no capital and bears no loss.` : ""}
+          </p>
         )}
+        {/* One source (the ledger, partner-statement.service): owed − waiting for approval = can be paid now. */}
         <Figures>
-          <Figure label="Owed now" value={s?.totals.owed} strong loading={!s} hint={s && s.totals.owed > 0 ? "Pay at the month's end" : "Nothing waiting"} />
-          <Figure label="Earned so far" value={s?.totals.earned} tone="in" loading={!s} hint="Every month's share, added up" />
-          <Figure label="Paid so far" value={s?.totals.paid} loading={!s} hint={`What ${name} has received`} />
+          {b && b.paidInAdvance > 0
+            ? <Figure label="Paid in advance" value={b.paidInAdvance} strong hint="More than earned so far; later shares make it up" />
+            : <Figure label="Can be paid now" value={b?.availableToPay} strong loading={!b}
+                hint={b ? (b.pendingCommitments > 0 ? `Owed ${formatPrice(b.postedPayable)} − ${formatPrice(b.pendingCommitments)} waiting for approval` : b.postedPayable > 0 ? "Everything owed" : "Nothing owed now") : undefined} />}
+          <Figure label="Earned" value={b?.finalizedEarnings} tone="in" loading={!b} hint="Shares that are in the books" />
+          <Figure label="Paid" value={b?.paymentsCompleted} loading={!b} hint={`What ${name} has received, less any reversed`} />
         </Figures>
+        {b && b.unclassified !== 0 && (
+          <Alert variant="warning" title="An entry needs a look">{formatPrice(Math.abs(b.unclassified))} on {name}&apos;s account came from a journal that isn&apos;t a share or a payment. It&apos;s in the history below.</Alert>
+        )}
         {s?.runningMonth && (
           <div className="flex items-start gap-3 rounded-xl bg-surface-muted p-4 text-sm">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
@@ -300,18 +320,33 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
             </p>
           </div>
         )}
-        {canAct && s && (
+        {s && (
           <div className="flex flex-wrap gap-2">
-            {s.waitingMonths.length > 0 && (
-              <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-shares">Share {s.waitingMonths.length === 1 ? monthLabel(s.waitingMonths[0]!) : `${s.waitingMonths.length} finished months`}</Button>
-            )}
-            {s.totals.owed > 0
-              ? <Button size="sm" variant={s.waitingMonths.length ? "outline" : "primary"} onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.totals.owed)}</Button>
-              : <Button size="sm" variant="outline" onClick={() => setPaying(true)} data-testid="pay-partner-advance">Pay {name} in advance</Button>}
+            {canAct && (s.balances.availableToPay > 0
+              ? <Button size="sm" onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.balances.availableToPay)}</Button>
+              : <Button size="sm" variant="outline" onClick={() => setPaying(true)} data-testid="pay-partner-advance">Pay {name} in advance</Button>)}
+            <Button size="sm" variant="ghost" onClick={() => setStatement(true)} data-testid="partner-statement">Statement</Button>
           </div>
         )}
       </div>
 
+      {/* Capital is not profit: what the partner put in and took back, on their capital account — its own figures. */}
+      {b && (isInvestorRole(partner.role) || b.capital.contributed !== 0 || b.capital.returned !== 0) && (
+        <div className="space-y-3 border-t border-line-subtle px-5 py-4 sm:px-6" data-testid="partner-capital">
+          <p className="text-[15px] font-semibold text-fg">Capital</p>
+          <Figures>
+            <Figure label="Put in" value={b.capital.contributed} />
+            <Figure label="Returned" value={b.capital.returned} />
+            <Figure label="Net capital" value={b.capital.net} strong />
+          </Figures>
+          {canAct && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => setCapital("CONTRIBUTE")} data-testid="capital-in"><ArrowDownLeft className="h-4 w-4" /> Capital put in</Button>
+              {b.capital.net > 0 && <Button size="sm" variant="outline" onClick={() => setCapital("RETURN")} data-testid="capital-back"><ArrowUpRight className="h-4 w-4" /> Capital returned</Button>}
+            </div>
+          )}
+        </div>
+      )}
       {s && s.shares.length > 0 && (
         <div className="border-t border-line-subtle px-5 py-4 sm:px-6">
           <p className="mb-2 text-[15px] font-semibold text-fg">Month by month</p>
@@ -332,8 +367,47 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
         </div>
       )}
       <Timeline items={activity.data?.items ?? []} loading={activity.isLoading} empty="No shares or payments yet." name={partner.name} />
-      {paying && s && <PayModal partner={partner} owed={s.totals.owed} onClose={() => setPaying(false)} />}
+      {/* What can be paid now; a negative figure means already paid that much in advance. */}
+      {paying && s && <PayModal partner={partner} owed={s.balances.paidInAdvance > 0 ? -s.balances.paidInAdvance : s.balances.availableToPay} onClose={() => setPaying(false)} />}
+      {capital && b && <PartnerCapitalModal kind={capital} partner={partner} net={b.capital.net} onClose={() => setCapital(null)} />}
+      {statement && <StatementModal partnerId={partner.id} name={partner.name} onClose={() => setStatement(false)} />}
     </Card>
+  );
+}
+
+/** Capital in (to the partner's capital account) or back (at most what is in it — the API checks it again). */
+function PartnerCapitalModal({ kind, partner, net, onClose }: { kind: "CONTRIBUTE" | "RETURN"; partner: Partner; net: number; onClose: () => void }) {
+  const qc = useQueryClient();
+  const accounts = useMoneyAccounts();
+  const [amount, setAmount] = useState("");
+  const [account, setAccount] = useState("");
+  const [method, setMethod] = useState<PaymentMethod>("BANK");
+  const [date, setDate] = useState(today());
+  const [note, setNote] = useState("");
+  const n = Number(amount);
+  const back = kind === "RETURN";
+  const body = { kind, financialAccountId: account, amount: n, date, method, note: note.trim() || null };
+  const valid = Boolean(account) && n > 0 && (!back || n <= net) && Boolean(date) && date <= today();
+  const scope = `partner-capital-${partner.id}-${kind}`;
+  const save = useMutation({
+    mutationFn: () => financeApi.partnerCapital(partner.id, body, idempotencyKeyFor(scope, body)),
+    onSuccess: (r) => { settleIdempotencyKey(scope); void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.movement.status === "POSTED" ? "Saved" : "Saved — waits for approval"); onClose(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Couldn't save")),
+  });
+  return (
+    <Modal open onClose={onClose} title={back ? `Capital returned to ${partner.name}` : `Capital put in by ${partner.name}`}
+      description={back ? `At most ${formatPrice(net)} — the capital ${partner.name} has in the business.` : "Money the partner puts into the business as capital — not a profit share."} widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-capital">Save</Button></>}>
+      <div className="space-y-4">
+        <Field htmlFor="pc-amount" label="Amount" required error={back && n > net ? `At most ${formatPrice(net)}` : undefined}><Input id="pc-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
+        <div className="space-y-1.5"><p className="text-sm font-medium text-fg">How</p><SegmentedControl aria-label="Method" value={method} onChange={setMethod} options={METHODS} /></div>
+        <Field htmlFor="pc-acc" label={back ? "From" : "Into"} required>
+          <Select id="pc-acc" value={account} onChange={(e) => setAccount(e.target.value)}><option value="">Choose…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>
+        </Field>
+        <Field htmlFor="pc-date" label="Date" required><Input id="pc-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field htmlFor="pc-note" label="Note"><Input id="pc-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} /></Field>
+      </div>
+    </Modal>
   );
 }
 
@@ -457,7 +531,7 @@ function PartnerModal({ partner, asOwner, onClose }: { partner: Partner | null; 
         <Field htmlFor="pt-left" label="Left on"><Input id="pt-left" type="date" value={form.leftOn} onChange={set("leftOn")} /></Field>
         {sharing && (
           <>
-            <Field htmlFor="pt-pct" label="Share of monthly profit (%)" hint="Nothing in a loss month"><Input id="pt-pct" inputMode="decimal" value={form.profitSharePct} onChange={set("profitSharePct")} placeholder="20" /></Field>
+            <Field htmlFor="pt-pct" label="Share of monthly profit (%)" hint={partner ? "A change applies from the first month not shared yet — shared months keep their rate. Nothing in a loss month." : "Nothing in a loss month"}><Input id="pt-pct" inputMode="decimal" value={form.profitSharePct} onChange={set("profitSharePct")} placeholder="20" /></Field>
             <Field htmlFor="pt-from" label="Shares from" hint="Default: partner since"><Input id="pt-from" type="date" value={form.shareFrom} onChange={set("shareFrom")} /></Field>
           </>
         )}

@@ -1,14 +1,13 @@
 /**
  * Partners & equity — foundation (ERP programme E11, docs/FINANCE_EQUITY.md).
  *
- * B-2 (the signed partner agreements) blocks everything that depends on them: profit distribution, capital rules, sweat
- * equity. What does not wait:
  *   register   each partner with a capital account (31xx) and a current account (32xx) — sensitive equity sub-accounts
  *              under 3000 Equity, created with the partner and never deleted
- *   balances   read straight from the ledger: what a partner put in (capital) and their current account (drawings and,
- *              once agreed, profit shares) — money in / out is an ordinary Treasury deposit / withdrawal against them
+ *   balances   read straight from the ledger: what a partner put in (capital) and their current account (profit shares
+ *              in, payments out) — money moves only through Treasury, checked by partner-payable.ts
  *   summary    the balance sheet's own equity section, so the two always agree
- * The agreed share is a note, UNCONFIRMED until the agreement; nothing is computed from it.
+ * Two different percentages: `agreedSharePct` (shown as ownershipPct) is a share of ownership and nothing is computed
+ * from it; `profitSharePct` is the confirmed share of each month's profit (partner-profit.service).
  */
 import type { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
@@ -20,6 +19,9 @@ import { nextFinanceSequence } from "./suppliers.service";
 import { balanceSheet } from "./statements.service";
 import { resolveMappedAccount } from "./chart.service";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
+import { firstUnsharedMonth, writeShareRate } from "./profit-share-period.service";
+
+const monthOf = (date: string) => date.slice(0, 7);
 
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 /** A partner's role in the business (not an admin role): the owner keeps what is left and never shares. */
@@ -42,6 +44,8 @@ export interface PartnerInput {
   shareFrom?: string | null;
   lossRule?: "ZERO_IN_LOSS_MONTHS" | "CARRY_LOSSES";
   shareConfirmedNote?: string | null;
+  /** YYYY-MM a changed profitSharePct starts from (default: the first month not shared yet). */
+  rateFrom?: string | null;
 }
 
 /** The owner never shares profit (they keep what is left); a confirmed share needs a start and is stamped when set. */
@@ -108,6 +112,8 @@ export async function createPartner(input: PartnerInput, actor: FinanceActor) {
     });
     audits.push({ businessId: business.id, actor, action: "equity.partner_create", entityType: "Partner", entityId: row.id, after: { number: partnerNumber(row.number), name, capital: capital.code, current: current.code } });
     await recordFinanceAudit(tx, audits);
+    // the share is kept as a rate from the month it starts (a later change starts after the last shared month)
+    if (row.profitSharePct !== null) await writeShareRate(tx, business, row, { pct: Number(row.profitSharePct), from: monthOf(businessDateOf(row.shareFrom ?? row.joinedOn)) }, actor);
     return partnerDto(row, new Map(), business.baseCurrency);
   });
 }
@@ -145,6 +151,12 @@ export async function updatePartner(id: string, input: Partial<PartnerInput>, ac
     });
     audits.push({ businessId: business.id, actor, action: "equity.partner_update", entityType: "Partner", entityId: id, before: partnerDto(before, new Map(), business.baseCurrency), after: partnerDto(row, new Map(), business.baseCurrency) });
     await recordFinanceAudit(tx, audits);
+    // A new % applies from a month not yet shared (by default the first one) — a shared month keeps its own rate.
+    const pctBefore = before.profitSharePct === null ? null : Number(before.profitSharePct);
+    if (input.profitSharePct !== undefined && (input.profitSharePct || null) !== pctBefore && !isBusinessOwner(before.role)) {
+      await writeShareRate(tx, business, row, { pct: input.profitSharePct ?? null, from: input.rateFrom ?? (await firstUnsharedMonth(tx, row)) }, actor);
+      return partnerDto(await tx.partner.findUniqueOrThrow({ where: { id }, include: INCLUDE }), new Map(), business.baseCurrency);
+    }
     return partnerDto(row, new Map(), business.baseCurrency);
   });
 }
@@ -156,6 +168,9 @@ function partnerDto(p: PartnerRow, balances: Map<string, number>, cur: string) {
   return {
     id: p.id, number: partnerNumber(p.number), name: p.name, phone: p.phone, email: p.email, joinedOn: businessDateOf(p.joinedOn), leftOn: p.leftOn ? businessDateOf(p.leftOn) : null,
     agreedSharePct: p.agreedSharePct === null ? null : Number(p.agreedSharePct), agreementReference: p.agreementReference, notes: p.notes,
+    /** Share of OWNERSHIP (agreedSharePct) — separate from `profitSharePct`, the share of each month's profit; nothing is
+     * computed from it. */
+    ownershipPct: p.agreedSharePct === null ? null : Number(p.agreedSharePct),
     role: p.role, profitSharePct: p.profitSharePct === null ? null : Number(p.profitSharePct), shareFrom: p.shareFrom ? businessDateOf(p.shareFrom) : null, lossRule: p.lossRule,
     shareConfirmed: Boolean(p.shareConfirmedAt), shareConfirmedAt: p.shareConfirmedAt?.toISOString() ?? null, shareConfirmedNote: p.shareConfirmedNote,
     capitalAccount: p.capitalAccount, currentAccount: p.currentAccount,

@@ -60,7 +60,7 @@ describe("the owner's home", () => {
     expect(h.status, JSON.stringify(h.body)).toBe(200);
     expect(h.body).toMatchObject({ booksStarted: true, month: { month: today.slice(0, 7), sales: 0, goods: 0, other: 2000, profit: -2000 } });
     expect(h.body.money.withUs.total).toBe(0);
-    expect(h.body.people.owner).toMatchObject({ putIn: 2000, takenOut: 0, inBusiness: 2000 });
+    expect(h.body.people.owner).toMatchObject({ netCapital: 2000, drawings: 0 }); // two figures, never added up
     expect(h.body.people.partners[0]).toMatchObject({ name: `Worker ${RUN}`, sharePct: 20, owed: 0, runningMonth: { profitSoFar: -2000, shareSoFar: 0 } });
     expect(h.body.todo).toEqual([]);
   });
@@ -69,7 +69,7 @@ describe("the owner's home", () => {
     expect((await as("OWNER").post("/equity/owner/money", { kind: "INVEST", financialAccountId: cash, amount: 500, date: today }, `oh-in-${RUN}`)).status).toBe(201);
     expect((await as("OWNER").post("/equity/owner/money", { kind: "WITHDRAW", financialAccountId: cash, amount: 300, date: today }, `oh-out-${RUN}`)).status).toBe(201);
     const h = (await as("OWNER").get("/owner-home")).body;
-    expect(h.people.owner).toMatchObject({ putIn: 2500, takenOut: 300, inBusiness: 2200 });
+    expect(h.people.owner).toMatchObject({ netCapital: 2500, drawings: 300 });
     expect(h.money.withUs.total).toBe(200);
     expect((await as("OWNER").get("/owner-home?month=2026-1")).status).toBe(400);
   });

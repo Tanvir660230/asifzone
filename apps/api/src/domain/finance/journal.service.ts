@@ -398,11 +398,22 @@ async function reversalSpec(tx: AppTransactionClient, business: FinanceBusinessI
   };
 }
 
-async function postReversal(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, reversalDate: string | undefined, actor: FinanceActor, owner: "treasury" | null = null) {
+async function postReversal(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, reversalDate: string | undefined, actor: FinanceActor, owner: "treasury" | "partner-adjustment" | null = null) {
   const original = await lockEntry(tx, business.id, id);
   // A journal that belongs to a treasury movement is reversed through the movement, so the two never disagree.
   if (original.kind === "TREASURY" && owner !== "treasury") {
     throw financeError(409, "JOURNAL_OWNED_BY_MOVEMENT", "This journal belongs to a money movement — reverse the movement instead", { sourceId: original.sourceId });
+  }
+  // Anything on a partner's accounts is undone only through a correction (partner-adjustments), where the evidence is
+  // linked and what they are owed is checked — never by reversing or correcting the journal here.
+  if (owner === null) {
+    const accountIds = original.lines.map((l) => l.accountId);
+    const partner = await tx.partner.findFirst({ where: { businessId: business.id, role: { not: "OWNER" }, OR: [{ currentAccountId: { in: accountIds } }, { capitalAccountId: { in: accountIds } }] }, select: { name: true } });
+    if (partner) {
+      throw original.kind === "EVENT"
+        ? financeError(409, "JOURNAL_OWNED_BY_PROFIT_SHARE", `This journal is ${partner.name}'s profit share — correct it from Owner & partners (a duplicate or wrong posting)`, { entryId: original.id })
+        : financeError(409, "PARTNER_ACCOUNT_OWNED", `This journal touches ${partner.name}'s accounts — correct it from Owner & partners`, { entryId: original.id });
+    }
   }
   const date = reversalDate ?? (compareBusinessDates(businessToday(business), businessDateOf(original.entryDate)) < 0 ? businessDateOf(original.entryDate) : businessToday(business));
   const spec = await reversalSpec(tx, business, original, reason, date);
@@ -421,6 +432,13 @@ async function postReversal(tx: AppTransactionClient, business: FinanceBusinessI
  * reverseJournal: mirror image, idempotent per original, never a reversal of a reversal. */
 export async function reverseJournalInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, reversalDate: string | undefined, actor: FinanceActor) {
   const { reversal, replayed } = await postReversal(tx, business, id, reason, reversalDate, actor, "treasury");
+  return { reversal, replayed };
+}
+
+/** The partner-adjustments service's own reversal of a journal on a partner's account (a duplicate or wrong posting),
+ * after it has checked the evidence and what the partner is owed. */
+export async function reversePartnerEntryInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, actor: FinanceActor) {
+  const { reversal, replayed } = await postReversal(tx, business, id, reason, undefined, actor, "partner-adjustment");
   return { reversal, replayed };
 }
 

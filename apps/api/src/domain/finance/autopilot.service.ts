@@ -157,8 +157,9 @@ async function shareStep(on: boolean, actor: FinanceActor): Promise<Step> {
   if (!on) return { ok: true, skipped: "OFF" };
   try {
     if (!(await booksStarted(await getFinanceContext()))) return { ok: true, skipped: "BOOKS_NOT_STARTED" };
+    // only months a person has prepared and verified after closing them; every other finished month says why it waited
     const r = await runProfitShares({}, actor);
-    return { ok: true, shared: r.shared };
+    return { ok: true, shared: r.shared, waiting: r.skipped };
   } catch (err) {
     return failed(err);
   }

@@ -4,7 +4,7 @@
  */
 import { fiscalYearOf, monthPeriod } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
-import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
+import { actorCan, recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { businessDateOf, dateColumn, financeError } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
@@ -45,7 +45,7 @@ const TRANSITIONS = {
 
 export type PeriodTransition = keyof typeof TRANSITIONS;
 
-export async function changePeriodStatus(periodId: string, transition: PeriodTransition, reason: string, actor: FinanceActor) {
+export async function changePeriodStatus(periodId: string, transition: PeriodTransition, reason: string, actor: FinanceActor, options: { acknowledgeShares?: boolean } = {}) {
   const { business } = await getFinanceContext();
   const rule = TRANSITIONS[transition];
   return financeTransaction(async (tx) => {
@@ -58,6 +58,15 @@ export async function changePeriodStatus(periodId: string, transition: PeriodTra
     if (rule.to === "CLOSED") {
       const drafts = await tx.journalEntry.count({ where: { periodId, status: "DRAFT" } });
       if (drafts > 0) throw financeError(409, "PERIOD_HAS_DRAFTS", `Post or delete the ${drafts} draft journal(s) in this period first`, { drafts });
+    }
+    // A month whose profit is already shared with partners: reopening it is the owner's, said out loud — the shares stay
+    // final, and the month must be closed and verified again; any change becomes a correction (profit-share-period.service).
+    const month = businessDateOf(before.startDate).slice(0, 7);
+    const shared = transition === "reopen" ? await tx.profitSharePeriod.findUnique({ where: { businessId_period: { businessId: business.id, period: month } } }) : null;
+    if (shared?.status === "POSTED") {
+      if (!actorCan(actor, "finance.sensitive")) throw financeError(403, "SHARES_ARE_THE_OWNERS", `${month} is shared with partners — only the owner can reopen it`);
+      if (!options.acknowledgeShares) throw financeError(409, "SHARES_FINAL_ACK_REQUIRED", `${month} is already shared with partners. Those shares stay final; a change will be flagged as a correction. Confirm to reopen.`);
+      await tx.profitSharePeriod.update({ where: { id: shared.id }, data: { status: "RESTATEMENT_WATCH" } });
     }
     const after = await tx.financialPeriod.update({
       where: { id: periodId },

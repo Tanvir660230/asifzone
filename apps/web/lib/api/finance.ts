@@ -668,7 +668,9 @@ export interface MonthEndChecklist {
 export const alertKeys = { all: ["finance", "alerts"] as const, monthEnd: (month: string) => ["finance", "month-end", month] as const };
 export const getFinanceAlerts = () => apiFetch<FinanceAlerts>(`${BASE}/alerts`);
 export const getMonthEnd = (month?: string) => apiFetch<MonthEndChecklist>(`${BASE}/month-end${month ? `?month=${month}` : ""}`);
-export const changePeriod = (id: string, transition: "close" | "reopen", reason: string) => apiFetch<unknown>(`${BASE}/periods/${id}/${transition}`, { method: "POST", body: { reason } });
+/** `acknowledgeShares`: reopening a month already shared with partners (the shares stay; changes become corrections). */
+export const changePeriod = (id: string, transition: "close" | "reopen", reason: string, acknowledgeShares = false) =>
+  apiFetch<unknown>(`${BASE}/periods/${id}/${transition}`, { method: "POST", body: { reason, ...(acknowledgeShares ? { acknowledgeShares } : {}) } });
 
 // ── payroll (docs/FINANCE_PAYROLL.md) ───────────────────────────────────────────────────────────────────────────────────
 export type PayComponentKind = "EARNING" | "DEDUCTION" | "EMPLOYER_CONTRIBUTION";
@@ -718,6 +720,8 @@ export const remitPayroll = (body: { liabilityAccountId: string; amount: number;
 export interface Partner {
   id: string; number: string; name: string; phone: string | null; email: string | null; joinedOn: string; leftOn: string | null;
   agreedSharePct: number | null; agreementReference: string | null; notes: string | null;
+  /** Share of ownership — not the share of profit (`profitSharePct`). */
+  ownershipPct: number | null;
   role: PartnerRole; profitSharePct: number | null; shareFrom: string | null; lossRule: "ZERO_IN_LOSS_MONTHS" | "CARRY_LOSSES";
   shareConfirmed: boolean; shareConfirmedAt: string | null; shareConfirmedNote: string | null;
   capitalAccount: { id: string; code: string; name: string }; currentAccount: { id: string; code: string; name: string };
@@ -736,14 +740,24 @@ export type PartnerRole = "OWNER" | "WORKING" | "INVESTOR";
 export type PaymentMethod = "CASH" | "BKASH" | "NAGAD" | "BANK" | "OTHER";
 export interface ProfitShareCorrection { kind: "CHANGE" | "CARRIED"; period: string; amount: number; note: string }
 export interface ProfitShareRow { id: string; period: string; periodStart: string; periodEnd: string; netProfit: number; sharePct: number; monthShare: number; corrections: ProfitShareCorrection[]; amount: number; carried: number; createdAt: string }
+/** From the ledger (partner-statement.service): owed = posted; pending = waiting for approval; available = payable now. */
+export interface PartnerBalances {
+  asOf: string; postedPayable: number; pendingCommitments: number; availableToPay: number; overCommitted: boolean;
+  finalizedEarnings: number; paymentsCompleted: number; paidInAdvance: number; receivedFromPartner: number; unclassified: number;
+  capital: { contributed: number; returned: number; net: number };
+}
 export interface PartnerShares {
-  partnerId: string; number: string; name: string; role: PartnerRole; sharePct: number; lossRule: string; confirmed: boolean; confirmedNote: string | null;
-  shares: ProfitShareRow[]; totals: { earned: number; paid: number; owed: number }; waitingMonths: string[];
+  partnerId: string; number: string; name: string; role: PartnerRole; sharePct: number | null; lossRule: string; confirmed: boolean; confirmedNote: string | null;
+  leftOn: string | null; status: "ACTIVE" | "LEFT" | "NO_CURRENT_SHARE";
+  shares: ProfitShareRow[]; balances: PartnerBalances; totals: { earned: number; paid: number; owed: number }; waitingMonths: string[];
   runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null;
 }
+export type PartnerActivityKind =
+  | "PUT_IN" | "PUT_IN_REVERSED" | "CAPITAL_BACK" | "CAPITAL_BACK_REVERSED" | "PROFIT_SHARE" | "SHARE_REVERSED" | "SHARE_CORRECTED" | "CREDITED"
+  | "TAKEN_OUT" | "PAID" | "PAYMENT_REVERSED" | "RECEIVED" | "RECEIVED_REVERSED" | "OTHER";
 export interface PartnerActivityItem {
   id: string; date: string; entryId: string; description: string; reference: string | null; account: "capital" | "current";
-  kind: "PUT_IN" | "CAPITAL_BACK" | "PROFIT_SHARE" | "CREDITED" | "TAKEN_OUT" | "PAID"; amount: number; capitalAfter: number; currentAfter: number;
+  kind: PartnerActivityKind; class: string; advance: boolean; amount: number; capitalAfter: number; currentAfter: number;
 }
 export interface PartnerActivity {
   partnerId: string; name: string; role: PartnerRole;
@@ -761,6 +775,34 @@ export const runProfitShares = (through?: string) => apiFetch<{ shared: Array<{ 
 export const getPartnerActivity = (id: string) => apiFetch<PartnerActivity>(`${BASE}/equity/partners/${id}/activity`);
 export const payPartner = (id: string, body: { fromFinancialAccountId: string; amount: number; paymentDate?: string; method: PaymentMethod; note?: string | null; advanceReason?: string }, idempotencyKey: string) =>
   apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/partners/${id}/pay`, { method: "POST", body, idempotencyKey });
+// a month's profit sharing — prepared once the month is closed, verified by a person, posted once — and corrections
+export type SharePeriodStatus = "PREPARED" | "VERIFIED" | "POSTED" | "POSTING_FAILED" | "RESTATEMENT_WATCH";
+export interface SharePeriodStep { key: string; label: string; status: "DONE" | "TODO" | "NOT_APPLICABLE"; detail: string; href: string; blocking: boolean }
+export interface SharePeriod {
+  period: string; accountingStatus: "OPEN" | "SOFT_CLOSED" | "CLOSED" | null; status: SharePeriodStatus | null; blocked: boolean; netProfit: number | null;
+  readiness: { restatement?: boolean; steps?: SharePeriodStep[]; shares?: Array<{ partnerId: string; name: string; pct: number; share: number }> };
+  preparedAt: string | null; verifiedAt: string | null; postedAt: string | null; lastError: string | null;
+}
+export type AdjustmentKind = "PROFIT_RESTATEMENT_UP" | "PROFIT_RESTATEMENT_DOWN" | "DUPLICATE_POSTING" | "INVALID_POSTING";
+export interface ShareAdjustment {
+  id: string; partnerId: string; period: string; kind: AdjustmentKind; status: "PROPOSED" | "POSTED" | "REJECTED" | "POLICY_REVIEW";
+  amount: number; sharePct: number | null; profitThen: number | null; profitNow: number | null; reason: string; decidedAt: string | null; rejectionReason: string | null; createdAt: string;
+}
+export interface PartnerStatementSection {
+  opening: number; closing: number; ledgerBalance: number; reconciled: boolean; difference: number; totals: Record<string, number>;
+  lines: Array<{ id: string; date: string; journalNumber: number | null; description: string; reference: string | null; class: string; advance: boolean; amount: number; balanceAfter: number }>;
+}
+export const sharePeriodKeys = { all: () => ["finance", "equity", "share-periods"] as const, adjustments: () => ["finance", "equity", "adjustments"] as const, statement: (id: string) => ["finance", "equity", "statement", id] as const };
+export const getSharePeriods = () => apiFetch<{ months: SharePeriod[] }>(`${BASE}/equity/share-periods`);
+export const sharePeriodAction = (period: string, action: "prepare" | "verify" | "post" | "retry", body: Record<string, unknown> = {}) =>
+  apiFetch<SharePeriod & { shared?: Array<{ partner: string; amount: number }> }>(`${BASE}/equity/share-periods/${period}/${action}`, { method: "POST", body });
+export const getAdjustments = () => apiFetch<{ adjustments: ShareAdjustment[] }>(`${BASE}/equity/adjustments`);
+export const detectAdjustments = () => apiFetch<{ adjustments: ShareAdjustment[] }>(`${BASE}/equity/adjustments/detect`, { method: "POST", body: {} });
+export const decideAdjustment = (id: string, decision: "approve" | "reject", reason?: string) =>
+  apiFetch<ShareAdjustment>(`${BASE}/equity/adjustments/${id}/${decision}`, { method: "POST", body: decision === "reject" ? { reason } : {} });
+export const getPartnerStatement = (id: string) => apiFetch<{ partnerId: string; name: string; from: string; to: string; current: PartnerStatementSection; capital: PartnerStatementSection }>(`${BASE}/equity/partners/${id}/statement`);
+export const partnerCapital = (id: string, body: { kind: "CONTRIBUTE" | "RETURN"; financialAccountId: string; amount: number; date?: string; method?: PaymentMethod; note?: string | null }, idempotencyKey: string) =>
+  apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/partners/${id}/capital`, { method: "POST", body, idempotencyKey });
 export const ownerMoney = (body: { kind: "INVEST" | "WITHDRAW"; financialAccountId: string; amount: number; date?: string; method?: PaymentMethod; note?: string | null }, idempotencyKey: string) =>
   apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/owner/money`, { method: "POST", body, idempotencyKey });
 export const getOwnerPayouts = () => apiFetch<{ payouts: OwnerPayout[] }>(`${BASE}/equity/owner/payouts`);

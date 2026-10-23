@@ -94,43 +94,61 @@ describe("the owner and a working partner", () => {
     mehedi = r.body.id;
   });
 
-  it("August earns 10,000 → 2,000; a later August sale arrives as a correction in September, a loss month", async () => {
+  it("August earns 10,000 → 2,000 once closed and verified; a later August sale is a correction; September's loss shares nothing", async () => {
     await journal("2026-08-15", bankLedger(), acc["4150"]!, 10_000, "August sales");
-    const aug = await api().post("/equity/profit-shares/run", { through: "2026-08" });
-    expect(aug.status, JSON.stringify(aug.body)).toBe(200);
-    expect(aug.body.shared).toEqual([{ partner: `Mehedi ${RUN}`, period: "2026-08", amount: 2000 }]);
+    // an open month is never shared — not by the button, not by Autopilot
+    const early = await api().post("/equity/profit-shares/run", { through: "2026-08" });
+    expect(early.status, JSON.stringify(early.body)).toBe(200);
+    expect(early.body.shared).toEqual([]);
+    expect(early.body.skipped).toContainEqual({ period: "2026-08", reason: "NOT_CLOSED" });
+    expect((await api().post("/equity/share-periods/2026-08/prepare")).body.details.code).toBe("PERIOD_NOT_CLOSED");
+
+    await closeMonth("2026-08");
+    await shareMonth("2026-08", 10_000);
+    const o1 = (await api().get("/equity/profit-shares")).body.partners.find((p: { partnerId: string }) => p.partnerId === mehedi);
+    expect(o1.shares.find((s: { period: string }) => s.period === "2026-08")).toMatchObject({ netProfit: 10_000, sharePct: 20, monthShare: 2000, amount: 2000, corrections: [] });
     expect((await api().post("/equity/profit-shares/run", { through: "2026-08" })).body.shared).toEqual([]);
 
+    // a late August sale: reopening a shared month is said out loud; the share stays; the difference is a correction
+    const reopen = await api().post(`/periods/${await periodId("2026-08")}/reopen`, { reason: "late sale" });
+    expect(reopen.body.details.code).toBe("SHARES_FINAL_ACK_REQUIRED");
+    expect((await api().post(`/periods/${await periodId("2026-08")}/reopen`, { reason: "late sale", acknowledgeShares: true })).status).toBe(200);
     await journal("2026-08-30", bankLedger(), acc["4150"]!, 1_000, "late August sale");
+    await closeMonth("2026-08");
+    expect((await api().post("/equity/share-periods/2026-08/prepare")).status).toBe(200);
+    expect((await api().post("/equity/share-periods/2026-08/verify", { confirmProfit: 11_000 })).body.status).toBe("POSTED");
+    const adj = (await api().get("/equity/adjustments")).body.adjustments as Array<{ id: string; kind: string; status: string; amount: number; sharePct: number }>;
+    expect(adj).toMatchObject([{ kind: "PROFIT_RESTATEMENT_UP", status: "PROPOSED", amount: 200, sharePct: 20 }]);
+    expect((await api().post(`/equity/adjustments/${adj[0]!.id}/approve`)).status).toBe(200);
+
     await journal("2026-09-10", acc["6100"]!, bankLedger(), 3_000, "September cost");
-    const sep = await api().post("/equity/profit-shares/run", { through: "2026-09" });
-    expect(sep.body.shared).toEqual([{ partner: `Mehedi ${RUN}`, period: "2026-09", amount: 200 }]);
+    await closeMonth("2026-09");
+    await shareMonth("2026-09", -3_000);
     const o = (await api().get("/equity/profit-shares")).body.partners.find((p: { partnerId: string }) => p.partnerId === mehedi);
     expect(o.totals).toMatchObject({ earned: 2200, paid: 0, owed: 2200 });
     const septShare = o.shares.find((s: { period: string }) => s.period === "2026-09");
-    expect(septShare).toMatchObject({ netProfit: -3000, monthShare: 0, amount: 200 });
-    expect(septShare.corrections[0]).toMatchObject({ kind: "CHANGE", period: "2026-08", amount: 200 });
+    expect(septShare).toMatchObject({ netProfit: -3000, monthShare: 0, amount: 0, corrections: [] });
     await expect(prisma.profitShare.update({ where: { id: septShare.id }, data: { amount: 1 } })).rejects.toThrow(/never changed/);
   });
 
   it("paying: never more than owed; the activity lists shares and payments", async () => {
-    await journal("2026-08-02", bankLedger(), acc["3100"]!, 5_000, "owner money for the test bank");
+    await journal("2026-10-02", bankLedger(), acc["3100"]!, 5_000, "owner money for the test bank"); // August and September are closed by now
     expect((await api().post(`/equity/partners/${mehedi}/pay`, { fromFinancialAccountId: bank, amount: 2500, method: "BKASH" }, `pp-over-${RUN}`)).status).toBe(400);
     const pay = await api().post(`/equity/partners/${mehedi}/pay`, { fromFinancialAccountId: bank, amount: 1500, method: "BKASH", note: "October" }, `pp-pay-${RUN}`);
     expect(pay.status, JSON.stringify(pay.body)).toBe(201);
     expect(pay.body.movement.status).toBe("POSTED");
     const a = (await api().get(`/equity/partners/${mehedi}/activity`)).body;
     expect(a.totals).toMatchObject({ credited: 2200, takenOut: 1500, current: 700 });
-    expect(a.items.map((i: { kind: string }) => i.kind)).toEqual(["PAID", "PROFIT_SHARE", "PROFIT_SHARE"]);
+    expect(a.items.map((i: { kind: string }) => i.kind)).toEqual(["PAID", "SHARE_CORRECTED", "PROFIT_SHARE"]);
     expect((await api().post(`/equity/partners/${owner}/pay`, { fromFinancialAccountId: bank, amount: 1, method: "CASH" }, `pp-owner-${RUN}`)).status).toBe(400);
   });
 
   it("the owner's money in and out", async () => {
-    expect((await api().post("/equity/owner/money", { kind: "INVEST", financialAccountId: bank, amount: 50_000, date: "2026-08-05", method: "BANK" }, `om-in-${RUN}`)).status).toBe(201);
-    expect((await api().post("/equity/owner/money", { kind: "WITHDRAW", financialAccountId: bank, amount: 4_000, date: "2026-09-01", method: "BKASH", note: "family" }, `om-out-${RUN}`)).status).toBe(201);
+    expect((await api().post("/equity/owner/money", { kind: "INVEST", financialAccountId: bank, amount: 50_000, date: "2026-10-05", method: "BANK" }, `om-in-${RUN}`)).status).toBe(201);
+    expect((await api().post("/equity/owner/money", { kind: "WITHDRAW", financialAccountId: bank, amount: 4_000, date: "2026-10-06", method: "BKASH", note: "family" }, `om-out-${RUN}`)).status).toBe(201);
     const a = (await api().get(`/equity/partners/${owner}/activity`)).body;
     expect(a.totals).toMatchObject({ putIn: 55_000, takenOut: 4_000 });
-    expect(a.items[0]).toMatchObject({ kind: "TAKEN_OUT", amount: -4000, date: "2026-09-01" });
+    expect(a.items[0]).toMatchObject({ kind: "TAKEN_OUT", amount: -4000, date: "2026-10-06" });
     expect((await api().get("/equity/owner/payouts")).status).toBe(200);
     expect((await api().post("/equity/owner/payouts-taken", { settlementIds: ["nope"] })).status).toBe(404);
   });
@@ -139,6 +157,25 @@ describe("the owner and a working partner", () => {
 let bankLedgerId = "";
 function bankLedger() {
   return bankLedgerId;
+}
+async function periodId(month: string) {
+  return (await prisma.financialPeriod.findFirstOrThrow({ where: { startDate: new Date(`${month}-01T00:00:00Z`) } })).id;
+}
+async function closeMonth(month: string) {
+  const r = await api().post(`/periods/${await periodId(month)}/close`, { reason: "month done" });
+  expect(r.status, JSON.stringify(r.body)).toBe(200);
+}
+/** Prepare, verify (typing the month's profit) and post a closed month. */
+async function shareMonth(month: string, profit: number) {
+  const p = await api().post(`/equity/share-periods/${month}/prepare`);
+  expect(p.status, JSON.stringify(p.body)).toBe(200);
+  expect(p.body).toMatchObject({ status: "PREPARED", blocked: false, netProfit: profit });
+  const v = await api().post(`/equity/share-periods/${month}/verify`, { confirmProfit: profit });
+  expect(v.status, JSON.stringify(v.body)).toBe(200);
+  const s = await api().post(`/equity/share-periods/${month}/post`);
+  expect(s.status, JSON.stringify(s.body)).toBe(200);
+  expect(s.body.status).toBe("POSTED");
+  return s.body;
 }
 beforeAll(async () => {
   const fa = await prisma.financialAccount.findUniqueOrThrow({ where: { id: bank }, select: { ledgerAccountId: true } });
