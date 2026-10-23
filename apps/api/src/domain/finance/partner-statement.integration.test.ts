@@ -124,7 +124,11 @@ describe("a partner's figures, from the ledger", () => {
   it("the history labels a reversed share as reversed, not as paid; earned goes down", async () => {
     const w = await partner();
     const share = await owe(w, 4_000);
-    await reverseJournal(share.id, { reason: "posted to the wrong partner" }, OWNER);
+    // a share is undone only as a correction with its evidence (never by reversing the journal by hand)
+    await expect(reverseJournal(share.id, { reason: "posted to the wrong partner" }, OWNER)).rejects.toMatchObject({ details: { code: "JOURNAL_OWNED_BY_PROFIT_SHARE" } });
+    const prop = await api().post("/equity/adjustments", { kind: "INVALID_POSTING", partnerId: w.id, relatedEntryId: share.id, reason: "posted to the wrong partner" });
+    expect(prop.body.status, JSON.stringify(prop.body)).toBe("PROPOSED");
+    expect((await api().post(`/equity/adjustments/${prop.body.id}/approve`)).status).toBe(200);
     const items = (await api().get(`/equity/partners/${w.id}/activity`)).body.items as Array<{ kind: string; class: string; amount: number }>;
     expect(items.map((i) => [i.kind, i.class, i.amount])).toEqual([["SHARE_REVERSED", "SHARE_REVERSAL", -4_000], ["PROFIT_SHARE", "SHARE", 4_000]]);
     const o = await overview(w);

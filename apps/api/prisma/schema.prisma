@@ -2152,30 +2152,30 @@ enum MessageDirection {
 /// Admin V2 Inbox R2 (DR-4): one thread with a customer, whatever channel it arrived on. The Inbox binds to this, never
 /// to a provider. Website contact-form messages are channel WEB_FORM (Feedback rows were backfilled; new ones land here).
 model Conversation {
-  id            String                @id @default(cuid())
-  channel       ConversationChannel
-  subject       String
-  contactName   String
-  email         String?
-  phone         String?
-  customerId    String?
-  customer      Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  status        ConversationStatus    @default(OPEN)
+  id               String                @id @default(cuid())
+  channel          ConversationChannel
+  subject          String
+  contactName      String
+  email            String?
+  phone            String?
+  customerId       String?
+  customer         Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  status           ConversationStatus    @default(OPEN)
   /// Who is handling it (Blueprint V2 Inbox "assignment"); null = nobody yet.
-  assignedToId  String?
-  assignedTo    AdminUser?            @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  lastMessageAt DateTime              @default(now())
-  createdAt     DateTime              @default(now())
+  assignedToId     String?
+  assignedTo       AdminUser?            @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  lastMessageAt    DateTime              @default(now())
+  createdAt        DateTime              @default(now())
   /// The Feedback row this thread was backfilled from (provenance only).
-  feedbackId    String?               @unique
+  feedbackId       String?               @unique
   /// The thread's id at Meta: WhatsApp number (wa_id), Messenger PSID, Instagram IGSID, or the top-level comment id.
   externalThreadId String?
   /// The customer's last message — Meta's reply window counts from it (shared replyWindow()).
-  lastInboundAt DateTime?
+  lastInboundAt    DateTime?
   /// FB_COMMENT: the post (or ad post) the comment is on.
-  postId        String?
-  messages      ConversationMessage[]
-  draft         ConversationDraft?
+  postId           String?
+  messages         ConversationMessage[]
+  draft            ConversationDraft?
 
   @@unique([channel, externalThreadId])
   @@index([status, lastMessageAt])
@@ -3313,7 +3313,7 @@ model FinanceBusiness {
   stockCounts                 StockCount[]
   materialRolls               MaterialRoll[]
   stockHubEntries             StockHubEntry[]
-  landedCosts                LandedCost[]
+  landedCosts                 LandedCost[]
   courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
   suppliers                   Supplier[]
@@ -3342,6 +3342,9 @@ model FinanceBusiness {
   payrollRemittances          PayrollRemittance[]
   partners                    Partner[]
   profitShares                ProfitShare[]
+  partnerShareRates           PartnerShareRate[]
+  profitSharePeriods          ProfitSharePeriod[]
+  profitShareAdjustments      ProfitShareAdjustment[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -4201,6 +4204,8 @@ model TreasuryMovement {
   @@index([businessId, status])
   @@index([bankTransactionId])
   @@index([refundOfPaymentId])
+  /// What is waiting to be paid to a partner (partner-payable.ts) is read under a lock on every payment.
+  @@index([counterAccountId, status])
   @@index([refundOfCreditNoteId])
 }
 
@@ -6002,37 +6007,39 @@ model PayrollRemittance {
 
 /// A partner of the business, with their own capital and current accounts (sensitive equity sub-accounts).
 model Partner {
-  id                 String          @id @default(cuid())
+  id                 String                  @id @default(cuid())
   businessId         String
-  business           FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business           FinanceBusiness         @relation(fields: [businessId], references: [id], onDelete: Restrict)
   /// FinanceSequence "partner" — shown as PT-01.
   number             Int
   name               String
   phone              String?
   email              String?
-  joinedOn           DateTime        @db.Date
-  leftOn             DateTime?       @db.Date
+  joinedOn           DateTime                @db.Date
+  leftOn             DateTime?               @db.Date
   /// The share the partners have discussed — UNCONFIRMED until the signed agreement (B-2); nothing is computed from it.
-  agreedSharePct     Decimal?        @db.Decimal(7, 4)
+  agreedSharePct     Decimal?                @db.Decimal(7, 4)
   agreementReference String?
   /// OWNER: the business's owner — capital is 3100 Owner capital, the current account is 3300 Drawings (one per business).
   /// WORKING: shares profit for their work and puts in no capital. INVESTOR: a partner with capital.
-  role               PartnerRole     @default(INVESTOR)
+  role               PartnerRole             @default(INVESTOR)
   /// The CONFIRMED share of each month's net profit (docs/FINANCE_EQUITY.md §8) — profit shares are computed from it.
-  profitSharePct     Decimal?        @db.Decimal(7, 4)
-  shareFrom          DateTime?       @db.Date
-  lossRule           ProfitShareLossRule @default(ZERO_IN_LOSS_MONTHS)
+  profitSharePct     Decimal?                @db.Decimal(7, 4)
+  shareFrom          DateTime?               @db.Date
+  lossRule           ProfitShareLossRule     @default(ZERO_IN_LOSS_MONTHS)
   shareConfirmedAt   DateTime?
   shareConfirmedNote String?
   profitShares       ProfitShare[]
-  capitalAccountId   String          @unique
-  capitalAccount     LedgerAccount   @relation("PartnerCapital", fields: [capitalAccountId], references: [id], onDelete: Restrict)
-  currentAccountId   String          @unique
-  currentAccount     LedgerAccount   @relation("PartnerCurrent", fields: [currentAccountId], references: [id], onDelete: Restrict)
+  shareRates         PartnerShareRate[]
+  shareAdjustments   ProfitShareAdjustment[]
+  capitalAccountId   String                  @unique
+  capitalAccount     LedgerAccount           @relation("PartnerCapital", fields: [capitalAccountId], references: [id], onDelete: Restrict)
+  currentAccountId   String                  @unique
+  currentAccount     LedgerAccount           @relation("PartnerCurrent", fields: [currentAccountId], references: [id], onDelete: Restrict)
   notes              String?
   createdByAdminId   String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@unique([businessId, number])
 }
@@ -6209,4 +6216,105 @@ model ProfitShare {
 
   @@unique([partnerId, period])
   @@index([businessId, period])
+}
+
+/// A partner's profit-share rate from a month on (partner finance plan §8.1). Each month is shared at the rate in force
+/// for it; a new rate starts after the last shared month, so a shared month is never re-priced. pct null = no share from
+/// that month.
+model PartnerShareRate {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  partnerId        String
+  partner          Partner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  pct              Decimal?        @db.Decimal(7, 4)
+  /// The first day of the month the rate starts.
+  effectiveFrom    DateTime        @db.Date
+  note             String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@unique([partnerId, effectiveFrom])
+}
+
+enum ProfitSharePeriodStatus {
+  PREPARED
+  VERIFIED
+  POSTED
+  POSTING_FAILED
+  RESTATEMENT_WATCH
+}
+
+/// A month's profit sharing (partner finance plan §7): prepared once the accounting period is CLOSED (with its blockers),
+/// verified by a person who confirms the profit figure, then posted once. Autopilot only posts a verified month.
+model ProfitSharePeriod {
+  id                String                  @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness         @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// YYYY-MM
+  period            String
+  status            ProfitSharePeriodStatus
+  /// The month's net profit as prepared (and confirmed at verification).
+  netProfit         Decimal?                @db.Decimal(18, 2)
+  /// What was checked when it was prepared: the month-end checklist's steps and whether any blocks sharing.
+  readiness         Json                    @default("{}")
+  blocked           Boolean                 @default(false)
+  preparedAt        DateTime?
+  preparedByAdminId String?
+  verifiedAt        DateTime?
+  verifiedByAdminId String?
+  postedAt          DateTime?
+  lastError         String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@unique([businessId, period])
+}
+
+enum ProfitShareAdjustmentKind {
+  PROFIT_RESTATEMENT_UP
+  PROFIT_RESTATEMENT_DOWN
+  DUPLICATE_POSTING
+  INVALID_POSTING
+}
+
+enum ProfitShareAdjustmentStatus {
+  PROPOSED
+  POSTED
+  REJECTED
+  POLICY_REVIEW
+}
+
+/// A correction to a partner's shares (partner finance plan §8.2), never an edit of a share: a month's profit later higher
+/// (credited once approved), lower (POLICY_REVIEW — nothing is taken back without an accounting decision), or a duplicate /
+/// wrong posting reversed with its evidence, only while it fits in what the partner is owed.
+model ProfitShareAdjustment {
+  id                String                      @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness             @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  partnerId         String
+  partner           Partner                     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  /// YYYY-MM of the share it corrects.
+  period            String
+  kind              ProfitShareAdjustmentKind
+  status            ProfitShareAdjustmentStatus
+  /// Signed: + credits the partner, − debits (only a duplicate / wrong posting's reversal ever posts a −).
+  amount            Decimal                     @db.Decimal(18, 2)
+  /// The month's own rate (never today's).
+  sharePct          Decimal?                    @db.Decimal(7, 4)
+  /// The profit the share was worked out on, and the profit now.
+  profitThen        Decimal?                    @db.Decimal(18, 2)
+  profitNow         Decimal?                    @db.Decimal(18, 2)
+  reason            String
+  /// DUPLICATE_POSTING / INVALID_POSTING: the journal reversed.
+  relatedEntryId    String?
+  proposedByAdminId String?
+  decidedByAdminId  String?
+  decidedAt         DateTime?
+  rejectionReason   String?
+  eventId           String?
+  journalEntryId    String?
+  createdAt         DateTime                    @default(now())
+
+  @@index([partnerId, period])
 }

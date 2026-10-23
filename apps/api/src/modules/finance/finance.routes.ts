@@ -65,6 +65,12 @@ import {
   profitSharePaySchema,
   ownerMoneySchema,
   partnerCapitalSchema,
+  shareRateSchema,
+  sharePeriodVerifySchema,
+  sharePeriodParamSchema,
+  adjustmentProposeSchema,
+  adjustmentRejectSchema,
+  adjustmentDetectSchema,
   payoutsTakenSchema,
   partnerActivityQuerySchema,
   equityQuerySchema,
@@ -118,6 +124,7 @@ import * as payroll from "../../domain/finance/payroll.service";
 import * as equity from "../../domain/finance/equity.service";
 import * as partnerProfit from "../../domain/finance/partner-profit.service";
 import * as partnerStatements from "../../domain/finance/partner-statement.service";
+import * as sharePeriods from "../../domain/finance/profit-share-period.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -183,7 +190,7 @@ financeRouter.patch("/financial-accounts/:id", requirePermission("finance.config
 // ── periods ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/periods", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json({ periods: await periods.listPeriods() })));
 for (const transition of ["soft-close", "close", "reopen"] as const) {
-  financeRouter.post(`/periods/:id/${transition}`, requirePermission("finance.period_close"), validate(periodActionSchema), asyncHandler(async (req, res) => res.json(await periods.changePeriodStatus(id(req), transition, req.body.reason, await actorOf(req)))));
+  financeRouter.post(`/periods/:id/${transition}`, requirePermission("finance.period_close"), validate(periodActionSchema), asyncHandler(async (req, res) => res.json(await periods.changePeriodStatus(id(req), transition, req.body.reason, await actorOf(req), { acknowledgeShares: req.body.acknowledgeShares }))));
 }
 
 // ── journals ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -319,6 +326,20 @@ financeRouter.post("/equity/owner/money", SENSITIVE, validate(ownerMoneySchema),
 financeRouter.get("/equity/owner/payouts", SENSITIVE, asyncHandler(async (_req, res) => res.json(await partnerProfit.ownerPayouts())));
 // one source for every partner and owner figure (partner-statement.service): a partner's statement, the owner's summary
 financeRouter.get("/equity/partners/:id/statement", SENSITIVE, validate(partnerActivityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await partnerStatements.partnerStatement(id(req), req.query as never))));
+// a month's profit sharing — prepared once the period is closed, verified by a person, posted once — and corrections to
+// it (profit-share-period.service, partner finance phase 3); rates by month
+financeRouter.get("/equity/share-periods", SENSITIVE, asyncHandler(async (_req, res) => res.json(await sharePeriods.listSharePeriods())));
+financeRouter.post("/equity/share-periods/:period/prepare", SENSITIVE, validate(sharePeriodParamSchema, "params"), asyncHandler(async (req, res) => res.json(await sharePeriods.prepareSharePeriod(req.params.period!, await actorOf(req)))));
+financeRouter.post("/equity/share-periods/:period/verify", SENSITIVE, validate(sharePeriodParamSchema, "params"), validate(sharePeriodVerifySchema), asyncHandler(async (req, res) => res.json(await sharePeriods.verifySharePeriod(req.params.period!, req.body, await actorOf(req)))));
+financeRouter.post("/equity/share-periods/:period/post", SENSITIVE, validate(sharePeriodParamSchema, "params"), asyncHandler(async (req, res) => res.json(await sharePeriods.postSharePeriod(req.params.period!, await actorOf(req)))));
+financeRouter.post("/equity/share-periods/:period/retry", SENSITIVE, validate(sharePeriodParamSchema, "params"), asyncHandler(async (req, res) => res.json(await sharePeriods.retrySharePeriod(req.params.period!, await actorOf(req)))));
+financeRouter.get("/equity/adjustments", SENSITIVE, asyncHandler(async (req, res) => res.json(await sharePeriods.listAdjustments({ partnerId: typeof req.query.partnerId === "string" ? req.query.partnerId : undefined }))));
+financeRouter.post("/equity/adjustments", SENSITIVE, validate(adjustmentProposeSchema), asyncHandler(async (req, res) => res.status(201).json(await sharePeriods.proposeReversal(req.body, await actorOf(req)))));
+financeRouter.post("/equity/adjustments/detect", SENSITIVE, validate(adjustmentDetectSchema), asyncHandler(async (req, res) => res.json(await sharePeriods.detectRestatements(req.body, await actorOf(req)))));
+financeRouter.post("/equity/adjustments/:id/approve", SENSITIVE, asyncHandler(async (req, res) => res.json(await sharePeriods.approveAdjustment(id(req), await actorOf(req)))));
+financeRouter.post("/equity/adjustments/:id/reject", SENSITIVE, validate(adjustmentRejectSchema), asyncHandler(async (req, res) => res.json(await sharePeriods.rejectAdjustment(id(req), req.body.reason, await actorOf(req)))));
+financeRouter.get("/equity/partners/:id/rates", SENSITIVE, asyncHandler(async (req, res) => res.json(await sharePeriods.listShareRates(id(req)))));
+financeRouter.post("/equity/partners/:id/rates", SENSITIVE, validate(shareRateSchema), asyncHandler(async (req, res) => res.status(201).json(await sharePeriods.setShareRate(id(req), req.body, await actorOf(req)))));
 financeRouter.get("/equity/owner/summary", SENSITIVE, validate(equityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await partnerStatements.ownerSummary((req.query as { asOf?: string }).asOf))));
 financeRouter.post("/equity/owner/payouts-taken", SENSITIVE, validate(payoutsTakenSchema), asyncHandler(async (req, res) => res.json(await partnerProfit.markPayoutsTaken(req.body.settlementIds, await actorOf(req)))));
 

@@ -26,11 +26,11 @@ import { prisma } from "../../config/prisma";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { resolveMappedAccount } from "./chart.service";
 import { businessDateOf, dateColumn, financeError, toMajorNumber, toMinor } from "./finance-values";
-import { PROFIT_SHARE_EVENT } from "./owner-books-posting-rules";
+import { PROFIT_SHARE_ADJUSTED_EVENT, PROFIT_SHARE_EVENT } from "./owner-books-posting-rules";
 import { PARTNER_ADVANCE_ACTION } from "./partner-payable";
 
 export const LINE_CLASSES = [
-  "SHARE", "SHARE_REVERSAL", "PAYMENT", "PAYMENT_REVERSAL", "PARTNER_DEPOSIT", "PARTNER_DEPOSIT_REVERSAL",
+  "SHARE", "SHARE_REVERSAL", "SHARE_CORRECTION", "SHARE_CORRECTION_REVERSAL", "PAYMENT", "PAYMENT_REVERSAL", "PARTNER_DEPOSIT", "PARTNER_DEPOSIT_REVERSAL",
   "CAPITAL_IN", "CAPITAL_IN_REVERSAL", "CAPITAL_OUT", "CAPITAL_OUT_REVERSAL", "OPENING", "UNCLASSIFIED",
 ] as const;
 export type LineClass = (typeof LINE_CLASSES)[number];
@@ -58,11 +58,14 @@ export async function classifiedLines(db: Db, businessId: string, accounts: { cu
   const movements = new Map((movementIds.length ? await db.treasuryMovement.findMany({ where: { id: { in: movementIds } }, select: { id: true, kind: true, direction: true, status: true } }) : []).map((m) => [m.id, m]));
   const advances = new Set(movementIds.length ? (await db.financeAuditEntry.findMany({ where: { businessId, action: PARTNER_ADVANCE_ACTION, entityType: "TreasuryMovement", entityId: { in: movementIds } }, select: { entityId: true } })).map((a) => a.entityId) : []);
   const eventIds = [...new Set(entries.map((e) => e.financialEventId).filter((x): x is string => Boolean(x)))];
-  const shareEvents = new Set(eventIds.length ? (await db.financialEvent.findMany({ where: { id: { in: eventIds }, eventType: PROFIT_SHARE_EVENT }, select: { id: true } })).map((e) => e.id) : []);
+  const events = eventIds.length ? await db.financialEvent.findMany({ where: { id: { in: eventIds }, eventType: { in: [PROFIT_SHARE_EVENT, PROFIT_SHARE_ADJUSTED_EVENT] } }, select: { id: true, eventType: true } }) : [];
+  const shareEvents = new Set(events.filter((e) => e.eventType === PROFIT_SHARE_EVENT).map((e) => e.id));
+  const correctionEvents = new Set(events.filter((e) => e.eventType === PROFIT_SHARE_ADJUSTED_EVENT).map((e) => e.id));
 
   const base = (e: EntryInfo, onCapital: boolean): LineClass | null => {
     if (e.kind === "OPENING_BALANCE") return "OPENING";
     if (e.kind === "EVENT" && e.financialEventId && shareEvents.has(e.financialEventId) && !onCapital) return "SHARE";
+    if (e.kind === "EVENT" && e.financialEventId && correctionEvents.has(e.financialEventId) && !onCapital) return "SHARE_CORRECTION";
     if (e.kind === "TREASURY" && e.sourceType === "TreasuryMovement" && e.sourceId) {
       const m = movements.get(e.sourceId);
       if (!m) return null;
@@ -132,7 +135,7 @@ export async function partnerBalances(partners: Array<{ id: string; currentAccou
     out.set(p.id, {
       asOf: day,
       postedPayable: m(P), pendingCommitments: m(C), availableToPay: m(Math.max(0, P - C)), overCommitted: P - C < 0 && C > 0,
-      finalizedEarnings: m(netOf(curRows, ["SHARE", "SHARE_REVERSAL"], cur)),
+      finalizedEarnings: m(netOf(curRows, ["SHARE", "SHARE_REVERSAL", "SHARE_CORRECTION", "SHARE_CORRECTION_REVERSAL"], cur)),
       paymentsCompleted: m(-netOf(curRows, ["PAYMENT", "PAYMENT_REVERSAL"], cur)),
       paidInAdvance: m(Math.max(0, -P)),
       receivedFromPartner: m(netOf(curRows, ["PARTNER_DEPOSIT", "PARTNER_DEPOSIT_REVERSAL"], cur)),
