@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { cacheDelByPrefix } from "../../config/redis";
 import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, trackOrder } from "../../test-fixtures";
 import { createManualOrder } from "../orders/order.service";
@@ -65,6 +66,11 @@ const finance = async (): Promise<FinanceCampaignSpend[]> => [
 ];
 
 describe("ad returns", () => {
+  // Each test asks for the same range with different Finance spend: the cached report (Redis, as in CI) must not leak.
+  beforeEach(async () => {
+    await cacheDelByPrefix("analytics:v1:ad-returns:");
+  });
+
   it("credits orders to their session's campaign and judges spend on what was actually delivered", async () => {
     const r = await getAdReturns(undefined, FROM, TO, { campaignSpend: finance });
     const a = r.campaigns.find((c) => c.financeCampaignId === "fc1")!;
