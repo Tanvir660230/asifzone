@@ -258,6 +258,19 @@ describe("unbooked provisional deficits (fill to order)", () => {
     expect(run([unfilled(1, 27_800), receipt(1, null)]).pos).toMatchObject({ deficitQty: 1, unvaluedQty: 1 });
   });
 
+  it("after a first fill: a sale beyond the filled bottles at the average — the valued one leaves as usual, the rest unbooked, nothing posted", () => {
+    const r = run([receipt(1, 31_600), unfilled(3, 31_600)]);
+    expect(r.pos).toMatchObject({ valuedQty: 0, value: 0n, deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: 31_600, unbooked: true }] });
+    ruleHolds(r.last);
+    expect(r.last).toMatchObject({ valueChange: -31_600n, unbookedDeficitChange: 63_200n });
+    expect(posted(r.last)).toBe(0n);
+    expect(posted(run([receipt(2, 63_200)], r.pos).last)).toBe(0n); // the fill at the same price
+    // A non-integral average: only the valued units' rounding residue is posted, exactly as an ordinary sale of them would.
+    const odd = run([receipt(3, 100_000), unfilled(5, 33_333)]);
+    expect(odd.last).toMatchObject({ unbookedDeficitChange: 66_666n });
+    expect(posted(odd.last)).toBe(run([receipt(3, 100_000), sale(3, 33_333)]).last.costAdjustment); // −1
+  });
+
   it("booked layers (ordinary provisional deficits) are unchanged and covered in order", () => {
     const ordinary = run([receipt(1, 10_000), sale(3, 10_000)]);
     expect(ordinary.last).toMatchObject({ costAdjustment: 20_000n, unbookedDeficitChange: 0n });

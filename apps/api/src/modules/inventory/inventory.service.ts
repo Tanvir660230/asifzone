@@ -157,18 +157,18 @@ export async function recordSale(
   // One statement, run while this transaction holds the rows' locks (taken by the decrements above): writes the ORDER
   // movements and returns each variant's costing facts with a snapshot taken after the locks — no other transaction can
   // change a locked variant's position, so it is current. The costing service then values every exit in one call.
-  const rows = await tx.$queryRaw<Array<{ id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date; variantCreatedAt: Date; trackInventory: boolean; hasState: boolean } & StoredPosition>>`
+  const rows = await tx.$queryRaw<Array<{ id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date; variantCreatedAt: Date; trackInventory: boolean; fillToOrder: boolean; hasState: boolean } & StoredPosition>>`
     WITH mv AS (
       INSERT INTO "StockMovement" (id, "variantId", change, reason, "orderId", "adminId", note, "createdAt")
       SELECT x.id, x."variantId", x.change, 'ORDER'::"StockMovementReason", ${orderId}, ${opts.adminId ?? null}, ${opts.note ?? null}, (NOW() AT TIME ZONE 'UTC')
       FROM jsonb_to_recordset(${JSON.stringify(items.map((item) => ({ id: randomUUID(), variantId: item.variantId, change: -item.quantity })))}::jsonb) AS x(id text, "variantId" text, change int)
       RETURNING id, "variantId", change, reason::text AS reason, "orderId", "createdAt"
     )
-    SELECT mv.*, v."createdAt" AS "variantCreatedAt", p."trackInventory", s."variantId" IS NOT NULL AS "hasState",
+    SELECT mv.*, v."createdAt" AS "variantCreatedAt", p."trackInventory", p."fillToOrder", s."variantId" IS NOT NULL AS "hasState",
            s."valuedQty", s.value, s."avgUnitCost", s."unvaluedQty", s."deficitQty", s."deficitLayers"
     FROM mv JOIN "ProductVariant" v ON v.id = mv."variantId" JOIN "Product" p ON p.id = v."productId"
     LEFT JOIN "InventoryCostState" s ON s."variantId" = mv."variantId"`;
-  const known = new Map<string, VariantCosting>(rows.map((r) => [r.variantId, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null }]));
+  const known = new Map<string, VariantCosting>(rows.map((r) => [r.variantId, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null, fillToOrder: r.fillToOrder }]));
   const byVariant = new Map(rows.map((r) => [r.variantId, r]));
   await value(
     tx,

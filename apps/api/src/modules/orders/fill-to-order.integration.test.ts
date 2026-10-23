@@ -516,3 +516,129 @@ describe("fill to order — the recipe cost at sale time", () => {
     expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
   });
 });
+
+// After the first fill a fill-to-order variant has a moving average — and selling beyond its filled bottles is still the
+// normal attar path. Those deficit units are the same UNBOOKED layer, at the average: nothing posts to 5150 at the sale,
+// the fill posts only actual − provisional, so a month end between the sale and the fill never shifts profit.
+describe("fill to order — selling beyond filled bottles once the variant has an average", () => {
+  let key = 0;
+  const RECIPE = 6 * 38 + 50; // 278
+  const REAL = 7 * 38 + 50; // 316: bottles really filled with 7 ml
+  const fill = (variantId: string, quantity: number, ml = 7) =>
+    quickRefill({ variantId, quantity, used: [{ materialVariantId: oil, quantity: ml * quantity }, { materialVariantId: bottle6, quantity }] }, OWNER, `fto-avg-${RUN}-${++key}`);
+  async function postPending() {
+    for (let round = 0; round < 10; round++) {
+      const waiting = await prisma.financialEvent.findMany({ where: { status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true } });
+      if (!waiting.length) return;
+      for (const e of waiting) await processFinancialEvent(e.id);
+    }
+  }
+  async function balance(mappingKey: string) {
+    const { business } = await getFinanceContext();
+    const accountId = (await prisma.accountMapping.findUniqueOrThrow({ where: { businessId_key: { businessId: business.id, key: mappingKey } } })).accountId;
+    const lines = await prisma.journalLine.findMany({ where: { accountId, entry: { status: "POSTED", businessId: business.id } } });
+    return Math.round(lines.reduce((s, l) => s + Number(l.debit) - Number(l.credit), 0) * 100) / 100;
+  }
+  /** Net profit so far (income − costs) over every posted line: what a month end would report. */
+  async function profit() {
+    const { business } = await getFinanceContext();
+    const lines = await prisma.journalLine.findMany({ where: { entry: { status: "POSTED", businessId: business.id }, account: { type: { in: ["REVENUE", "COGS", "EXPENSE", "OTHER_INCOME", "OTHER_EXPENSE"] } } } });
+    return Math.round(lines.reduce((s, l) => s + Number(l.credit) - Number(l.debit), 0) * 100) / 100;
+  }
+  async function checks() {
+    await postPending();
+    const r = await runReconciliation({ checks: ["inventory.valuation_vs_ledger", "inventory.quantity_vs_valuation", "inventory.valuation_postings", "inventory.order_cost_links", "manufacturing.wip", "ledger.integrity", "events.unposted"] }, OWNER);
+    return Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]));
+  }
+  const ALL_MATCHED = {
+    "inventory.valuation_vs_ledger": "MATCHED", "inventory.quantity_vs_valuation": "MATCHED", "inventory.valuation_postings": "MATCHED", "inventory.order_cost_links": "MATCHED",
+    "manufacturing.wip": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED",
+  };
+  const costState = (variantId: string) => prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId } });
+  /** A fresh attar that has been filled once and sold out: it has an average (REAL) and no bottles. */
+  async function soldOutAfterFirstFill(phone: string) {
+    const a = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await fill(a.variant, 1);
+    await placeOrder([{ variantId: a.variant, quantity: 1 }], { customerPhone: phone });
+    const s = await costState(a.variant);
+    expect(s).toMatchObject({ valuedQty: 0, deficitQty: 0 });
+    expect(Number(s.avgUnitCost)).toBe(REAL);
+    return a;
+  }
+
+  it("order 2 beyond filled stock → unbooked layer at the average, 5150 untouched; the fill at the same price leaves 5150 and profit unchanged", async () => {
+    const a = await soldOutAfterFirstFill("01712000041");
+    expect(await checks()).toEqual(ALL_MATCHED);
+    const adjBefore = await balance("cogs.cost_adjustments");
+    const profitBefore = await profit();
+
+    const order = await placeOrder([{ variantId: a.variant, quantity: 2 }], { customerPhone: "01712000042" });
+    const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id }, select: { unitCostSnapshot: true, unitCostSource: true } });
+    expect(line).toMatchObject({ unitCostSnapshot: REAL * 100, unitCostSource: "INVENTORY_PROVISIONAL" }); // the average, not the recipe (278)
+    expect(await costState(a.variant)).toMatchObject({ deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: REAL * 100, unbooked: true }] });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore); // nothing set aside at the sale
+    const profitAtMonthEnd = await profit(); // a month end falls here, between the sale and the fill
+    expect(profitAtMonthEnd).toBe(profitBefore);
+
+    await fill(a.variant, 2); // same 7 ml a bottle → actual = provisional
+    expect(await costState(a.variant)).toMatchObject({ deficitQty: 0, deficitLayers: [], valuedQty: 0 });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    expect(await profit()).toBe(profitAtMonthEnd); // the next month sees no shift
+    await assertInventoryInvariants(a.variant);
+  });
+
+  it("a fill at a different cost posts only actual − average", async () => {
+    const a = await soldOutAfterFirstFill("01712000043");
+    await postPending();
+    const adjBefore = await balance("cogs.cost_adjustments");
+    await placeOrder([{ variantId: a.variant, quantity: 1 }], { customerPhone: "01712000044" });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    await fill(a.variant, 1, 6); // 278 really, provisional 316
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore - (REAL - RECIPE));
+  });
+
+  it("cancel before the fill nets the unbooked layer at zero", async () => {
+    const a = await soldOutAfterFirstFill("01712000045");
+    await postPending();
+    const adjBefore = await balance("cogs.cost_adjustments");
+    const profitBefore = await profit();
+    const order = await placeOrder([{ variantId: a.variant, quantity: 2 }], { customerPhone: "01712000046" });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    await updateOrderStatus(order.id, { status: "CANCELLED" }, admin);
+    expect(await costState(a.variant)).toMatchObject({ deficitQty: 0, deficitLayers: [], unvaluedQty: 0, valuedQty: 0 });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    expect(await profit()).toBe(profitBefore);
+  });
+
+  it("mixed: 1 filled bottle + an order of 3 → 1 ordinary exit + 2 unbooked; the fill of 2 leaves 5150 unchanged", async () => {
+    const a = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await fill(a.variant, 1);
+    expect(await costState(a.variant)).toMatchObject({ valuedQty: 1 });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    const adjBefore = await balance("cogs.cost_adjustments");
+    const profitBefore = await profit();
+
+    const order = await placeOrder([{ variantId: a.variant, quantity: 3 }], { customerPhone: "01712000047" });
+    expect(await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id }, select: { unitCostSnapshot: true, unitCostSource: true } }))
+      .toMatchObject({ unitCostSnapshot: REAL * 100, unitCostSource: "INVENTORY_PROVISIONAL" });
+    const after = await costState(a.variant);
+    expect(after).toMatchObject({ valuedQty: 0, deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: REAL * 100, unbooked: true }] });
+    expect(Number(after.value)).toBe(0); // the filled bottle left at its value: an ordinary exit
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    expect(await profit()).toBe(profitBefore);
+
+    await fill(a.variant, 2);
+    expect(await costState(a.variant)).toMatchObject({ deficitQty: 0, deficitLayers: [], valuedQty: 0 });
+    expect(await checks()).toEqual(ALL_MATCHED);
+    expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
+    expect(await profit()).toBe(profitBefore);
+    await assertInventoryInvariants(a.variant);
+  });
+});

@@ -63,8 +63,13 @@ it (`INVENTORY_PROVISIONAL`) and the costing deficit is an **unbooked** layer at
 nothing is posted when it is sold, the cost of goods is booked at delivery from the line, and the fill that covers the
 units posts only *actual − standard* to 5150 (0 when prices haven't moved). A cancel before the fill nets the layer at
 the same cost with nothing posted. The inventory account check reads `ledger = valuation + in-transit − unbooked deficit`
-(the bottles' cost is on the way to the customer while their materials are still on the shelf). Once a variant has an
-average (after its first fill), a sale beyond its filled bottles is an ordinary provisional deficit at that average.
+(the bottles' cost is on the way to the customer while their materials are still on the shelf).
+
+The same holds after the first fill, the normal attar path: **every** unit a fill-to-order variant sells beyond its
+filled bottles is an unbooked layer, at the variant's moving average once it has one (else the recipe cost, else no
+cost). Bottles that are filled leave as any sale does; an order of 3 with 1 filled bottle is 1 ordinary exit + 2
+unbooked. So 5150 moves only by *actual − provisional* at the fill, and a month end between sale and fill shifts no
+profit. Ordinary products (and their oversells) keep booked provisional deficits.
 
 ## 4. Go-live order
 

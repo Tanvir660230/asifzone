@@ -12,7 +12,7 @@
  *
  * A deficit layer is BOOKED (the default: its issue posted the provisional cost as a cost adjustment, Dr inventory /
  * Cr 5150, and its cover posts the whole covered value back, so 5150 nets to actual − provisional) or UNBOOKED (a
- * fill-to-order bottle sold before it is filled, at its recipe's standard cost, or ordered-not-filled at the cutover —
+ * fill-to-order bottle sold before it is filled, at its moving average or else its recipe's standard cost, or ordered-not-filled at the cutover —
  * docs/STOCK_HUB.md §3): its provisional cost is held OFF the inventory account, so its issue posts nothing and its cover
  * posts only actual − provisional. Every entry states `unbookedDeficitChange` (the change of the unbooked layers' value);
  * the ledger posts `costAdjustment − unbookedDeficitChange`, and the ledger bridge subtracts the unbooked deficit's value
@@ -503,6 +503,8 @@ export interface VariantCosting {
   variantCreatedAt: Date;
   hasState: boolean;
   position: StoredPosition | null;
+  /** The product is filled to order (docs/STOCK_HUB.md §3): its order exits beyond stock are unbooked deficits. */
+  fillToOrder: boolean;
 }
 
 /**
@@ -519,12 +521,12 @@ function inScope(v: VariantCosting, scope: CostingScope): boolean {
 async function readVariantCosting(tx: AppTransactionClient, variantIds: string[]): Promise<Map<string, VariantCosting>> {
   const ids = [...new Set(variantIds)].sort();
   if (!ids.length) return new Map();
-  const rows = await tx.$queryRaw<Array<{ id: string; variantCreatedAt: Date; trackInventory: boolean; hasState: boolean } & StoredPosition>>`
-    SELECT v.id, v."createdAt" AS "variantCreatedAt", p."trackInventory", s."variantId" IS NOT NULL AS "hasState",
+  const rows = await tx.$queryRaw<Array<{ id: string; variantCreatedAt: Date; trackInventory: boolean; fillToOrder: boolean; hasState: boolean } & StoredPosition>>`
+    SELECT v.id, v."createdAt" AS "variantCreatedAt", p."trackInventory", p."fillToOrder", s."variantId" IS NOT NULL AS "hasState",
            s."valuedQty", s.value, s."avgUnitCost", s."unvaluedQty", s."deficitQty", s."deficitLayers"
     FROM "ProductVariant" v JOIN "Product" p ON p.id = v."productId" LEFT JOIN "InventoryCostState" s ON s."variantId" = v.id
     WHERE v.id IN (${Prisma.join(ids)}) ORDER BY v.id FOR UPDATE OF v`;
-  return new Map(rows.map((r) => [r.id, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null }]));
+  return new Map(rows.map((r) => [r.id, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null, fillToOrder: r.fillToOrder }]));
 }
 
 /**
@@ -532,13 +534,20 @@ async function readVariantCosting(tx: AppTransactionClient, variantIds: string[]
  * read under the row lock the stock decrement holds: the moving average. INVENTORY when valued stock covers the units,
  * INVENTORY_PROVISIONAL when some leave beyond valued stock (a provisional cost, trued up through 5150 later), NONE when no
  * cost was ever known (never zero, never the catalog).
+ *
+ * A fill-to-order variant (`fillToOrder` given) sells beyond its filled bottles as its normal path, so EVERY unit it issues
+ * beyond stock is an unbooked deficit (the fill that covers it posts only actual − provisional; nothing moves 5150 at the
+ * sale, so a period end between sale and fill shifts no profit): at the moving average when it has one, else — never
+ * valued — at its recipe's standard cost, else no cost. Units covered by valued stock leave as any exit does.
  */
-function exitCost(position: CostPosition, qty: number, currency: string, recipeMinor?: number | null): { unitCostMinor: number | null; source: LineCostSource; unbooked: boolean } {
+function exitCost(position: CostPosition, qty: number, currency: string, fillToOrder?: { recipeMinor: number | null }): { unitCostMinor: number | null; source: LineCostSource; unbooked: boolean } {
   const unit = averageUnitCostMinor(position, currency);
-  // A fill-to-order bottle sold before any was ever valued: its recipe's standard cost, provisional and unbooked (the fill
-  // that covers it posts only the difference) — so the sale carries a cost and nothing is costed twice.
-  if (unit === null && recipeMinor != null && position.unvaluedQty === 0) return { unitCostMinor: recipeMinor, source: "INVENTORY_PROVISIONAL", unbooked: true };
-  return { unitCostMinor: unit, source: unit === null ? "NONE" : qty > position.valuedQty ? "INVENTORY_PROVISIONAL" : "INVENTORY", unbooked: false };
+  const source: LineCostSource = unit === null ? "NONE" : qty > position.valuedQty ? "INVENTORY_PROVISIONAL" : "INVENTORY";
+  if (fillToOrder) {
+    if (unit !== null) return { unitCostMinor: unit, source, unbooked: true };
+    if (fillToOrder.recipeMinor !== null && position.unvaluedQty === 0) return { unitCostMinor: fillToOrder.recipeMinor, source: "INVENTORY_PROVISIONAL", unbooked: true };
+  }
+  return { unitCostMinor: unit, source, unbooked: false };
 }
 
 /** One line of a fill-to-order variant's recipe (latest APPROVED bill of materials, lines the business supplies). */
@@ -608,11 +617,11 @@ export interface MovementToValue {
 
 const COUNTER_FOR_REASON: Record<string, AccountMappingKey> = { DAMAGED: "cogs.inventory_shrinkage", LOST: "cogs.inventory_shrinkage", PACKAGING_USE: "cogs.packaging" };
 
-function opFor(m: MovementToValue, position: CostPosition, currency: string, recipeMinor?: number | null): { op: CostOperation; unitCostMinor: number | null; lineSource?: LineCostSource } {
+function opFor(m: MovementToValue, position: CostPosition, currency: string, fillToOrder?: { recipeMinor: number | null }): { op: CostOperation; unitCostMinor: number | null; lineSource?: LineCostSource } {
   const qty = Math.abs(m.movement.change);
   if (m.basis.kind === "ORDER_EXIT") {
     if (!m.basis.orderItemIds.length) throw new Error(`COSTING_EXIT_UNLINKED: stock of costed variant ${m.movement.variantId} left for an order without the order lines to cost`);
-    const c = exitCost(position, qty, currency, recipeMinor);
+    const c = exitCost(position, qty, currency, fillToOrder);
     return { op: { type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor: c.unitCostMinor, ...(c.unbooked ? { unbooked: true } : {}) } }, unitCostMinor: c.unitCostMinor, lineSource: c.source };
   }
   if (m.basis.kind === "DOCUMENT") {
@@ -663,9 +672,11 @@ export async function valueStockMovementsInTx(
   const cur = scope.business.baseCurrency;
   const positions = new Map<string, CostPosition>();
   for (const [id, v] of facts) if (inScope(v, scope)) positions.set(id, positionOf(v.position, cur));
-  // Order exits of variants never valued (no average): a fill-to-order one takes its recipe's standard cost.
-  const neverValued = [...new Set(movements.filter((m) => m.basis.kind === "ORDER_EXIT" && m.movement.change < 0).map((m) => m.movement.variantId))]
-    .filter((id) => { const p = positions.get(id); return p !== undefined && p.avgScaled === null && p.unvaluedQty === 0; });
+  // Order exits of fill-to-order variants: their deficits are unbooked; one never valued (no average) takes its recipe's
+  // standard cost.
+  const fillToOrder = new Set([...new Set(movements.filter((m) => m.basis.kind === "ORDER_EXIT" && m.movement.change < 0).map((m) => m.movement.variantId))]
+    .filter((id) => positions.has(id) && facts.get(id)!.fillToOrder));
+  const neverValued = [...fillToOrder].filter((id) => { const p = positions.get(id)!; return p.avgScaled === null && p.unvaluedQty === 0; });
   const recipe = neverValued.length ? await recipeCostsAtAverage(tx, neverValued.sort(), cur) : new Map<string, number | null>();
 
   // A variant appears at most once per persisted batch (its next movement needs the position this one produces).
@@ -685,7 +696,7 @@ export async function valueStockMovementsInTx(
     if (m.movement.change === 0 || !positions.has(m.movement.variantId)) continue;
     if (batch.some((b) => b.m.movement.variantId === m.movement.variantId)) await flush();
     const position = positions.get(m.movement.variantId)!;
-    const { op, unitCostMinor, lineSource } = opFor(m, position, cur, recipe.get(m.movement.variantId));
+    const { op, unitCostMinor, lineSource } = opFor(m, position, cur, fillToOrder.has(m.movement.variantId) ? { recipeMinor: recipe.get(m.movement.variantId) ?? null } : undefined);
     const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
     batch.push({
       m,
