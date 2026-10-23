@@ -718,6 +718,8 @@ export const remitPayroll = (body: { liabilityAccountId: string; amount: number;
 export interface Partner {
   id: string; number: string; name: string; phone: string | null; email: string | null; joinedOn: string; leftOn: string | null;
   agreedSharePct: number | null; agreementReference: string | null; notes: string | null;
+  /** Share of ownership — not the share of profit (`profitSharePct`). */
+  ownershipPct: number | null;
   role: PartnerRole; profitSharePct: number | null; shareFrom: string | null; lossRule: "ZERO_IN_LOSS_MONTHS" | "CARRY_LOSSES";
   shareConfirmed: boolean; shareConfirmedAt: string | null; shareConfirmedNote: string | null;
   capitalAccount: { id: string; code: string; name: string }; currentAccount: { id: string; code: string; name: string };
@@ -736,14 +738,24 @@ export type PartnerRole = "OWNER" | "WORKING" | "INVESTOR";
 export type PaymentMethod = "CASH" | "BKASH" | "NAGAD" | "BANK" | "OTHER";
 export interface ProfitShareCorrection { kind: "CHANGE" | "CARRIED"; period: string; amount: number; note: string }
 export interface ProfitShareRow { id: string; period: string; periodStart: string; periodEnd: string; netProfit: number; sharePct: number; monthShare: number; corrections: ProfitShareCorrection[]; amount: number; carried: number; createdAt: string }
+/** From the ledger (partner-statement.service): owed = posted; pending = waiting for approval; available = payable now. */
+export interface PartnerBalances {
+  asOf: string; postedPayable: number; pendingCommitments: number; availableToPay: number; overCommitted: boolean;
+  finalizedEarnings: number; paymentsCompleted: number; paidInAdvance: number; receivedFromPartner: number; unclassified: number;
+  capital: { contributed: number; returned: number; net: number };
+}
 export interface PartnerShares {
-  partnerId: string; number: string; name: string; role: PartnerRole; sharePct: number; lossRule: string; confirmed: boolean; confirmedNote: string | null;
-  shares: ProfitShareRow[]; totals: { earned: number; paid: number; owed: number }; waitingMonths: string[];
+  partnerId: string; number: string; name: string; role: PartnerRole; sharePct: number | null; lossRule: string; confirmed: boolean; confirmedNote: string | null;
+  leftOn: string | null; status: "ACTIVE" | "LEFT" | "NO_CURRENT_SHARE";
+  shares: ProfitShareRow[]; balances: PartnerBalances; totals: { earned: number; paid: number; owed: number }; waitingMonths: string[];
   runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null;
 }
+export type PartnerActivityKind =
+  | "PUT_IN" | "PUT_IN_REVERSED" | "CAPITAL_BACK" | "CAPITAL_BACK_REVERSED" | "PROFIT_SHARE" | "SHARE_REVERSED" | "CREDITED"
+  | "TAKEN_OUT" | "PAID" | "PAYMENT_REVERSED" | "RECEIVED" | "RECEIVED_REVERSED" | "OTHER";
 export interface PartnerActivityItem {
   id: string; date: string; entryId: string; description: string; reference: string | null; account: "capital" | "current";
-  kind: "PUT_IN" | "CAPITAL_BACK" | "PROFIT_SHARE" | "CREDITED" | "TAKEN_OUT" | "PAID"; amount: number; capitalAfter: number; currentAfter: number;
+  kind: PartnerActivityKind; class: string; advance: boolean; amount: number; capitalAfter: number; currentAfter: number;
 }
 export interface PartnerActivity {
   partnerId: string; name: string; role: PartnerRole;

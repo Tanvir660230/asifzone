@@ -172,15 +172,16 @@ function OwnerMoneyForm({ into, onDone }: { into: boolean; onDone: () => void })
 
 function PayPartnerForm({ partners, initialId, onDone }: { partners: NonNullable<OwnerHome["people"]>["partners"]; initialId?: string; onDone: () => void }) {
   const money = useMoneyAccounts(PAYING);
-  const [id, setId] = useState(initialId ?? partners.find((p) => p.owed > 0)?.id ?? partners[0]?.id ?? "");
+  // What can be paid now (owed less payments waiting for approval); an advance beyond it is made from Owner & partners.
+  const [id, setId] = useState(initialId ?? partners.find((p) => p.available > 0)?.id ?? partners[0]?.id ?? "");
   const partner = partners.find((p) => p.id === id);
-  const [amount, setAmount] = useState(partner && partner.owed > 0 ? String(partner.owed) : "");
+  const [amount, setAmount] = useState(partner && partner.available > 0 ? String(partner.available) : "");
   const [account, setAccount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("BKASH");
   const [date, setDate] = useState(today());
   const [note, setNote] = useState("");
   const done = useDone(onDone, `Paid ${partner?.name ?? "partner"}`);
-  const tooMuch = partner ? Number(amount) > partner.owed : false;
+  const tooMuch = partner ? Number(amount) > partner.available : false;
   const valid = partner && amountOk(amount) && !tooMuch && account;
   const save = useMutation({
     mutationFn: () => {
@@ -192,12 +193,12 @@ function PayPartnerForm({ partners, initialId, onDone }: { partners: NonNullable
   });
   return (
     <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate(); }}>
-      <Field htmlFor="qp-partner" label="Partner" className="sm:col-span-2" hint={partner ? (partner.owed > 0 ? `Owed now: ${formatPrice(partner.owed)}` : "Nothing is owed right now — shares are added when each month ends") : undefined}>
-        <Select id="qp-partner" value={id} onChange={(e) => { setId(e.target.value); const p = partners.find((x) => x.id === e.target.value); setAmount(p && p.owed > 0 ? String(p.owed) : ""); }}>
+      <Field htmlFor="qp-partner" label="Partner" className="sm:col-span-2" hint={partner ? (partner.available > 0 ? `Can be paid now: ${formatPrice(partner.available)}${partner.pending > 0 ? ` (${formatPrice(partner.pending)} waiting for approval)` : ""}` : "Nothing can be paid right now — shares are added when each month ends") : undefined}>
+        <Select id="qp-partner" value={id} onChange={(e) => { setId(e.target.value); const p = partners.find((x) => x.id === e.target.value); setAmount(p && p.available > 0 ? String(p.available) : ""); }}>
           {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
       </Field>
-      <Field htmlFor="qp-amount" label={`Amount (${storeCurrencySymbol()})`} required error={tooMuch ? "More than is owed" : undefined}><Input id="qp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+      <Field htmlFor="qp-amount" label={`Amount (${storeCurrencySymbol()})`} required error={tooMuch ? "More than can be paid now — pay an advance from Owner & partners" : undefined}><Input id="qp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
       <Field htmlFor="qp-date" label="Date"><Input id="qp-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
       <Field htmlFor="qp-account" label="Paid from" required hint={money.isLoading || money.accounts.some((a) => a.currentBalance > 0) ? undefined : "No account has money in it right now"}><Select id="qp-account" value={account} onChange={(e) => setAccount(e.target.value)} disabled={money.isLoading}><option value="">Choose…</option>{money.accounts.filter((a) => a.currentBalance > 0).map((a) => <option key={a.id} value={a.id}>{a.name} ({formatPrice(a.currentBalance)})</option>)}</Select></Field>
       <Field htmlFor="qp-method" label="How"><Select id="qp-method" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>{METHOD.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</Select></Field>

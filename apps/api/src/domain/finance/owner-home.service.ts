@@ -14,8 +14,8 @@ import { booksStarted } from "./finance-facts";
 import { toMajorNumber, toMinor, type FinanceViewer } from "./finance-values";
 import { incomeStatement } from "./statements.service";
 import { moneyMap } from "./custody.service";
-import { equityOverview, isBusinessOwner } from "./equity.service";
 import { profitShareOverview } from "./partner-profit.service";
+import { ownerSummary } from "./partner-statement.service";
 import { listRenewals } from "./finance-center.service";
 
 type Month = { key: string; from: string; to: string };
@@ -75,17 +75,23 @@ export async function ownerHome(q: { month?: string }, viewer: FinanceViewer) {
     weOwe: { suppliers: t.suppliersOwed + t.goodsNotInvoiced, owner: t.ownerToRepay, loans: t.loans, storeCredit: t.storeCredit },
   };
 
-  // People — only for the owner (finance.sensitive).
+  // People — only for the owner (finance.sensitive). The same figures as Owner & partners (partner-statement.service):
+  // the owner's net capital and drawings side by side, never added up; each partner's owed / waiting / payable now.
   let people: null | {
-    owner: { name: string; putIn: number; takenOut: number; inBusiness: number } | null;
-    partners: Array<{ id: string; name: string; sharePct: number | null; owed: number; earned: number; paid: number; runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null }>;
+    owner: { name: string; netCapital: number; drawings: number; asOf: string } | null;
+    partners: Array<{ id: string; name: string; sharePct: number | null; status: string; owed: number; pending: number; available: number; paidInAdvance: number; earned: number; paid: number; runningMonth: { period: string; profitSoFar: number; shareSoFar: number } | null }>;
   } = null;
   if (viewer.sensitive) {
-    const [eq, shares] = await Promise.all([equityOverview({}), profitShareOverview()]);
-    const o = eq.partners.find((p) => isBusinessOwner(p.role));
+    const [o, shares] = await Promise.all([ownerSummary(), profitShareOverview()]);
     people = {
-      owner: o ? { name: o.name, putIn: o.balances.capital, takenOut: -o.balances.current, inBusiness: o.balances.total } : null,
-      partners: shares.partners.map((p) => ({ id: p.partnerId, name: p.name, sharePct: p.sharePct, owed: p.totals.owed, earned: p.totals.earned, paid: p.totals.paid, runningMonth: p.runningMonth })),
+      owner: o.partnerId ? { name: o.name!, netCapital: o.netCapital, drawings: o.drawings, asOf: o.asOf } : null,
+      partners: shares.partners
+        .filter((p) => p.status !== "LEFT" || p.balances.postedPayable !== 0 || p.balances.pendingCommitments !== 0)
+        .map((p) => ({
+          id: p.partnerId, name: p.name, sharePct: p.sharePct, status: p.status,
+          owed: p.balances.postedPayable, pending: p.balances.pendingCommitments, available: p.balances.availableToPay, paidInAdvance: p.balances.paidInAdvance,
+          earned: p.balances.finalizedEarnings, paid: p.balances.paymentsCompleted, runningMonth: p.runningMonth,
+        })),
     };
   }
 
@@ -94,7 +100,7 @@ export async function ownerHome(q: { month?: string }, viewer: FinanceViewer) {
   if (!started) todo.push({ kind: "BOOKS_NOT_STARTED", href: "/admin/finance/opening" });
   const drafts = await prisma.clearingSettlement.findMany({ where: { businessId: business.id, status: "DRAFT" }, select: { netAmount: true } });
   if (drafts.length) todo.push({ kind: "PAYOUT_WAITING", count: drafts.length, amount: toMajorNumber(drafts.reduce((s, d) => s + toMinor(d.netAmount, cur), 0), cur), href: "/admin/finance/courier" });
-  for (const p of people?.partners ?? []) if (p.owed > 0) todo.push({ kind: "PAY_PARTNER", name: p.name, amount: p.owed, partnerId: p.id, href: "/admin/finance/equity" });
+  for (const p of people?.partners ?? []) if (p.available > 0) todo.push({ kind: "PAY_PARTNER", name: p.name, amount: p.available, partnerId: p.id, href: "/admin/finance/equity" });
   for (const r of await listRenewals()) {
     if (r.status === "RENEW_SOON" || r.status === "EXPIRED") todo.push({ kind: r.status === "EXPIRED" ? "EXPIRED" : "RENEW_SOON", name: r.name, date: r.serviceEnd, amount: r.renewalAmount ?? r.amount, href: "/admin/finance/prepaid" });
   }

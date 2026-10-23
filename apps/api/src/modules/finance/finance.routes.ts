@@ -116,6 +116,7 @@ import * as alerts from "../../domain/finance/finance-alerts.service";
 import * as payroll from "../../domain/finance/payroll.service";
 import * as equity from "../../domain/finance/equity.service";
 import * as partnerProfit from "../../domain/finance/partner-profit.service";
+import * as partnerStatements from "../../domain/finance/partner-statement.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -311,6 +312,9 @@ financeRouter.post("/equity/owner/money", SENSITIVE, validate(ownerMoneySchema),
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 financeRouter.get("/equity/owner/payouts", SENSITIVE, asyncHandler(async (_req, res) => res.json(await partnerProfit.ownerPayouts())));
+// one source for every partner and owner figure (partner-statement.service): a partner's statement, the owner's summary
+financeRouter.get("/equity/partners/:id/statement", SENSITIVE, validate(partnerActivityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await partnerStatements.partnerStatement(id(req), req.query as never))));
+financeRouter.get("/equity/owner/summary", SENSITIVE, validate(equityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await partnerStatements.ownerSummary((req.query as { asOf?: string }).asOf))));
 financeRouter.post("/equity/owner/payouts-taken", SENSITIVE, validate(payoutsTakenSchema), asyncHandler(async (req, res) => res.json(await partnerProfit.markPayoutsTaken(req.body.settlementIds, await actorOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────

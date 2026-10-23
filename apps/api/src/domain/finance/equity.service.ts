@@ -1,14 +1,13 @@
 /**
  * Partners & equity — foundation (ERP programme E11, docs/FINANCE_EQUITY.md).
  *
- * B-2 (the signed partner agreements) blocks everything that depends on them: profit distribution, capital rules, sweat
- * equity. What does not wait:
  *   register   each partner with a capital account (31xx) and a current account (32xx) — sensitive equity sub-accounts
  *              under 3000 Equity, created with the partner and never deleted
- *   balances   read straight from the ledger: what a partner put in (capital) and their current account (drawings and,
- *              once agreed, profit shares) — money in / out is an ordinary Treasury deposit / withdrawal against them
+ *   balances   read straight from the ledger: what a partner put in (capital) and their current account (profit shares
+ *              in, payments out) — money moves only through Treasury, checked by partner-payable.ts
  *   summary    the balance sheet's own equity section, so the two always agree
- * The agreed share is a note, UNCONFIRMED until the agreement; nothing is computed from it.
+ * Two different percentages: `agreedSharePct` (shown as ownershipPct) is a share of ownership and nothing is computed
+ * from it; `profitSharePct` is the confirmed share of each month's profit (partner-profit.service).
  */
 import type { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
@@ -156,6 +155,9 @@ function partnerDto(p: PartnerRow, balances: Map<string, number>, cur: string) {
   return {
     id: p.id, number: partnerNumber(p.number), name: p.name, phone: p.phone, email: p.email, joinedOn: businessDateOf(p.joinedOn), leftOn: p.leftOn ? businessDateOf(p.leftOn) : null,
     agreedSharePct: p.agreedSharePct === null ? null : Number(p.agreedSharePct), agreementReference: p.agreementReference, notes: p.notes,
+    /** Share of OWNERSHIP (agreedSharePct) — separate from `profitSharePct`, the share of each month's profit; nothing is
+     * computed from it. */
+    ownershipPct: p.agreedSharePct === null ? null : Number(p.agreedSharePct),
     role: p.role, profitSharePct: p.profitSharePct === null ? null : Number(p.profitSharePct), shareFrom: p.shareFrom ? businessDateOf(p.shareFrom) : null, lossRule: p.lossRule,
     shareConfirmed: Boolean(p.shareConfirmedAt), shareConfirmedAt: p.shareConfirmedAt?.toISOString() ?? null, shareConfirmedNote: p.shareConfirmedNote,
     capitalAccount: p.capitalAccount, currentAccount: p.currentAccount,
