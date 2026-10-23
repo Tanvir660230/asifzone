@@ -350,7 +350,7 @@ const movement = (kind: treasury.MovementRequest["kind"], map: (b: Record<string
     res.status(result.replayed ? 200 : 201).json(result);
   });
 financeRouter.post("/movements/deposit", requirePermission("finance.transact"), validate(depositSchema), movement("DEPOSIT", (b) => ({ toFinancialAccountId: b.toFinancialAccountId as string, counterAccountId: b.counterAccountId as string })));
-financeRouter.post("/movements/withdrawal", requirePermission("finance.transact"), validate(withdrawalSchema), movement("WITHDRAWAL", (b) => ({ fromFinancialAccountId: b.fromFinancialAccountId as string, counterAccountId: b.counterAccountId as string })));
+financeRouter.post("/movements/withdrawal", requirePermission("finance.transact"), validate(withdrawalSchema), movement("WITHDRAWAL", (b) => ({ fromFinancialAccountId: b.fromFinancialAccountId as string, counterAccountId: b.counterAccountId as string, partnerAdvanceReason: (b.partnerAdvanceReason as string | undefined) ?? null })));
 financeRouter.post("/movements/transfer", requirePermission("finance.transact"), validate(transferSchema), movement("TRANSFER", (b) => ({ fromFinancialAccountId: b.fromFinancialAccountId as string, toFinancialAccountId: b.toFinancialAccountId as string })));
 financeRouter.post("/movements/adjustment", requirePermission("finance.transact"), validate(adjustmentSchema), movement("ADJUSTMENT", (b) => ({
   direction: b.direction as "IN" | "OUT",

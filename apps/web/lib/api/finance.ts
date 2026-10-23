@@ -759,7 +759,7 @@ export const partnerKeys = {
 export const getProfitShares = () => apiFetch<{ currency: string; booksStarted: boolean; partners: PartnerShares[] }>(`${BASE}/equity/profit-shares`);
 export const runProfitShares = (through?: string) => apiFetch<{ shared: Array<{ partner: string; period: string; amount: number }> }>(`${BASE}/equity/profit-shares/run`, { method: "POST", body: through ? { through } : {} });
 export const getPartnerActivity = (id: string) => apiFetch<PartnerActivity>(`${BASE}/equity/partners/${id}/activity`);
-export const payPartner = (id: string, body: { fromFinancialAccountId: string; amount: number; paymentDate?: string; method: PaymentMethod; note?: string | null }, idempotencyKey: string) =>
+export const payPartner = (id: string, body: { fromFinancialAccountId: string; amount: number; paymentDate?: string; method: PaymentMethod; note?: string | null; advanceReason?: string }, idempotencyKey: string) =>
   apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/partners/${id}/pay`, { method: "POST", body, idempotencyKey });
 export const ownerMoney = (body: { kind: "INVEST" | "WITHDRAW"; financialAccountId: string; amount: number; date?: string; method?: PaymentMethod; note?: string | null }, idempotencyKey: string) =>
   apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/owner/money`, { method: "POST", body, idempotencyKey });

@@ -24,7 +24,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { Partner, PartnerActivityItem, PartnerRole, PartnerShares, PaymentMethod } from "@/lib/api/finance";
 import { formatBookDate, formatPrice } from "@/lib/format";
-import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { idempotencyKeyFor, partnerPaymentScope, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -300,12 +300,14 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
             </p>
           </div>
         )}
-        {canAct && s && (s.waitingMonths.length > 0 || s.totals.owed > 0) && (
+        {canAct && s && (
           <div className="flex flex-wrap gap-2">
             {s.waitingMonths.length > 0 && (
               <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-shares">Share {s.waitingMonths.length === 1 ? monthLabel(s.waitingMonths[0]!) : `${s.waitingMonths.length} finished months`}</Button>
             )}
-            {s.totals.owed > 0 && <Button size="sm" variant={s.waitingMonths.length ? "outline" : "primary"} onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.totals.owed)}</Button>}
+            {s.totals.owed > 0
+              ? <Button size="sm" variant={s.waitingMonths.length ? "outline" : "primary"} onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.totals.owed)}</Button>
+              : <Button size="sm" variant="outline" onClick={() => setPaying(true)} data-testid="pay-partner-advance">Pay {name} in advance</Button>}
           </div>
         )}
       </div>
@@ -345,24 +347,34 @@ function useMoneyAccounts() {
 function PayModal({ partner, owed, onClose }: { partner: Partner; owed: number; onClose: () => void }) {
   const qc = useQueryClient();
   const accounts = useMoneyAccounts();
-  const [amount, setAmount] = useState(String(owed));
+  const [amount, setAmount] = useState(owed > 0 ? String(owed) : "");
   const [from, setFrom] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("BKASH");
   const [date, setDate] = useState(today());
   const [note, setNote] = useState("");
+  const [advanceReason, setAdvanceReason] = useState("");
   const n = Number(amount);
-  const body = { fromFinancialAccountId: from, amount: n, paymentDate: date, method, note: note.trim() || null };
-  const valid = Boolean(from) && n > 0 && n <= owed && Boolean(date) && date <= today();
+  // More than is owed is paid as an advance — on purpose, with a reason; later shares make it up (nothing is taken back).
+  const owedNow = Math.max(0, owed);
+  const advance = n > owedNow;
+  const body = { fromFinancialAccountId: from, amount: n, paymentDate: date, method, note: note.trim() || null, ...(advance ? { advanceReason: advanceReason.trim() } : {}) };
+  const valid = Boolean(from) && n > 0 && (!advance || advanceReason.trim().length >= 3) && Boolean(date) && date <= today();
   const save = useMutation({
-    mutationFn: () => financeApi.payPartner(partner.id, body, idempotencyKeyFor(`partner-pay-${partner.id}`, body)),
-    onSuccess: (r) => { settleIdempotencyKey(`partner-pay-${partner.id}`); void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.movement.status === "POSTED" ? `Paid ${formatPrice(n)} to ${partner.name}` : "Payment waits for approval"); onClose(); },
+    mutationFn: () => financeApi.payPartner(partner.id, body, idempotencyKeyFor(partnerPaymentScope(partner.id), body)),
+    onSuccess: (r) => { settleIdempotencyKey(partnerPaymentScope(partner.id)); void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.movement.status === "POSTED" ? `Paid ${formatPrice(n)} to ${partner.name}` : "Payment waits for approval"); onClose(); },
     onError: (e) => toast.error(getErrorMessage(e, "The payment couldn't be saved")),
   });
   return (
-    <Modal open onClose={onClose} title={`Pay ${partner.name}`} description={`Owed now: ${formatPrice(owed)}.`} widthClassName="max-w-md"
+    <Modal open onClose={onClose} title={`Pay ${partner.name}`} description={owed < 0 ? `Already paid ${formatPrice(-owed)} in advance.` : `Owed now: ${formatPrice(owedNow)}.`} widthClassName="max-w-md"
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()} data-testid="save-pay">Pay {n > 0 ? formatPrice(n) : ""}</Button></>}>
       <div className="space-y-4">
-        <Field htmlFor="pp-amount" label="Amount" required error={n > owed ? `At most ${formatPrice(owed)}` : undefined}><Input id="pp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field htmlFor="pp-amount" label="Amount" required><Input id="pp-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        {advance && n > 0 && (
+          <Field htmlFor="pp-advance" label="Reason for the advance" required
+            hint={`${formatPrice(n - owedNow)} is more than ${partner.name} is owed, so it is paid in advance. Their next shares make it up; nothing is taken back.`}>
+            <Input id="pp-advance" value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} maxLength={300} placeholder="e.g. Eid advance, agreed" data-testid="pay-advance-reason" />
+          </Field>
+        )}
         <div className="space-y-1.5"><p className="text-sm font-medium text-fg">How</p><SegmentedControl aria-label="Payment method" value={method} onChange={setMethod} options={METHODS} /></div>
         <Field htmlFor="pp-from" label="Paid from" required>
           <Select id="pp-from" value={from} onChange={(e) => setFrom(e.target.value)}><option value="">Choose…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>

@@ -15,7 +15,7 @@ import type { PaymentMethod } from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { OwnerHome } from "@/lib/api/finance-books";
 import { formatPrice, storeCurrencySymbol } from "@/lib/format";
-import { idempotencyKeyFor } from "@/lib/idempotency";
+import { idempotencyKeyFor, partnerPaymentScope, settleIdempotencyKey } from "@/lib/idempotency";
 
 export type QuickAddKind = "EXPENSE" | "OWNER_OUT" | "OWNER_IN" | "PAY_PARTNER";
 
@@ -185,9 +185,9 @@ function PayPartnerForm({ partners, initialId, onDone }: { partners: NonNullable
   const save = useMutation({
     mutationFn: () => {
       const body = { fromFinancialAccountId: account, amount: Number(amount), paymentDate: date, method, note: note.trim() || null };
-      return financeApi.payPartner(id, body, idempotencyKeyFor(`quick-add:pay:${id}`, body));
+      return financeApi.payPartner(id, body, idempotencyKeyFor(partnerPaymentScope(id), body));
     },
-    onSuccess: done,
+    onSuccess: () => { settleIdempotencyKey(partnerPaymentScope(id)); done(); },
     onError: (e) => toast.error(getErrorMessage(e, "The payment couldn't be recorded")),
   });
   return (

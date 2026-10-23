@@ -46,7 +46,8 @@ const movementBase = {
 };
 
 export const depositSchema = z.object({ ...movementBase, toFinancialAccountId: id, counterAccountId: id });
-export const withdrawalSchema = z.object({ ...movementBase, fromFinancialAccountId: id, counterAccountId: id });
+/** `partnerAdvanceReason`: only to a non-owner partner's current account, owner only — paid beyond what they are owed. */
+export const withdrawalSchema = z.object({ ...movementBase, fromFinancialAccountId: id, counterAccountId: id, partnerAdvanceReason: z.string().trim().min(3).max(300).optional() });
 export const transferSchema = z
   .object({ ...movementBase, fromFinancialAccountId: id, toFinancialAccountId: id })
   .refine((v) => v.fromFinancialAccountId !== v.toFinancialAccountId, { message: "Choose two different accounts", path: ["toFinancialAccountId"] });

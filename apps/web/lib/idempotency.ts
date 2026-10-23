@@ -24,6 +24,10 @@ export function idempotencyKeyFor(scope: string, payload: unknown): string {
   return key;
 }
 
+/** Paying a partner: the Pay dialog and Quick add share one scope per partner, so the same payment sent again from either
+ * replays the first instead of becoming a second payment. */
+export const partnerPaymentScope = (partnerId: string) => `partner-pay:${partnerId}`;
+
 /** Call after the operation succeeded: the next submission in this scope is a new operation. */
 export function settleIdempotencyKey(scope: string): void {
   current.delete(scope);
