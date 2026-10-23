@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
-import { getErrorMessage } from "@/lib/api-client";
+import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { AlertSeverity, ChecklistStep, MonthEndChecklist } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
@@ -166,23 +166,37 @@ function MonthEnd({ initialMonth, canClose }: { initialMonth: string | null; can
 function PeriodModal({ checklist, transition, onClose }: { checklist: MonthEndChecklist; transition: "close" | "reopen"; onClose: () => void }) {
   const qc = useQueryClient();
   const [reason, setReason] = useState("");
+  // a month already shared with partners: the server asks for it to be said out loud before reopening
+  const [sharesShared, setSharesShared] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
   const save = useMutation({
-    mutationFn: () => financeApi.changePeriod(checklist.period!.id, transition, reason.trim()),
+    mutationFn: () => financeApi.changePeriod(checklist.period!.id, transition, reason.trim(), acknowledged),
     onSuccess: () => {
       toast.success(`${monthLabel(checklist.month)} ${transition === "close" ? "closed" : "reopened"}`);
       void qc.invalidateQueries({ queryKey: ["finance", "month-end"] });
       void qc.invalidateQueries({ queryKey: financeApi.alertKeys.all });
       onClose();
     },
-    onError: (err) => toast.error(getErrorMessage(err, `The month couldn't be ${transition === "close" ? "closed" : "reopened"}`)),
+    onError: (err) => {
+      if (err instanceof ApiError && (err.details as { code?: string } | undefined)?.code === "SHARES_FINAL_ACK_REQUIRED") { setSharesShared(true); return; }
+      toast.error(getErrorMessage(err, `The month couldn't be ${transition === "close" ? "closed" : "reopened"}`));
+    },
   });
   const title = `${transition === "close" ? "Close" : "Reopen"} ${monthLabel(checklist.month)}`;
   return (
     <Modal open onClose={onClose} title={title} widthClassName="max-w-md"
       description={transition === "close" ? "Nothing more can be posted into a closed month. The reason is kept in the audit log." : "Postings into this month become possible again. The reason is kept in the audit log."}
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={reason.trim().length < 3} onClick={() => save.mutate()} data-testid="confirm-period">{transition === "close" ? "Close month" : "Reopen month"}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={reason.trim().length < 3 || (sharesShared && !acknowledged)} onClick={() => save.mutate()} data-testid="confirm-period">{transition === "close" ? "Close month" : "Reopen month"}</Button></>}>
       <div className="space-y-3">
         {transition === "close" && checklist.open > 0 && <Alert variant="warning" title={`${checklist.open} ${checklist.open === 1 ? "step is" : "steps are"} still open`}>Say why the month is being closed anyway.</Alert>}
+        {sharesShared && (
+          <Alert variant="warning" title="This month's profit is already shared with partners">
+            <p>Those shares stay as they are. If the month&apos;s profit changes, the difference shows up as a correction to approve — a lower profit is never taken back without an accounting decision. Close and verify the month again afterwards.</p>
+            <label className="mt-2 flex items-center gap-2 font-medium text-fg">
+              <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} data-testid="ack-shares" /> I understand — reopen it
+            </label>
+          </Alert>
+        )}
         <Field htmlFor="period-reason" label="Reason" required>
           <Textarea id="period-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={500} placeholder={transition === "close" ? "October books reviewed" : "Supplier bill dated in this month arrived late"} />
         </Field>

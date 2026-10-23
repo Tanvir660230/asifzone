@@ -19,6 +19,7 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
+import { Corrections, MonthlySharing, StatementModal } from "@/components/admin/finance/partner-sharing";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -35,7 +36,7 @@ const ROLE_LABEL: Record<PartnerRole, string> = { OWNER: "Owner", WORKING: "Work
 const monthLabel = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 const KIND_LABEL: Record<PartnerActivityItem["kind"], string> = {
   PUT_IN: "Put in", PUT_IN_REVERSED: "Put in, reversed", CAPITAL_BACK: "Capital returned", CAPITAL_BACK_REVERSED: "Capital return reversed",
-  PROFIT_SHARE: "Profit share", SHARE_REVERSED: "Profit share reversed", CREDITED: "Credited", TAKEN_OUT: "Taken out", PAID: "Paid",
+  PROFIT_SHARE: "Profit share", SHARE_REVERSED: "Profit share reversed", SHARE_CORRECTED: "Profit share correction", CREDITED: "Credited", TAKEN_OUT: "Taken out", PAID: "Paid",
   PAYMENT_REVERSED: "Payment reversed", RECEIVED: "Received from partner", RECEIVED_REVERSED: "Receipt reversed", OTHER: "Other entry",
 };
 const firstName = (name: string) => name.split(" ")[0] ?? name;
@@ -96,6 +97,8 @@ export default function EquityPage() {
           {others.length === 0 && owner && (
             <p className="text-sm text-fg-muted">No partners yet. A working partner who shares the profit is added with <span className="font-medium text-fg">Add partner</span>.</p>
           )}
+          {others.some((p) => p.profitSharePct !== null) && <MonthlySharing />}
+          {others.length > 0 && <Corrections partnerNames={new Map(others.map((p) => [p.id, p.name]))} />}
 
           <Card className="p-0">
             <button type="button" onClick={() => setShowEquity((v) => !v)} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left" aria-expanded={showEquity}>
@@ -265,14 +268,9 @@ function Timeline({ items, loading, empty, name }: { items: PartnerActivityItem[
 
 function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner; shares: PartnerShares | null; canAct: boolean; onEdit: () => void }) {
   const activity = useQuery({ queryKey: financeApi.partnerKeys.activity(partner.id), queryFn: () => financeApi.getPartnerActivity(partner.id) });
-  const qc = useQueryClient();
   const [paying, setPaying] = useState(false);
   const [capital, setCapital] = useState<"CONTRIBUTE" | "RETURN" | null>(null);
-  const run = useMutation({
-    mutationFn: () => financeApi.runProfitShares(),
-    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ["finance"] }); toast.success(r.shared.length ? `Shared ${r.shared.length} month${r.shared.length === 1 ? "" : "s"}` : "Nothing to share yet"); },
-    onError: (e) => toast.error(getErrorMessage(e, "Couldn't share the profit")),
-  });
+  const [statement, setStatement] = useState(false);
   const s = shares;
   const b = s?.balances;
   const name = firstName(partner.name);
@@ -322,14 +320,12 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
             </p>
           </div>
         )}
-        {canAct && s && (
+        {s && (
           <div className="flex flex-wrap gap-2">
-            {s.waitingMonths.length > 0 && (
-              <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-shares">Share {s.waitingMonths.length === 1 ? monthLabel(s.waitingMonths[0]!) : `${s.waitingMonths.length} finished months`}</Button>
-            )}
-            {s.balances.availableToPay > 0
-              ? <Button size="sm" variant={s.waitingMonths.length ? "outline" : "primary"} onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.balances.availableToPay)}</Button>
-              : <Button size="sm" variant="outline" onClick={() => setPaying(true)} data-testid="pay-partner-advance">Pay {name} in advance</Button>}
+            {canAct && (s.balances.availableToPay > 0
+              ? <Button size="sm" onClick={() => setPaying(true)} data-testid="pay-partner">Pay {name} {formatPrice(s.balances.availableToPay)}</Button>
+              : <Button size="sm" variant="outline" onClick={() => setPaying(true)} data-testid="pay-partner-advance">Pay {name} in advance</Button>)}
+            <Button size="sm" variant="ghost" onClick={() => setStatement(true)} data-testid="partner-statement">Statement</Button>
           </div>
         )}
       </div>
@@ -374,6 +370,7 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
       {/* What can be paid now; a negative figure means already paid that much in advance. */}
       {paying && s && <PayModal partner={partner} owed={s.balances.paidInAdvance > 0 ? -s.balances.paidInAdvance : s.balances.availableToPay} onClose={() => setPaying(false)} />}
       {capital && b && <PartnerCapitalModal kind={capital} partner={partner} net={b.capital.net} onClose={() => setCapital(null)} />}
+      {statement && <StatementModal partnerId={partner.id} name={partner.name} onClose={() => setStatement(false)} />}
     </Card>
   );
 }
@@ -534,7 +531,7 @@ function PartnerModal({ partner, asOwner, onClose }: { partner: Partner | null; 
         <Field htmlFor="pt-left" label="Left on"><Input id="pt-left" type="date" value={form.leftOn} onChange={set("leftOn")} /></Field>
         {sharing && (
           <>
-            <Field htmlFor="pt-pct" label="Share of monthly profit (%)" hint="Nothing in a loss month"><Input id="pt-pct" inputMode="decimal" value={form.profitSharePct} onChange={set("profitSharePct")} placeholder="20" /></Field>
+            <Field htmlFor="pt-pct" label="Share of monthly profit (%)" hint={partner ? "A change applies from the first month not shared yet — shared months keep their rate. Nothing in a loss month." : "Nothing in a loss month"}><Input id="pt-pct" inputMode="decimal" value={form.profitSharePct} onChange={set("profitSharePct")} placeholder="20" /></Field>
             <Field htmlFor="pt-from" label="Shares from" hint="Default: partner since"><Input id="pt-from" type="date" value={form.shareFrom} onChange={set("shareFrom")} /></Field>
           </>
         )}

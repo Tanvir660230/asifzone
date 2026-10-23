@@ -149,7 +149,11 @@ export async function listSharePeriods() {
   const today = businessToday(business);
   if (!business.openingDate) return { months: [] };
   const last = monthOf(`${addMonthBack(monthOf(today))}-01`);
-  const months = monthOf(business.openingDate) <= last ? monthsBetween(monthOf(business.openingDate), last) : [];
+  // from the first month any partner shares in (a month before everyone's start has nothing to share)
+  const partners = await prisma.partner.findMany({ where: { businessId: business.id, role: { not: "OWNER" } }, select: { shareFrom: true, joinedOn: true, leftOn: true } });
+  const firsts = partners.map((p) => shareWindow(p, business.openingDate, today).first).sort();
+  const first = firsts[0];
+  const months = first && first <= last ? monthsBetween(first, last) : [];
   const [rows, periods] = await Promise.all([
     prisma.profitSharePeriod.findMany({ where: { businessId: business.id } }),
     prisma.financialPeriod.findMany({ where: { businessId: business.id }, select: { startDate: true, status: true } }),
