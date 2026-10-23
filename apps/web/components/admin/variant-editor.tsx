@@ -33,6 +33,8 @@ interface VariantEditorProps {
   typeName?: string;
   /** The product's type — the SKU generator numbers per type. */
   typeId?: string;
+  /** Stock costing is live: stock is shown, not edited — it changes on the Stock page (Bought, Filled, Counted). */
+  stockLocked?: boolean;
 }
 
 /** Fields the bulk bar can set on many variants at once. Prices can also be cleared (the variant then sells at the
@@ -74,12 +76,15 @@ export function VariantEditor({
   variantDimensions = [],
   typeName = "this product type",
   typeId,
+  stockLocked = false,
 }: VariantEditorProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
   const [generatingSku, setGeneratingSku] = useState<number | null>(null);
   // Keyed by the field-array row id, so a selection survives drag-reordering.
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [bulkField, setBulkField] = useState<BulkField>("stock");
+  const [chosenBulkField, setBulkField] = useState<BulkField>("stock");
+  const bulkFields = stockLocked ? BULK_FIELDS.filter((f) => f.key !== "stock") : BULK_FIELDS;
+  const bulkField: BulkField = bulkFields.some((f) => f.key === chosenBulkField) ? chosenBulkField : bulkFields[0]!.key;
   const [bulkValue, setBulkValue] = useState("");
   const [generatingAll, setGeneratingAll] = useState(false);
 
@@ -306,7 +311,7 @@ export function VariantEditor({
               Set
             </Label>
             <Select id="bulk-field" value={bulkField} onChange={(e) => setBulkField(e.target.value as BulkField)} className="h-9 text-xs">
-              {BULK_FIELDS.map((f) => (
+              {bulkFields.map((f) => (
                 <option key={f.key} value={f.key}>
                   {f.label}
                 </option>
@@ -543,7 +548,24 @@ export function VariantEditor({
                             </Link>
                           )}
                         </div>
-                        <Input id={id("stock")} type="number" inputMode="numeric" aria-invalid={Boolean(err("stock")) || undefined} {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
+                        {stockLocked ? (
+                          <>
+                            <Input
+                              id={id("stock")}
+                              type="number"
+                              readOnly
+                              tabIndex={-1}
+                              aria-describedby={id("stock-hub")}
+                              className="bg-surface-muted text-fg-muted"
+                              {...register(`variants.${index}.stock`, { valueAsNumber: true })}
+                            />
+                            <Link id={id("stock-hub")} href="/admin/stock" className="mt-1 inline-block text-xs font-medium text-accent hover:underline">
+                              Change on the Stock page
+                            </Link>
+                          </>
+                        ) : (
+                          <Input id={id("stock")} type="number" inputMode="numeric" aria-invalid={Boolean(err("stock")) || undefined} {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
+                        )}
                         {err("stock") && <p className="ui-field-error">{err("stock")}</p>}
                       </div>
                       <div>

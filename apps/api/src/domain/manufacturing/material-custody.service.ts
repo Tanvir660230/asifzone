@@ -11,7 +11,7 @@
 import type { FinanceValuationStatus } from "@prisma/client";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
-import { recordDocumentMovements } from "../../modules/inventory/inventory.service";
+import { notifyStockMoved, recordDocumentMovements } from "../../modules/inventory/inventory.service";
 import { actorCan, recordFinanceAudit, type FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { financeError, toDecimal, toMajorNumber, toMinor } from "../finance/finance-values";
@@ -86,8 +86,9 @@ export async function issueMaterials(orderId: string, input: { lines: MoveLineIn
       await tx.productionOrder.update({ where: { id: o.id }, data: { status: "IN_PRODUCTION", startedAt: new Date() } });
       await recordFinanceAudit(tx, { businessId: business.id, actor, action: "production_order.start", entityType: "ProductionOrder", entityId: o.id, before: { status: o.status }, after: { status: "IN_PRODUCTION" } });
     }
-    return { replayed: false };
+    return { replayed: false, moved: lines.map((x) => x.line.materialVariantId) };
   });
+  notifyStockMoved(result.moved ?? []);
   return { ...(await getProductionOrder(orderId, opts)), replayed: result.replayed };
 }
 
@@ -124,8 +125,9 @@ export async function returnMaterials(orderId: string, input: { lines: MoveLineI
       moves.push({ move, valueMinor: x.valueMinor });
     }
     await bookMoves(tx, business, brand, actor, o.id, moNumber(o.number), "RETURN", moves);
-    return { replayed: false };
+    return { replayed: false, moved: plan.map((x) => x.line.materialVariantId) };
   });
+  notifyStockMoved(result.moved ?? []);
   return { ...(await getProductionOrder(orderId, opts)), replayed: result.replayed };
 }
 

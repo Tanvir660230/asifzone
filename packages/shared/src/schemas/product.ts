@@ -58,11 +58,14 @@ export const createVariantSchema = z.object({
   /** "Was" price for this variant; must be above its selling price when both are set. */
   compareAtPrice: nullableNumber(),
   costPrice: nullableNumber(),
-  stock: z.number().int().min(0).default(0),
+  /** Never below 0 for a new variant (the refinements below). An existing one (`id`) may carry a negative stock: a
+   * fill-to-order variant sold beyond its filled bottles sits below zero (docs/STOCK_HUB.md §3), and saving its product
+   * must still validate. The server refuses any change that would take stock below zero (inventory.service). */
+  stock: z.number().int().default(0),
   /** On an update of an existing variant: the stock value the editor last saw. The server applies `stock` only as a
    * compare-and-set against it, so a stale form can never overwrite a sale that happened meanwhile
    * (docs/INVENTORY_INVARIANTS.md rule 6). Ignored for new variants. */
-  expectedStock: z.number().int().min(0).optional(),
+  expectedStock: z.number().int().optional(),
   weight: nullableNumber(),
   /** An inactive variant is hidden from the storefront and refused at checkout; it keeps its history. */
   isActive: z.boolean().optional(),
@@ -78,17 +81,19 @@ export const createVariantSchema = z.object({
 });
 
 /** A variant's compare-at price only makes sense above what it actually sells for. */
-const variantWithRules = createVariantSchema.refine(
-  (v) => v.price == null || v.compareAtPrice == null || v.compareAtPrice > v.price,
-  { message: "Compare-at price must be higher than the variant price", path: ["compareAtPrice"] },
-);
+const variantWithRules = createVariantSchema
+  .refine((v) => v.price == null || v.compareAtPrice == null || v.compareAtPrice > v.price, {
+    message: "Compare-at price must be higher than the variant price",
+    path: ["compareAtPrice"],
+  })
+  .refine((v) => Boolean(v.id) || v.stock >= 0, { message: "Stock can't be below 0", path: ["stock"] });
 
 /** A variant in a product update. Same rules, but `stock` and `attributeValueIds` are optional *without* defaults: with the create
  * schema's defaults, a variant listed without them was written back as stock 0 and with its option links cleared. An existing
  * variant (`id`) may also omit `sku`; a new one still needs it. */
 const updateVariantSchema = createVariantSchema.extend({
   sku: z.string().min(1).max(64).optional(),
-  stock: z.number().int().min(0).optional(),
+  stock: z.number().int().optional(),
   attributeValueIds: z.array(z.string().cuid()).optional(),
 });
 const variantUpdateWithRules = updateVariantSchema
@@ -96,7 +101,8 @@ const variantUpdateWithRules = updateVariantSchema
     message: "Compare-at price must be higher than the variant price",
     path: ["compareAtPrice"],
   })
-  .refine((v) => Boolean(v.id) || Boolean(v.sku), { message: "A new variant needs a SKU", path: ["sku"] });
+  .refine((v) => Boolean(v.id) || Boolean(v.sku), { message: "A new variant needs a SKU", path: ["sku"] })
+  .refine((v) => Boolean(v.id) || v.stock == null || v.stock >= 0, { message: "Stock can't be below 0", path: ["stock"] });
 
 /** One search tag as stored — the same normalization storefront search applies to what a shopper types, so a tag
  * matches exactly (see buildFieldSearchOr). */

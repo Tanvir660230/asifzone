@@ -29,6 +29,7 @@ import {
   type ResolvedAttributeField,
   type ResolvedTypeConfig,
   variantStockState,
+  sellable,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
@@ -48,7 +49,9 @@ import {
   sellingPriceOrderBy,
   sellingPriceWhere,
 } from "../../domain/storefront/read-model.service";
-import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
+import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
+import { activeCostingInTx } from "../../domain/finance/costing.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
@@ -66,7 +69,7 @@ import { recordAudit } from "../../lib/audit";
 import { SALE_ORDER_WHERE } from "../../domain/metrics/sale-order";
 import { resolveLegacyWindow, utcInstant } from "../../domain/metrics/store-time";
 import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, type SectionRow } from "../catalog/sections.service";
-import { PRODUCT_CACHE_PREFIX, invalidateProductCache, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
+import { PRODUCT_CACHE_PREFIX, invalidateProductCache, productDetailCacheKey, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
 import { captureError } from "../../lib/observability/error-capture";
@@ -300,6 +303,19 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   };
 }
 
+/** Once inventory costing is active, a tracked variant's stock changes only as Bought, Filled or Counted on the Stock page
+ * (docs/STOCK_HUB.md) — never from the product form or a CSV import; a product or variant is still created, at stock 0.
+ * Before go-live both work as they always did. */
+function stockViaHubError() {
+  return new AppError(409, "Stock can't be changed here once stock costing is live. Record it as Bought, Filled or Counted on the Stock page.", { code: "STOCK_VIA_HUB" });
+}
+
+/** Whether this save may not move stock: a tracked product once costing is active, read in the save's transaction (the same
+ * switch inventory.service values movements by). Materials are tracked products, so the same rule holds for them. */
+async function stockOnlyViaHub(tx: Prisma.TransactionClient, trackInventory: boolean): Promise<boolean> {
+  return trackInventory && (await activeCostingInTx(tx)) !== null;
+}
+
 /** Every storefront product read is presented by the Storefront Read Model (docs/STOREFRONT_READ_MODEL.md): canonical
  * `pricing` (live, from the pricing engine), `availability` (from canonical inventory state + D5) and the deprecated
  * `activeFlashSale` compat view — one DTO for PDP, listings, search, quick view, compare and recommendations. */
@@ -531,9 +547,11 @@ async function completenessForPage(ids: string[]) {
 }
 
 export async function listProducts(query: ProductListQuery) {
+  // "Out": no active variant with stock — except a fill-to-order product that can still make one (docs/STOCK_HUB.md §3).
+  const canMake = query.stock === "out" ? await fillToOrderInStockIds(prisma, {}, { storefront: false }) : [];
   const stockWhere: Prisma.ProductWhereInput =
     query.stock === "out"
-      ? { trackInventory: true, variants: { none: { isActive: true, stock: { gt: 0 } } } }
+      ? { trackInventory: true, variants: { none: { isActive: true, stock: { gt: 0 } } }, ...(canMake.length ? { id: { notIn: canMake } } : {}) }
       : query.stock === "low"
         ? { id: { in: await lowStockProductIds() } }
         : {};
@@ -564,10 +582,29 @@ export async function listProducts(query: ProductListQuery) {
     () => prisma.product.count({ where }),
   );
   const completeness = await completenessForPage(result.items.map((p) => p.id));
+  // Fill to order: the state follows what the product sells (filled bottles + what can still be made); the total stays the
+  // filled bottles on the shelf.
+  const filling = result.items.filter((p) => p.fillToOrder && p.trackInventory);
+  const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
+  const stockState = (p: (typeof result.items)[number]) => {
+    const own = productStockState(p);
+    return made && p.fillToOrder && p.trackInventory ? { ...own, stockState: productStockState({ ...p, variants: applyCapacity(made, p.variants) }).stockState } : own;
+  };
+  // Each fill-to-order variant also carries what it can sell (filled bottles + what can still be made), uncapped — the
+  // phone-order picker offers it like the shop does, without the shop's per-line cap. `stock` stays the filled bottles.
+  const withSellable = (p: (typeof result.items)[number]) =>
+    made && p.fillToOrder && p.trackInventory ? p.variants.map((v) => ({ ...v, sellable: sellable(v.stock, made.get(v.id) ?? 0) })) : p.variants;
   return {
     ...result,
-    items: result.items.map((p) => ({ ...p, ...productStockState(p), completeness: completeness.get(p.id) ?? null })),
+    items: result.items.map((p) => ({ ...p, variants: withSellable(p), ...stockState(p), completeness: completeness.get(p.id) ?? null })),
   };
+}
+
+/** What every catalog editor's product form needs to know about stock: whether a tracked product's stock now changes only on
+ * the Stock page (inventory costing is live — the save refuses a stock edit then, STOCK_VIA_HUB). Readable with catalog.read,
+ * so the form doesn't depend on finance permissions to show stock read-only. */
+export async function getStockPolicy(): Promise<{ stockViaHub: boolean }> {
+  return { stockViaHub: (await prisma.$transaction((tx) => activeCostingInTx(tx))) !== null };
 }
 
 export async function getProductById(id: string) {
@@ -578,7 +615,7 @@ export async function getProductById(id: string) {
 
 /** Public lookup: only returns active products, matching what the storefront should link to. */
 export async function getProductBySlug(slug: string) {
-  const cacheKey = `${CACHE_PREFIX}slug:${slug}`;
+  const cacheKey = productDetailCacheKey(slug);
   let product = await cacheGet<Presented<Prisma.ProductGetPayload<{ select: typeof PUBLIC_DETAIL_SELECT }>>>(cacheKey);
 
   if (!product) {
@@ -1608,6 +1645,7 @@ export async function createProduct(
       // Opening stock: each variant was created at 0; its initial quantity lands through the inventory service as an
       // opening RESTOCK (or IMPORT from a CSV) movement, so the ledger accounts for stock from the moment it exists.
       const stockBySku = new Map(variants.map((v) => [v.sku, v.stock ?? 0]));
+      if (variants.some((v) => (v.stock ?? 0) !== 0) && (await stockOnlyViaHub(tx, created.trackInventory))) throw stockViaHubError();
       for (const v of created.variants) {
         await recordInitialStock(tx, v.id, stockBySku.get(v.sku) ?? 0, options.stockReason ?? "RESTOCK", {
           adminId,
@@ -1652,6 +1690,8 @@ export async function updateProduct(
   options: { stockNote?: string; stockMode?: "form" | "count" } = {},
 ) {
   const replenished: string[] = [];
+  // Variants whose stock this save moved (notifyStockMoved after commit).
+  const stockMoved: string[] = [];
   const existing = await getProductById(id);
   // Same rule as create, checked up front: otherwise two rows sharing a SKU only fail at the DB unique index, as a
   // generic conflict that doesn't say which rows clash. A row listed by id without a SKU keeps its stored one.
@@ -1802,6 +1842,9 @@ export async function updateProduct(
       }
 
       if (input.variants) {
+        // Decided once per save, on the product as it will be saved (the same payload may switch tracking on).
+        let viaHub: boolean | null = null;
+        const hubOnly = async () => (viaHub ??= await stockOnlyViaHub(tx, input.trackInventory ?? existing.trackInventory));
         const incomingIds = new Set(input.variants.filter((v) => v.id).map((v) => v.id!));
         const toDelete = existing.variants.filter((v) => !incomingIds.has(v.id));
 
@@ -1820,6 +1863,7 @@ export async function updateProduct(
           // instead: it drops out of checkout the same as a delete would, without destroying history.
           if (mustKeep.length) {
             await zeroVariantStock(tx, mustKeep, { adminId, note: "Variant removed from product — had order history, stock zeroed instead of deleted" });
+            stockMoved.push(...mustKeep);
           }
         }
 
@@ -1852,15 +1896,23 @@ export async function updateProduct(
             }
             // Stock is never overwritten here: a form edit is a compare-and-set against what the editor last saw, a
             // CSV import is a declared count — both applied by the inventory service under a row lock, ledger-complete.
-            if (desiredStock !== undefined) {
+            if (desiredStock !== undefined && (await hubOnly())) {
+              // Nothing moves here after go-live: a save that would leave stock as it is (sent unchanged, or a stale form
+              // whose stock the editor didn't touch) goes through; one that would change it is refused.
+              const current = (await tx.productVariant.findUniqueOrThrow({ where: { id: variantId }, select: { stock: true } })).stock;
+              const untouched = desiredStock === current || (options.stockMode !== "count" && expectedStock !== undefined && desiredStock === expectedStock);
+              if (!untouched) throw stockViaHubError();
+            } else if (desiredStock !== undefined) {
               const actor = { adminId, note: options.stockNote ?? (options.stockMode === "count" ? "Changed by CSV import" : "Manual edit via product form") };
               const delta =
                 options.stockMode === "count"
                   ? await setVariantStockCount(tx, variantId, desiredStock, "IMPORT", actor)
                   : await setVariantStockFromForm(tx, variantId, desiredStock, expectedStock, actor);
               if (delta > 0 && desiredStock - delta <= 0) replenished.push(variantId);
+              if (delta !== 0) stockMoved.push(variantId);
             }
           } else {
+            if ((variant.stock ?? 0) !== 0 && (await hubOnly())) throw stockViaHubError();
             const created = await tx.productVariant.create({
               data: { ...toVariantCreateData({ ...variant, sku: variant.sku!, stock: variant.stock ?? 0, attributeValueIds: variant.attributeValueIds ?? [] }, index), productId: id },
             });
@@ -1905,6 +1957,9 @@ export async function updateProduct(
   // Fire-and-forget: real stock/price changes trigger real customer notifications — never
   // allowed to block or fail the admin's product save.
   notifyReplenished(replenished);
+  // A stock edit (form or CSV count) of a material or a fill-to-order variant changes what the products sharing those
+  // materials can make (docs/STOCK_HUB.md §3).
+  notifyStockMoved(stockMoved);
   if (input.basePrice !== undefined && input.basePrice < Number(existing.basePrice)) {
     notifyPriceDrop(id, input.basePrice).catch((err) => captureError(err, { msg: "[price-drop] notify failed:" }));
   }

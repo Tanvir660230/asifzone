@@ -10,6 +10,10 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
   res.json(await productService.listProducts(req.query as never));
 });
 
+export const stockPolicy = asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await productService.getStockPolicy());
+});
+
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
   res.json({ product: await productService.getProductById(req.params.id!) });
 });

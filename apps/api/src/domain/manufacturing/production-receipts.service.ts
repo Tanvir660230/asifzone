@@ -19,7 +19,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
-import { notifyReplenished, recordDocumentMovements } from "../../modules/inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordDocumentMovements } from "../../modules/inventory/inventory.service";
 import { actorCan, recordFinanceAudit, type FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "../finance/finance-values";
@@ -180,9 +180,10 @@ export async function postProductionReceipt(id: string, input: { overReceiptReas
     await refreshReceiptStatus(tx, business.id, o.id, actor, prNumber(r.number));
     const after = await tx.productionReceipt.findUniqueOrThrow({ where: { id: r.id }, include: RECEIPT_INCLUDE });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "production_receipt.post", entityType: "ProductionReceipt", entityId: r.id, before: { status: r.status }, after: { status: after.status, valueMinor, unitMinor, overReceiptReason: after.overReceiptReason } });
-    return { receipt: receiptDto(after, cur, opts), replayed: false, replenished: moved.replenished };
+    return { receipt: receiptDto(after, cur, opts), replayed: false, replenished: moved.replenished, moved: accepted.map((l) => l.variantId) };
   });
   if (result.replenished.length) notifyReplenished(result.replenished);
+  notifyStockMoved(result.moved ?? []);
   return { receipt: result.receipt, replayed: result.replayed };
 }
 
@@ -190,7 +191,8 @@ export async function postProductionReceipt(id: string, input: { overReceiptReas
 export async function reverseProductionReceipt(id: string, reason: string, actor: FinanceActor, opts: { canSeeCost: boolean }) {
   const { business, brand } = await getFinanceContext();
   const cur = business.baseCurrency;
-  return financeTransaction(async (tx) => {
+  let movedIds: string[] = [];
+  const result = await financeTransaction(async (tx) => {
     const r = await lockReceipt(tx, business.id, id);
     if (r.status === "REVERSED") return { receipt: receiptDto(r, cur, opts), replayed: true };
     if (r.status !== "POSTED") throw financeError(409, "RECEIPT_NOT_POSTED", "Only a posted receipt is reversed — delete a draft");
@@ -201,6 +203,7 @@ export async function reverseProductionReceipt(id: string, reason: string, actor
     if (accepted.length) {
       const moved = await recordDocumentMovements(tx, accepted.map((l) => ({ variantId: l.variantId, change: -l.accepted, reason: "PRODUCTION_RECEIPT" as const, basis: { kind: "SNAPSHOT" as const, unitCostMinor: toMinor(l.unitCost!, cur) } })), { adminId: adminOf(actor), note: `${prNumber(r.number)} reversed: ${reason}` });
       for (const [i, l] of accepted.entries()) await tx.productionReceiptLine.update({ where: { id: l.id }, data: { reversalMovementId: moved.lines[i]!.movement.id } });
+      movedIds = accepted.map((l) => l.variantId);
     }
     const original = await tx.financialEvent.findUnique({ where: { sourceInstallId_eventKey: { sourceInstallId: installId, eventKey: `mfg-rcpt:${r.id}#r0` } } });
     await recordFinancialEvent(tx, {
@@ -216,6 +219,8 @@ export async function reverseProductionReceipt(id: string, reason: string, actor
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "production_receipt.reverse", entityType: "ProductionReceipt", entityId: r.id, reason, before: { status: r.status }, after: { status: after.status } });
     return { receipt: receiptDto(after, cur, opts), replayed: false };
   });
+  notifyStockMoved(movedIds);
+  return result;
 }
 
 export async function listProductionReceipts(orderId: string, opts: { canSeeCost: boolean }) {

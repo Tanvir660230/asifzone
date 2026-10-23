@@ -1,11 +1,13 @@
 import { Prisma } from "@prisma/client";
-import type { ManualStockReason, StockMovementListQuery } from "@clothing-brand/shared";
+import { sellable, type ManualStockReason, type StockMovementListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { randomUUID } from "node:crypto";
+import { hasFillToOrderProducts, refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
+import { fillCapacity, fillCapacityChanged, fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
 import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
@@ -31,16 +33,17 @@ const include = {
 };
 
 /** Applies `delta` to one variant's stock and returns the new balance — or null when the variant no longer
- * exists, or when `guard` is set and a decrease would take stock below zero. Raw SQL so the new value comes
- * back from the same atomic statement (needed to spot a 0 → positive "back in stock" crossing).
+ * exists, or when `guard` is set and a decrease would take stock below zero (below `-floor` when a floor is given —
+ * a fill-to-order variant, docs/STOCK_HUB.md §3). Raw SQL so the new value comes back from the same atomic statement
+ * (needed to spot a 0 → positive "back in stock" crossing).
  *
  * `updatedAt` is a `timestamp` without time zone that Prisma reads and writes as UTC. A bare NOW() would store the
  * DB session's local wall clock (Asia/Dhaka, +6 h), so the stamp is taken in UTC — the same semantics as @updatedAt. */
-async function applyDelta(tx: Tx, variantId: string, delta: number, guard: boolean): Promise<number | null> {
+async function applyDelta(tx: Tx, variantId: string, delta: number, guard: boolean, floor = 0): Promise<number | null> {
   const rows = guard
     ? await tx.$queryRaw<Array<{ stock: number }>>`
         UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
-        WHERE id = ${variantId} AND stock + ${delta} >= 0
+        WHERE id = ${variantId} AND stock + ${delta} >= ${-floor}
         RETURNING stock`
     : await tx.$queryRaw<Array<{ stock: number }>>`
         UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
@@ -68,11 +71,87 @@ async function value(tx: Tx, items: Array<{ movement: MovementRow; basis: Moveme
   return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger })), scope, known);
 }
 
-/** Fire-and-forget back-in-stock emails for variants that just went from 0 to positive. Call after commit. */
+/** Fire-and-forget back-in-stock emails for variants whose stock just went from 0 to positive. Call after commit.
+ * A fill-to-order variant is left out: its filled bottles crossing zero says nothing about whether it can be bought (it sells
+ * what can still be made) — its shoppers are emailed when what it can sell goes from nothing to something (`flushStockMoved`). */
 export function notifyReplenished(variantIds: string[]): void {
-  for (const id of new Set(variantIds)) {
-    notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
+  const ids = [...new Set(variantIds)];
+  if (!ids.length) return;
+  void prisma.productVariant
+    .findMany({ where: { id: { in: ids }, product: { fillToOrder: true } }, select: { id: true } })
+    .then((filled) => {
+      const skip = new Set(filled.map((v) => v.id));
+      for (const id of ids) if (!skip.has(id)) notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
+    })
+    .catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
+}
+
+/** Trailing debounce for the fill-to-order refresh: an attar sale (or a burst of them) refreshes the products that share its
+ * materials once, after the moves stop for this long — at most MAX_WAIT after the first. In-process. */
+const STOCK_MOVED_DEBOUNCE_MS = 2_000;
+const STOCK_MOVED_MAX_WAIT_MS = 5_000;
+const pendingMoved = new Set<string>();
+let pendingSince = 0;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+const refreshing = new Set<Promise<void>>();
+/** What each fill-to-order variant could sell when last refreshed here — to spot "nothing → something" (back in stock). */
+const lastSellable = new Map<string, number>();
+
+/** Fire-and-forget after commit: these variants' stock moved, so the shop's memoised fill capacity is dropped (this
+ * process; others within its TTL) and — coalesced (STOCK_MOVED_DEBOUNCE_MS) — every fill-to-order product whose recipe uses
+ * one of them (a material), or that owns one, is refreshed for the storefront (docs/STOCK_HUB.md §3). Nothing at all when
+ * no product is fill to order. */
+export function notifyStockMoved(variantIds: string[]): void {
+  if (!variantIds.length) return;
+  fillCapacityChanged();
+  for (const id of variantIds) pendingMoved.add(id);
+  const now = Date.now();
+  if (!pendingTimer) pendingSince = now;
+  else clearTimeout(pendingTimer);
+  const wait = Math.max(0, Math.min(STOCK_MOVED_DEBOUNCE_MS, pendingSince + STOCK_MOVED_MAX_WAIT_MS - now));
+  pendingTimer = setTimeout(flushStockMoved, wait);
+  pendingTimer.unref?.();
+}
+
+/** Runs the coalesced refresh now (the debounce timer, or `stockMovedSettled`). */
+function flushStockMoved(): void {
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = null;
+  const ids = [...pendingMoved];
+  pendingMoved.clear();
+  if (!ids.length) return;
+  const run: Promise<void> = (async () => {
+    if (!(await hasFillToOrderProducts())) return;
+    const productIds = await refreshProductsUsingMaterials(ids);
+    await notifySellableAgain(productIds);
+  })()
+    .catch((err) => captureError(err, { msg: "[read-model] fill-to-order refresh failed:" }))
+    .finally(() => refreshing.delete(run));
+  refreshing.add(run);
+}
+
+/** Back in stock for fill to order: a variant of these products that could sell nothing at its last refresh (in this
+ * process) and can now — materials bought, an order cancelled — emails its waiting shoppers. The first refresh only
+ * records (nothing known before it). */
+async function notifySellableAgain(productIds: string[]): Promise<void> {
+  if (!productIds.length) return;
+  const variants = await prisma.productVariant.findMany({ where: { productId: { in: productIds }, product: { fillToOrder: true, trackInventory: true } }, select: { id: true, stock: true } });
+  if (!variants.length) return;
+  const made = await fillCapacity(prisma, { variantIds: variants.map((v) => v.id) });
+  const again: string[] = [];
+  for (const v of variants) {
+    const now = sellable(v.stock, made.get(v.id) ?? 0);
+    if (lastSellable.get(v.id) === 0 && now > 0) again.push(v.id);
+    lastSellable.set(v.id, now);
   }
+  for (const id of again) notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
+}
+
+/** Runs any refresh still waiting for its debounce, then resolves once every refresh `notifyStockMoved` started so far has
+ * finished (tests; a graceful shutdown; the go-live script). */
+export async function stockMovedSettled(): Promise<void> {
+  flushStockMoved();
+  while (refreshing.size) await Promise.allSettled([...refreshing]);
 }
 
 // --- order-driven movements ---------------------------------------------------------------------
@@ -87,7 +166,12 @@ export interface SaleResult {
 /** Takes an order's units out of stock (`ORDER` movements). Without `allowOversell`, any line short of stock
  * aborts the whole transaction with a 409; with it (a paid gateway settlement only), stock may go negative.
  * D5: a product with trackInventory = false has unlimited availability — its units are still recorded (ledger and
- * balance, for reporting) but never rejected, and never reported as oversold. */
+ * balance, for reporting) but never rejected, and never reported as oversold.
+ * Fill to order (docs/STOCK_HUB.md §3): a variant in `floors` may go down to `-floor` (ordered, not yet filled) — the
+ * caller computes the floors under the materials' locks (fill-capacity.service `fillToOrderFloors`). Its exit is costed
+ * like any other: units beyond what is valued become the costing deficit, settled when the bottles are filled. Every caller
+ * that can sell such a variant passes them: checkout (insertOrderRecord), order modification (applyPlan, also behind a paid
+ * settlement) and exchange (createExchangeOrder); reReserveOrderLines (restore from Trash) does the same for its decrement. */
 export async function recordSale(
   tx: Tx,
   orderId: string,
@@ -95,16 +179,20 @@ export async function recordSale(
    * stock row lock taken by the decrement below and written to exactly these lines with the link to the exit — a costed
    * exit without its lines is refused, so an order can't commit a costed exit whose lines don't carry its cost. */
   items: Array<{ variantId: string; quantity: number; orderItemIds?: string[] }>,
-  opts: { allowOversell?: boolean; untrackedVariantIds?: Set<string> } & Actor = {},
+  opts: { allowOversell?: boolean; untrackedVariantIds?: Set<string>; floors?: Map<string, number> } & Actor = {},
 ): Promise<SaleResult> {
   // Whether costing is active needs no lock: read it before the decrement, so the row lock covers only the stock change and
   // the cost determination that depends on it.
   let scope = await activeCostingInTx(tx);
+  // One global lock order: the variants are decremented in id order (as the cutover and fillToOrderFloors lock them), so
+  // two carts — or a cart and the cutover — can't deadlock. Each item keeps its own order lines, so the cost movements
+  // go to the same lines whatever the order.
+  items = [...items].sort((a, b) => (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0));
   const oversold: string[] = [];
   const stockAfter = new Map<string, number>();
   // Distinct variant rows are independent — run the guarded decrements concurrently (checkout latency).
   const untracked = opts.untrackedVariantIds ?? new Set<string>();
-  const results = await Promise.all(items.map((item) => applyDelta(tx, item.variantId, -item.quantity, !untracked.has(item.variantId))));
+  const results = await Promise.all(items.map((item) => applyDelta(tx, item.variantId, -item.quantity, !untracked.has(item.variantId), opts.floors?.get(item.variantId) ?? 0)));
   for (const [i, item] of items.entries()) {
     let after = results[i];
     if (after === null || after === undefined) {
@@ -126,18 +214,18 @@ export async function recordSale(
   // One statement, run while this transaction holds the rows' locks (taken by the decrements above): writes the ORDER
   // movements and returns each variant's costing facts with a snapshot taken after the locks — no other transaction can
   // change a locked variant's position, so it is current. The costing service then values every exit in one call.
-  const rows = await tx.$queryRaw<Array<{ id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date; variantCreatedAt: Date; trackInventory: boolean; hasState: boolean } & StoredPosition>>`
+  const rows = await tx.$queryRaw<Array<{ id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date; variantCreatedAt: Date; trackInventory: boolean; fillToOrder: boolean; hasState: boolean } & StoredPosition>>`
     WITH mv AS (
       INSERT INTO "StockMovement" (id, "variantId", change, reason, "orderId", "adminId", note, "createdAt")
       SELECT x.id, x."variantId", x.change, 'ORDER'::"StockMovementReason", ${orderId}, ${opts.adminId ?? null}, ${opts.note ?? null}, (NOW() AT TIME ZONE 'UTC')
       FROM jsonb_to_recordset(${JSON.stringify(items.map((item) => ({ id: randomUUID(), variantId: item.variantId, change: -item.quantity })))}::jsonb) AS x(id text, "variantId" text, change int)
       RETURNING id, "variantId", change, reason::text AS reason, "orderId", "createdAt"
     )
-    SELECT mv.*, v."createdAt" AS "variantCreatedAt", p."trackInventory", s."variantId" IS NOT NULL AS "hasState",
+    SELECT mv.*, v."createdAt" AS "variantCreatedAt", p."trackInventory", p."fillToOrder", s."variantId" IS NOT NULL AS "hasState",
            s."valuedQty", s.value, s."avgUnitCost", s."unvaluedQty", s."deficitQty", s."deficitLayers"
     FROM mv JOIN "ProductVariant" v ON v.id = mv."variantId" JOIN "Product" p ON p.id = v."productId"
     LEFT JOIN "InventoryCostState" s ON s."variantId" = mv."variantId"`;
-  const known = new Map<string, VariantCosting>(rows.map((r) => [r.variantId, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null }]));
+  const known = new Map<string, VariantCosting>(rows.map((r) => [r.variantId, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null, fillToOrder: r.fillToOrder }]));
   const byVariant = new Map(rows.map((r) => [r.variantId, r]));
   await value(
     tx,
@@ -165,7 +253,12 @@ export async function releaseOrderLines(
   kind: "release" | "return",
   opts: Actor & { lines?: Array<{ orderItemId: string; quantity: number }> } = {},
 ): Promise<{ released: ReleasedLine[]; replenished: string[] }> {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true } });
+  // Variant id order — the lock order every stock writer uses.
+  const items = await tx.orderItem.findMany({
+    where: { orderId },
+    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true },
+    orderBy: [{ variantId: "asc" }, { id: "asc" }],
+  });
   const requested = opts.lines ? new Map(opts.lines.map((l) => [l.orderItemId, l.quantity])) : null;
   const released: ReleasedLine[] = [];
   const replenished: string[] = [];
@@ -212,7 +305,7 @@ export async function releaseModifiedUnits(
   actor: Actor = {},
 ): Promise<string[]> {
   const replenished: string[] = [];
-  for (const u of units) {
+  for (const u of [...units].sort((a, b) => (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0))) {
     if (u.quantity <= 0) continue;
     const after = await applyDelta(tx, u.variantId, u.quantity, false);
     if (after === null) continue; // the variant was hard-deleted since: nothing to put back
@@ -244,25 +337,37 @@ export async function writeOffReturnedUnits(
 }
 
 /** Locks the variants' rows and reports which can't supply `quantity` units right now (tracked products only — D5). Lets a
- * paid settlement decide BEFORE writing anything whether a waiting modification can still be fulfilled (§14). */
-export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; quantity: number }>, untracked: Set<string>): Promise<string[]> {
+ * paid settlement decide BEFORE writing anything whether a waiting modification can still be fulfilled (§14). `floors`:
+ * fill-to-order variants may go that far below zero, as in recordSale (fill-capacity.service `fillToOrderFloorsFor`). */
+export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; quantity: number }>, untracked: Set<string>, floors?: Map<string, number>): Promise<string[]> {
   const short: string[] = [];
   for (const u of [...units].sort((a, b) => (a.variantId < b.variantId ? -1 : 1))) {
     if (untracked.has(u.variantId)) continue;
     const stock = await lockStock(tx, u.variantId);
-    if (stock === null || stock < u.quantity) short.push(u.variantId);
+    if (stock === null || stock + (floors?.get(u.variantId) ?? 0) < u.quantity) short.push(u.variantId);
   }
   return short;
 }
 
 /** Restoring a pre-shipment order from Trash takes back the units released when it was trashed. All-or-nothing:
- * if any line's stock has since been sold, nothing changes and a 409 explains why. */
-export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<void> {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true } });
+ * if any line's stock has since been sold, nothing changes and a 409 explains why. A fill-to-order line may take its stock
+ * below zero by what can still be made, exactly as at checkout (docs/STOCK_HUB.md §3). Returns the variants it moved, for
+ * `notifyStockMoved` after commit (fill-to-order lines and their materials; empty for any other order). */
+export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<string[]> {
+  const items = await tx.orderItem.findMany({
+    where: { orderId },
+    select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true },
+    orderBy: [{ variantId: "asc" }, { id: "asc" }], // the lock order every stock writer uses
+  });
+  const fill = await fillToOrderFloorsFor(
+    tx,
+    items.map((item) => ({ variantId: item.variantId, quantity: item.restockedQuantity - item.returnedQuantity })).filter((l) => l.quantity > 0),
+  );
   for (const item of items) {
     const amount = item.restockedQuantity - item.returnedQuantity;
     if (amount <= 0) continue;
-    const after = await applyDelta(tx, item.variantId, -amount, true);
+    // Several lines of one variant share its floor: each takes from the stock the previous one left, so the floor holds.
+    const after = await applyDelta(tx, item.variantId, -amount, true, fill?.floors.get(item.variantId) ?? 0);
     if (after === null) {
       throw AppError.conflict("Not enough stock to restore this order — its items have been sold since it was trashed. Adjust stock first.");
     }
@@ -272,6 +377,7 @@ export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor 
     // entry), so the line's recorded cost stays the cost of every one of its units.
     await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: item.unitCostSnapshot }, ledger: "ORDER" }]);
   }
+  return fillMoved(fill);
 }
 
 // --- document-driven movements (Phase 4D+: purchasing, later manufacturing) ----------------------
@@ -339,6 +445,8 @@ export async function setVariantStockFromForm(tx: Tx, variantId: string, desired
       `Stock for this variant changed since the form was loaded (now ${current}). Reload the product, or use Inventory → Adjust to add or remove units.`,
     );
   }
+  // Only sales take a (fill-to-order) variant below zero; an edit never does — the schema lets an unchanged negative through.
+  if (desired < 0) throw AppError.badRequest("Stock can't be set below 0");
   const delta = desired - current;
   await applyDelta(tx, variantId, delta, true);
   const mv = await tx.stockMovement.create({ data: movement(variantId, delta, "ADJUSTMENT", actor) });
@@ -352,6 +460,7 @@ export async function setVariantStockCount(tx: Tx, variantId: string, counted: n
   if (current === null) throw AppError.notFound("Variant not found");
   const delta = counted - current;
   if (delta === 0) return 0;
+  if (counted < 0) throw AppError.badRequest("A stock count can't be below 0");
   await applyDelta(tx, variantId, delta, false);
   const mv = await tx.stockMovement.create({ data: movement(variantId, delta, reason, actor) });
   await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
@@ -397,26 +506,61 @@ export async function recordPackagingUse(tx: Tx, orderId: string, items: Array<{
 // --- manual adjustments -------------------------------------------------------------------------
 
 /** Admin stock adjustment (Inventory → Adjust). Never below zero; DAMAGED/LOST must reduce stock, RESTOCK must
- * add (validated by adjustStockSchema, re-checked here since this is the authority). */
-export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null) {
+ * add (validated by adjustStockSchema, re-checked here since this is the authority).
+ * `source`: the document line the adjustment is for (a stock hub count line) — written on the movement, and an adjustment
+ * already made for it is not made again (a retry). `floor`: how far below zero stock may go (a fill-to-order variant whose
+ * unfilled orders already took it below zero, docs/STOCK_HUB.md §3); 0 otherwise. */
+export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null, opts: AdjustOptions = {}) {
+  const result = await prisma.$transaction((tx) => adjustVariantStockInTx(tx, variantId, delta, reason, adminId, note, opts));
+  afterAdjustment(result);
+  return result.variant;
+}
+
+export interface AdjustOptions {
+  source?: { type: string; id: string };
+  floor?: number;
+}
+export interface AdjustResult {
+  variant: Prisma.ProductVariantGetPayload<object>;
+  /** Went from 0 or below to above 0 (a back-in-stock crossing). */
+  replenished: boolean;
+  /** A movement was written (false: the source's adjustment was already made). */
+  moved: boolean;
+}
+
+/** `adjustVariantStock` inside the caller's transaction — for a caller that must read something (units waiting on orders, an
+ * expectation) under the same variant row lock the adjustment takes, so no sale can slip in between (lock it first with
+ * `lockVariantStock`). The caller hands the result to `afterAdjustment` once its transaction has committed. */
+export async function adjustVariantStockInTx(tx: Tx, variantId: string, delta: number, reason: ManualStockReason, adminId: string | null, note?: string | null, opts: AdjustOptions = {}): Promise<AdjustResult> {
   if (delta === 0) throw AppError.badRequest("Delta cannot be zero");
   if ((reason === "DAMAGED" || reason === "LOST") && delta > 0) throw AppError.badRequest("Damaged or lost stock must be a negative change");
   if (reason === "RESTOCK" && delta < 0) throw AppError.badRequest("A restock must add stock");
+  const source = opts.source ? { sourceType: opts.source.type, sourceId: opts.source.id } : null;
+  if (source && (await tx.stockMovement.findFirst({ where: { variantId, ...source }, select: { id: true } }))) {
+    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: false, moved: false };
+  }
+  const after = await applyDelta(tx, variantId, delta, true, Math.max(0, opts.floor ?? 0));
+  if (after === null) {
+    const exists = await tx.productVariant.count({ where: { id: variantId } });
+    throw exists ? AppError.conflict("Stock cannot go below zero") : AppError.notFound("Variant not found");
+  }
+  const mv = await tx.stockMovement.create({ data: { ...movement(variantId, delta, reason, { adminId, note }), ...source } });
+  // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
+  // known) and booked against shrinkage / count adjustments — never as a purchase.
+  await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
+  return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0, moved: true };
+}
 
-  const { variant, replenished } = await prisma.$transaction(async (tx) => {
-    const after = await applyDelta(tx, variantId, delta, true);
-    if (after === null) {
-      const exists = await tx.productVariant.count({ where: { id: variantId } });
-      throw exists ? AppError.conflict("Stock cannot go below zero") : AppError.notFound("Variant not found");
-    }
-    const mv = await tx.stockMovement.create({ data: movement(variantId, delta, reason, { adminId, note }) });
-    // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
-    // known) and booked against shrinkage / count adjustments — never as a purchase.
-    await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
-    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0 };
-  });
-  if (replenished) notifyReplenished([variantId]);
-  return variant;
+/** After commit: back-in-stock emails and the storefront refresh for an adjustment made with `adjustVariantStockInTx`. */
+export function afterAdjustment(result: Pick<AdjustResult, "variant" | "replenished" | "moved">): void {
+  if (result.replenished) notifyReplenished([result.variant.id]);
+  if (result.moved) notifyStockMoved([result.variant.id]);
+}
+
+/** Row-locked read of a variant's stock (null if it doesn't exist) — the lock every stock change takes, held to the end of
+ * the caller's transaction. */
+export async function lockVariantStock(tx: Tx, variantId: string): Promise<number | null> {
+  return lockStock(tx, variantId);
 }
 
 export async function listStockMovements(query: StockMovementListQuery) {

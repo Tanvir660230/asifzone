@@ -9,7 +9,7 @@
 import type { PackingRulePer, PackingRuleScope } from "@prisma/client";
 import { addDays, businessDate } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
-import { recordPackagingUse } from "../../modules/inventory/inventory.service";
+import { notifyStockMoved, recordPackagingUse } from "../../modules/inventory/inventory.service";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
@@ -98,6 +98,7 @@ export async function syncPackaging(opts: { days?: number } = {}) {
   const variantIds = [...new Set(orders.flatMap((o) => o.items.map((i) => i.variantId)))];
   const variants = new Map((await prisma.productVariant.findMany({ where: { id: { in: variantIds } }, select: { id: true, productId: true, product: { select: { categoryId: true } } } })).map((v) => [v.id, v]));
   let movements = 0;
+  const moved = new Set<string>();
   const short: Array<{ orderNumber: string; variantId: string; quantity: number }> = [];
   for (const o of orders) {
     const left = o.courierBookedAt ?? o.statusHistory[0]?.createdAt ?? null;
@@ -111,8 +112,10 @@ export async function syncPackaging(opts: { days?: number } = {}) {
     if (!needs.size) continue;
     const r = await financeTransaction((tx) => recordPackagingUse(tx, o.id, [...needs].map(([variantId, quantity]) => ({ variantId, quantity })), { note: `Packaging for ${o.orderNumber}` }));
     movements += r.written.length;
+    for (const v of r.written) moved.add(v.variantId);
     for (const s of r.short) short.push({ orderNumber: o.orderNumber, ...s });
   }
+  notifyStockMoved([...moved]);
   return { parcels: orders.length, movements, short };
 }
 

@@ -40,6 +40,11 @@ export function listProducts(params: ProductListParams = {}, { signal }: FetchSi
   return apiFetch<PaginatedResult<Product & ProductListExtras>>(`/api/products?${query.toString()}`, { signal });
 }
 
+/** Whether a tracked product's stock now changes only on the Stock page (inventory costing is live). Any catalog reader can ask. */
+export function getStockPolicy() {
+  return apiFetch<{ stockViaHub: boolean }>("/api/products/stock-policy");
+}
+
 export function getProduct(id: string) {
   return apiFetch<{ product: Product }>(`/api/products/${id}`);
 }

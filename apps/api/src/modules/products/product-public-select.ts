@@ -49,6 +49,8 @@ export const PUBLIC_PRODUCT_SCALARS = {
   trackInventory: true,
   freeDelivery: true,
   markedSoldOut: true,
+  /** Fill to order (docs/STOCK_HUB.md §3): the presenter sells the filled bottles plus what the recipe can still make. */
+  fillToOrder: true,
   lowStockThreshold: true,
   restockDate: true,
   isActive: true,

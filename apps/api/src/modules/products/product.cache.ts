@@ -1,4 +1,4 @@
-import { cacheDelByPrefix } from "../../config/redis";
+import { cacheDel, cacheDelByPrefix } from "../../config/redis";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { revalidateStorefrontTags } from "../../lib/storefront-revalidate";
@@ -11,6 +11,15 @@ export const PRODUCT_CACHE_PREFIX = "products:";
 export async function invalidateProductCache() {
   await cacheDelByPrefix(PRODUCT_CACHE_PREFIX);
 }
+
+/** Drops only these products' cached detail (product.service getProductBySlug's `slug:` key) — one DEL, no keyspace scan.
+ * For stock-driven refreshes, which run far more often than catalog edits. */
+export async function invalidateProductDetailCache(slugs: string[]) {
+  await cacheDel(...slugs.map(productDetailCacheKey));
+}
+
+/** The cache key of a product's public detail (by slug). */
+export const productDetailCacheKey = (slug: string) => `${PRODUCT_CACHE_PREFIX}slug:${slug}`;
 
 export interface RevalidationContext {
   /** A single product's id — most call sites. */
