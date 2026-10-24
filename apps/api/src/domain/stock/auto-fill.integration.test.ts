@@ -23,6 +23,7 @@ import { fillCapacityChanged } from "./fill-capacity.service";
 import { fillForBookedOrder, retryAutoFill } from "./auto-fill.service";
 import { recordFill } from "./fill.service";
 import { stockToday } from "./stock-today.service";
+import { stockActivity } from "./stock-activity.service";
 
 // Smart stock page, task 6 (owner decision 2026-10-24): booking an attar parcel records the fill of the bottles still owed
 // for it — the booking never fails because of the fill, and a fill that can't be made waits on Today. Steadfast is stubbed.
@@ -232,5 +233,25 @@ describe("booking fills the bottles still owed", () => {
     expect(await stockOf(attar)).toBe(0);
     const today = await stockToday({ canSeeCost: true });
     expect(today.fillProblems).toEqual(expect.arrayContaining([expect.objectContaining({ id: row.id, partial: true })]));
+  });
+});
+
+describe("activity", () => {
+  it("AF-10: the activity lists fills by hand and at booking, and a booking fill that couldn't be made — newest first", async () => {
+    const attar = await attarOf(oil);
+    const dry = await attarOf(dryOil, "UNLIMITED");
+    const booked1 = await placeOrder([{ variantId: attar, quantity: 2 }]);
+    await bookOrderWithSteadfast(booked1.id);
+    await recordFill({ variantId: attar, quantity: 3 }, OWNER, `af-activity-${RUN}-${++key}`);
+    const stuck = await placeOrder([{ variantId: dry, quantity: 1 }]);
+    await bookOrderWithSteadfast(stuck.id);
+    const a = await stockActivity({ limit: 10 }, { canSeeCost: true });
+    const mine = a.events.filter((e) => e.items.some((i) => i.variantId === attar || i.variantId === dry));
+    expect(mine.map((e) => e.kind).slice(0, 3)).toEqual(["FILL_PROBLEM", "FILLED", "AUTO_FILLED"]);
+    expect(mine.find((e) => e.kind === "AUTO_FILLED")!.items[0]).toMatchObject({ variantId: attar, change: 2 });
+    expect(mine.find((e) => e.kind === "FILLED")!.by).toEqual(expect.any(String));
+    expect(mine.find((e) => e.kind === "FILL_PROBLEM")).toMatchObject({ context: stuck.orderNumber, pending: true });
+    expect(a.today.bottlesFilled).toBeGreaterThanOrEqual(5);
+    for (let i = 1; i < a.events.length; i++) expect(a.events[i - 1]!.at >= a.events[i]!.at).toBe(true);
   });
 });

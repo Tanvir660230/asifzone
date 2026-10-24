@@ -63,7 +63,10 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   await expect(bought.getByTestId("bought-review-total")).toHaveText("10");
   await bought.getByTestId("bought-save").click();
   await expect(bought).toBeHidden(NAV);
-  await expect(page.getByTestId("stock-recent-row").first()).toContainText("10 ml");
+  // the purchase heads the activity (beside the list on wide screens, its own tab on a phone)
+  if (!(await page.getByTestId("activity-panel").isVisible())) await page.getByTestId("stock-view-activity").click();
+  await expect(page.getByTestId("activity-event").first()).toContainText("Received 10 ml", NAV);
+  if (await page.getByTestId("stock-view-stock").isVisible()) await page.getByTestId("stock-view-stock").click();
   const afterBuy = await overview(page);
   expect(itemOf(afterBuy, oil!.variantId).stock).toBe(oil!.stock + 10);
 
@@ -285,4 +288,26 @@ test("the list's filters live in the URL", async ({ page }) => {
   await expect(page).toHaveURL(/status=LOW/, NAV);
   await page.reload();
   await expect(page.getByTestId("stock-filter-LOW")).toHaveAttribute("aria-pressed", "true", NAV);
+});
+
+test("search forgives typos and shows matches with what to do; the activity shows what happened", async ({ page }) => {
+  await login(page);
+  const first = page.getByTestId("stock-list").locator("[data-testid^=stock-row-]").first();
+  await expect(first).toBeVisible(NAV);
+  const name = (await first.locator("span.line-clamp-2").innerText()).trim();
+  const word = name.split(/\s+/).find((w) => w.length >= 5)!;
+  // drop one letter: still found
+  const typo = word.slice(0, 2) + word.slice(3);
+  await page.getByTestId("stock-search").fill(typo);
+  await expect(page.getByTestId("stock-search-results")).toBeVisible(NAV);
+  await expect(page.getByTestId("stock-search-result").first()).toBeVisible();
+  await page.getByTestId("stock-search").press("Enter");
+  await expect(page.getByTestId("stock-item-panel")).toBeVisible(NAV);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("stock-search").fill("");
+  // wide: the item sits where the activity was — back to it; phone: the Activity tab
+  if (await page.getByTestId("stock-item-back").isVisible()) await page.getByTestId("stock-item-back").click();
+  else if (!(await page.getByTestId("activity-panel").isVisible())) await page.getByTestId("stock-view-activity").click();
+  await expect(page.getByTestId("activity-panel")).toBeVisible(NAV);
+  await expect(page.getByTestId("activity-done-today")).toBeVisible();
 });

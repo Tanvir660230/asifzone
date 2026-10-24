@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, ClipboardCheck, Droplets, ShoppingBag } fr
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { StockToday } from "@/lib/api/stock-smart";
+import type { StockActivity, StockToday } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { num, spacedUnit } from "./stock-shared";
@@ -61,13 +61,14 @@ export interface TodayActions {
   onRetryFill?: (id: string) => void;
 }
 
-export function TodayList({ data, isLoading, isError, onRetry, actions }: { data: StockToday | undefined; isLoading: boolean; isError: boolean; onRetry: () => void; actions: TodayActions }) {
+export function TodayList({ data, done, isLoading, isError, onRetry, actions }: { data: StockToday | undefined; done?: StockActivity["today"]; isLoading: boolean; isError: boolean; onRetry: () => void; actions: TodayActions }) {
   const tasks = data ? (data.fill ? 1 : 0) + (data.reorder ? 1 : 0) + (data.count ? 1 : 0) + data.approvals.length + data.fillProblems.length : 0;
+  const doneRows = doneRowsOf(done);
   return (
     <section aria-labelledby="stock-today" className="space-y-3" data-testid="stock-today">
       <div className="flex items-baseline justify-between gap-4">
         <h2 id="stock-today" className="text-lg font-semibold tracking-tight text-fg">Today</h2>
-        {data && tasks > 0 && <p className="text-sm text-fg-muted">{plural(tasks, "thing")} to do</p>}
+        {data && (tasks > 0 || doneRows.length > 0) && <p className="text-sm tabular-nums text-fg-muted" data-testid="today-progress">{[doneRows.length ? `${num(doneRows.length)} done` : null, tasks ? `${plural(tasks, "thing")} to do` : null].filter(Boolean).join(" · ")}</p>}
       </div>
       <Card className="overflow-hidden p-0">
         {isLoading ? (
@@ -77,7 +78,10 @@ export function TodayList({ data, isLoading, isError, onRetry, actions }: { data
         ) : isError ? (
           <p className="px-5 py-4 text-sm text-fg-muted">Today&apos;s tasks couldn&apos;t be loaded. <button type="button" onClick={onRetry} className="font-medium text-fg underline underline-offset-4">Try again</button></p>
         ) : !data || tasks === 0 ? (
-          <ul><Task testId="today-clear" icon={CheckCircle2} tone="success" title="All caught up" detail="Nothing to fill, reorder, count or approve right now." /></ul>
+          <ul className="divide-y divide-line-subtle">
+            <Task testId="today-clear" icon={CheckCircle2} tone="success" title="All caught up" detail="Nothing to fill, reorder, count or approve right now." />
+            {doneRows.map((d) => <DoneRow key={d} text={d} />)}
+          </ul>
         ) : (
           <ul className="divide-y divide-line-subtle">
             {data.fill && (
@@ -137,10 +141,31 @@ export function TodayList({ data, isLoading, isError, onRetry, actions }: { data
                 action={actions.onApproval && <Button variant="outline" onClick={() => actions.onApproval!(a.id)} data-testid="today-approval-open">Review</Button>}
               />
             ))}
+            {doneRows.map((d) => <DoneRow key={d} text={d} />)}
           </ul>
         )}
       </Card>
     </section>
+  );
+}
+
+/** What was already done today, from the activity: ticked, quieter than what is still to do. */
+function doneRowsOf(done: StockActivity["today"] | undefined): string[] {
+  if (!done) return [];
+  return [
+    done.bottlesFilled ? `Filled ${plural(done.bottlesFilled, "bottle")}` : null,
+    done.purchases ? `Received ${plural(done.purchases, "purchase")}` : null,
+    done.counts ? `Counted ${done.counts === 1 ? "once" : `${num(done.counts)} times`}` : null,
+    done.decisions ? `Decided ${plural(done.decisions, "count loss", "count losses")}` : null,
+  ].filter((x): x is string => Boolean(x));
+}
+
+function DoneRow({ text }: { text: string }) {
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5 text-sm text-fg-muted sm:px-5" data-testid="today-done">
+      <span className="grid h-10 w-10 place-items-center" aria-hidden="true"><CheckCircle2 className="h-5 w-5 text-success-600" /></span>
+      <span><span className="sr-only">Done: </span>{text}</span>
+    </li>
   );
 }
 
