@@ -168,6 +168,13 @@ export function receiveReturnedParcel(id: string, input: ReceiveReturnedParcelIn
   return apiFetch<{ order: Order }>(`/api/orders/${id}/receive-return`, { method: "POST", body: input });
 }
 
+/** Attar lines still on the shelf: their bottles filled (READY), some of them (PARTLY_FILLED) or none yet (AWAITING_FILL) —
+ * filled bottles go to waiting orders oldest first. Empty when the order has no attar waiting. */
+export interface OrderFillLine { orderItemId: string; units: number; filled: number; toFill: number; status: "READY" | "PARTLY_FILLED" | "AWAITING_FILL" }
+export function getOrderFillStatus(id: string, { signal }: FetchSignal = {}) {
+  return apiFetch<{ lines: OrderFillLine[] }>(`/api/orders/${id}/fill-status`, { signal });
+}
+
 /** Resolves a PARTIALLY_DELIVERED order — declares how many units of each line item actually came
  * back so they can be restocked. See OrderDetailPanel's "Partial delivery" card. */
 export function reconcilePartialDelivery(id: string, input: ReconcilePartialDeliveryInput) {

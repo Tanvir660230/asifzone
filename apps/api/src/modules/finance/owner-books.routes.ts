@@ -44,6 +44,7 @@ import {
   stockPurchaseFinishSchema,
   stockCountsSchema,
   stockPolicySchema,
+  stockFillSchema,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
 import * as autopilot from "../../domain/finance/autopilot.service";
@@ -72,6 +73,8 @@ import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.se
 import * as stockPurchases from "../../domain/stock/purchase.service";
 import * as stockCounts from "../../domain/stock/count.service";
 import { setStockPolicy, stockHub } from "../../domain/stock/stock-hub.service";
+import { recordFill } from "../../domain/stock/fill.service";
+import { stockTrace } from "../../domain/stock/trace.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -234,3 +237,9 @@ ownerBooksRouter.post("/stock/counts", requirePermission("inventory.adjust"), va
 ownerBooksRouter.get("/stock", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await stockHub({ canSeeCost: req.admin!.permissions.includes("costing.read") }))));
 // How a fill-to-order product sells past its filled bottles (inventory recovery phase 2): who may correct stock decides it.
 ownerBooksRouter.put("/stock/products/:id/policy", requirePermission("inventory.adjust"), validate(stockPolicySchema), asyncHandler(async (req, res) => res.json(await setStockPolicy(id(req), req.body, await actorOf(req)))));
+// Filled (inventory recovery phase 3): bottles filled from the recipe, as a resumable hub entry; the item's story.
+ownerBooksRouter.post("/stock/fills", requirePermission("manufacturing.approve"), validate(stockFillSchema), asyncHandler(async (req, res) => {
+  const r = await recordFill(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+ownerBooksRouter.get("/stock/items/:id/trace", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await stockTrace(id(req), { canSeeCost: req.admin!.permissions.includes("costing.read") }))));
