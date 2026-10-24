@@ -107,7 +107,7 @@ function decodeCursor(cursor: string | undefined): number {
 }
 
 /** Every item, classified and sorted — the list's source and what Today summarises. */
-export async function allStockItems(viewer: { canSeeCost: boolean }): Promise<{ items: StockListItem[]; today: string; hub: Awaited<ReturnType<typeof stockHub>> }> {
+export async function allStockItems(viewer: { canSeeCost: boolean }): Promise<{ items: StockListItem[]; today: string; hub: Awaited<ReturnType<typeof stockHub>>; claimed: Map<string, number> }> {
   const [hub, recipes, { business }] = await Promise.all([stockHub(viewer), recipesByVariant(), getFinanceContext()]);
   const today = businessToday(business);
   const flat = hub.groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.key })));
@@ -139,7 +139,7 @@ export async function allStockItems(viewer: { canSeeCost: boolean }): Promise<{ 
     const y = rankOf({ ...b, owed: b.policy?.owed ?? 0 });
     return x < y ? -1 : x > y ? 1 : 0;
   });
-  return { items, today, hub };
+  return { items, today, hub, claimed };
 }
 
 export async function listStockItems(raw: StockItemsQuery, viewer: { canSeeCost: boolean }) {
