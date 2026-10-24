@@ -16,3 +16,15 @@ export const stockItemSettingsSchema = z
 
 export type StockItemSettingsInput = z.input<typeof stockItemSettingsSchema>;
 export type StockItemSettings = z.output<typeof stockItemSettingsSchema>;
+
+/** The stock list's filters (GET /stock/items): status, group, search and paging. */
+export const STOCK_STATUSES = ["NEEDS_FILL", "OUT", "LOW", "OK"] as const;
+export type StockStatus = (typeof STOCK_STATUSES)[number];
+export const stockItemsQuerySchema = z.object({
+  status: z.enum(STOCK_STATUSES).optional(),
+  group: z.enum(["FINISHED", "FILL_TO_ORDER", "MATERIAL"]).optional(),
+  q: z.string().trim().max(100).optional().transform((v) => (v ? v : undefined)),
+  cursor: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type StockItemsQuery = z.input<typeof stockItemsQuerySchema>;
