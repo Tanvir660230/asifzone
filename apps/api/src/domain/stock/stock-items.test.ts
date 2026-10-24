@@ -1,0 +1,95 @@
+import { describe, it, expect } from "vitest";
+import { classify, itemLabel, limitingMaterial, rankOf, suggestReorder } from "./stock-items.service";
+
+// Smart stock page, task 2 (pure parts): status, reorder suggestion, urgency order and the material that limits a fill.
+
+const item = (over: Record<string, unknown> = {}) => ({
+  stock: 10, makeable: null as number | null, low: false, daysLeft: null as number | null, usedPerDay: null as number | null, reserved: 0,
+  policy: null as { owed: number; policy: "TRACKED" | "UNLIMITED" | "BACKORDER" } | null, ...over,
+});
+
+describe("classify", () => {
+  it("owed bottles → NEEDS_FILL, even when more can be made", () => {
+    expect(classify(item({ stock: -3, makeable: 40, policy: { owed: 3, policy: "TRACKED" } }) as never)).toBe("NEEDS_FILL");
+  });
+  it("nothing to sell while it is being used or ordered → OUT", () => {
+    expect(classify(item({ stock: 0, usedPerDay: 2 }) as never)).toBe("OUT");
+    expect(classify(item({ stock: 0, reserved: 1 }) as never)).toBe("OUT");
+    expect(classify(item({ stock: 0, makeable: 0, usedPerDay: 1, policy: { owed: 0, policy: "TRACKED" } }) as never)).toBe("OUT");
+  });
+  it("nothing left and nobody wants it → EMPTY, not an emergency", () => {
+    expect(classify(item({ stock: 0 }) as never)).toBe("EMPTY");
+  });
+  it("an attar on UNLIMITED is never OUT", () => {
+    expect(classify(item({ stock: 0, makeable: 1_000_000, policy: { owed: 0, policy: "UNLIMITED" } }) as never)).toBe("OK");
+  });
+  it("low → LOW, else OK", () => {
+    expect(classify(item({ low: true }) as never)).toBe("LOW");
+    expect(classify(item() as never)).toBe("OK");
+  });
+});
+
+describe("suggestReorder", () => {
+  it("10 a day, 3 days to arrive, 30 days cover, 100 on hand → 230, order in 7 days", () => {
+    expect(suggestReorder({ usedPerDay: 10, available: 100, leadTimeDays: 3, coverDays: 30, today: "2026-10-24" })).toEqual({ suggested: 230, orderBy: "2026-10-31" });
+  });
+  it("already past the order date → order today", () => {
+    expect(suggestReorder({ usedPerDay: 10, available: 20, leadTimeDays: 5, coverDays: 30, today: "2026-10-24" })).toEqual({ suggested: 330, orderBy: "2026-10-24" });
+  });
+  it("enough on hand → suggests 0", () => {
+    expect(suggestReorder({ usedPerDay: 1, available: 500, leadTimeDays: 3, coverDays: 30, today: "2026-10-24" })?.suggested).toBe(0);
+  });
+  it("no use → no suggestion", () => {
+    expect(suggestReorder({ usedPerDay: null, available: 5, leadTimeDays: 3, coverDays: 30, today: "2026-10-24" })).toBeNull();
+  });
+  it("fractional use rounds the need up", () => {
+    expect(suggestReorder({ usedPerDay: 0.5, available: 0, leadTimeDays: 3, coverDays: 30, today: "2026-10-24" })?.suggested).toBe(17);
+  });
+});
+
+describe("rankOf", () => {
+  it("NEEDS_FILL (most owed first) → OUT → LOW (fewest days first) → OK", () => {
+    const rows = [
+      { status: "OK", owed: 0, daysLeft: 90, name: "b", sku: "B" },
+      { status: "LOW", owed: 0, daysLeft: 9, name: "a", sku: "A" },
+      { status: "NEEDS_FILL", owed: 2, daysLeft: null, name: "z", sku: "Z" },
+      { status: "LOW", owed: 0, daysLeft: 3, name: "c", sku: "C" },
+      { status: "OUT", owed: 0, daysLeft: null, name: "d", sku: "D" },
+      { status: "NEEDS_FILL", owed: 23, daysLeft: 11, name: "y", sku: "Y" },
+    ] as const;
+    expect([...rows].sort((x, y) => rankOf(x).localeCompare(rankOf(y))).map((r) => r.sku)).toEqual(["Y", "Z", "D", "C", "A", "B"]);
+  });
+});
+
+describe("limitingMaterial", () => {
+  it("the line that makes the fewest bottles, wastage included", () => {
+    const lines = [
+      { materialVariantId: "oil", qtyPerUnit: 6, wastagePct: 0 },
+      { materialVariantId: "bottle", qtyPerUnit: 1, wastagePct: 0 },
+      { materialVariantId: "box", qtyPerUnit: 1, wastagePct: 10 },
+    ];
+    expect(limitingMaterial(lines, new Map([["oil", 250], ["bottle", 166], ["box", 500]]))).toBe("oil"); // 41 vs 166 vs 454
+    expect(limitingMaterial(lines, new Map([["oil", 6000], ["bottle", 166], ["box", 150]]))).toBe("box"); // 1000 vs 166 vs 136
+    expect(limitingMaterial([], new Map())).toBeNull();
+  });
+});
+
+describe("itemLabel", () => {
+  it("adds the size / colour only where the product name doesn't already say it", () => {
+    expect(itemLabel({ productName: "Premium Pakistani Cap - Black A", size: "2XL 23.5", color: "Black" })).toBe("Premium Pakistani Cap - Black A — 2XL 23.5");
+    expect(itemLabel({ productName: "Empty attar bottle 6 ml", size: "6ml", color: null })).toBe("Empty attar bottle 6 ml");
+    expect(itemLabel({ productName: "ZAYAN ELIXIR", size: "12ml", color: "Standard" })).toBe("ZAYAN ELIXIR — 12 ml");
+    expect(itemLabel({ productName: "Attar oil — ZAYAN ELIXIR", size: "Bulk oil", color: null }, "MATERIAL")).toBe("Attar oil — ZAYAN ELIXIR");
+  });
+});
+
+describe("review fixes", () => {
+  it("owed bottles that already claim more than the shelf holds are part of what to buy", () => {
+    // 100 ml on the shelf, 300 ml claimed by owed bottles → available −200; 10 ml a day over 3 + 30 days
+    expect(suggestReorder({ usedPerDay: 10, available: -200, leadTimeDays: 3, coverDays: 30, today: "2026-10-24" })).toEqual({ suggested: 530, orderBy: "2026-10-24" });
+  });
+  it("a LOW item with no recent use sorts after ones that run out soon", () => {
+    const low = (sku: string, daysLeft: number | null) => ({ status: "LOW" as const, owed: 0, daysLeft, name: sku, sku });
+    expect([low("P", null), low("Q", 1), low("R", 9)].sort((a, b) => rankOf(a).localeCompare(rankOf(b))).map((r) => r.sku)).toEqual(["Q", "R", "P"]);
+  });
+});

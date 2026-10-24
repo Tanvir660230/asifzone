@@ -86,7 +86,7 @@ describe("Counted", () => {
     expect((await reservedNotDispatched(prisma, [shirt])).get(shirt)).toBe(2);
     const r = await post({ lines: [{ variantId: shirt, counted: 4 }] }, `cnt-shirt-${RUN}`);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.lines).toEqual([{ variantId: shirt, expected: 4, counted: 4, difference: 0, movementId: null }]);
+    expect(r.body.lines).toEqual([{ variantId: shirt, expected: 4, counted: 4, difference: 0, movementId: null, pendingApprovalId: null }]);
     expect(await stock(shirt)).toBe(2);
     expect(await movements(shirt)).toHaveLength(0);
     expect(await prisma.stockCount.count({ where: { variantId: shirt } })).toBe(1);

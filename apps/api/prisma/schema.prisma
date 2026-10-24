@@ -730,6 +730,8 @@ model ProductVariant {
   /// Manufacturing — Restrict: a variant used in a BOM or a production order keeps its history.
   bomMaterialLines          BillOfMaterialsLine[]      @relation("BomMaterial")
   stockCounts               StockCount[]
+  stockCountApprovals       StockCountApproval[]
+  autoFillFailures          StockAutoFillFailure[]
   materialRolls             MaterialRoll[]
   bomFinishedLines          BillOfMaterialsLine[]      @relation("BomFinishedVariant")
   productionLines           ProductionOrderLine[]
@@ -739,6 +741,7 @@ model ProductVariant {
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
   valuationEntries          InventoryValuationEntry[]
   costState                 InventoryCostState?
+  stockSetting              StockItemSetting?
   cartItems                 CartItem[]
   stockAlerts               StockAlert[]
   createdAt                 DateTime                   @default(now())
@@ -1219,19 +1222,20 @@ model Order {
   bundleDiscount Decimal @default(0) @db.Decimal(10, 2)
 
   items                  OrderItem[]
+  autoFillFailures       StockAutoFillFailure[]
   statusHistory          OrderStatusHistory[]
   returnRequests         ReturnRequest[]
   /// Reverse side of ReturnRequest.exchangeOrderId — an approved EXCHANGE request creates a new,
   /// separate Order (the replacement shipment) and links back here; at most one element in
   /// practice (one exchange request produces one exchange order), kept as an array only because
   /// Prisma requires a matching relation field on both sides.
-  exchangeReturnRequests ReturnRequest[]      @relation("ReturnRequestExchangeOrder")
+  exchangeReturnRequests ReturnRequest[]        @relation("ReturnRequestExchangeOrder")
   courierLossEvents      CourierLossEvent[]
   /// Courier cost reconciliation (docs/COURIER_COSTS.md): every physical leg of this order — its delivery, the parcel coming
   /// back, an exchange's replacement. `parcelShipments`: the legs whose parcel was booked against THIS order (an exchange
   /// order's replacement leg belongs to the original order but its parcel is the exchange order's).
-  shipments              Shipment[]           @relation("ShipmentOrder")
-  parcelShipments        Shipment[]           @relation("ShipmentParcelOrder")
+  shipments              Shipment[]             @relation("ShipmentOrder")
+  parcelShipments        Shipment[]             @relation("ShipmentParcelOrder")
   modifications          OrderModification[]
   paymentLinks           PaymentLink[]
   notes                  String?
@@ -3299,6 +3303,9 @@ model FinanceBusiness {
   autoProfitShares            Boolean                   @default(false)
   /// Inventory recovery: an owner alert is raised for any inventory gain (5210 count adjustment) at or above this amount.
   inventoryGainAlertThreshold Decimal                   @default(1000) @db.Decimal(18, 2)
+  /// Smart stock page: a count loss by someone without inventory.approve worth at least this (at the average cost) waits for
+  /// the owner (StockCountApproval) instead of moving the stock.
+  countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
   /// What the last night's run did, for the settings page.
   autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())
@@ -3327,6 +3334,7 @@ model FinanceBusiness {
   verifications               FinanceVerification[]
   smsBalanceSnapshots         SmsBalanceSnapshot[]
   stockCounts                 StockCount[]
+  stockCountApprovals         StockCountApproval[]
   materialRolls               MaterialRoll[]
   stockHubEntries             StockHubEntry[]
   landedCosts                 LandedCost[]
@@ -4584,6 +4592,7 @@ model Supplier {
   payments                TreasuryMovement[]
   allocations             SupplierAllocation[]
   recurringCommitments    RecurringCommitment[]
+  stockItemSettings       StockItemSetting[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -6117,12 +6126,12 @@ model WebVitalSample {
 /// A physical count of one variant (docs/FINANCE_CENTER.md §7). Recorded BESIDE the site's stock, never written into it:
 /// the stock check shows the difference, and any correction stays an ordinary, reasoned stock adjustment.
 model StockCount {
-  id               String          @id @default(cuid())
+  id               String              @id @default(cuid())
   businessId       String
-  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business         FinanceBusiness     @relation(fields: [businessId], references: [id], onDelete: Restrict)
   variantId        String
-  variant          ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  countDate        DateTime        @db.Date
+  variant          ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  countDate        DateTime            @db.Date
   counted          Int
   /// The site's stock when the count was recorded — for a stock hub count, what should have been on the shelf then
   /// (stock + units on orders not yet handed to the courier), so `counted − siteStock` is the true difference.
@@ -6130,8 +6139,9 @@ model StockCount {
   note             String?
   countedByAdminId String?
   /// The stock hub count line that recorded it (`<entry id>:<line>`): a retry finds it instead of counting twice.
-  sourceId         String?         @unique
-  createdAt        DateTime        @default(now())
+  sourceId         String?             @unique
+  approval         StockCountApproval?
+  createdAt        DateTime            @default(now())
 
   @@index([variantId, countDate])
 }
@@ -6335,4 +6345,73 @@ model ProfitShareAdjustment {
   createdAt         DateTime                    @default(now())
 
   @@index([partnerId, period])
+}
+
+/// Per-item stock settings (docs/STOCK_HUB.md §7): the usual supplier, days to arrive and days a reorder should cover —
+/// read by the reorder suggestion on /admin/stock. No row = the defaults (STOCK_ITEM_DEFAULTS).
+model StockItemSetting {
+  id                  String         @id @default(cuid())
+  variantId           String         @unique
+  variant             ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  preferredSupplierId String?
+  preferredSupplier   Supplier?      @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  leadTimeDays        Int            @default(3)
+  coverDays           Int            @default(30)
+  updatedByAdminId    String?
+  updatedAt           DateTime       @updatedAt
+}
+
+enum StockCountApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A count loss waiting for the owner (docs/STOCK_HUB.md §7): recorded by someone without inventory.approve and worth at
+/// least FinanceBusiness.countLossApprovalThreshold. The count itself is kept (StockCount); approving applies the difference
+/// recorded here — never one worked out again — through the ordinary stock adjustment; rejecting moves nothing.
+model StockCountApproval {
+  id                 String                   @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  stockCountId       String                   @unique
+  stockCount         StockCount               @relation(fields: [stockCountId], references: [id], onDelete: Restrict)
+  variantId          String
+  variant            ProductVariant           @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  /// counted − expected at the count (negative)
+  difference         Int
+  reason             String
+  note               String?
+  /// the loss at the average cost then; null when the item had no cost
+  value              Decimal?                 @db.Decimal(18, 2)
+  status             StockCountApprovalStatus @default(PENDING)
+  requestedByAdminId String?
+  decidedByAdminId   String?
+  decidedAt          DateTime?
+  decisionNote       String?
+  movementId         String?                  @unique
+  createdAt          DateTime                 @default(now())
+
+  @@index([businessId, status])
+}
+
+/// A courier booking whose attar bottles couldn't be recorded as filled (docs/STOCK_HUB.md §7): the booking stands, the
+/// bottles stay owed, and Today shows it until the bottles are filled (resolvedAt).
+model StockAutoFillFailure {
+  id         String         @id @default(cuid())
+  orderId    String
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId  String
+  variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  units      Int
+  reason     String
+  /// The fill's key: Try again sends it once more, so a fill that stopped half way finishes instead of starting over.
+  fillKey    String         @unique
+  /// It stopped after writing (materials may be issued): only Try again closes it, never a fill by hand.
+  partial    Boolean        @default(false)
+  resolvedAt DateTime?
+  createdAt  DateTime       @default(now())
+
+  @@index([orderId])
+  @@index([resolvedAt])
 }

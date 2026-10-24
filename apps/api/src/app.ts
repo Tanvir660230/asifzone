@@ -55,6 +55,7 @@ import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { storefrontReadModelRouter } from "./modules/storefront/read-model.routes";
 import { financeRouter } from "./modules/finance/finance.routes";
 import { ownerBooksRouter } from "./modules/finance/owner-books.routes";
+import { stockSmartRouter } from "./modules/finance/stock-smart.routes";
 import { purchasingRouter } from "./modules/purchasing/purchasing.routes";
 import { manufacturingRouter } from "./modules/manufacturing/manufacturing.routes";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
@@ -156,6 +157,7 @@ app.use("/api/v1/admin", adminHomeRouter);
 // Financial Core (docs/FINANCE_PHASE_1.md §6): the books of the business — OWNER-only finance.* permissions.
 app.use("/api/v1/finance", financeRouter);
 app.use("/api/v1/finance", ownerBooksRouter);
+app.use("/api/v1/finance", stockSmartRouter);
 // Financial Core Phase 4 (docs/FINANCE_PHASE_4.md): purchasing, suppliers / AP and inventory costing.
 app.use("/api/v1/purchasing", purchasingRouter);
 app.use("/api/v1/manufacturing", manufacturingRouter);

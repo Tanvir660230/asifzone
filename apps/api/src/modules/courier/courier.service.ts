@@ -14,6 +14,7 @@ import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
 import { CourierOutcomeUnknownError } from "../../providers/errors";
 import { syncOrderShipmentsSafely } from "../../domain/shipments/shipment-sync";
+import { fillForBookedOrder, planAutoFill, type AutoFillPlan } from "../../domain/stock/auto-fill.service";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -161,6 +162,16 @@ async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, d
   });
 }
 
+/** The auto-fill plan (docs/STOCK_HUB.md §7) must never stop a booking: if it can't be read, nothing is filled. */
+async function planAutoFillSafely(orderIds: string[]): Promise<AutoFillPlan> {
+  try {
+    return await planAutoFill(orderIds);
+  } catch (err) {
+    logger.error("[stock] couldn't plan the auto-fill for a booking", { detail: String(err) });
+    return new Map();
+  }
+}
+
 export async function bookOrderWithSteadfast(orderId: string) {
   const order = await getOrderById(orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before booking a courier");
@@ -181,6 +192,8 @@ export async function bookOrderWithSteadfast(orderId: string) {
   if (!(await claimCourierBooking(orderId))) {
     throw AppError.conflict("This order is already booked with a courier, or a booking for it is in progress");
   }
+  // attar bottles still owed for this parcel — read while it is still on the shelf (docs/STOCK_HUB.md §7)
+  const fillPlan = await planAutoFillSafely([orderId]);
 
   let consignment;
   try {
@@ -220,6 +233,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
     await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
   }
   await syncOrderShipmentsSafely(orderId);
+  await fillForBookedOrder(orderId, String(consignment.consignment_id), fillPlan);
 
   notify({
     type: "order.courier_booked",
@@ -270,6 +284,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   }
   if (!claimed.length) return { booked: [], failed };
   const codAmounts = await codToCollectFor(claimed.map((order) => order.id));
+  const fillPlan = await planAutoFillSafely(claimed.map((order) => order.id));
 
   let results;
   try {
@@ -332,6 +347,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
       await updateOrderStatus(order.id, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
     }
     await syncOrderShipmentsSafely(order.id);
+    await fillForBookedOrder(order.id, String(result.consignment_id), fillPlan);
     booked.push({ orderId: order.id, orderNumber: order.orderNumber, trackingNumber: result.tracking_code });
   }
 

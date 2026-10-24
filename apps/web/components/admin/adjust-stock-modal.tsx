@@ -183,7 +183,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
             <Label htmlFor="stock-reason">Reason</Label>
             <Select id="stock-reason" value={reason} onChange={(e) => setReason(e.target.value as ManualStockReason)}>
               <option value="ADJUSTMENT">Adjustment / correction</option>
-              <option value="RESTOCK">Restock (only before stock costing starts — then use Stock › Bought)</option>
+              <option value="RESTOCK">Restock (only before stock costing starts — then use Stock › Received goods)</option>
               <option value="DAMAGED">Damaged (write-off — enter a negative number)</option>
               <option value="LOST">Lost / shrinkage (write-off — enter a negative number)</option>
             </Select>

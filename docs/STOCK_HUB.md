@@ -237,3 +237,62 @@ up there as a figure nobody expected. Every count is printed next to the site's 
 If `--apply` stops half way (an error is printed), fix the cause and run it again: each step finds what an earlier run
 made. Stock is set once per item: if the counts file differs from what an earlier run already set, the run lists the
 differences and stops unless `--keep-earlier-counts` (correct those items under Stock › Counted after go-live). Once the cutover has posted, stock is no longer set from the file — later counts go through Stock › Counted.
+
+## 7. The smart stock page (2026-10-24)
+
+Owner request: the page should say what to do, work clearly on a phone, and still read well with many more products.
+Plan: `docs/superpowers/plans/2026-10-24-stock-smart.md`. The actions keep one name everywhere — **Received goods**
+(was Bought), **Filled bottles** (was Filled), **Count** (was Counted); the API and test ids are unchanged.
+
+### Today (`GET /stock/today`, `inventory.read`)
+
+Only what needs doing, each with its one action (`stock-today.service.ts`, worked out on each read):
+
+| Task | When | Action |
+|---|---|---|
+| Fill N bottles for M orders | a fill-to-order size owes bottles; names a material that can't cover them | **Mark filled** (one form for every size) |
+| Bottles that couldn't be filled | a booking's auto-fill was refused (below) | — (fill them; it clears itself) |
+| Reorder N items | a bought item is low or out, or must be ordered within 3 days to arrive in time | **Review** → by supplier → **Record purchase** |
+| This week's count | cycle count: by 30-day use value, the top 80% every 7 days, the next 15% every 30, the rest every 90; at most 8 | **Start** (one item a screen) |
+| Approve a loss | a staff count loss waits (below) | **Review** → Approve / Reject |
+
+Nothing to do reads "All caught up". A store with no fill-to-order products (Nasihamart) never shows the fill task.
+
+### The stock list (`GET /stock/items?status=&group=&q=&cursor=&limit=`, `inventory.read`)
+
+Every item with a status — `NEEDS_FILL` (bottles owed), `OUT` (none to sell while it is used or on orders), `LOW`,
+`OK`, `EMPTY` (none left, no use in 30 days and no orders: a size not stocked any more, not an emergency) — what it can
+still sell, the recipe material that runs out first, and for a bought item the reorder suggestion:
+
+```
+suggested = max(0, ⌈used per day × (days to arrive + days of stock to keep)⌉ − available)
+order by  = today + max(0, ⌊available ÷ used per day⌋ − days to arrive)
+```
+
+A material's available stock leaves out what owed bottles will take. Search, filters, sorting (by what needs doing, then
+SKU) and cursor paging are on the server; 1,500 items page in well under 800 ms. Counts per status honour the search and
+kind, not the status. An item's settings (`PUT /stock/items/:id/settings`, `inventory.adjust`; `StockItemSetting`) are
+its usual supplier, days to arrive (default 3) and days of stock to keep (default 30). Received goods prefilled from the
+reorder list shows the unit price paid last time per line and asks for a check (never blocks) above +20%.
+
+### Bottles filled at courier booking (owner decision 2026-10-24)
+
+An attar parcel is only booked once its bottles are filled, so booking with Steadfast — one order or bulk — records the
+fill of the bottles still owed for it, worked out before it leaves the shelf (filled bottles go to waiting orders oldest
+first, so filled bottles on the shelf are used first). It runs through `recordFill` (§3, phase 3) with the key
+`auto-fill:<order>:<consignment>:<variant>:<units>` (one per booking, so a re-booked order fills again). It never fails a booking: a refused fill is kept as a
+`StockAutoFillFailure` with its key and shown on Today with **Try again** (`POST /stock/auto-fill-failures/:id/retry`, `manufacturing.approve`), which sends the same fill. One refused before writing (no recipe, a material short) drops off once the size owes no bottles; one that stopped after writing (materials may be issued) stays until Try again finishes it. Mark filled re-reads what each size owes when it saves, so bottles a booking already recorded are not filled twice. Nothing happens before
+stock costing is live. A parcel marked shipped without a Steadfast booking is not filled automatically.
+
+### Count losses wait for the owner (owner decision 2026-10-24)
+
+A loss counted by someone without `inventory.approve` (owner only) worth at least `FinanceBusiness.countLossApprovalThreshold`
+(default ৳1,000; at the average cost, else the cost price; an item with neither counts as over) is not booked: the count
+is kept and a `StockCountApproval` waits (`GET /stock/approvals`, `POST /stock/approvals/:id/decision`). Approving applies
+the difference recorded at the count — once — through the ordinary adjustment; rejecting moves nothing. The owner's own
+counts and every gain are booked at once, as before. While a loss waits, that item can't be counted again (409 `COUNT_PENDING_APPROVAL`): its stock hasn't moved yet, so the same shortfall would be booked twice. An average cost of 0 (unvalued stock) counts as unknown.
+
+### Navigation
+
+Inventory in the sidebar: **Stock**, **Stock levels** (movements, write-offs) and **Production**, whose pages — Overview,
+Production orders, Bills of materials, Materials — are tabs on it.

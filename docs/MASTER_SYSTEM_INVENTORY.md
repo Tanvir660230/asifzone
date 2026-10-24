@@ -182,6 +182,9 @@ PostgreSQL via Prisma: **85 models, 31 enums, 84 migrations**. Raw-SQL partial u
 | `PaymentEvent` | Attempt timeline | type, note, rawResponse |
 | `Refund` | Manual refund record (REQUESTED → COMPLETED) | amount, method (free text), requestedBy/completedBy, idempotencyKey |
 | `StockMovement` | Inventory ledger | change, reason (8 reasons), orderId (plain column), admin, note |
+| `StockItemSetting` | An item's reorder settings (docs/STOCK_HUB.md §7) | usual supplier, days to arrive (default 3), days of stock to keep (default 30); no row = the defaults |
+| `StockCountApproval` | A count loss waiting for the owner (STOCK_HUB §7) | the StockCount, recorded difference, reason, value; PENDING → APPROVED (adjusts once) / REJECTED |
+| `StockAutoFillFailure` | A booked attar parcel whose bottles couldn't be recorded as filled (STOCK_HUB §7) | order, size, units, reason; resolved once the size is filled |
 | `CourierLossEvent` | Estimated courier round-trip loss | amount (admin estimate), reason |
 | `ShippingZone` / `ShippingZoneMatch` / `ShippingRate` | Zone-based shipping (postcode/district/division match, priority, freeOverAmount) | **No admin CRUD.** Only two legacy zones get their fee updated from the settings page (§26). |
 | `TaxSetting` | Central tax config (mode INCLUSIVE/EXCLUSIVE, rates, shipping taxable) | Only enabled/rate/shippingTaxable can be edited from settings; **mode and shippingRate have no UI** |
@@ -268,6 +271,7 @@ Roles: **OWNER**, **STAFF** (plus the implicit **Customer** and **Guest**). Ther
 | campaigns.manage | ✅ | ✅ | campaigns, SMS templates |
 | analytics.read / export | ✅ | ✅ | analytics, BI, metrics (incl. COGS/margin); CSV exports |
 | inventory.read / adjust | ✅ | ✅ | movements, reconciliation, stock map; adjustments |
+| inventory.approve | ✅ | ❌ | decide a staff count loss at or above the limit (default ৳1,000) |
 | ops.read | ✅ | ✅ | outbox status, reliability, drift reports, metrics consistency, ops attention |
 | ops.repair | ✅ | ❌ | outbox retry, ledger repair, read-model rebuild |
 

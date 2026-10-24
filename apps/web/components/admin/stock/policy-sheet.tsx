@@ -120,7 +120,7 @@ export function PolicySheet({ product, onClose }: { product: ProductGroup; onClo
           <Input id="policy-reason" value={reason} maxLength={300} placeholder="e.g. Filled every evening from the oil in stock" onChange={(e) => setReason(e.target.value)} data-testid="policy-reason" />
         </Field>
 
-        {owed > 0 && <p className="text-sm text-fg-muted">{num(owed)} bottle{owed === 1 ? " is" : "s are"} owed on orders now. They stay owed whatever you choose — fill them on Stock › Filled.</p>}
+        {owed > 0 && <p className="text-sm text-fg-muted">{num(owed)} bottle{owed === 1 ? " is" : "s are"} owed on orders now. They stay owed whatever you choose — fill them with Stock › Filled bottles.</p>}
       </form>
     </Modal>
   );

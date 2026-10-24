@@ -97,7 +97,7 @@ export async function planFill(input: ReturnType<typeof stockFillSchema.parse>) 
     throw financeError(
       409,
       "FILL_SHORT",
-      `Not enough in stock: ${short.map((m) => `${m.name} needs ${m.consumed + m.wasted} ${m.unit}, ${m.inStock} in stock`).join("; ")} — record what you bought on Stock › Bought first, or fill fewer`,
+      `Not enough in stock: ${short.map((m) => `${m.name} needs ${m.consumed + m.wasted} ${m.unit}, ${m.inStock} in stock`).join("; ")} — record what you bought on Stock › Received goods first, or fill fewer`,
       { short: short.map((m) => ({ sku: m.sku, name: m.name, unit: m.unit, needed: m.consumed + m.wasted, inStock: m.inStock })) },
     );
   }
