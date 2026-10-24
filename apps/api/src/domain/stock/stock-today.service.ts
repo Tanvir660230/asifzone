@@ -15,6 +15,7 @@
 import { addDays } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { ON_SHELF_STATUSES } from "./count.service";
+import { openAutoFillFailures } from "./auto-fill.service";
 import { listApprovals } from "./count-approval.service";
 import { lastPurchasePrice } from "./item-settings.service";
 import { allStockItems, type StockListItem } from "./stock-items.service";
@@ -109,6 +110,8 @@ export async function stockToday(viewer: { canSeeCost: boolean }) {
 
   const approvals = (await listApprovals({ status: "PENDING" }, viewer)).approvals.map((a) => ({ id: a.id, variantId: a.variantId, name: a.name, difference: a.difference, reason: a.reason, value: a.value, requestedBy: a.requestedBy, countedOn: a.countedOn }));
 
-  return { today, fill, fillProblems: [] as Array<{ orderNumber: string; variantId: string; name: string; units: number; reason: string }>, reorder, count, approvals };
+  const fillProblems = await openAutoFillFailures();
+
+  return { today, fill, fillProblems, reorder, count, approvals };
 }
 export type StockToday = Awaited<ReturnType<typeof stockToday>>;

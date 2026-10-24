@@ -731,6 +731,7 @@ model ProductVariant {
   bomMaterialLines          BillOfMaterialsLine[]      @relation("BomMaterial")
   stockCounts               StockCount[]
   stockCountApprovals       StockCountApproval[]
+  autoFillFailures          StockAutoFillFailure[]
   materialRolls             MaterialRoll[]
   bomFinishedLines          BillOfMaterialsLine[]      @relation("BomFinishedVariant")
   productionLines           ProductionOrderLine[]
@@ -1221,19 +1222,20 @@ model Order {
   bundleDiscount Decimal @default(0) @db.Decimal(10, 2)
 
   items                  OrderItem[]
+  autoFillFailures       StockAutoFillFailure[]
   statusHistory          OrderStatusHistory[]
   returnRequests         ReturnRequest[]
   /// Reverse side of ReturnRequest.exchangeOrderId — an approved EXCHANGE request creates a new,
   /// separate Order (the replacement shipment) and links back here; at most one element in
   /// practice (one exchange request produces one exchange order), kept as an array only because
   /// Prisma requires a matching relation field on both sides.
-  exchangeReturnRequests ReturnRequest[]      @relation("ReturnRequestExchangeOrder")
+  exchangeReturnRequests ReturnRequest[]        @relation("ReturnRequestExchangeOrder")
   courierLossEvents      CourierLossEvent[]
   /// Courier cost reconciliation (docs/COURIER_COSTS.md): every physical leg of this order — its delivery, the parcel coming
   /// back, an exchange's replacement. `parcelShipments`: the legs whose parcel was booked against THIS order (an exchange
   /// order's replacement leg belongs to the original order but its parcel is the exchange order's).
-  shipments              Shipment[]           @relation("ShipmentOrder")
-  parcelShipments        Shipment[]           @relation("ShipmentParcelOrder")
+  shipments              Shipment[]             @relation("ShipmentOrder")
+  parcelShipments        Shipment[]             @relation("ShipmentParcelOrder")
   modifications          OrderModification[]
   paymentLinks           PaymentLink[]
   notes                  String?
@@ -6124,12 +6126,12 @@ model WebVitalSample {
 /// A physical count of one variant (docs/FINANCE_CENTER.md §7). Recorded BESIDE the site's stock, never written into it:
 /// the stock check shows the difference, and any correction stays an ordinary, reasoned stock adjustment.
 model StockCount {
-  id               String          @id @default(cuid())
+  id               String              @id @default(cuid())
   businessId       String
-  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business         FinanceBusiness     @relation(fields: [businessId], references: [id], onDelete: Restrict)
   variantId        String
-  variant          ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  countDate        DateTime        @db.Date
+  variant          ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  countDate        DateTime            @db.Date
   counted          Int
   /// The site's stock when the count was recorded — for a stock hub count, what should have been on the shelf then
   /// (stock + units on orders not yet handed to the courier), so `counted − siteStock` is the true difference.
@@ -6137,9 +6139,9 @@ model StockCount {
   note             String?
   countedByAdminId String?
   /// The stock hub count line that recorded it (`<entry id>:<line>`): a retry finds it instead of counting twice.
-  sourceId         String?         @unique
+  sourceId         String?             @unique
   approval         StockCountApproval?
-  createdAt        DateTime        @default(now())
+  createdAt        DateTime            @default(now())
 
   @@index([variantId, countDate])
 }
@@ -6391,4 +6393,21 @@ model StockCountApproval {
   createdAt          DateTime                 @default(now())
 
   @@index([businessId, status])
+}
+
+/// A courier booking whose attar bottles couldn't be recorded as filled (docs/STOCK_HUB.md §7): the booking stands, the
+/// bottles stay owed, and Today shows it until the bottles are filled (resolvedAt).
+model StockAutoFillFailure {
+  id         String         @id @default(cuid())
+  orderId    String
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId  String
+  variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  units      Int
+  reason     String
+  resolvedAt DateTime?
+  createdAt  DateTime       @default(now())
+
+  @@unique([orderId, variantId])
+  @@index([resolvedAt])
 }
