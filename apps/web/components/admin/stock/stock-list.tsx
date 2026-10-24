@@ -131,7 +131,7 @@ export function StockList({ hasFillToOrder, q, selectedId, onOpen }: { hasFillTo
                   aria-current={selectedId === i.variantId ? "true" : undefined}
                   data-testid={`stock-row-${i.sku}`}
                   className={cn(
-                    "grid w-full grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 text-left transition-colors duration-fast hover:bg-ink-900/[0.025] focus-visible:bg-ink-900/[0.04] sm:px-4 md:grid-cols-[2.75rem_minmax(0,1fr)_7rem_8.5rem_7rem]",
+                    "grid w-full grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 text-left transition-colors duration-fast hover:bg-ink-900/[0.025] focus-visible:bg-ink-900/[0.04] sm:px-4 md:grid-cols-[2.75rem_minmax(0,1fr)_auto_8.5rem_7rem]",
                     selectedId === i.variantId && "bg-accent/[0.06] hover:bg-accent/[0.08]",
                   )}
                 >
@@ -140,7 +140,7 @@ export function StockList({ hasFillToOrder, q, selectedId, onOpen }: { hasFillTo
                     <span className="line-clamp-2 text-[15px] leading-snug text-fg"><Highlight text={i.productName} query={q} /></span>
                     <span className="block truncate text-xs text-fg-muted"><Highlight text={metaOf(i)} query={q} /><span className="md:hidden"> · {figureOf(i, true)}</span></span>
                   </span>
-                  <span className="hidden text-right text-sm tabular-nums text-fg md:block">{figureOf(i)}</span>
+                  <span className="hidden whitespace-nowrap text-right text-sm tabular-nums text-fg md:block">{figureOf(i)}</span>
                   <span className="hidden md:block"><Lasts item={i} /></span>
                   <span className="justify-self-end"><StatusPill item={i} /></span>
                 </button>

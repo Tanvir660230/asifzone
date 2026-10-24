@@ -4,7 +4,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, XCircle } from "lucide-react";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { useShortcut } from "@/hooks/use-shortcut";
 import { listStockItems, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
 import { cn } from "@/lib/utils";
 import { Highlight, ItemThumb } from "./item-thumb";
@@ -32,7 +31,7 @@ const HINTS = ["zayan 12", "black xl", "bottle", "oil"];
 /**
  * Find anything in stock as you'd say it (docs/STOCK_HUB.md §7): words in any order, typos forgiven. Results appear as you
  * type, with their pictures and the one thing to do with each; Enter (or a click) opens the item, ↑/↓ move, Esc closes.
- * The text also filters the list below. "/" anywhere on the page jumps here.
+ * The text also filters the list below. "/" anywhere on the page jumps here (the shell focuses the field marked data-page-search).
  */
 export function StockSearchBox({ value, onChange, onOpen, onAction }: { value: string; onChange: (v: string) => void; onOpen: (i: StockListItem) => void; onAction: (i: StockListItem, a: QuickAction) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,7 +47,6 @@ export function StockSearchBox({ value, onChange, onOpen, onAction }: { value: s
     placeholderData: (p) => p,
   });
   const items = q ? results.data?.items ?? [] : [];
-  useShortcut("search.focus", () => inputRef.current?.focus());
   useEffect(() => setActive(0), [q]);
   useEffect(() => {
     const close = (e: MouseEvent) => { if (!boxRef.current?.contains(e.target as Node)) setOpen(false); };
@@ -82,6 +80,7 @@ export function StockSearchBox({ value, onChange, onOpen, onAction }: { value: s
           }}
           className="ui-control !h-12 rounded-2xl pl-12 pr-24 text-[15px] shadow-float [&::-webkit-search-cancel-button]:hidden"
           data-testid="stock-search"
+          data-page-search=""
         />
         <span className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-2">
           {value ? (
