@@ -71,6 +71,49 @@ cost). Bottles that are filled leave as any sale does; an order of 3 with 1 fill
 unbooked. So 5150 moves only by *actual − provisional* at the fill, and a month end between sale and fill shifts no
 profit. Ordinary products (and their oversells) keep booked provisional deficits.
 
+### Filled as one entry, bottles owed, and the attar trace (inventory recovery phase 3, 2026-10-24)
+
+**Filled** (`POST /stock/fills`, `manufacturing.approve`, `Idempotency-Key`) is a stock hub entry of kind `FILL`, like
+Bought and Counted. `/quick-refills` runs through the same code (`domain/stock/fill.service.ts`).
+
+- **Checked before anything is written** (409, nothing written):
+  - the size has an approved recipe (`NO_RECIPE` — unconfigured, so it can't be filled; nothing is invented);
+  - every material named as used or wasted is in that recipe (`FILL_MATERIAL_NOT_IN_RECIPE`);
+  - stock holds what the fill takes (`FILL_SHORT`, each short material with needed / in stock). What the fill takes is the
+    recipe's need (as the production order plans it), or `used` when given, plus `wasted`.
+- **Once.** A double tap waits (`STOCK_ENTRY_IN_PROGRESS`); a replay returns the fill (200); the same key for a different
+  fill is refused (`IDEMPOTENCY_KEY_REUSED`). A failure part-way (`FILL_STOPPED`) keeps what was done; sending the same
+  form again resumes at that step. The issue replays by its request key, usage is absolute, the receipt is posted once
+  and the order is found by its notes marker, so a retry never takes oil or bottles twice.
+- **Waste** (`wasted` + `wasteReason`, required): issued on top of the bottles' material and declared as scrap. It leaves
+  stock and stays in the bottles' cost (normal loss). The reason is kept on the production order.
+- **The record**: date, who, bottles, each material used and wasted with its value, cost and cost per bottle.
+
+**Bottles owed and which orders are ready** (`fill-status.service.ts`, derived — no table):
+
+```
+on the shelf (filled) = max(0, stock + waiting)    waiting = units on orders not yet given to the courier
+owed (to fill)        = max(0, −stock)
+```
+
+Filled bottles go to the waiting orders oldest first. Each line reads `READY`, `PARTLY_FILLED` (k of n) or
+`AWAITING_FILL`. Shown on the order page (`GET /api/orders/:id/fill-status`) and in the trace.
+
+**The trace** (`GET /stock/items/:id/trace`, `inventory.read`; costs only with `costing.read`) gives one size's whole
+picture:
+- filled on the shelf, on orders, owed, can make;
+- the recipe (or `recipeMissing`), with each material's stock and average and its recent purchases;
+- the waiting orders with their readiness;
+- every fill (materials used and wasted, cost per bottle, who and when);
+- the last 90 days (sold, back from cancellations, returned, filled, count corrections);
+- the valuation and any open "stock without a cost".
+
+Costing is a moving average, so a bottle is traced to the materials of its fill and to those materials' recent
+purchases, not to one purchase lot.
+
+The stock page shows **Raw materials** (stock unit ml, l, g, kg) and **Packaging** (pieces, rolls…) as separate groups.
+Which group a material is in is read from its stock unit (`materialRole`), so there is no setting per material.
+
 ## 4. Go-live order
 
 A one-off script (`apps/api/scripts/finance/asif-zone-stock-golive.ts`) reads a **fresh count taken on go-live day**
@@ -132,7 +175,7 @@ every inventory check MATCHED after each step. Website after go-live: Azhaar 6 m
 
 ## 5. API and safeguards
 
-All under `/api/v1/finance`. Bought and Counted need an `Idempotency-Key` header; the same key replays (200), a different
+All under `/api/v1/finance`. Bought, Counted and Filled need an `Idempotency-Key` header; the same key replays (200), a different
 request under it is refused (409 `IDEMPOTENCY_KEY_REUSED`).
 
 | Route | Permission | Notes |
@@ -143,6 +186,8 @@ request under it is refused (409 `IDEMPOTENCY_KEY_REUSED`).
 | `POST /stock/purchases` | `purchasing.receive` (+ `purchasing.approve`, `ap.manage`, `finance.transact`; + `finance.sensitive` for the owner's own money) | 201 / 200 replay |
 | `POST /stock/purchases/:id/finish` | as above | Completes a purchase stuck mid-way, optionally from another account while nothing has been paid (`PAID_FROM_LOCKED` otherwise) |
 | `POST /stock/counts` | `inventory.adjust` | 201 / 200 replay |
+| `POST /stock/fills` | `manufacturing.approve` | 201 / 200 replay; resumable (§3, phase 3) |
+| `GET /stock/items/:id/trace` | `inventory.read` | One item's trace; costs only with `costing.read` |
 
 - **Checked before anything is written** (409, nothing written): the date is in open books (`BEFORE_OPENING_DATE`,
   `PERIOD_CLOSED`, `PERIOD_SOFT_CLOSED`), the supplier isn't on hold (`SUPPLIER_ON_HOLD`), a cash box or wallet holds

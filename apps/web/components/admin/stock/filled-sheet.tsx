@@ -15,17 +15,18 @@ import * as booksApi from "@/lib/api/finance-books";
 import * as mfgApi from "@/lib/api/manufacturing";
 import * as stockApi from "@/lib/api/stock";
 import type { StockOverview, StockProblem } from "@/lib/api/stock";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
 import { byProduct, materialName, num, spacedUnit, variantWords } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
-interface Done { name: string; quantity: number; perBottle: number | null; number: string; replayed: boolean }
+interface Done { name: string; quantity: number; perBottle: number | null; number: string | null; replayed: boolean; date: string | null; by: string | null; wasted: boolean }
 
 /**
- * Filled: bottles filled from bulk oil + an empty bottle + a box + a sticker (the approved recipe). Runs the quick refill —
- * the materials leave stock at their average cost and the bottles come in at that exact cost.
+ * Filled: bottles filled from bulk oil + an empty bottle + a box + a sticker (the approved recipe). One guarded entry
+ * (POST /stock/fills): checked before anything is written, a double tap or a retry records it once, and anything spilt or
+ * broken is recorded with its reason. The materials leave stock at their average cost; the bottles come in at that cost.
  */
 export function FilledSheet({ overview, canFill, onClose }: { overview: StockOverview; canFill: boolean; onClose: () => void }) {
   const qc = useQueryClient();
@@ -42,6 +43,9 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
   const [count, setCount] = useState(firstNeed && firstNeed.stock < 0 ? String(-firstNeed.stock) : "");
   const [problem, setProblem] = useState<StockProblem | null>(null);
   const [done, setDone] = useState<Done | null>(null);
+  const [wasteOpen, setWasteOpen] = useState(false);
+  const [waste, setWaste] = useState<Record<string, string>>({});
+  const [wasteReason, setWasteReason] = useState("");
 
   const boms = useQuery({ queryKey: [...mfgApi.manufacturingKeys.all, "boms", "APPROVED"], queryFn: () => mfgApi.listBoms({ status: "APPROVED" }) });
   const recipe = useMemo(() => {
@@ -54,10 +58,15 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
     .filter((l) => l.suppliedBy === "BUSINESS" && (!l.finishedVariant || l.finishedVariant.id === variant?.variantId))
     .map((l) => {
       const need = Math.ceil(n * Number(l.qtyPerUnit) * (1 + Number(l.wastagePct) / 100));
+      const wasteText = (waste[l.material.variantId] ?? "").trim();
+      const wasted = wasteOpen && /^\d+$/.test(wasteText) ? Number(wasteText) : 0;
       const stock = materials.get(l.material.variantId)?.stock ?? null;
-      return { id: l.id, name: materials.get(l.material.variantId)?.productName ?? materialName(l.material.name), unit: l.material.stockUnit || "pcs", each: Number(l.qtyPerUnit), need, stock, left: stock === null ? null : stock - need };
+      return { id: l.id, materialVariantId: l.material.variantId, name: materials.get(l.material.variantId)?.productName ?? materialName(l.material.name), unit: l.material.stockUnit || "pcs", each: Number(l.qtyPerUnit), need, wasted, stock, left: stock === null ? null : stock - need - wasted };
     });
   const short = uses.filter((u) => u.left !== null && u.left < 0);
+  const wastedLines = uses.filter((u) => u.wasted > 0);
+  const badWaste = wasteOpen && uses.some((u) => (waste[u.materialVariantId] ?? "").trim() !== "" && !/^\d+$/.test((waste[u.materialVariantId] ?? "").trim()));
+  const needsReason = wastedLines.length > 0 && wasteReason.trim().length < 3;
 
   const pick = (pid: string) => {
     setProductId(pid);
@@ -70,12 +79,19 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
 
   const run = useMutation({
     mutationFn: () => {
-      const body = { variantId: variant!.variantId, quantity: n };
-      return booksApi.quickRefill(body, idempotencyKeyFor(formId, body));
+      const body: stockApi.FillBody = {
+        variantId: variant!.variantId,
+        quantity: n,
+        ...(wastedLines.length ? { wasted: wastedLines.map((u) => ({ materialVariantId: u.materialVariantId, quantity: u.wasted })), wasteReason: wasteReason.trim() } : {}),
+      };
+      return stockApi.recordFill(body, idempotencyKeyFor(formId, body));
     },
     onSuccess: (r) => {
       settleIdempotencyKey(formId);
-      setDone({ name: `${product!.name} ${spacedUnit(variantWords(variant!))}`, quantity: n, perBottle: r.order.finalCost?.perAcceptedUnit ?? null, number: r.order.number, replayed: r.replayed });
+      setDone({ name: `${product!.name} ${spacedUnit(variantWords(variant!))}`, quantity: r.fill.quantity || n, perBottle: r.fill.perBottle, number: r.fill.number, replayed: r.replayed, date: r.fill.date, by: r.fill.by, wasted: Boolean(r.fill.wasteReason) });
+      setWaste({});
+      setWasteReason("");
+      setWasteOpen(false);
       setProblem(null);
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
       void qc.invalidateQueries({ queryKey: booksApi.booksKeys.refills() });
@@ -88,7 +104,7 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
     },
   });
 
-  const valid = Boolean(variant) && n > 0 && Boolean(recipe) && short.length === 0;
+  const valid = Boolean(variant) && n > 0 && Boolean(recipe) && short.length === 0 && !badWaste && !needsReason;
 
   return (
     <Modal
@@ -112,7 +128,8 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
       {done ? (
         <div className="flex flex-col items-start gap-3 py-2" data-testid="filled-done" role="status">
           <CheckCircle2 className="h-8 w-8 text-success-600" aria-hidden="true" />
-          <p className="text-[15px] text-fg">{num(done.quantity)} × {done.name} {done.replayed ? "were already recorded" : "are in stock"} <span className="text-fg-muted">({done.number})</span></p>
+          <p className="text-[15px] text-fg">{num(done.quantity)} × {done.name} {done.replayed ? "were already recorded" : "are in stock"}{done.number && <span className="text-fg-muted"> ({done.number})</span>}</p>
+          {(done.date || done.by) && <p className="text-sm text-fg-muted" data-testid="filled-when">Filled {done.date ? formatBookDate(done.date) : ""}{done.by ? ` by ${done.by}` : ""}{done.wasted ? " · waste recorded" : ""}</p>}
           {done.perBottle !== null && <p className="text-sm text-fg-muted">Cost per bottle <span className="text-lg font-semibold tabular-nums text-fg" data-testid="filled-cost">{formatPrice(done.perBottle)}</span></p>}
         </div>
       ) : products.length === 0 ? (
@@ -174,7 +191,8 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
                   <li key={u.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 px-3 py-2.5">
                     <span className="min-w-0 text-fg">{u.name}<span className="block text-xs text-fg-muted">{num(u.each)}{u.unit === "pcs" ? "" : ` ${u.unit}`} a bottle</span></span>
                     <span className="text-right tabular-nums">
-                      <span className="text-fg">{n ? `−${num(u.need)}` : "—"} <span className="text-xs text-fg-muted">{u.unit}</span></span>
+                      <span className="text-fg">{n || u.wasted ? `−${num(u.need + u.wasted)}` : "—"} <span className="text-xs text-fg-muted">{u.unit}</span></span>
+                      {u.wasted > 0 && <span className="block text-xs text-warning-700">incl. {num(u.wasted)} wasted</span>}
                       <span className={cn("block text-xs", u.left !== null && u.left < 0 ? "font-medium text-danger-700" : "text-fg-muted")}>
                         {u.stock === null ? "stock not shown" : u.left !== null && u.left < 0 ? `only ${num(u.stock)} in stock` : `${num(u.left ?? u.stock)} left`}
                       </span>
@@ -189,6 +207,50 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
               </p>
             )}
           </section>
+
+          {recipe && uses.length > 0 && (
+            <section aria-labelledby="filled-waste" className="space-y-3">
+              <button
+                type="button"
+                id="filled-waste"
+                aria-expanded={wasteOpen}
+                aria-controls="filled-waste-panel"
+                onClick={() => setWasteOpen((o) => !o)}
+                className="min-h-10 text-sm font-medium text-fg underline underline-offset-4 hover:text-accent"
+                data-testid="filled-waste-toggle"
+              >
+                {wasteOpen ? "Nothing was wasted" : "Something spilt or broke?"}
+              </button>
+              {wasteOpen && (
+                <div id="filled-waste-panel" className="space-y-3 rounded-xl border border-line-subtle p-3">
+                  <p className="text-xs text-fg-muted">Only what was lost on top of the bottles filled. It leaves stock too and is added to these bottles&apos; cost.</p>
+                  <ul className="space-y-2">
+                    {uses.map((u) => (
+                      <li key={u.id} className="flex items-center justify-between gap-3">
+                        <label htmlFor={`filled-waste-${u.id}`} className="min-w-0 text-sm text-fg">{u.name}</label>
+                        <span className="flex items-center gap-2">
+                          <Input
+                            id={`filled-waste-${u.id}`}
+                            inputMode="numeric"
+                            className="w-24 tabular-nums"
+                            value={waste[u.materialVariantId] ?? ""}
+                            onChange={(e) => { setWaste((w) => ({ ...w, [u.materialVariantId]: e.target.value })); setProblem(null); }}
+                            placeholder="0"
+                            data-testid="filled-waste-qty"
+                          />
+                          <span className="w-8 text-xs text-fg-muted">{u.unit}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {badWaste && <p className="ui-field-error" role="alert">Whole numbers only</p>}
+                  <Field htmlFor="filled-waste-reason" label="What happened" required={wastedLines.length > 0} error={wastedLines.length > 0 && needsReason && wasteReason !== "" ? "A few words, please" : undefined}>
+                    <Input id="filled-waste-reason" value={wasteReason} onChange={(e) => setWasteReason(e.target.value)} placeholder="Spilt while pouring, bottle cracked…" maxLength={300} data-testid="filled-waste-reason" />
+                  </Field>
+                </div>
+              )}
+            </section>
+          )}
         </form>
       )}
     </Modal>

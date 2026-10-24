@@ -1,7 +1,7 @@
 /**
  * The stock hub API (docs/STOCK_HUB.md §5, /admin/stock): the overview, Bought (a purchase in one form), Counted, and the
- * purchases list. Filled uses the owner's-books quick refill (lib/api/finance-books.ts). Money in major units; Bought and
- * Counted carry an Idempotency-Key — the same key replays, so a double tap or a retry writes once.
+ * purchases list, Filled (a resumable entry) and one item's trace. Money in major units; Bought, Counted and Filled carry an
+ * Idempotency-Key — the same key replays, so a double tap or a retry writes once.
  */
 import { ApiError, apiFetch } from "../api-client";
 import { formatPrice } from "../format";
@@ -29,6 +29,8 @@ export interface StockItem {
   makeable: number | null;
   /** Fill-to-order only: how it sells past the filled bottles; `owed` = bottles sold, not yet filled. */
   policy: { policy: StockPolicy; overridden: boolean; backorderLimit: number | null; owed: number } | null;
+  /** Materials only: RAW (oil — by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
+  materialKind: "RAW" | "PACKAGING" | null;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -104,6 +106,7 @@ export const stockKeys = {
   all: ["stock-hub"] as const,
   overview: () => ["stock-hub", "overview"] as const,
   purchases: () => ["stock-hub", "purchases"] as const,
+  trace: (variantId: string) => ["stock-hub", "trace", variantId] as const,
 };
 
 export const getStockOverview = () => apiFetch<StockOverview>(BASE);
@@ -111,6 +114,68 @@ export const listStockPurchases = (limit = 20) => apiFetch<{ purchases: StockPur
 export const recordStockPurchase = (body: PurchaseBody, idempotencyKey: string) => apiFetch<PurchaseResult>(`${BASE}/purchases`, { method: "POST", body, idempotencyKey });
 export const finishStockPurchase = (id: string, body: { paidFrom?: PaidFrom }) => apiFetch<PurchaseResult>(`${BASE}/purchases/${id}/finish`, { method: "POST", body });
 export const recordStockCount = (body: CountBody, idempotencyKey: string) => apiFetch<CountResult>(`${BASE}/counts`, { method: "POST", body, idempotencyKey });
+
+export interface FillBody {
+  variantId: string;
+  quantity: number;
+  /** Material spilt or spoilt on top of the recipe, in its stock unit; needs wasteReason. */
+  wasted?: Array<{ materialVariantId: string; quantity: number }>;
+  wasteReason?: string | null;
+  note?: string | null;
+}
+export interface StockFill {
+  id: string;
+  complete: boolean;
+  date: string | null;
+  recordedAt: string;
+  by: string | null;
+  productionOrderId: string | null;
+  number: string | null;
+  variantId: string;
+  sku: string | null;
+  product: string | null;
+  quantity: number;
+  wasteReason: string | null;
+  materials: Array<{ sku: string; name: string; unit: string; used: number; wasted: number; value: number | null }>;
+  cost: number | null;
+  perBottle: number | null;
+}
+export const recordFill = (body: FillBody, idempotencyKey: string) => apiFetch<{ fill: StockFill; replayed: boolean }>(`${BASE}/fills`, { method: "POST", body, idempotencyKey });
+
+export type FillReadiness = "READY" | "PARTLY_FILLED" | "AWAITING_FILL";
+export interface StockTrace {
+  variantId: string;
+  sku: string;
+  name: string;
+  productId: string;
+  productName: string;
+  unit: string;
+  kind: StockGroupKey;
+  stock: number;
+  waiting: number;
+  onShelf: number;
+  owed: number;
+  makeable: number | null;
+  policy: { policy: StockPolicy; backorderLimit: number | null } | null;
+  recipe: {
+    version: number;
+    lines: Array<{
+      materialVariantId: string; sku: string; name: string; unit: string; materialKind: "RAW" | "PACKAGING"; perBottle: number; wastagePct: number; suppliedBy: string; inStock: number; avgCost: number | null;
+      recentPurchases: Array<{ date: string; quantity: number; note: string | null; unitCost: number | null }>;
+    }>;
+  } | null;
+  recipeMissing: boolean;
+  waitingOrders: Array<{ orderId: string; orderNumber: string; placedAt: string; units: number; filled: number; toFill: number; status: FillReadiness }>;
+  fills: Array<{
+    productionOrderId: string; number: string; status: string; date: string; by: string | null; bottles: number; wasteReason: string | null;
+    materials: Array<{ sku: string; name: string; unit: string; used: number; wasted: number; value: number | null }>;
+    cost: number | null; perBottle: number | null;
+  }>;
+  last90Days: { sold: number; cancelled: number; returned: number; filled: number; bought: number; counted: number; materialUse: number };
+  valuation: { valuedQty: number; unvaluedQty: number; deficitQty: number; value: number | null; avgCost: number | null } | null;
+  unresolvedCosts: Array<{ id: string; title: string; amount: number | null; at: string }>;
+}
+export const getStockTrace = (variantId: string) => apiFetch<StockTrace>(`${BASE}/items/${variantId}/trace`);
 
 export type StockPolicy = "TRACKED" | "UNLIMITED" | "BACKORDER";
 export interface StockPolicyBody { policy: StockPolicy; backorderLimit?: number | null; variants?: Array<{ variantId: string; policy: StockPolicy | null }>; reason: string }
@@ -153,6 +218,9 @@ const TITLES: Record<string, string> = {
   STOCK_COUNT_FUTURE: "The date is in the future",
   NO_RECIPE: "No approved recipe",
   REFILL_STOPPED: "The fill stopped part-way",
+  FILL_STOPPED: "The fill stopped part-way",
+  FILL_SHORT: "Not enough in stock for this fill",
+  FILL_MATERIAL_NOT_IN_RECIPE: "That material isn't in the recipe",
   RECIPE_EMPTY: "The recipe has nothing to take from stock",
 };
 
@@ -194,7 +262,7 @@ export function describeStockError(err: unknown, fallbackTitle: string): StockPr
 export const CHECKED_BEFORE_WRITING = new Set([
   "COSTING_NOT_ACTIVE", "INSUFFICIENT_FUNDS", "SUPPLIER_ON_HOLD", "BEFORE_OPENING_DATE", "PERIOD_CLOSED", "PERIOD_SOFT_CLOSED", "OPENING_DATE_NOT_SET",
   "STOCK_PURCHASE_PERMISSION", "PAYMENT_SOURCE_KIND", "FINANCIAL_ACCOUNT_NOT_FOUND", "PURCHASE_IN_FUTURE", "PURCHASE_LINE_AMOUNT", "PURCHASE_UNTRACKED",
-  "VARIANT_NOT_FOUND", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS",
+  "VARIANT_NOT_FOUND", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS", "FILL_SHORT", "NO_RECIPE", "FILL_MATERIAL_NOT_IN_RECIPE",
 ]);
 
 export const PENDING_STEP_LABEL: Record<PurchaseStep, string> = {

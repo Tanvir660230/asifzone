@@ -149,7 +149,7 @@ function VariantGrid({ items }: { items: StockItem[] }) {
 const FILL_COLS = "sm:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem_7rem]";
 
 /** `onPolicy`: who may correct stock may also set how an attar sells past its filled bottles (inventory recovery phase 2). */
-export function FillGroup({ items, onPolicy }: { items: StockItem[]; onPolicy?: (product: ProductGroup) => void }) {
+export function FillGroup({ items, onPolicy, onTrace }: { items: StockItem[]; onPolicy?: (product: ProductGroup) => void; onTrace: (item: StockItem) => void }) {
   const products = useMemo(() => byProduct(items), [items]);
   const toFill = items.reduce((s, i) => s + Math.max(0, -i.stock), 0);
   return (
@@ -181,7 +181,16 @@ export function FillGroup({ items, onPolicy }: { items: StockItem[]; onPolicy?: 
               return (
                 <li key={i.variantId} className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-1.5 sm:gap-4", FILL_COLS)} data-testid="stock-fill-row">
                   <span className="min-w-0 text-sm text-fg-muted">
-                    <span className="text-fg">{spacedUnit(variantWords(i))}</span>
+                    <button
+                      type="button"
+                      onClick={() => onTrace(i)}
+                      className="min-h-8 text-left text-fg underline decoration-dotted underline-offset-4 transition-colors duration-fast hover:text-accent hover:decoration-solid"
+                      aria-label={`${p.name} ${spacedUnit(variantWords(i))}: materials, fills and orders`}
+                      data-testid="stock-fill-trace"
+                      data-sku={i.sku}
+                    >
+                      {spacedUnit(variantWords(i))}
+                    </button>
                     {i.daysLeft !== null && <span className="text-fg-subtle"> · {i.daysLeft === 0 ? "none left" : `about ${num(i.daysLeft)} days`}</span>}
                     <span className="block text-xs sm:hidden">{num(i.expectedOnShelf)} filled · {num(i.reserved)} on orders{toFillNow ? ` · ${num(toFillNow)} to fill` : ""}</span>
                   </span>
@@ -214,19 +223,24 @@ function materialWords(i: StockItem): string | null {
   return i.productName.toLowerCase().includes(w.toLowerCase()) ? null : w;
 }
 
-export function MaterialGroup({ items, rolls, showCost }: { items: StockItem[]; rolls: StockRoll[]; showCost: boolean }) {
+/** Materials, shown as two groups (inventory recovery phase 3): raw material a recipe fills from (oil, by volume or
+ * weight) and packaging (bottles, boxes, stickers, poly — in pieces, with the bubble roll in use). */
+export function MaterialGroup({ items, rolls, showCost, kind }: { items: StockItem[]; rolls: StockRoll[]; showCost: boolean; kind: "RAW" | "PACKAGING" }) {
   const low = items.filter((i) => i.low).length;
   const cols = showCost ? MAT_COLS_COST : MAT_COLS;
+  const raw = kind === "RAW";
   return (
     <Group
-      id="stock-materials"
-      testId="stock-group-materials"
-      title="Materials"
+      id={raw ? "stock-materials" : "stock-packaging"}
+      testId={raw ? "stock-group-materials" : "stock-group-packaging"}
+      title={raw ? "Raw materials" : "Packaging"}
       summary={low ? <span className="text-warning-700">{low} running low</span> : items.length ? "Nothing running low" : undefined}
       columns={cols}
-      header={showCost ? ["Material", "In stock", "Average", "Value", "Lasts"] : ["Material", "In stock", "Lasts"]}
+      header={showCost ? [raw ? "Material" : "Item", "In stock", "Average", "Value", "Lasts"] : [raw ? "Material" : "Item", "In stock", "Lasts"]}
     >
-      {items.length === 0 && <Empty>No materials yet. Oil, bottles, boxes and stickers appear here once they are set up.</Empty>}
+      {items.length === 0 && rolls.length === 0 && (
+        <Empty>{raw ? "No raw materials yet. Bulk oil appears here once it is set up and bought." : "No packaging yet. Empty bottles, boxes, stickers and poly appear here once they are set up and bought."}</Empty>
+      )}
       {items.map((i) => {
         const sub = materialWords(i);
         const lasts = i.daysLeft === null ? "not used lately" : i.daysLeft === 0 ? "none left" : `lasts about ${num(i.daysLeft)} days`;
