@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -49,10 +50,27 @@ function subLine(i: StockListItem): string {
 }
 
 export function StockList({ hasFillToOrder, onOpen }: { hasFillToOrder: boolean; onOpen: (item: StockListItem) => void }) {
-  const [status, setStatus] = useState<StatusFilter>("ALL");
-  const [group, setGroup] = useState<GroupFilter>("ALL");
-  const [search, setSearch] = useState("");
+  // the filters live in the URL (?status=&kind=&q=), so Back and a shared link keep them
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const fromUrl = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
+    const v = params.get(key) as T | null;
+    return v && allowed.includes(v) ? v : fallback;
+  };
+  const [status, setStatus] = useState<StatusFilter>(() => fromUrl<StatusFilter>("status", ["ALL", "NEEDS_FILL", "OUT", "LOW", "OK", "EMPTY"], "ALL"));
+  const [group, setGroup] = useState<GroupFilter>(() => fromUrl<GroupFilter>("kind", ["ALL", "FILL_TO_ORDER", "MATERIAL", "FINISHED"], "ALL"));
+  const [search, setSearch] = useState(() => params.get("q") ?? "");
   const q = useDebouncedValue(search.trim(), 250);
+  useEffect(() => {
+    const next = new URLSearchParams(params.toString());
+    const put = (k: string, v: string, empty: string) => (v && v !== empty ? next.set(k, v) : next.delete(k));
+    put("status", status, "ALL");
+    put("kind", group, "ALL");
+    put("q", q, "");
+    const s = next.toString();
+    if (s !== params.toString()) router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
+  }, [status, group, q, params, pathname, router]);
   const filters = { status: status === "ALL" ? undefined : status, group: group === "ALL" ? undefined : group, q: q || undefined, limit: PAGE };
   const list = useInfiniteQuery({
     queryKey: smartKeys.list(filters),

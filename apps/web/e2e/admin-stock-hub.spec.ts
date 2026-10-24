@@ -278,3 +278,11 @@ test("a count loss waiting for the owner can be approved from Today", async ({ p
   await page.getByTestId("approval-approve").click();
   await expect(page.getByTestId("approval-sheet")).toBeHidden(NAV);
 });
+
+test("the list's filters live in the URL", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("stock-filter-LOW").click();
+  await expect(page).toHaveURL(/status=LOW/, NAV);
+  await page.reload();
+  await expect(page.getByTestId("stock-filter-LOW")).toHaveAttribute("aria-pressed", "true", NAV);
+});

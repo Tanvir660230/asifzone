@@ -106,7 +106,7 @@ export function GuidedCount({ overview, due, showCost, onClose }: { overview: St
       <div className="space-y-5" data-testid="guided-count">
         {!result && (
           <div className="h-1 overflow-hidden rounded-full bg-ink-900/[0.06]" aria-hidden="true">
-            <div className="h-full rounded-full bg-success-600 transition-[width] duration-base ease-smooth" style={{ width: `${(Math.min(at, steps.length) / Math.max(1, steps.length)) * 100}%` }} />
+            <div className="h-full origin-left rounded-full bg-success-600 transition-transform duration-base ease-smooth" style={{ transform: `scaleX(${Math.min(at, steps.length) / Math.max(1, steps.length)})` }} />
           </div>
         )}
         {problem && <ProblemAlert problem={problem} />}
