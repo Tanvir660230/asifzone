@@ -70,7 +70,11 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   // ── Filled: one bottle of an attar that can be made ─────────────────────────────────────────────────────────────────
   const before = itemOf(afterBuy, attar!.variantId);
   await page.getByTestId("stock-action-filled").click();
+  // with bottles waiting the button opens Mark bottles filled; one bottle for later goes through its single-fill link
+  const batch = page.getByRole("dialog", { name: "Mark bottles filled" });
   const filled = page.getByRole("dialog", { name: "Filled" });
+  await expect(batch.or(filled)).toBeVisible(NAV);
+  if (await batch.isVisible()) await batch.getByTestId("batch-fill-single").click();
   await filled.getByTestId("filled-attar").getByRole("button", { name: attar!.productName, exact: true }).click();
   const sizes = filled.getByRole("group", { name: "Bottle size" });
   if (await sizes.isVisible()) await filled.getByTestId(`filled-size-${attar!.sku}`).click();
@@ -160,7 +164,29 @@ test("Today lists what to do; the fill task opens Filled bottles", async ({ page
   test.skip(!today.fill || !(await overview(page)).costingActive, "nothing to fill on this database");
   await expect(card.getByTestId("today-fill")).toContainText(`Fill ${today.fill!.bottles}`);
   await card.getByTestId("today-fill-open").click();
-  await expect(page.getByRole("dialog", { name: "Filled" })).toBeVisible(NAV);
+  const batch = page.getByRole("dialog", { name: "Mark bottles filled" });
+  await expect(batch).toBeVisible(NAV);
+  await expect(batch.getByTestId("batch-fill-line")).toHaveCount((today.fill as unknown as { lines: unknown[] }).lines.length);
+  await expect(batch.getByTestId("batch-fill-save")).toContainText(`Mark ${today.fill!.bottles} filled`);
+});
+
+test("Mark filled records every ticked size in one save; an unticked size stays owed", async ({ page }) => {
+  await login(page);
+  test.skip(!(await overview(page)).costingActive, "stock costing isn't live on this database");
+  type Fill = { bottles: number; lines: Array<{ variantId: string; owed: number }>; short: unknown[] };
+  const before = ((await (await page.request.get(`${API}/api/v1/finance/stock/today`)).json()) as { fill: Fill | null }).fill;
+  test.skip(!before || before.lines.length < 2 || before.short.length > 0, "needs two sizes waiting, all coverable");
+  await page.getByTestId("today-fill-open").click();
+  const batch = page.getByRole("dialog", { name: "Mark bottles filled" });
+  const lines = batch.getByTestId("batch-fill-line");
+  await expect(lines).toHaveCount(before!.lines.length, NAV);
+  await lines.last().getByTestId("batch-fill-tick").uncheck();
+  const skipped = before!.lines[before!.lines.length - 1]!;
+  await batch.getByTestId("batch-fill-save").click();
+  await expect(batch.getByTestId("batch-fill-done")).toBeVisible({ timeout: 90_000 });
+  const after = (await overview(page)).groups.flatMap((g) => g.items);
+  for (const l of before!.lines.slice(0, -1)) expect(after.find((i) => i.variantId === l.variantId)!.stock).toBeGreaterThanOrEqual(0);
+  expect(after.find((i) => i.variantId === skipped.variantId)!.stock).toBeLessThan(0);
 });
 
 test("the stock list filters by status and searches on the server", async ({ page }) => {

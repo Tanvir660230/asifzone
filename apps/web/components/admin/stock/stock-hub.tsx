@@ -24,6 +24,7 @@ import type { StockProblem, StockPurchase } from "@/lib/api/stock";
 import { getStockToday, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
+import { BatchFillSheet } from "./batch-fill-sheet";
 import { BoughtSheet } from "./bought-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
@@ -36,7 +37,7 @@ import type { ProductGroup } from "./stock-shared";
 import { byProduct, num } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
-type Sheet = "bought" | "filled" | "counted" | null;
+type Sheet = "bought" | "filled" | "batch-fill" | "counted" | null;
 const GO_LIVE = "Stock costing starts at go-live";
 
 /** /admin/stock (docs/STOCK_HUB.md §7): Today — what to fill, reorder, count and approve — then every item in one
@@ -91,7 +92,7 @@ export function StockHub() {
                   disabled={!data || !live}
                   title={data && !live ? GO_LIVE : undefined}
                   aria-describedby={data && !live ? "stock-golive" : undefined}
-                  onClick={() => setSheet(a.key)}
+                  onClick={() => setSheet(a.key === "filled" && today.data?.fill ? "batch-fill" : a.key)}
                   data-testid={`stock-action-${a.key}`}
                 >
                   <a.icon className="h-4 w-4" aria-hidden="true" /> {a.label}
@@ -142,7 +143,7 @@ export function StockHub() {
             isError={today.isError}
             onRetry={() => today.refetch()}
             actions={live ? {
-              onFill: can("manufacturing.view") ? () => setSheet("filled") : undefined,
+              onFill: can("manufacturing.view") ? () => setSheet("batch-fill") : undefined,
               onReorder: can("purchasing.receive") ? () => setSheet("bought") : undefined,
               onCount: can("inventory.adjust") ? () => setSheet("counted") : undefined,
               onApproval: setApprovalOf,
@@ -155,6 +156,7 @@ export function StockHub() {
 
       {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} onClose={() => setSheet(null)} />}
       {data && sheet === "filled" && <FilledSheet overview={data} canFill={can("manufacturing.approve")} onClose={() => setSheet(null)} />}
+      {data && sheet === "batch-fill" && today.data?.fill && <BatchFillSheet overview={data} fill={today.data.fill} canFill={can("manufacturing.approve")} onSingle={() => setSheet("filled")} onClose={() => setSheet(null)} />}
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
       {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
       {traceOf && <TraceSheet item={traceOf} showCost={showCost} onClose={() => setTraceOf(null)} />}
