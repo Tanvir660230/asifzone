@@ -69,11 +69,12 @@ describe("DETAIL_LEVELS", () => {
     expect(DETAIL_LEVELS.at(-1)!.items).toBe("summary");
   });
 
-  it("prints the QR on every level, and keeps the logo and the full barcode until the products are down to a count", () => {
-    for (const level of DETAIL_LEVELS) expect(["full", "small"]).toContain(level.qr);
+  it("keeps the logo, the QR and the full barcode until the products are down to a count", () => {
     const firstSummary = DETAIL_LEVELS.findIndex((l) => l.items === "summary");
+    const firstNoQr = DETAIL_LEVELS.findIndex((l) => l.qr === "none");
     const firstNoLogo = DETAIL_LEVELS.findIndex((l) => !l.logo);
-    expect(firstNoLogo).toBeGreaterThan(firstSummary);
+    expect(firstNoQr).toBeGreaterThan(firstSummary);
+    expect(firstNoLogo).toBeGreaterThan(firstNoQr);
     expect(DETAIL_LEVELS.findIndex((l) => l.slimBarcode)).toBe(DETAIL_LEVELS.length - 1);
   });
 
@@ -85,10 +86,10 @@ describe("DETAIL_LEVELS", () => {
 
   it("never brings back something an earlier level already dropped", () => {
     for (let i = 1; i < DETAIL_LEVELS.length; i++) {
-      for (const part of ["footer", "logo"] as const) {
+      for (const part of ["footer", "infoTable", "logo"] as const) {
         if (!DETAIL_LEVELS[i - 1]![part]) expect(DETAIL_LEVELS[i]![part], `level ${i} ${part}`).toBe(false);
       }
-      const qrRank = { full: 2, small: 1 } as const;
+      const qrRank = { full: 2, small: 1, none: 0 } as const;
       expect(qrRank[DETAIL_LEVELS[i]!.qr], `level ${i} qr`).toBeLessThanOrEqual(qrRank[DETAIL_LEVELS[i - 1]!.qr]);
       if (DETAIL_LEVELS[i - 1]!.slimBarcode) expect(DETAIL_LEVELS[i]!.slimBarcode, `level ${i} slimBarcode`).toBe(true);
     }
@@ -96,13 +97,13 @@ describe("DETAIL_LEVELS", () => {
 });
 
 describe("gradeFit", () => {
-  it("is full only when every product is named", () => {
+  it("is full only when every product is named and the QR and info table printed", () => {
     expect(gradeFit({ level: 0, unit: 9, overflow: false }, 12)).toBe("full");
     expect(gradeFit({ level: 1, unit: 9, overflow: false }, 12)).toBe("full"); // all named, inline
     expect(gradeFit({ level: 2, unit: 9, overflow: false }, 12)).toBe("full"); // only the footer went
     expect(gradeFit({ level: 3, unit: 9, overflow: false }, 12)).toBe("full"); // a smaller QR, still everything
     expect(gradeFit({ level: 4, unit: 9, overflow: false }, 6)).toBe("shortened"); // only 2 products named
-    expect(gradeFit({ level: 6, unit: 9, overflow: false }, 1)).toBe("shortened"); // a count, no names
+    expect(gradeFit({ level: 7, unit: 9, overflow: false }, 1)).toBe("shortened"); // no QR
     expect(gradeFit({ level: DETAIL_LEVELS.length - 1, unit: 6, overflow: false }, 1)).toBe("shortened");
     expect(gradeFit({ level: 0, unit: 5.5, overflow: true }, 1)).toBe("overflow");
   });
