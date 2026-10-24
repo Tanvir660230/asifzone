@@ -35,7 +35,8 @@ const group = (o: Overview, key: string) => o.groups.find((g) => g.key === key)?
 test("buy oil, fill a bottle and count — the stock follows each", async ({ page }) => {
   await login(page);
   await expect(page.getByRole("heading", { name: "Stock", level: 1 })).toBeVisible(NAV);
-  await expect(page.getByTestId("stock-group-fill")).toBeVisible(NAV);
+  await expect(page.getByTestId("stock-today")).toBeVisible(NAV);
+  await expect(page.getByTestId("stock-list")).toBeVisible(NAV);
   const start = await overview(page);
   test.skip(!start.costingActive, "stock costing isn't live on this database (run it on a go-live rehearsal copy)");
 
@@ -84,7 +85,9 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   await expect(filled).toBeHidden(NAV);
 
   // ── the size's trace: its recipe, and the fill just made ───────────────────────────────────────────────────────────
-  await page.locator(`[data-testid="stock-fill-trace"][data-sku="${attar!.sku}"]`).click();
+  await page.getByTestId("stock-search").fill(attar!.sku);
+  await page.getByTestId(`stock-row-${attar!.sku}`).click();
+  await page.getByTestId("stock-item-trace").click();
   const trace = page.getByTestId("stock-trace");
   await expect(trace.getByTestId("stock-trace-recipe")).toBeVisible(NAV);
   await expect(trace.getByTestId("stock-trace-fill").first()).toContainText(/1 bottle/);
@@ -140,3 +143,54 @@ test("the owner's home links goods in stock to the Stock page", async ({ page })
   await expect(link).toHaveAttribute("href", "/admin/stock");
 });
 
+
+// ── the smart stock page (docs/STOCK_HUB.md §7): Today and the stock list ─────────────────────────────────────────────
+
+interface Today { fill: { bottles: number } | null; reorder: unknown; count: unknown; approvals: unknown[] }
+
+test("Today lists what to do; the fill task opens Filled bottles", async ({ page }) => {
+  await login(page);
+  const today = (await (await page.request.get(`${API}/api/v1/finance/stock/today`)).json()) as Today;
+  const card = page.getByTestId("stock-today");
+  await expect(card).toBeVisible(NAV);
+  if (!today.fill && !today.reorder && !today.count && today.approvals.length === 0) {
+    await expect(card.getByTestId("today-clear")).toContainText("All caught up");
+    return;
+  }
+  test.skip(!today.fill || !(await overview(page)).costingActive, "nothing to fill on this database");
+  await expect(card.getByTestId("today-fill")).toContainText(`Fill ${today.fill!.bottles}`);
+  await card.getByTestId("today-fill-open").click();
+  await expect(page.getByRole("dialog", { name: "Filled" })).toBeVisible(NAV);
+});
+
+test("the stock list filters by status and searches on the server", async ({ page }) => {
+  await login(page);
+  const list = page.getByTestId("stock-list");
+  await expect(list.locator("[data-testid^=stock-row-]").first()).toBeVisible(NAV);
+  const out = list.getByTestId("stock-filter-OUT");
+  await out.click();
+  await expect(out).toHaveAttribute("aria-pressed", "true");
+  const rows = list.locator("[data-testid^=stock-row-]");
+  await expect(list.getByTestId("stock-list-empty").or(rows.first())).toBeVisible(NAV);
+  for (const r of await rows.all()) await expect(r).toContainText("Out");
+
+  await list.getByTestId("stock-filter-ALL").click();
+  const first = await rows.first().getAttribute("data-testid");
+  const sku = first!.replace("stock-row-", "");
+  await page.getByTestId("stock-search").fill(sku);
+  await expect(rows).toHaveCount(1, NAV);
+  await expect(rows.first()).toHaveAttribute("data-testid", `stock-row-${sku}`);
+  await page.getByTestId("stock-search").fill(`no-such-item-${Date.now()}`);
+  await expect(list.getByTestId("stock-list-empty")).toContainText("Nothing matches", NAV);
+});
+
+test("a row opens the item; the page never scrolls sideways", async ({ page }) => {
+  await login(page);
+  const row = page.getByTestId("stock-list").locator("[data-testid^=stock-row-]").first();
+  await expect(row).toBeVisible(NAV);
+  await row.click();
+  await expect(page.getByTestId("stock-item-panel")).toBeVisible(NAV);
+  await expect(page.getByTestId("stock-item-movements")).toHaveAttribute("href", /\/admin\/inventory\?variantId=/);
+  await page.keyboard.press("Escape");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});

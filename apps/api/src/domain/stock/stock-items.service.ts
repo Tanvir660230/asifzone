@@ -1,7 +1,7 @@
 /**
  * The stock list (docs/STOCK_HUB.md §7, /admin/stock): every stock-tracked item from the stock hub overview, each with a
  * status that says what to do — NEEDS_FILL (bottles sold, not yet filled), OUT (nothing to sell), LOW (10 days or less,
- * or 10 or fewer to sell), OK — what it can still sell, the recipe material that limits a fill-to-order item, and for a
+ * or 10 or fewer to sell), OK, EMPTY (none left and no recent use or orders) — what it can still sell, the recipe material that limits a fill-to-order item, and for a
  * bought item (material or finished goods) how much to reorder and by when:
  *
  *   suggested = max(0, ⌈used per day × (days to arrive + days to cover)⌉ − available)
@@ -21,6 +21,8 @@ import { stockHub, type StockHubGroupKey, type StockHubItem } from "./stock-hub.
 
 export interface StockListItem extends StockHubItem {
   group: StockHubGroupKey;
+  /** A short name for lists: the product, plus the size / colour only where the product name doesn't already say it. */
+  label: string;
   status: StockStatus;
   /** What the shop can still sell: filled + makeable for a fill-to-order item, the shelf otherwise; null = unlimited. */
   canSell: number | null;
@@ -29,7 +31,20 @@ export interface StockListItem extends StockHubItem {
   settings: ItemSettings;
 }
 
-type Classifiable = Pick<StockHubItem, "stock" | "makeable" | "low"> & { policy: { owed: number; policy: string } | null };
+type Classifiable = Pick<StockHubItem, "stock" | "makeable" | "low" | "usedPerDay" | "reserved"> & { policy: { owed: number; policy: string } | null };
+
+const BLANK = new Set(["", "-", "standard", "default"]);
+const squash = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+const spaced = (s: string) => s.replace(/^(\d+(?:\.\d+)?)\s*(ml|g|kg|l)$/i, "$1 $2");
+
+/** "Premium Pakistani Cap - Black A" + 2XL / Black → "Premium Pakistani Cap - Black A — 2XL"; "Empty attar bottle 6 ml" + 6ml
+ * → "Empty attar bottle 6 ml". A material is named by its product alone. */
+export function itemLabel(i: { productName: string; size: string | null; color: string | null }, group?: StockHubGroupKey): string {
+  if (group === "MATERIAL") return i.productName;
+  const name = squash(i.productName);
+  const parts = [i.size, i.color].map((p) => p?.trim() ?? "").filter((p) => !BLANK.has(p.toLowerCase()) && !name.includes(squash(p)));
+  return parts.length ? `${i.productName} — ${parts.map(spaced).join(" / ")}` : i.productName;
+}
 
 export function canSellOf(i: Pick<StockHubItem, "stock" | "makeable">): number | null {
   if (i.makeable === null) return Math.max(0, i.stock);
@@ -40,7 +55,8 @@ export function canSellOf(i: Pick<StockHubItem, "stock" | "makeable">): number |
 export function classify(i: Classifiable): StockStatus {
   if ((i.policy?.owed ?? 0) > 0) return "NEEDS_FILL";
   const can = canSellOf(i);
-  if (can === 0) return "OUT";
+  // none left and nobody wants it: a size that isn't stocked any more is not an emergency
+  if (can === 0) return (i.usedPerDay ?? 0) > 0 || i.reserved > 0 ? "OUT" : "EMPTY";
   if (i.low && can !== null) return "LOW";
   return "OK";
 }
@@ -53,7 +69,7 @@ export function suggestReorder(i: { usedPerDay: number | null; available: number
   return { suggested, orderBy: addDays(i.today, Math.max(0, lasts - i.leadTimeDays)) };
 }
 
-const STATUS_ORDER: Record<StockStatus, number> = { NEEDS_FILL: 0, OUT: 1, LOW: 2, OK: 3 };
+const STATUS_ORDER: Record<StockStatus, number> = { NEEDS_FILL: 0, OUT: 1, LOW: 2, OK: 3, EMPTY: 4 };
 const pad = (n: number) => String(Math.max(0, Math.min(999_999, Math.round(n)))).padStart(6, "0");
 
 /** A sort key: NEEDS_FILL most owed first, OUT, LOW fewest days first, OK by name — then SKU, so the order is total. */
@@ -127,9 +143,10 @@ export async function allStockItems(viewer: { canSeeCost: boolean }): Promise<{ 
     const available = i.group === "MATERIAL" ? Math.floor(i.stock - (claimed.get(i.variantId) ?? 0)) : i.stock;
     return {
       ...i,
+      label: itemLabel(i, i.group),
       status: classify(i),
       canSell: canSellOf(i),
-      limitedBy: limit ? { variantId: limit, name: byId.get(limit)?.name ?? "" } : null,
+      limitedBy: limit ? { variantId: limit, name: byId.get(limit)?.productName ?? "" } : null,
       reorder: i.group === "FILL_TO_ORDER" ? null : suggestReorder({ usedPerDay: i.usedPerDay, available, leadTimeDays: s.leadTimeDays, coverDays: s.coverDays, today }),
       settings: s,
     };
@@ -148,7 +165,7 @@ export async function listStockItems(raw: StockItemsQuery, viewer: { canSeeCost:
   const { items } = await allStockItems(viewer);
   const needle = query.q?.toLowerCase();
   const scoped = items.filter((i) => (!query.group || i.group === query.group) && (!needle || i.sku.toLowerCase().includes(needle) || i.name.toLowerCase().includes(needle) || i.productName.toLowerCase().includes(needle)));
-  const counts: Record<StockStatus | "ALL", number> = { ALL: scoped.length, NEEDS_FILL: 0, OUT: 0, LOW: 0, OK: 0 };
+  const counts: Record<StockStatus | "ALL", number> = { ALL: scoped.length, NEEDS_FILL: 0, OUT: 0, LOW: 0, OK: 0, EMPTY: 0 };
   for (const i of scoped) counts[i.status]++;
   const filtered = query.status ? scoped.filter((i) => i.status === query.status) : scoped;
   const page = filtered.slice(offset, offset + query.limit);

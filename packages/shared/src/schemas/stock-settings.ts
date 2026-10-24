@@ -18,7 +18,7 @@ export type StockItemSettingsInput = z.input<typeof stockItemSettingsSchema>;
 export type StockItemSettings = z.output<typeof stockItemSettingsSchema>;
 
 /** The stock list's filters (GET /stock/items): status, group, search and paging. */
-export const STOCK_STATUSES = ["NEEDS_FILL", "OUT", "LOW", "OK"] as const;
+export const STOCK_STATUSES = ["NEEDS_FILL", "OUT", "LOW", "OK", "EMPTY"] as const;
 export type StockStatus = (typeof STOCK_STATUSES)[number];
 export const stockItemsQuerySchema = z.object({
   status: z.enum(STOCK_STATUSES).optional(),

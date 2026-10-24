@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { classify, limitingMaterial, rankOf, suggestReorder } from "./stock-items.service";
+import { classify, itemLabel, limitingMaterial, rankOf, suggestReorder } from "./stock-items.service";
 
 // Smart stock page, task 2 (pure parts): status, reorder suggestion, urgency order and the material that limits a fill.
 
 const item = (over: Record<string, unknown> = {}) => ({
-  stock: 10, makeable: null as number | null, low: false, daysLeft: null as number | null,
+  stock: 10, makeable: null as number | null, low: false, daysLeft: null as number | null, usedPerDay: null as number | null, reserved: 0,
   policy: null as { owed: number; policy: "TRACKED" | "UNLIMITED" | "BACKORDER" } | null, ...over,
 });
 
@@ -12,9 +12,13 @@ describe("classify", () => {
   it("owed bottles → NEEDS_FILL, even when more can be made", () => {
     expect(classify(item({ stock: -3, makeable: 40, policy: { owed: 3, policy: "TRACKED" } }) as never)).toBe("NEEDS_FILL");
   });
-  it("nothing to sell → OUT", () => {
-    expect(classify(item({ stock: 0 }) as never)).toBe("OUT");
-    expect(classify(item({ stock: 0, makeable: 0, policy: { owed: 0, policy: "TRACKED" } }) as never)).toBe("OUT");
+  it("nothing to sell while it is being used or ordered → OUT", () => {
+    expect(classify(item({ stock: 0, usedPerDay: 2 }) as never)).toBe("OUT");
+    expect(classify(item({ stock: 0, reserved: 1 }) as never)).toBe("OUT");
+    expect(classify(item({ stock: 0, makeable: 0, usedPerDay: 1, policy: { owed: 0, policy: "TRACKED" } }) as never)).toBe("OUT");
+  });
+  it("nothing left and nobody wants it → EMPTY, not an emergency", () => {
+    expect(classify(item({ stock: 0 }) as never)).toBe("EMPTY");
   });
   it("an attar on UNLIMITED is never OUT", () => {
     expect(classify(item({ stock: 0, makeable: 1_000_000, policy: { owed: 0, policy: "UNLIMITED" } }) as never)).toBe("OK");
@@ -67,5 +71,14 @@ describe("limitingMaterial", () => {
     expect(limitingMaterial(lines, new Map([["oil", 250], ["bottle", 166], ["box", 500]]))).toBe("oil"); // 41 vs 166 vs 454
     expect(limitingMaterial(lines, new Map([["oil", 6000], ["bottle", 166], ["box", 150]]))).toBe("box"); // 1000 vs 166 vs 136
     expect(limitingMaterial([], new Map())).toBeNull();
+  });
+});
+
+describe("itemLabel", () => {
+  it("adds the size / colour only where the product name doesn't already say it", () => {
+    expect(itemLabel({ productName: "Premium Pakistani Cap - Black A", size: "2XL 23.5", color: "Black" })).toBe("Premium Pakistani Cap - Black A — 2XL 23.5");
+    expect(itemLabel({ productName: "Empty attar bottle 6 ml", size: "6ml", color: null })).toBe("Empty attar bottle 6 ml");
+    expect(itemLabel({ productName: "ZAYAN ELIXIR", size: "12ml", color: "Standard" })).toBe("ZAYAN ELIXIR — 12 ml");
+    expect(itemLabel({ productName: "Attar oil — ZAYAN ELIXIR", size: "Bulk oil", color: null }, "MATERIAL")).toBe("Attar oil — ZAYAN ELIXIR");
   });
 });

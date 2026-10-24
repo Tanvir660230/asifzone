@@ -21,32 +21,39 @@ import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as stockApi from "@/lib/api/stock";
 import type { StockProblem, StockPurchase } from "@/lib/api/stock";
+import { getStockToday, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
+import { ApprovalSheet } from "./approval-sheet";
 import { BoughtSheet } from "./bought-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
-import { FillGroup, FinishedGroup, MaterialGroup } from "./stock-row";
+import { ItemPanel } from "./item-panel";
 import { PolicySheet } from "./policy-sheet";
+import { StockList } from "./stock-list";
+import { TodayList } from "./today-list";
 import { TraceSheet } from "./trace-sheet";
 import type { ProductGroup } from "./stock-shared";
-import { num } from "./stock-shared";
+import { byProduct, num } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
 type Sheet = "bought" | "filled" | "counted" | null;
 const GO_LIVE = "Stock costing starts at go-live";
 
-/** /admin/stock (docs/STOCK_HUB.md): everything in stock — attar filled to order, raw materials, packaging, ready goods —
- * and the three things the owner records. An attar size opens its trace (materials, fills, waiting orders, cost). */
+/** /admin/stock (docs/STOCK_HUB.md §7): Today — what to fill, reorder, count and approve — then every item in one
+ * searchable list, sorted by what needs doing. A row opens the item; an attar size goes on to its trace. */
 export function StockHub() {
   const { can, ready } = useCapabilities();
   const allowed = can("inventory.view");
   const showCost = can("costing.view");
   const overview = useQuery({ queryKey: stockApi.stockKeys.overview(), queryFn: stockApi.getStockOverview, enabled: allowed });
+  const today = useQuery({ queryKey: smartKeys.today(), queryFn: getStockToday, enabled: allowed });
   const purchasesQ = useQuery({ queryKey: stockApi.stockKeys.purchases(), queryFn: () => stockApi.listStockPurchases(20), enabled: allowed && can("purchasing.view") });
   const [sheet, setSheet] = useState<Sheet>(null);
   const [finishing, setFinishing] = useState<StockPurchase | null>(null);
   const [policyFor, setPolicyFor] = useState<ProductGroup | null>(null);
   const [traceOf, setTraceOf] = useState<stockApi.StockItem | null>(null);
+  const [itemOf, setItemOf] = useState<StockListItem | null>(null);
+  const [approvalOf, setApprovalOf] = useState<string | null>(null);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -56,9 +63,9 @@ export function StockHub() {
   const incomplete = purchases.filter((p) => !p.complete);
   const groupOf = (key: stockApi.StockGroupKey) => data?.groups.find((g) => g.key === key)?.items ?? [];
   const actions = [
-    { key: "bought" as const, label: "Bought", icon: PackagePlus, allowed: can("purchasing.receive"), variant: "primary" as const },
-    { key: "filled" as const, label: "Filled", icon: Droplets, allowed: can("manufacturing.view") && groupOf("FILL_TO_ORDER").length > 0, variant: "outline" as const },
-    { key: "counted" as const, label: "Counted", icon: ClipboardCheck, allowed: can("inventory.adjust"), variant: "outline" as const },
+    { key: "bought" as const, label: "Received goods", icon: PackagePlus, allowed: can("purchasing.receive"), variant: "outline" as const },
+    { key: "filled" as const, label: "Filled bottles", icon: Droplets, allowed: can("manufacturing.view") && groupOf("FILL_TO_ORDER").length > 0, variant: "outline" as const },
+    { key: "counted" as const, label: "Count", icon: ClipboardCheck, allowed: can("inventory.adjust"), variant: "outline" as const },
   ].filter((a) => a.allowed);
 
   const summary = data ? [
@@ -129,10 +136,19 @@ export function StockHub() {
         <ErrorState title="Stock couldn't be loaded" description={getErrorMessage(overview.error, "Check your connection and try again.")} onRetry={() => overview.refetch()} variant="bordered" />
       ) : data ? (
         <>
-          <FillGroup items={groupOf("FILL_TO_ORDER")} onPolicy={can("inventory.adjust") ? setPolicyFor : undefined} onTrace={setTraceOf} />
-          <MaterialGroup kind="RAW" items={groupOf("MATERIAL").filter((i) => i.materialKind === "RAW")} rolls={[]} showCost={showCost} />
-          <MaterialGroup kind="PACKAGING" items={groupOf("MATERIAL").filter((i) => i.materialKind !== "RAW")} rolls={data.rolls} showCost={showCost} />
-          <FinishedGroup items={groupOf("FINISHED")} showCost={showCost} />
+          <TodayList
+            data={today.data}
+            isLoading={today.isLoading}
+            isError={today.isError}
+            onRetry={() => today.refetch()}
+            actions={live ? {
+              onFill: can("manufacturing.view") ? () => setSheet("filled") : undefined,
+              onReorder: can("purchasing.receive") ? () => setSheet("bought") : undefined,
+              onCount: can("inventory.adjust") ? () => setSheet("counted") : undefined,
+              onApproval: setApprovalOf,
+            } : {}}
+          />
+          <StockList hasFillToOrder={groupOf("FILL_TO_ORDER").length > 0} onOpen={setItemOf} />
           {can("purchasing.view") && <RecentPurchases query={purchasesQ} />}
         </>
       ) : null}
@@ -142,6 +158,20 @@ export function StockHub() {
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
       {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
       {traceOf && <TraceSheet item={traceOf} showCost={showCost} onClose={() => setTraceOf(null)} />}
+      {itemOf && (
+        <ItemPanel
+          item={itemOf}
+          showCost={showCost}
+          canAdjust={can("inventory.adjust")}
+          onTrace={() => { setTraceOf(itemOf); setItemOf(null); }}
+          onPolicy={can("inventory.adjust") ? () => {
+            const product = byProduct(groupOf("FILL_TO_ORDER")).find((p) => p.productId === itemOf.productId);
+            if (product) { setPolicyFor(product); setItemOf(null); }
+          } : undefined}
+          onClose={() => setItemOf(null)}
+        />
+      )}
+      {approvalOf && <ApprovalSheet id={approvalOf} canDecide={can("inventory.approve")} onClose={() => setApprovalOf(null)} />}
       {finishing && <FinishDialog purchase={finishing} canOwnerMoney={can("finance.sensitive")} onClose={() => setFinishing(null)} />}
     </div>
   );

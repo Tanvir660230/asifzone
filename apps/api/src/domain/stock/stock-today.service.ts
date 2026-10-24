@@ -72,11 +72,11 @@ export async function stockToday(viewer: { canSeeCost: boolean }) {
     const short = [...claimed.entries()]
       .map(([materialId, need]) => ({ m: byId.get(materialId), need: Math.ceil(need - 1e-9) }))
       .filter((x) => x.m && x.need > x.m.stock)
-      .map((x) => ({ variantId: x.m!.variantId, sku: x.m!.sku, name: x.m!.name, unit: x.m!.unit, need: x.need, have: x.m!.stock }));
+      .map((x) => ({ variantId: x.m!.variantId, sku: x.m!.sku, name: x.m!.label, unit: x.m!.unit, need: x.need, have: x.m!.stock }));
     fill = {
       bottles: owed.reduce((s, i) => s + (i.policy?.owed ?? 0), 0),
       orders,
-      lines: owed.map((i) => ({ variantId: i.variantId, sku: i.sku, name: i.name, productName: i.productName, owed: i.policy?.owed ?? 0 })),
+      lines: owed.map((i) => ({ variantId: i.variantId, sku: i.sku, name: i.label, productName: i.productName, owed: i.policy?.owed ?? 0 })),
       short,
     };
   }
@@ -92,7 +92,7 @@ export async function stockToday(viewer: { canSeeCost: boolean }) {
       const supplierId = i.settings.preferredSupplierId ?? last.get(i.variantId)?.supplierId ?? null;
       const price = last.get(i.variantId);
       return {
-        variantId: i.variantId, sku: i.sku, name: i.name, unit: i.unit, status: i.status, daysLeft: i.daysLeft,
+        variantId: i.variantId, sku: i.sku, name: i.label, productName: i.productName, unit: i.unit, status: i.status, daysLeft: i.daysLeft,
         suggested: i.reorder!.suggested, orderBy: i.reorder!.orderBy,
         supplier: supplierId ? { id: supplierId, name: nameOf.get(supplierId) ?? "" } : null,
         lastUnitCost: viewer.canSeeCost && price ? price.unitCost : null,
@@ -105,7 +105,7 @@ export async function stockToday(viewer: { canSeeCost: boolean }) {
   const lastRows = await prisma.stockCount.groupBy({ by: ["variantId"], where: { variantId: { in: ranked.map((i) => i.variantId) } }, _max: { countDate: true } });
   const lastCounted = new Map(lastRows.filter((r) => r._max.countDate).map((r) => [r.variantId, r._max.countDate!.toISOString().slice(0, 10)]));
   const dueCount = cycleCountDue(ranked, lastCounted, today);
-  const count = dueCount.length ? { due: dueCount.map((i) => ({ variantId: i.variantId, sku: i.sku, name: i.name, unit: i.unit })), minutes: Math.max(1, Math.ceil(dueCount.length * 0.75)) } : null;
+  const count = dueCount.length ? { due: dueCount.map((i) => ({ variantId: i.variantId, sku: i.sku, name: i.label, unit: i.unit })), minutes: Math.max(1, Math.ceil(dueCount.length * 0.75)) } : null;
 
   const approvals = (await listApprovals({ status: "PENDING" }, viewer)).approvals.map((a) => ({ id: a.id, variantId: a.variantId, name: a.name, difference: a.difference, reason: a.reason, value: a.value, requestedBy: a.requestedBy, countedOn: a.countedOn }));
 

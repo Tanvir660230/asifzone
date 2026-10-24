@@ -32,11 +32,13 @@ describe("listStockItems", () => {
   });
 
   it("L-2: counts honour the search but not the status filter", async () => {
-    const r = await listStockItems({ q: few, status: "OUT", limit: 50 }, { canSeeCost: true });
+    // the size with none in stock and no recent use or orders is EMPTY, not OUT
+    const r = await listStockItems({ q: few, status: "EMPTY", limit: 50 }, { canSeeCost: true });
     expect(r.items.map((i) => i.sku)).toEqual([`${few}1`]);
     expect(r.counts.ALL).toBe(2);
-    expect(r.counts.OUT).toBe(1);
-    expect(r.counts.OUT + r.counts.LOW + r.counts.OK + r.counts.NEEDS_FILL).toBe(2);
+    expect(r.counts.EMPTY).toBe(1);
+    expect(r.counts.OUT).toBe(0);
+    expect(r.counts.OUT + r.counts.LOW + r.counts.OK + r.counts.NEEDS_FILL + r.counts.EMPTY).toBe(2);
   });
 
   it(`L-3: paging ${N} items by 50 returns each exactly once, each page quickly`, async () => {
@@ -55,9 +57,9 @@ describe("listStockItems", () => {
     expect(slowest).toBeLessThan(800);
   }, 300_000);
 
-  it("L-4: an out-of-stock item sorts before a stocked one", async () => {
+  it("L-4: an empty, unused size sorts after a stocked one", async () => {
     const r = await listStockItems({ q: few, limit: 50 }, { canSeeCost: true });
-    expect(r.items[0]!.status).toBe("OUT");
+    expect(r.items.map((i) => i.status)).toEqual(["OK", "EMPTY"]);
   });
 
   it("L-5: values are null without costing.read", async () => {
