@@ -31,6 +31,11 @@ export const reviewReturnRequestSchema = z
     status: z.enum(["APPROVED", "REJECTED"]),
     adminNote: nullableString(1000),
     compensation: returnCompensationEnum.optional(),
+    /** Approving a RETURN: units that came back unsellable, per order line — written off instead of restocked. */
+    damaged: z
+      .array(z.object({ orderItemId: z.string().cuid(), quantity: z.number().int().min(1).max(10000) }))
+      .max(100)
+      .optional(),
   })
   // DR-8: a rejection says why — the customer sees this note on their order.
   .superRefine((value, ctx) => {

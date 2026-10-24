@@ -63,7 +63,7 @@ import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryS
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
-import { notifyReplenished, notifyStockMoved, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
+import { notifyReplenished, notifyStockMoved, recordSale, releaseOrderLines, reReserveOrderLines, writeOffParcelUnits, writeOffReturnedUnits } from "../inventory/inventory.service";
 import { applyCapacity, fillCapacity, fillShortfall, fillToOrderFloors } from "../../domain/stock/fill-capacity.service";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import {
@@ -1617,15 +1617,27 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
         `Returned quantity for ${item.productNameSnapshot} cannot exceed the ordered quantity (${item.quantity})`,
       );
     }
+    if ((entry.damaged ?? 0) > entry.returnedQuantity) throw AppError.badRequest("Damaged can't be more than what came back");
   }
+  if (new Set(input.items.map((e) => e.orderItemId)).size !== input.items.length) throw AppError.badRequest("Each item can be listed once");
 
   const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
   const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDistrict) : null;
   // What came back is valued exactly like an item-level return (the order's own allocated pricing), so the payment
   // position charges only what the customer kept (PAYMENT_LEDGER §5c). Valued before the restock below.
   const returnLines = returnedEntries.length
-    ? valueItemReturn(existing, { items: returnedEntries.map((e) => ({ orderItemId: e.orderItemId, quantity: e.returnedQuantity, restock: true })) }, await getCurrency())
+    ? valueItemReturn(
+        existing,
+        {
+          items: returnedEntries.flatMap((e) => [
+            { orderItemId: e.orderItemId, quantity: e.returnedQuantity - (e.damaged ?? 0), restock: true },
+            { orderItemId: e.orderItemId, quantity: e.damaged ?? 0, restock: false },
+          ]),
+        },
+        await getCurrency(),
+      )
     : [];
+  const damagedUnits = returnedEntries.reduce((n, e) => n + (e.damaged ?? 0), 0);
   const returnedByItem = new Map(returnedEntries.map((e) => [e.orderItemId, e.returnedQuantity]));
   const keptNothing = existing.items.every((item) => (returnedByItem.get(item.id) ?? 0) >= item.quantity);
 
@@ -1643,13 +1655,25 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
           lines: returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })),
         })
       : { released: [] as Array<{ variantId: string }>, replenished: [] as string[] };
+    // Units that came back unsellable leave again at the line's own cost — booked via the return record's `writtenOff`, or
+    // by the movement itself for the rare order with no customer (no return record is written for it, below).
+    const recordedCost = damagedUnits
+      ? new Map((await tx.orderItem.findMany({ where: { orderId }, select: { id: true, unitCostSnapshot: true } })).map((i) => [i.id, i.unitCostSnapshot]))
+      : new Map<string, number | null>();
+    const damagedOut = returnedEntries
+      .filter((e) => (e.damaged ?? 0) > 0)
+      .map((e) => ({ variantId: itemById.get(e.orderItemId)!.variantId, quantity: e.damaged!, unitCostMinor: recordedCost.get(e.orderItemId) ?? null }));
+    if (existing.customerId) await writeOffReturnedUnits(tx, existing.orderNumber, damagedOut, { adminId, note: "partial delivery" });
+    else await writeOffParcelUnits(tx, { id: orderId, orderNumber: existing.orderNumber }, damagedOut.map((u) => ({ ...u, reason: "DAMAGED" as const })), { adminId, note: "partial delivery" });
+    // Only a variant with at least one good unit back is "back in stock".
+    const goodVariants = new Set(returnedEntries.filter((e) => e.returnedQuantity - (e.damaged ?? 0) > 0).map((e) => itemById.get(e.orderItemId)!.variantId));
 
     if (courierLossFee !== null) {
       await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
     }
 
     const note = returnedEntries.length
-      ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned and restocked`
+      ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned${damagedUnits ? `, ${damagedUnits} unit(s) damaged and written off` : " and restocked"}`
       : "Partial delivery reconciled — customer kept the full shipment";
 
     // Gives the returned portion its own visible record in the same Return Requests list an admin
@@ -1686,7 +1710,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
       },
       include,
     });
-    return { order: updated, replenished: result.replenished, moved: result.released.map((r) => r.variantId) };
+    return { order: updated, replenished: result.replenished.filter((v) => goodVariants.has(v)), moved: result.released.map((r) => r.variantId) };
   });
   notifyReplenished(replenished);
   notifyStockMoved(moved);
@@ -1702,26 +1726,70 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
 /** A parcel cancelled after it shipped is back at the shop (inventory recovery F-d): its units go back into stock now —
  * never at the cancellation, when the parcel was still with the courier. `lines` limits it to what actually came back
  * (omitted = everything still outstanding). Idempotent per order line (releaseOrderLines' restockedQuantity guard): a
- * second press, or two admins at once, puts nothing more back (NOTHING_TO_RECEIVE). The timeline records who received it. */
-export async function receiveReturnedParcel(orderId: string, adminId: string, input: { lines?: Array<{ orderItemId: string; quantity: number }>; note?: string | null }) {
+ * second press, or two admins at once, puts nothing more back (NOTHING_TO_RECEIVE). The timeline records who received it.
+ * Per line, `damaged` of the units that came back and `lost` units that never will are closed too, then written off
+ * (writeOffParcelUnits) — so only the good ones become sellable stock. */
+export async function receiveReturnedParcel(
+  orderId: string,
+  adminId: string,
+  input: { lines?: Array<{ orderItemId: string; quantity: number; damaged?: number; lost?: number }>; note?: string | null; damageNote?: string | null },
+) {
   const { order, replenished, moved } = await prisma.$transaction(async (tx) => {
-    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
-      SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null; orderNumber: string }>>`
+      SELECT status, "deletedAt", "orderNumber" FROM "Order" WHERE id = ${orderId} FOR UPDATE
     `;
     if (!locked) throw AppError.notFound("Order not found");
     if (locked.deletedAt) throw AppError.badRequest("Restore this order before making changes");
     if (locked.status !== "CANCELLED") {
       throw new AppError(409, "Only a cancelled order's parcel is received back here — returns of delivered orders go through Returned or a return request", { code: "NOT_AWAITING_RETURN" });
     }
-    const result = await releaseOrderLines(tx, orderId, "release", { adminId, note: input.note?.trim() || "Parcel received back — stock restored", lines: input.lines });
+    const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true } });
+    const byId = new Map(items.map((i) => [i.id, i]));
+    if (input.lines && new Set(input.lines.map((l) => l.orderItemId)).size !== input.lines.length) throw AppError.badRequest("Each item can be listed once");
+    for (const l of input.lines ?? []) {
+      const item = byId.get(l.orderItemId);
+      if (!item) throw AppError.badRequest("That item isn't on this order");
+      if ((l.damaged ?? 0) > l.quantity) throw AppError.badRequest("Damaged can't be more than what came back");
+      const outstanding = item.quantity - item.restockedQuantity;
+      if (l.quantity + (l.lost ?? 0) > outstanding) {
+        throw new AppError(400, `Only ${outstanding} unit(s) of this item are still out with the courier`, { code: "MORE_THAN_OUTSTANDING" });
+      }
+    }
+    const requested = input.lines ? new Map(input.lines.map((l) => [l.orderItemId, l])) : null;
+    const result = await releaseOrderLines(tx, orderId, "release", {
+      adminId,
+      note: input.note?.trim() || "Parcel received back",
+      lines: input.lines?.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity + (l.lost ?? 0) })),
+    });
     if (!result.released.length) throw new AppError(409, "Nothing is waiting to come back on this order — its stock was already restored", { code: "NOTHING_TO_RECEIVE" });
-    const units = result.released.reduce((s, r) => s + r.quantity, 0);
+
+    const writeOffs: Array<{ variantId: string; quantity: number; unitCostMinor: number | null; reason: "DAMAGED" | "LOST" }> = [];
+    const goodVariants = new Set<string>();
+    let good = 0;
+    let damaged = 0;
+    let lost = 0;
+    for (const r of result.released) {
+      const line = requested?.get(r.orderItemId);
+      const unitCostMinor = byId.get(r.orderItemId)!.unitCostSnapshot;
+      const d = line?.damaged ?? 0;
+      const l = line?.lost ?? 0;
+      if (d) writeOffs.push({ variantId: r.variantId, quantity: d, unitCostMinor, reason: "DAMAGED" });
+      if (l) writeOffs.push({ variantId: r.variantId, quantity: l, unitCostMinor, reason: "LOST" });
+      if (r.quantity - d - l > 0) goodVariants.add(r.variantId);
+      good += r.quantity - d - l;
+      damaged += d;
+      lost += l;
+    }
+    await writeOffParcelUnits(tx, { id: orderId, orderNumber: locked.orderNumber }, writeOffs, { adminId, note: input.damageNote?.trim() || null });
+
+    const stillOut = items.reduce((s, i) => s + i.quantity - i.restockedQuantity, 0) - result.released.reduce((s, r) => s + r.quantity, 0);
+    const parts = [`${good} good`, damaged ? `${damaged} damaged${input.damageNote?.trim() ? ` (${input.damageNote.trim()})` : ""}` : "", lost ? `${lost} lost by the courier` : "", stillOut ? `${stillOut} still out` : ""];
     const updated = await tx.order.update({
       where: { id: orderId },
-      data: { statusHistory: { create: { status: "CANCELLED", note: `Parcel received back — ${units} unit(s) restocked${input.note?.trim() ? ` (${input.note.trim()})` : ""}`, changedByAdminId: adminId } } },
+      data: { statusHistory: { create: { status: "CANCELLED", note: `Parcel received back — ${parts.filter(Boolean).join(", ")}${input.note?.trim() ? ` (${input.note.trim()})` : ""}`, changedByAdminId: adminId } } },
       include,
     });
-    return { order: updated, replenished: result.replenished, moved: result.released.map((r) => r.variantId) };
+    return { order: updated, replenished: result.replenished.filter((v) => goodVariants.has(v)), moved: result.released.map((r) => r.variantId) };
   });
   notifyReplenished(replenished);
   notifyStockMoved(moved);

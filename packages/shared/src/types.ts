@@ -370,7 +370,10 @@ export interface ReturnRequest {
   reviewedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  order?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt">;
+  /** `items`: the order's lines, so approving a return can mark units that came back damaged. */
+  order?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt"> & {
+    items?: Array<Pick<OrderItem, "id" | "productNameSnapshot" | "sizeSnapshot" | "colorSnapshot" | "quantity" | "restockedQuantity">>;
+  };
   customer?: { name: string; email: string | null };
   exchangeOrder?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt"> | null;
 }

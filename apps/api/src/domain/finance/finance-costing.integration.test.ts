@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder, markOpeningPostedInTx, purgeFinanceTables, trackOrder, checkout } from "../../test-fixtures";
-import { createOrder, deleteOrder, deriveOrderPricing, insertOrderRecord, restoreOrder, updateOrderStatus } from "../../modules/orders/order.service";
+import { createOrder, deleteOrder, deriveOrderPricing, insertOrderRecord, receiveReturnedParcel, restoreOrder, updateOrderStatus } from "../../modules/orders/order.service";
 import { ensureCommerceAccounting } from "./commerce-setup.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { applyOrderModification } from "../../modules/orders/order-modification.service";
@@ -102,7 +102,7 @@ beforeAll(async () => {
     await markOpeningPostedInTx(tx, ctx.business.id, new Date("2026-01-01T00:00:00Z"));
   });
   // The pool: variants as they exist before 4C cuts them over.
-  for (const [name, stock] of [["A", 100], ["B", 5], ["C", 2], ["D", 10], ["E", 20], ["E2", 10], ["F", 10], ["G", 10], ["H", 10], ["I", 10], ["J", 10], ["K", 3], ["M1", 50], ["M2", 50], ["R", 40], ["X1", 10], ["X2", 10]] as const) await preActivationVariant(name, stock, { catalogCost: 999 });
+  for (const [name, stock] of [["A", 100], ["B", 5], ["C", 2], ["D", 10], ["E", 20], ["E2", 10], ["F", 10], ["G", 10], ["H", 10], ["I", 10], ["J", 10], ["K", 3], ["M1", 50], ["M2", 50], ["R", 40], ["X1", 10], ["X2", 10], ["P", 10]] as const) await preActivationVariant(name, stock, { catalogCost: 999 });
   await preActivationVariant("U", 0, { catalogCost: 300, tracked: false });
   await preActivationVariant("U0", 0, { catalogCost: null, tracked: false });
   await preActivationVariant("N", 10, { catalogCost: 200 });
@@ -113,7 +113,7 @@ beforeAll(async () => {
   // The cutover 4C will perform: each variant's first valuation = its physical stock at a recorded cost (N is not cut over).
   const cost: Record<string, number> = { A: 12_000, F: 10_000, G: 20_000 };
   await financeTransaction(async (tx) => {
-    for (const name of ["A", "B", "C", "D", "E", "E2", "F", "G", "H", "I", "J", "K", "M1", "M2", "R", "X1", "X2"]) {
+    for (const name of ["A", "B", "C", "D", "E", "E2", "F", "G", "H", "I", "J", "K", "M1", "M2", "R", "X1", "X2", "P"]) {
       const v = pool[name]!.id;
       const qty = (await tx.productVariant.findUniqueOrThrow({ where: { id: v } })).stock;
       await recordValuationInTx(tx, { business: ctx.business, brandId: ctx.brand.id, variantId: v, sourceType: "Cutover", sourceId: "test", financialDate: "2026-10-15", op: { type: "CUTOVER", qty, valueMinor: qty * (cost[name] ?? 10_000) } });
@@ -342,6 +342,26 @@ describe("units coming back keep the cost they left at", () => {
     expect(cancel.unitCostMinor).toBe(15_000);
     await projectOrder(o.id);
     await postPending();
+  });
+
+  it("a parcel received back: good units return at the line's cost, damaged and lost ones are booked to shrinkage at it", async () => {
+    const P = pool.P!.id;
+    const o = await order(P, 3); // at 100.00
+    for (const s of ["CONFIRMED", "SHIPPED", "CANCELLED"] as const) await updateOrderStatus(o.id, { status: s }, admin);
+    await projectOrder(o.id);
+    await postPending();
+    const before = { inv: await balance("asset.inventory"), shrink: await balance("cogs.inventory_shrinkage") };
+    const [line] = await lineOf(o.id);
+    await receiveReturnedParcel(o.id, admin, { lines: [{ orderItemId: line!.id, quantity: 2, damaged: 1, lost: 1 }] });
+    await projectOrder(o.id);
+    await postPending();
+    expect(await stockOf(P)).toBe(8);
+    expect(await stateOf(P)).toMatchObject({ valuedQty: 8, value: 800 });
+    const out = (await entriesOf(P)).filter((e) => e.note?.startsWith("DAMAGED") || e.note?.startsWith("LOST"));
+    expect(out.map((e) => [e.qtyChange, e.unitCostMinor])).toEqual([[-1, 10_000], [-1, 10_000]]);
+    // The parcel never left the books (a cancelled COD sale is never recognised): only the two written-off units move them.
+    expect(Math.round(((await balance("cogs.inventory_shrinkage")) - before.shrink) * 100)).toBe(20_000);
+    expect(Math.round(((await balance("asset.inventory")) - before.inv) * 100)).toBe(-20_000);
   });
 
   it("trash and restore: the restore re-takes the units at the line's own cost; the line stays linked to its first exit", async () => {

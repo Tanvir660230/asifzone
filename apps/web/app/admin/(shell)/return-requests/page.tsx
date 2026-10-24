@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, RotateCcw, X } from "lucide-react";
-import type { ReturnCompensation, ReturnRequest, ReturnRequestStatus } from "@clothing-brand/shared";
+import { formatVariantLabel, type ReturnCompensation, type ReturnRequest, type ReturnRequestStatus } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
+import { UnitStepper } from "@/components/admin/orders/detail/unit-stepper";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
 import { approvalStatusBadgeVariant, formatPrice, formatStoreDate, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
@@ -41,10 +42,12 @@ interface Review {
 /** What approving does — performed by the server in one transaction (return-request.service reviewReturnRequest): a
  * return moves the order to RETURNED through the order state machine (restock, refund-due alert when paid); an exchange
  * restocks the original item, takes the requested variant and creates a replacement order priced by the D6 rule. */
-function approvalEffects(r: ReturnRequest): string[] {
+function approvalEffects(r: ReturnRequest, damagedUnits = 0): string[] {
   if (r.type === "EXCHANGE") return [];
   return [
-    "The order moves to Returned — its units go back into stock as a customer return.",
+    damagedUnits > 0
+      ? `The order moves to Returned — good units go back into stock; ${damagedUnits} damaged unit(s) are written off.`
+      : "The order moves to Returned — its units go back into stock as a customer return.",
     "Loyalty points earned on the order are reversed.",
     "If the customer paid, a refund becomes due (record it on the order once sent).",
   ];
@@ -60,6 +63,8 @@ export default function AdminReturnRequestsPage() {
   /** Exchange downgrade / approved return: where the money owed back goes (server default when not chosen). */
   const [compensation, setCompensation] = useState<ReturnCompensation | undefined>(undefined);
   const [exchangeReady, setExchangeReady] = useState(false);
+  /** Approving a return: units per order line that came back damaged (written off instead of restocked). */
+  const [damaged, setDamaged] = useState<Record<string, number>>({});
 
   // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link).
   useEffect(() => {
@@ -75,7 +80,14 @@ export default function AdminReturnRequestsPage() {
 
   const reviewMutation = useMutation({
     mutationFn: ({ id, decision, adminNote }: { id: string; decision: "APPROVED" | "REJECTED"; adminNote: string | null }) =>
-      returnRequestsApi.reviewReturnRequest(id, { status: decision, adminNote, ...(decision === "APPROVED" && compensation ? { compensation } : {}) }),
+      returnRequestsApi.reviewReturnRequest(id, {
+        status: decision,
+        adminNote,
+        ...(decision === "APPROVED" && compensation ? { compensation } : {}),
+        ...(decision === "APPROVED" && review?.request.type === "RETURN"
+          ? { damaged: Object.entries(damaged).filter(([, n]) => n > 0).map(([orderItemId, quantity]) => ({ orderItemId, quantity })) }
+          : {}),
+      }),
     onSuccess: (_, { decision }) => {
       queryClient.invalidateQueries({ queryKey: ["admin-return-requests"] });
       invalidateOrderQueries(queryClient, review?.request.orderId);
@@ -89,6 +101,7 @@ export default function AdminReturnRequestsPage() {
     setNote("");
     setCompensation(undefined);
     setExchangeReady(false);
+    setDamaged({});
     setReview({ request, decision });
   }
 
@@ -276,11 +289,38 @@ export default function AdminReturnRequestsPage() {
               <div className="rounded-xl border border-line-subtle bg-surface-muted p-3.5">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">What happens</p>
                 <ul className="list-disc space-y-1 pl-4 text-sm text-ink-700">
-                  {approvalEffects(review.request).map((t) => (
+                  {approvalEffects(review.request, Object.values(damaged).reduce((n, v) => n + v, 0)).map((t) => (
                     <li key={t}>{t}</li>
                   ))}
                 </ul>
               </div>
+              {(review.request.order?.items ?? []).some((i) => i.quantity - i.restockedQuantity > 0) && (
+                <div className="space-y-2 rounded-xl border border-line-subtle p-3" data-testid="return-damaged">
+                  <p className="text-sm text-ink-700">
+                    Any items damaged?
+                    <span className="block text-xs text-ink-500">Damaged units are written off instead of going back into stock.</span>
+                  </p>
+                  <ul className="space-y-2">
+                    {review.request.order!.items!.filter((i) => i.quantity - i.restockedQuantity > 0).map((i) => {
+                      const variant = formatVariantLabel(i.sizeSnapshot, i.colorSnapshot, "/");
+                      return (
+                        <li key={i.id} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0">
+                            <span className="block truncate text-ink-900">{i.productNameSnapshot}</span>
+                            {variant && <span className="block text-xs text-ink-500">{variant}</span>}
+                          </span>
+                          <UnitStepper
+                            label={`Damaged units of ${i.productNameSnapshot}`}
+                            value={damaged[i.id] ?? 0}
+                            max={i.quantity - i.restockedQuantity}
+                            onChange={(v) => setDamaged({ ...damaged, [i.id]: v })}
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               <label className="flex min-h-11 items-start gap-2.5 rounded-xl border border-line-subtle p-3 text-sm text-ink-700">
                 <input type="checkbox" className="mt-1" checked={compensation === "STORE_CREDIT"} onChange={(e) => setCompensation(e.target.checked ? "STORE_CREDIT" : undefined)} />
                 <span>

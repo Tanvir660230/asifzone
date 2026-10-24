@@ -67,8 +67,13 @@ function movement(variantId: string, change: number, reason: MovementReason, act
 type MovementRow = { id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date };
 
 /** Hands movements just written to the costing service (same transaction — the stock change and its value are atomic). */
-async function value(tx: Tx, items: Array<{ movement: MovementRow; basis: MovementToValue["basis"]; ledger: MovementToValue["ledger"] }>, scope?: CostingScope | null, known?: Map<string, VariantCosting>) {
-  return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger })), scope, known);
+async function value(
+  tx: Tx,
+  items: Array<{ movement: MovementRow; basis: MovementToValue["basis"]; ledger: MovementToValue["ledger"]; knownCause?: boolean }>,
+  scope?: CostingScope | null,
+  known?: Map<string, VariantCosting>,
+) {
+  return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger, knownCause: i.knownCause })), scope, known);
 }
 
 /** Fire-and-forget back-in-stock emails for variants whose stock just went from 0 to positive. Call after commit.
@@ -333,6 +338,28 @@ export async function writeOffReturnedUnits(
     if (after === null) continue;
     const mv = await tx.stockMovement.create({ data: movement(u.variantId, -u.quantity, "DAMAGED", { ...actor, note: `Returned damaged — order ${orderNumber}${actor.note ? `: ${actor.note}` : ""}` }) });
     await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: u.unitCostMinor }, ledger: "ORDER" }]);
+  }
+}
+
+/** Units back at the shop that can't be sold again — a cancelled parcel's damaged units, units the courier lost, or the
+ * damaged part of an approved customer return: after `releaseOrderLines` closed them on the order, they leave again as
+ * DAMAGED / LOST at the line's own cost. No return record books them, so the movement itself does (shrinkage,
+ * `ledger: "MOVEMENT"`). Outside the order (INV-3), linked to it by sourceType "OrderParcelReceipt" / sourceId the order.
+ * docs/ORDER_ADJUSTMENTS.md §8a. */
+export async function writeOffParcelUnits(
+  tx: Tx,
+  order: { id: string; orderNumber: string },
+  units: Array<{ variantId: string; quantity: number; unitCostMinor: number | null; reason: "DAMAGED" | "LOST" }>,
+  actor: Actor = {},
+) {
+  for (const u of units) {
+    if (u.quantity <= 0) continue;
+    const after = await applyDelta(tx, u.variantId, -u.quantity, false);
+    if (after === null) continue;
+    const label = u.reason === "DAMAGED" ? "Came back damaged" : "Lost by the courier";
+    const note = `${label} — order ${order.orderNumber}${actor.note ? `: ${actor.note}` : ""}`;
+    const mv = await tx.stockMovement.create({ data: { ...movement(u.variantId, -u.quantity, u.reason, { ...actor, note }), sourceType: "OrderParcelReceipt", sourceId: order.id } });
+    await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: u.unitCostMinor }, ledger: "MOVEMENT", knownCause: true }]);
   }
 }
 

@@ -2,12 +2,10 @@
 
 import { useDeferredValue, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus } from "lucide-react";
 import type { ItemReturnPreviewInput, Order, ReturnCompensation } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,22 +17,7 @@ import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { adjustmentErrorOf } from "@/lib/order-adjustment-errors";
 import { cn } from "@/lib/utils";
 import { invalidateOrderQueries, orderKeys } from "../order-domain";
-
-function Stepper({ label, value, max, onChange, min = 0 }: { label: string; value: number; max: number; min?: number; onChange: (v: number) => void }) {
-  return (
-    <div className="inline-flex items-center rounded-full border border-line-strong" role="group" aria-label={label}>
-      <IconButton aria-label={`${label}: one less`} size="lg" disabled={value <= min} onClick={() => onChange(value - 1)}>
-        <Minus size={14} />
-      </IconButton>
-      <span className="min-w-8 text-center text-sm tabular-nums" aria-live="polite">
-        {value}
-      </span>
-      <IconButton aria-label={`${label}: one more`} size="lg" disabled={value >= max} onClick={() => onChange(value + 1)}>
-        <Plus size={14} />
-      </IconButton>
-    </div>
-  );
-}
+import { UnitStepper } from "./unit-stepper";
 
 /**
  * Item-level return on a delivered order (docs/ORDER_ADJUSTMENTS.md §8, §11 — "kept 1 of 3"). Staff pick exact units per
@@ -168,10 +151,10 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
                 </div>
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
                   <span className="flex items-center gap-2">
-                    Returning <Stepper label={`Units of ${item.productNameSnapshot} ${label} returning`} value={q.returning} max={returnable} onChange={(v) => set(item.id, { returning: v })} />
+                    Returning <UnitStepper label={`Units of ${item.productNameSnapshot} ${label} returning`} value={q.returning} max={returnable} onChange={(v) => set(item.id, { returning: v })} />
                   </span>
                   <span className={cn("flex items-center gap-2", q.returning === 0 && "opacity-50")}>
-                    of which damaged <Stepper label={`Damaged units of ${item.productNameSnapshot} ${label}`} value={q.damaged} max={q.returning} onChange={(v) => set(item.id, { damaged: v })} />
+                    of which damaged <UnitStepper label={`Damaged units of ${item.productNameSnapshot} ${label}`} value={q.damaged} max={q.returning} onChange={(v) => set(item.id, { damaged: v })} />
                   </span>
                 </div>
                 {q.returning > 0 && (

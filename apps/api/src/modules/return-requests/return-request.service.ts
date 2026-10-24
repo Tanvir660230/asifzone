@@ -18,7 +18,7 @@ import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { generateOrderNumber } from "../../lib/order-number";
 import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.service";
-import { notifyStockMoved, recordSale, releaseOrderLines } from "../inventory/inventory.service";
+import { notifyStockMoved, recordSale, releaseOrderLines, writeOffParcelUnits } from "../inventory/inventory.service";
 import { fillMoved, fillToOrderFloors, withFillToOrder } from "../../domain/stock/fill-capacity.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
@@ -29,6 +29,17 @@ import { openReturnLeg } from "../../domain/shipments/shipment-sync";
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
   exchangeOrder: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
+};
+
+/** Staff also see the order's lines — approving a return can mark units that came back damaged. */
+const adminInclude = {
+  ...include,
+  order: {
+    select: {
+      ...include.order.select,
+      items: { select: { id: true, productNameSnapshot: true, sizeSnapshot: true, colorSnapshot: true, quantity: true, restockedQuantity: true } },
+    },
+  },
 };
 
 export async function createReturnRequest(customerId: string, input: CreateReturnRequestInput) {
@@ -124,7 +135,7 @@ export async function listReturnRequestsAdmin(query: ReturnRequestListQuery) {
     (p) =>
       prisma.returnRequest.findMany({
         where,
-        include: { ...include, customer: { select: { name: true, email: true } } },
+        include: { ...adminInclude, customer: { select: { name: true, email: true } } },
         orderBy: { createdAt: "desc" },
         ...p,
       }),
@@ -164,7 +175,14 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
       moved = (await createExchangeOrder(tx, request, adminId, input.compensation)).moved;
       return null;
     }
+    const before = input.damaged?.length ? await restockedByLine(tx, request.orderId) : null;
     const outcome = await applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
+    if (before && input.damaged) {
+      const damage = await writeOffDamagedReturn(tx, request.orderId, before, input.damaged, adminId);
+      moved = damage.moved;
+      // A variant all of whose returned units were written off is not back in stock: no "back in stock" message for it.
+      outcome.replenished = outcome.replenished.filter((v) => !damage.allDamaged.has(v));
+    }
     // Staff may settle the return as store credit right away (everything still owed back on the order); otherwise it
     // stays in the refund-due queue for a refund, as before.
     if (input.compensation === "STORE_CREDIT") {
@@ -188,7 +206,42 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
   if (outcome) await runTransitionSideEffects(outcome);
   notifyStockMoved(moved);
 
-  return prisma.returnRequest.findUnique({ where: { id }, include });
+  return prisma.returnRequest.findUnique({ where: { id }, include: adminInclude });
+}
+
+async function restockedByLine(tx: Prisma.TransactionClient, orderId: string) {
+  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, restockedQuantity: true } });
+  return new Map(items.map((i) => [i.id, i.restockedQuantity]));
+}
+
+/** An approved return's unsellable units: the RETURNED transition just put them back, so they leave again at the line's own
+ * cost (writeOffParcelUnits — shrinkage, outside the order). Never more than THIS approval brought back per line (`before`:
+ * each line's restocked count before the transition); repeated lines are added up first. */
+async function writeOffDamagedReturn(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  before: Map<string, number>,
+  damaged: Array<{ orderItemId: string; quantity: number }>,
+  adminId: string,
+) {
+  const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { orderNumber: true, items: { select: { id: true, variantId: true, restockedQuantity: true, unitCostSnapshot: true } } } });
+  const byId = new Map(order.items.map((i) => [i.id, i]));
+  const wanted = new Map<string, number>();
+  for (const d of damaged) wanted.set(d.orderItemId, (wanted.get(d.orderItemId) ?? 0) + d.quantity);
+  const units: Array<{ variantId: string; quantity: number; unitCostMinor: number | null; reason: "DAMAGED" }> = [];
+  const good = new Set<string>();
+  const touched = new Set<string>();
+  for (const item of order.items) {
+    const back = item.restockedQuantity - (before.get(item.id) ?? item.restockedQuantity);
+    const d = wanted.get(item.id) ?? 0;
+    if (d > back) throw AppError.badRequest(`Only ${back} unit(s) of this item came back with this return`);
+    if (back > d) good.add(item.variantId);
+    if (back > 0) touched.add(item.variantId);
+    if (d) units.push({ variantId: item.variantId, quantity: d, unitCostMinor: item.unitCostSnapshot, reason: "DAMAGED" });
+  }
+  for (const id of wanted.keys()) if (!byId.has(id)) throw AppError.badRequest("That item isn't on this order");
+  await writeOffParcelUnits(tx, { id: orderId, orderNumber: order.orderNumber }, units, { adminId, note: "customer return" });
+  return { moved: units.map((u) => u.variantId), allDamaged: new Set([...touched].filter((v) => !good.has(v))) };
 }
 
 /** Creates the replacement shipment for an approved EXCHANGE request, inside the approval's transaction.

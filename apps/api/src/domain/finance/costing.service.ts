@@ -614,6 +614,8 @@ export interface MovementToValue {
     | { kind: "DOCUMENT"; valueMinor: number; status?: "KNOWN" | "ESTIMATED" }
     | { kind: "AVERAGE" };
   ledger: LedgerOwner;
+  /** The decrease has a known cause (a parcel the courier lost): never goods already sent outside (outside-stock.ts). */
+  knownCause?: boolean;
 }
 
 const COUNTER_FOR_REASON: Record<string, AccountMappingKey> = { DAMAGED: "cogs.inventory_shrinkage", LOST: "cogs.inventory_shrinkage", PACKAGING_USE: "cogs.packaging" };
@@ -731,7 +733,7 @@ async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: M
   const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
   const counterKey = m.ledger === "MOVEMENT" ? (COUNTER_FOR_REASON[m.movement.reason] ?? "cogs.count_adjustments") : null;
   // A count correction or loss is first the goods already costed as sold outside the website (outside-stock.ts).
-  const outsideReleaseMinor = counterKey && bookMinor < 0 && OUTSIDE_RELEASE_REASONS.has(m.movement.reason) ? await outsideReleaseInTx(tx, scope.business.id, scope.business.baseCurrency, -bookMinor) : 0;
+  const outsideReleaseMinor = counterKey && bookMinor < 0 && !m.knownCause && OUTSIDE_RELEASE_REASONS.has(m.movement.reason) ? await outsideReleaseInTx(tx, scope.business.id, scope.business.baseCurrency, -bookMinor) : 0;
   await recordFinancialEvent(tx, {
     contract: "finance.event",
     contractVersion: 1,
