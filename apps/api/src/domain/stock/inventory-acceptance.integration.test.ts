@@ -206,7 +206,7 @@ describe("inventory acceptance", () => {
     const r = await as(request(app).post(`/api/inventory/variants/${t1}/adjust`)).send({ delta: 50, reason: "RESTOCK", note: "new stock" });
     expect(r.status).toBe(409);
     expect(r.body.details?.code).toBe("STOCK_VIA_HUB");
-    expect(String(r.body.error ?? r.body.message)).toMatch(/Stock › Bought/);
+    expect(String(r.body.error ?? r.body.message)).toMatch(/Stock › Received goods/);
     await postPending();
     expect(await stockOf(t1)).toBe(stock);
     expect(await sum5210()).toBe(before5210);

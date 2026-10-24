@@ -66,18 +66,46 @@ function spread(totalMinor: number, qty: number[]): number[] {
   return out;
 }
 
-export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; onClose: () => void }) {
+/** Lines to start with (the reorder list): each item at its suggested quantity, and the unit price paid last time. */
+export interface BoughtStart {
+  supplierName: string | null;
+  lines: Array<{ variantId: string; qty: number; lastUnitCost: number | null }>;
+}
+
+/** The start lines as form lines: an item's own choice, the sizes of one product together on its grid. */
+function startLines(choices: Choice[], start: BoughtStart | undefined): Line[] {
+  if (!start) return [];
+  const out: Line[] = [];
+  for (const s of start.lines) {
+    const choice = choices.find((c) => c.variants.some((v) => v.variantId === s.variantId));
+    if (!choice) continue;
+    const line = out.find((l) => l.choice.id === choice.id);
+    if (line) line.qty[s.variantId] = String(s.qty);
+    else out.push({ key: nextKey(), choice, qty: { [s.variantId]: String(s.qty) }, amount: "" });
+  }
+  return out;
+}
+
+export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; start?: BoughtStart; onClose: () => void }) {
   const qc = useQueryClient();
   const formId = useRef(`stock-bought:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).current;
   const choices = useMemo(() => byUse(choicesOf(overview), purchases), [overview, purchases]);
+  const lastCost = useMemo(() => new Map((start?.lines ?? []).filter((l) => l.lastUnitCost !== null).map((l) => [l.variantId, l.lastUnitCost!])), [start]);
+  /** The line's last price per unit, weighted by what is entered now; null unless every entered size has one. */
+  const lastEachOf = (l: Line): number | null => {
+    const vs = l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0);
+    if (!vs.length || vs.some((v) => !lastCost.has(v.variantId))) return null;
+    const qty = vs.reduce((s, v) => s + qtyOf(l.qty[v.variantId]), 0);
+    return vs.reduce((s, v) => s + qtyOf(l.qty[v.variantId]) * lastCost.get(v.variantId)!, 0) / qty;
+  };
   const accountsQ = useQuery({ queryKey: financeApi.financeKeys.accounts(), queryFn: financeApi.listFinancialAccounts, retry: (n, e) => !(e instanceof ApiError && e.status === 403) && n < 2 });
   const accounts = (accountsQ.data?.financialAccounts ?? []).filter((a) => a.isActive && PAYING.has(a.kind) && !a.name.endsWith("— own money"));
   const accountsForbidden = accountsQ.error instanceof ApiError && accountsQ.error.status === 403;
 
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<Line[]>(() => startLines(choices, start));
   const [extras, setExtras] = useState<Extra[]>([]);
   const [query, setQuery] = useState("");
-  const [supplier, setSupplier] = useState("");
+  const [supplier, setSupplier] = useState(start?.supplierName ?? "");
   const [date, setDate] = useState(todayLocal());
   const [paidFrom, setPaidFrom] = useState("");
   const [documentTotal, setDocumentTotal] = useState("");
@@ -187,7 +215,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
     <Modal
       open
       onClose={guard.requestClose}
-      title="Bought"
+      title="Received goods"
       description="What arrived, what you paid and who paid it."
       widthClassName="max-w-3xl"
       footer={guard.prompt ?? (
@@ -242,6 +270,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
               qty={totals[i]!.qty}
               minor={totals[i]!.minor}
               extrasShare={goodsMinor ? (extrasMinor * totals[i]!.minor) / goodsMinor : 0}
+              lastEach={lastEachOf(l)}
               error={tried ? lineErrors[i] : null}
               onChange={(patch) => update(l.key, patch)}
               onRemove={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
@@ -338,11 +367,15 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
   );
 }
 
-function BoughtLine({ line, qty, minor, extrasShare, error, onChange, onRemove }: { line: Line; qty: number; minor: number; extrasShare: number; error: string | null | undefined; onChange: (p: Partial<Line>) => void; onRemove: () => void }) {
+/** A unit price this much above the last one is worth a second look (a typo, or a real rise) — never a block. */
+const PRICE_JUMP = 0.2;
+
+function BoughtLine({ line, qty, minor, extrasShare, lastEach, error, onChange, onRemove }: { line: Line; qty: number; minor: number; extrasShare: number; lastEach: number | null; error: string | null | undefined; onChange: (p: Partial<Line>) => void; onRemove: () => void }) {
   const { choice } = line;
   const v0 = choice.variants[0]!;
   const unit = choice.grid ? "pcs" : v0.unit;
   const each = qty && minor ? minor / 100 / qty : null;
+  const jump = each !== null && lastEach ? each / lastEach - 1 : null;
   const withExtras = qty && minor && extrasShare ? (minor + extrasShare) / 100 / qty : null;
   const per = unit === "pcs" ? "each" : `per ${unit}`;
   const id = `bl-${line.key}`;
@@ -374,8 +407,14 @@ function BoughtLine({ line, qty, minor, extrasShare, error, onChange, onRemove }
               {withExtras !== null && <> · <span className="tabular-nums text-fg">{formatPrice(withExtras)}</span> with extras</>}
             </>
           )}
+          {lastEach !== null && <span className="block text-xs text-fg-muted" data-testid="bought-last-price">Last time {formatPrice(lastEach)} {per}</span>}
         </p>
       </div>
+      {jump !== null && jump > PRICE_JUMP && (
+        <p className="mt-2 text-sm text-warning-700" role="status" data-testid="bought-price-check">
+          {Math.round(jump * 100)}% more than last time. Check the amount is the total paid for all of them.
+        </p>
+      )}
       {error && <p className="ui-field-error mt-2" role="alert">{error}</p>}
     </div>
   );

@@ -100,7 +100,7 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
 
   if (result) {
     return (
-      <Modal open onClose={onClose} title="Counted" description={`Recorded for ${formatBookDate(result.date)}.`} widthClassName="max-w-2xl" footer={<Button onClick={onClose} data-testid="counted-close">Done</Button>}>
+      <Modal open onClose={onClose} title="Count" description={`Recorded for ${formatBookDate(result.date)}.`} widthClassName="max-w-2xl" footer={<Button onClick={onClose} data-testid="counted-close">Done</Button>}>
         <div className="space-y-3" data-testid="counted-result">
           <p className="flex items-center gap-2 text-[15px] text-fg"><CheckCircle2 className="h-5 w-5 text-success-600" aria-hidden="true" /> {num(result.lines.length)} counted, {num(result.lines.filter((l) => l.difference).length)} booked as a difference</p>
           <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm">
@@ -125,7 +125,7 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
     <Modal
       open
       onClose={guard.requestClose}
-      title="Counted"
+      title="Count"
       description="Enter what is on the shelf. Leave a line empty if you didn't count it."
       widthClassName="max-w-2xl"
       footer={guard.prompt ?? (

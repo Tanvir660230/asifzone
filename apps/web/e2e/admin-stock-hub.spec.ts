@@ -46,7 +46,7 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
 
   // ── Bought: 10 ml of oil for ৳300, paid from the owner's own money ──────────────────────────────────────────────────
   await page.getByTestId("stock-action-bought").click();
-  const bought = page.getByRole("dialog", { name: "Bought" });
+  const bought = page.getByRole("dialog", { name: "Received goods" });
   await bought.getByTestId("bought-search").fill(oil!.productName);
   await bought.getByTestId("bought-choices").getByRole("button", { name: new RegExp(oil!.productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click();
   await bought.getByTestId("bought-qty").fill("10");
@@ -72,7 +72,7 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   await page.getByTestId("stock-action-filled").click();
   // with bottles waiting the button opens Mark bottles filled; one bottle for later goes through its single-fill link
   const batch = page.getByRole("dialog", { name: "Mark bottles filled" });
-  const filled = page.getByRole("dialog", { name: "Filled" });
+  const filled = page.getByRole("dialog", { name: "Filled bottles" });
   await expect(batch.or(filled)).toBeVisible(NAV);
   if (await batch.isVisible()) await batch.getByTestId("batch-fill-single").click();
   await filled.getByTestId("filled-attar").getByRole("button", { name: attar!.productName, exact: true }).click();
@@ -101,7 +101,7 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   // ── Counted: the oil is 1 ml short — a reason is required, then the difference is booked ───────────────────────────
   const oilNow = itemOf(afterFill, oil!.variantId);
   await page.getByTestId("stock-action-counted").click();
-  const counted = page.getByRole("dialog", { name: "Counted" });
+  const counted = page.getByRole("dialog", { name: "Count", exact: true });
   await counted.getByRole("searchbox", { name: "Find an item to count" }).fill(oil!.productName);
   const line = counted.getByTestId("count-line").filter({ hasText: oil!.productName }).first();
   await line.getByRole("textbox").fill(String(oilNow.expectedOnShelf - 1));
@@ -122,7 +122,7 @@ test("a sheet with typed counts asks before it closes; an empty one closes at on
   await expect(page.getByTestId("stock-action-counted")).toBeVisible(NAV);
   test.skip(!(await overview(page)).costingActive, "stock costing isn't live on this database (run it on a go-live rehearsal copy)");
   await page.getByTestId("stock-action-counted").click();
-  const counted = page.getByRole("dialog", { name: "Counted" });
+  const counted = page.getByRole("dialog", { name: "Count", exact: true });
   await counted.getByRole("button", { name: "Cancel" }).click();
   await expect(counted).toBeHidden();
 
@@ -219,4 +219,32 @@ test("a row opens the item; the page never scrolls sideways", async ({ page }) =
   await expect(page.getByTestId("stock-item-movements")).toHaveAttribute("href", /\/admin\/inventory\?variantId=/);
   await page.keyboard.press("Escape");
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("Reorder opens Received goods with the suggested amounts; a price far above last time asks for a check", async ({ page }) => {
+  await login(page);
+  type Reorder = { items: Array<{ variantId: string; suggested: number; supplier: { id: string } | null; lastUnitCost: number | null }> } | null;
+  const reorder = ((await (await page.request.get(`${API}/api/v1/finance/stock/today`)).json()) as { reorder: Reorder }).reorder;
+  test.skip(!reorder || !(await overview(page)).costingActive, "nothing to reorder on this database");
+  await page.getByTestId("today-reorder-open").click();
+  const sheet = page.getByTestId("reorder-sheet");
+  await expect(sheet).toBeVisible(NAV);
+  await expect(sheet.getByTestId("reorder-row")).toHaveCount(reorder!.items.length);
+  const group = sheet.getByTestId("reorder-group").first();
+  const firstQty = await group.getByTestId("reorder-qty").first().inputValue();
+  await group.getByTestId("reorder-record").click();
+  const bought = page.getByRole("dialog", { name: "Received goods" });
+  await expect(bought).toBeVisible(NAV);
+  await expect(bought.getByTestId("bought-line").first()).toBeVisible();
+  const qty = bought.getByTestId("bought-qty").first();
+  if (await qty.isVisible()) await expect(qty).toHaveValue(firstQty);
+
+  const last = bought.getByTestId("bought-last-price").first();
+  if (await last.isVisible()) {
+    const line = bought.getByTestId("bought-line").filter({ has: page.getByTestId("bought-last-price") }).first();
+    const lastEach = Number((await last.innerText()).replace(/[^\d.]/g, ""));
+    const n = Number(await line.getByTestId("bought-qty").inputValue());
+    await line.getByTestId("bought-amount").fill(String(Math.ceil(n * lastEach * 1.3)));
+    await expect(line.getByTestId("bought-price-check")).toContainText("more than last time");
+  }
 });

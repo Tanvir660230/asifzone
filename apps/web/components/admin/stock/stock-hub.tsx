@@ -25,7 +25,8 @@ import { getStockToday, smartKeys, type StockListItem } from "@/lib/api/stock-sm
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
 import { BatchFillSheet } from "./batch-fill-sheet";
-import { BoughtSheet } from "./bought-sheet";
+import { BoughtSheet, type BoughtStart } from "./bought-sheet";
+import { ReorderSheet } from "./reorder-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
 import { ItemPanel } from "./item-panel";
@@ -37,7 +38,7 @@ import type { ProductGroup } from "./stock-shared";
 import { byProduct, num } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
-type Sheet = "bought" | "filled" | "batch-fill" | "counted" | null;
+type Sheet = "bought" | "reorder" | "filled" | "batch-fill" | "counted" | null;
 const GO_LIVE = "Stock costing starts at go-live";
 
 /** /admin/stock (docs/STOCK_HUB.md §7): Today — what to fill, reorder, count and approve — then every item in one
@@ -55,6 +56,7 @@ export function StockHub() {
   const [traceOf, setTraceOf] = useState<stockApi.StockItem | null>(null);
   const [itemOf, setItemOf] = useState<StockListItem | null>(null);
   const [approvalOf, setApprovalOf] = useState<string | null>(null);
+  const [boughtStart, setBoughtStart] = useState<BoughtStart | null>(null);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -144,7 +146,7 @@ export function StockHub() {
             onRetry={() => today.refetch()}
             actions={live ? {
               onFill: can("manufacturing.view") ? () => setSheet("batch-fill") : undefined,
-              onReorder: can("purchasing.receive") ? () => setSheet("bought") : undefined,
+              onReorder: can("purchasing.receive") ? () => setSheet("reorder") : undefined,
               onCount: can("inventory.adjust") ? () => setSheet("counted") : undefined,
               onApproval: setApprovalOf,
             } : {}}
@@ -154,7 +156,10 @@ export function StockHub() {
         </>
       ) : null}
 
-      {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} onClose={() => setSheet(null)} />}
+      {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} start={boughtStart ?? undefined} onClose={() => { setSheet(null); setBoughtStart(null); }} />}
+      {sheet === "reorder" && today.data?.reorder && (
+        <ReorderSheet reorder={today.data.reorder} today={today.data.today} onRecord={(s) => { setBoughtStart(s); setSheet("bought"); }} onClose={() => setSheet(null)} />
+      )}
       {data && sheet === "filled" && <FilledSheet overview={data} canFill={can("manufacturing.approve")} onClose={() => setSheet(null)} />}
       {data && sheet === "batch-fill" && today.data?.fill && <BatchFillSheet overview={data} fill={today.data.fill} canFill={can("manufacturing.approve")} onSingle={() => setSheet("filled")} onClose={() => setSheet(null)} />}
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
@@ -187,7 +192,7 @@ function RecentPurchases({ query }: { query: { data?: { purchases: StockPurchase
       {query.isLoading ? <Skeleton className="h-24 w-full rounded-xl" /> : query.isError ? (
         <p className="text-sm text-fg-muted">Recent purchases couldn&apos;t be loaded. <button type="button" className="font-medium text-fg underline underline-offset-4" onClick={() => query.refetch()}>Try again</button></p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-fg-muted">None yet. Everything you record with Bought shows here.</p>
+        <p className="text-sm text-fg-muted">None yet. Everything you record with Received goods shows here.</p>
       ) : (
         <Card className="p-0">
           <ul className="divide-y divide-line-subtle">
