@@ -28,7 +28,8 @@ SHA="${DEPLOY_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 BACKUP_FILE="${BACKUP_FILE:-$BACKUP_DIR/predeploy-$SHA-$(date +%Y%m%d-%H%M%S).sql.gz}"
 
 do_backup()        { $COMPOSE exec -T postgres pg_dump -U postgres "$POSTGRES_DB" | gzip > "$BACKUP_FILE"; }
-do_build()         { $COMPOSE build api web; }
+# one image at a time: building api and web together ran the VPS out of memory (2026-10-24, the build was killed)
+do_build()         { $COMPOSE build api && $COMPOSE build web; }
 do_migrate()       { $COMPOSE run --rm api npx prisma migrate deploy; }
 do_switch()        { $COMPOSE up -d api web; }
 do_ready_probe()   { $COMPOSE exec -T api node -e "fetch('http://localhost:4000/health/ready').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"; }
