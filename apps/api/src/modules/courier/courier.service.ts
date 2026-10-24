@@ -233,7 +233,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
     await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
   }
   await syncOrderShipmentsSafely(orderId);
-  await fillForBookedOrder(orderId, fillPlan);
+  await fillForBookedOrder(orderId, String(consignment.consignment_id), fillPlan);
 
   notify({
     type: "order.courier_booked",
@@ -347,7 +347,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
       await updateOrderStatus(order.id, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
     }
     await syncOrderShipmentsSafely(order.id);
-    await fillForBookedOrder(order.id, fillPlan);
+    await fillForBookedOrder(order.id, String(result.consignment_id), fillPlan);
     booked.push({ orderId: order.id, orderNumber: order.orderNumber, trackingNumber: result.tracking_code });
   }
 

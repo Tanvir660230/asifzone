@@ -40,10 +40,10 @@ beforeAll(async () => {
   await updateBusinessSettings({ openingDate: "2026-09-01", reason: "books start" }, OWNER);
   const brandId = (await getFinanceContext()).brand.id;
   const opening = [];
-  for (const name of ["pending", "owner", "small", "gain", "moved", "twice", "reject", "http"]) {
+  for (const name of ["pending", "owner", "small", "gain", "moved", "twice", "reject", "http", "again", "zero"]) {
     const p = await createStockedProduct({ stocks: [10], basePrice: 900 });
     v[name] = p.variants[0]!.id;
-    opening.push({ variantId: v[name]!, sku: p.variants[0]!.sku, name, quantity: 10, unitCost: 460, valuationStatus: "KNOWN", valuationMethod: "SUPPLIER_INVOICE", valuationSource: "INV", valuationDate: "2026-09-01", brandId });
+    if (name !== "zero") opening.push({ variantId: v[name]!, sku: p.variants[0]!.sku, name, quantity: 10, unitCost: 460, valuationStatus: "KNOWN", valuationMethod: "SUPPLIER_INVOICE", valuationSource: "INV", valuationDate: "2026-09-01", brandId });
   }
   await saveOpeningInventory(opening as never, OWNER);
   await postOpeningBalances(OWNER);
@@ -126,5 +126,26 @@ describe("deciding", () => {
     expect(await stockOf(v.http!)).toBe(6);
     const list = await as("STAFF")(request(app).get("/api/v1/finance/stock/approvals?status=PENDING"));
     expect(list.status).toBe(200);
+  });
+});
+
+describe("review fixes", () => {
+  it("A-9: an item whose count waits can't be counted again until it is decided (its loss would be booked twice)", async () => {
+    const first = await count(v.again!, 6, "DAMAGED", STAFF);
+    expect(first.lines[0]!.pendingApprovalId).toEqual(expect.any(String));
+    await expect(count(v.again!, 6, "DAMAGED", STAFF)).rejects.toMatchObject({ statusCode: 409, details: { code: "COUNT_PENDING_APPROVAL" } });
+    await expect(count(v.again!, 6, "DAMAGED", OWNER)).rejects.toMatchObject({ statusCode: 409, details: { code: "COUNT_PENDING_APPROVAL" } });
+    await decideApproval(first.lines[0]!.pendingApprovalId!, { decision: "APPROVE", note: null }, OWNER);
+    expect(await stockOf(v.again!)).toBe(6);
+    const after = await count(v.again!, 6, null, STAFF);
+    expect(after.lines[0]).toMatchObject({ difference: 0, pendingApprovalId: null });
+  });
+
+  it("A-10: an item with no cost (unvalued stock, no cost price) is unknown, so even a small loss waits", async () => {
+    await prisma.productVariant.update({ where: { id: v.zero! }, data: { costPrice: null } });
+    await prisma.product.update({ where: { id: (await prisma.productVariant.findUniqueOrThrow({ where: { id: v.zero! } })).productId }, data: { costPrice: null } });
+    const r = await count(v.zero!, 9, "LOST", STAFF);
+    expect(r.lines[0]!.pendingApprovalId).toEqual(expect.any(String));
+    expect(await stockOf(v.zero!)).toBe(10);
   });
 });

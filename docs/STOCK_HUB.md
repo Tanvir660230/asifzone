@@ -280,8 +280,8 @@ reorder list shows the unit price paid last time per line and asks for a check (
 An attar parcel is only booked once its bottles are filled, so booking with Steadfast — one order or bulk — records the
 fill of the bottles still owed for it, worked out before it leaves the shelf (filled bottles go to waiting orders oldest
 first, so filled bottles on the shelf are used first). It runs through `recordFill` (§3, phase 3) with the key
-`auto-fill:<order>:<variant>:<units>`. It never fails a booking: a refused fill (no recipe, a material short) is kept as a
-`StockAutoFillFailure`, shown on Today, and marked resolved once the size no longer owes bottles. Nothing happens before
+`auto-fill:<order>:<consignment>:<variant>:<units>` (one per booking, so a re-booked order fills again). It never fails a booking: a refused fill is kept as a
+`StockAutoFillFailure` with its key and shown on Today with **Try again** (`POST /stock/auto-fill-failures/:id/retry`, `manufacturing.approve`), which sends the same fill. One refused before writing (no recipe, a material short) drops off once the size owes no bottles; one that stopped after writing (materials may be issued) stays until Try again finishes it. Mark filled re-reads what each size owes when it saves, so bottles a booking already recorded are not filled twice. Nothing happens before
 stock costing is live. A parcel marked shipped without a Steadfast booking is not filled automatically.
 
 ### Count losses wait for the owner (owner decision 2026-10-24)
@@ -290,7 +290,7 @@ A loss counted by someone without `inventory.approve` (owner only) worth at leas
 (default ৳1,000; at the average cost, else the cost price; an item with neither counts as over) is not booked: the count
 is kept and a `StockCountApproval` waits (`GET /stock/approvals`, `POST /stock/approvals/:id/decision`). Approving applies
 the difference recorded at the count — once — through the ordinary adjustment; rejecting moves nothing. The owner's own
-counts and every gain are booked at once, as before.
+counts and every gain are booked at once, as before. While a loss waits, that item can't be counted again (409 `COUNT_PENDING_APPROVAL`): its stock hasn't moved yet, so the same shortfall would be booked twice. An average cost of 0 (unvalued stock) counts as unknown.
 
 ### Navigation
 

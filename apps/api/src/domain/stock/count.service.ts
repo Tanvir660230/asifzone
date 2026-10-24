@@ -29,7 +29,7 @@ import { businessDateOf, financeError } from "../finance/finance-values";
 import { recordStockCountInTx } from "../finance/stock-check.service";
 import { financeTransaction } from "../finance/finance-tx";
 import { holdLossForApprovalInTx } from "./count-approval.service";
-import { claimEntry, completeEntry, fingerprintOf, releaseEntry, renewLease, saveSteps, unitOf, variantLabel } from "./hub-entry";
+import { claimEntry, completeEntry, findEntry, fingerprintOf, releaseEntry, renewLease, saveSteps, unitOf, variantLabel } from "./hub-entry";
 
 /** Order statuses whose units are still on the shelf (packed at most; not yet handed to the courier). */
 export const ON_SHELF_STATUSES = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"] as const;
@@ -122,6 +122,15 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
     if (problem) problems.push(problem);
   }
   if (problems.length) throw financeError(400, "COUNT_REASON", problems.join("; "), { lines: problems });
+  // A loss waiting for the owner hasn't left stock yet, so a new count of that item would find the same shortfall and
+  // book it again: decide the waiting one first. (A retry of the count that made it is a replay, found by its key.)
+  const pending = await prisma.stockCountApproval.findMany({ where: { variantId: { in: ids }, status: "PENDING" }, select: { variantId: true, stockCount: { select: { sourceId: true } } } });
+  const replaying = pending.length ? await findEntry(business.id, "COUNT", key) : null;
+  const blocking = pending.filter((p) => !replaying || !(p.stockCount.sourceId ?? "").startsWith(`${replaying.id}:`));
+  if (blocking.length) {
+    const names = [...new Set(blocking.map((p) => variantLabel(byId.get(p.variantId)!)))];
+    throw financeError(409, "COUNT_PENDING_APPROVAL", `${names.join(", ")}: an earlier count of ${names.length === 1 ? "it" : "them"} waits for the owner — approve or reject it first`, { variantIds: [...new Set(blocking.map((p) => p.variantId))] });
+  }
 
   const initial: CountSteps = {
     lines: input.lines.map((l) => {

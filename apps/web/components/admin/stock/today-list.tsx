@@ -58,6 +58,7 @@ export interface TodayActions {
   onReorder?: () => void;
   onCount?: () => void;
   onApproval?: (id: string) => void;
+  onRetryFill?: (id: string) => void;
 }
 
 export function TodayList({ data, isLoading, isError, onRetry, actions }: { data: StockToday | undefined; isLoading: boolean; isError: boolean; onRetry: () => void; actions: TodayActions }) {
@@ -94,12 +95,13 @@ export function TodayList({ data, isLoading, isError, onRetry, actions }: { data
             )}
             {data.fillProblems.map((p) => (
               <Task
-                key={`${p.orderNumber}-${p.variantId}`}
+                key={p.id}
                 testId="today-fill-problem"
                 icon={AlertTriangle}
                 tone="danger"
-                title={`${plural(p.units, "booked bottle")} couldn't be filled`}
-                detail={`${p.orderNumber} · ${p.name}: ${p.reason}`}
+                title={`${plural(p.units, "booked bottle")} couldn't be recorded as filled`}
+                detail={`${p.orderNumber} · ${p.name}: ${p.reason}${p.partial ? " Use Try again so it finishes — don't record these bottles again by hand." : ""}`}
+                action={actions.onRetryFill && <Button variant="outline" onClick={() => actions.onRetryFill!(p.id)} data-testid="today-fill-retry">Try again</Button>}
               />
             ))}
             {data.reorder && (

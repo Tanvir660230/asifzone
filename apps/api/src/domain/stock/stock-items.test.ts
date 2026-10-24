@@ -82,3 +82,14 @@ describe("itemLabel", () => {
     expect(itemLabel({ productName: "Attar oil — ZAYAN ELIXIR", size: "Bulk oil", color: null }, "MATERIAL")).toBe("Attar oil — ZAYAN ELIXIR");
   });
 });
+
+describe("review fixes", () => {
+  it("owed bottles that already claim more than the shelf holds are part of what to buy", () => {
+    // 100 ml on the shelf, 300 ml claimed by owed bottles → available −200; 10 ml a day over 3 + 30 days
+    expect(suggestReorder({ usedPerDay: 10, available: -200, leadTimeDays: 3, coverDays: 30, today: "2026-10-24" })).toEqual({ suggested: 530, orderBy: "2026-10-24" });
+  });
+  it("a LOW item with no recent use sorts after ones that run out soon", () => {
+    const low = (sku: string, daysLeft: number | null) => ({ status: "LOW" as const, owed: 0, daysLeft, name: sku, sku });
+    expect([low("P", null), low("Q", 1), low("R", 9)].sort((a, b) => rankOf(a).localeCompare(rankOf(b))).map((r) => r.sku)).toEqual(["Q", "R", "P"]);
+  });
+});

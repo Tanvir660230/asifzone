@@ -20,6 +20,7 @@ import { createMaterial } from "../manufacturing/materials.service";
 import { approveBom, createBom } from "../manufacturing/boms.service";
 import { bookOrderWithSteadfast, bookOrdersWithSteadfastBulk } from "../../modules/courier/courier.service";
 import { fillCapacityChanged } from "./fill-capacity.service";
+import { fillForBookedOrder, retryAutoFill } from "./auto-fill.service";
 import { recordFill } from "./fill.service";
 import { stockToday } from "./stock-today.service";
 
@@ -195,6 +196,41 @@ describe("booking fills the bottles still owed", () => {
     await recordFill({ variantId: attar, quantity: 1 }, OWNER, `af-late-${RUN}-${++key}`);
     const today = await stockToday({ canSeeCost: true });
     expect(today.fillProblems.find((p) => p.variantId === attar)).toBeUndefined();
-    expect((await failures(order.id))[0]!.resolvedAt).not.toBeNull();
+    // refused before writing, so filling by hand settles it; reading Today writes nothing
+    expect((await failures(order.id))[0]).toMatchObject({ partial: false, resolvedAt: null });
+  });
+
+  it("AF-7: each booking has its own fill — a second consignment for the same order fills again", async () => {
+    const attar = await attarOf(oil);
+    const order = await placeOrder([{ variantId: attar, quantity: 1 }]);
+    const plan = new Map([[order.id, [{ variantId: attar, units: 1 }]]]);
+    await fillForBookedOrder(order.id, "C-1", plan);
+    await fillForBookedOrder(order.id, "C-1", plan); // the same booking again: replayed, not filled twice
+    expect(await stockOf(attar)).toBe(0);
+    await fillForBookedOrder(order.id, "C-2", plan);
+    expect(await stockOf(attar)).toBe(1);
+  });
+
+  it("AF-8: Try again records the waiting fill with its own key once the oil is in", async () => {
+    const attar = await attarOf(dryOil, "UNLIMITED");
+    const order = await placeOrder([{ variantId: attar, quantity: 1 }]);
+    await bookOrderWithSteadfast(order.id);
+    const [f] = await failures(order.id);
+    await expect(retryAutoFill(f!.id, OWNER)).rejects.toMatchObject({ details: { code: "FILL_SHORT" } });
+    await buy(dryOil, 6, 5);
+    expect(await retryAutoFill(f!.id, OWNER)).toMatchObject({ resolved: true, replayed: false });
+    expect(await stockOf(attar)).toBe(0);
+    expect(await retryAutoFill(f!.id, OWNER)).toMatchObject({ resolved: true, replayed: true });
+    expect(await booksMatch()).toEqual(MATCHED);
+  });
+
+  it("AF-9: a fill that stopped after writing stays on Today even once the size owes nothing", async () => {
+    const attar = await attarOf(oil);
+    const order = await placeOrder([{ variantId: attar, quantity: 1 }]);
+    await recordFill({ variantId: attar, quantity: 1 }, OWNER, `af-partial-${RUN}-${++key}`);
+    const row = await prisma.stockAutoFillFailure.create({ data: { orderId: order.id, variantId: attar, units: 1, reason: "stopped at receive the bottles", fillKey: `af-partial-row-${RUN}`, partial: true } });
+    expect(await stockOf(attar)).toBe(0);
+    const today = await stockToday({ canSeeCost: true });
+    expect(today.fillProblems).toEqual(expect.arrayContaining([expect.objectContaining({ id: row.id, partial: true })]));
   });
 });

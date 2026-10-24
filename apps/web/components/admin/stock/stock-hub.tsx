@@ -21,7 +21,7 @@ import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as stockApi from "@/lib/api/stock";
 import type { StockProblem, StockPurchase } from "@/lib/api/stock";
-import { getStockToday, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
+import { getStockToday, retryAutoFill, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
 import { BatchFillSheet } from "./batch-fill-sheet";
@@ -58,6 +58,12 @@ export function StockHub() {
   const [itemOf, setItemOf] = useState<StockListItem | null>(null);
   const [approvalOf, setApprovalOf] = useState<string | null>(null);
   const [boughtStart, setBoughtStart] = useState<BoughtStart | null>(null);
+  const qc = useQueryClient();
+  const retryFill = useMutation({
+    mutationFn: retryAutoFill,
+    onSuccess: () => { toast.success("Bottles recorded as filled"); void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all }); },
+    onError: (e) => toast.error(getErrorMessage(e, "The fill still couldn't be recorded")),
+  });
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -150,6 +156,7 @@ export function StockHub() {
               onReorder: can("purchasing.receive") ? () => setSheet("reorder") : undefined,
               onCount: can("inventory.adjust") ? () => setSheet("guided-count") : undefined,
               onApproval: setApprovalOf,
+              onRetryFill: can("manufacturing.approve") ? (id) => retryFill.mutate(id) : undefined,
             } : {}}
           />
           <StockList hasFillToOrder={groupOf("FILL_TO_ORDER").length > 0} onOpen={setItemOf} />

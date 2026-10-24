@@ -52,7 +52,8 @@ export interface StockToday {
     lines: Array<{ variantId: string; sku: string; name: string; productName: string; owed: number }>;
     short: Array<{ variantId: string; sku: string; name: string; unit: string; need: number; have: number }>;
   } | null;
-  fillProblems: Array<{ orderNumber: string; variantId: string; name: string; units: number; reason: string }>;
+  /** partial: it stopped after writing — only Try again (the same fill) closes it. */
+  fillProblems: Array<{ id: string; orderNumber: string; variantId: string; name: string; units: number; reason: string; partial: boolean }>;
   reorder: {
     items: Array<{ variantId: string; sku: string; name: string; productName: string; unit: string; status: StockStatus; daysLeft: number | null; suggested: number; orderBy: string; supplier: { id: string; name: string } | null; lastUnitCost: number | null }>;
     suppliers: number;
@@ -99,3 +100,5 @@ export const setItemSettings = (variantId: string, body: ItemSettings) => apiFet
 export const listStockApprovals = (status: StockApproval["status"] = "PENDING") => apiFetch<{ approvals: StockApproval[] }>(`${BASE}/approvals${qs({ status })}`);
 export const decideStockApproval = (id: string, body: { decision: "APPROVE" | "REJECT"; note?: string | null }) =>
   apiFetch<{ id: string; status: StockApproval["status"]; replayed: boolean }>(`${BASE}/approvals/${id}/decision`, { method: "POST", body });
+/** Try again on a booked parcel's fill that couldn't be recorded: the same fill is sent once more. */
+export const retryAutoFill = (id: string) => apiFetch<{ id: string; resolved: boolean; replayed: boolean }>(`${BASE}/auto-fill-failures/${id}/retry`, { method: "POST", body: {} });

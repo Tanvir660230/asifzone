@@ -6,6 +6,8 @@ CREATE TABLE "StockAutoFillFailure" (
     "variantId" TEXT NOT NULL,
     "units" INTEGER NOT NULL,
     "reason" TEXT NOT NULL,
+    "fillKey" TEXT NOT NULL,
+    "partial" BOOLEAN NOT NULL DEFAULT false,
     "resolvedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -13,10 +15,13 @@ CREATE TABLE "StockAutoFillFailure" (
 );
 
 -- CreateIndex
-CREATE INDEX "StockAutoFillFailure_resolvedAt_idx" ON "StockAutoFillFailure"("resolvedAt");
+CREATE UNIQUE INDEX "StockAutoFillFailure_fillKey_key" ON "StockAutoFillFailure"("fillKey");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "StockAutoFillFailure_orderId_variantId_key" ON "StockAutoFillFailure"("orderId", "variantId");
+CREATE INDEX "StockAutoFillFailure_orderId_idx" ON "StockAutoFillFailure"("orderId");
+
+-- CreateIndex
+CREATE INDEX "StockAutoFillFailure_resolvedAt_idx" ON "StockAutoFillFailure"("resolvedAt");
 
 -- AddForeignKey
 ALTER TABLE "StockAutoFillFailure" ADD CONSTRAINT "StockAutoFillFailure_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -6405,9 +6405,13 @@ model StockAutoFillFailure {
   variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   units      Int
   reason     String
+  /// The fill's key: Try again sends it once more, so a fill that stopped half way finishes instead of starting over.
+  fillKey    String         @unique
+  /// It stopped after writing (materials may be issued): only Try again closes it, never a fill by hand.
+  partial    Boolean        @default(false)
   resolvedAt DateTime?
   createdAt  DateTime       @default(now())
 
-  @@unique([orderId, variantId])
+  @@index([orderId])
   @@index([resolvedAt])
 }

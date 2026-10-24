@@ -13,7 +13,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import * as mfgApi from "@/lib/api/manufacturing";
 import * as stockApi from "@/lib/api/stock";
 import type { StockOverview, StockProblem } from "@/lib/api/stock";
-import type { StockToday } from "@/lib/api/stock-smart";
+import { getStockToday, type StockToday } from "@/lib/api/stock-smart";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
 import { materialName, num, spacedUnit } from "./stock-shared";
@@ -71,16 +71,24 @@ export function BatchFillSheet({ overview, fill, canFill, onSingle, onClose }: {
   async function save() {
     setRunning(true);
     setProblem(null);
+    // Bottles may have been filled since this opened — a parcel booked meanwhile records its own — so each size is filled
+    // only up to what it still owes now, never twice.
+    const fresh = await getStockToday().catch(() => null);
+    const owedNow = fresh ? new Map((fresh.fill?.lines ?? []).map((x) => [x.variantId, x.owed])) : null;
     let saved = 0;
+    let trimmed = 0;
     for (const l of lines) {
       if (!l.on || qtyOf(l) <= 0 || l.state === "done") continue;
-      set(l.variantId, { state: "saving" });
-      const body: stockApi.FillBody = { variantId: l.variantId, quantity: qtyOf(l) };
+      const quantity = owedNow ? Math.min(qtyOf(l), owedNow.get(l.variantId) ?? 0) : qtyOf(l);
+      if (quantity < qtyOf(l)) trimmed += qtyOf(l) - quantity;
+      if (quantity <= 0) { set(l.variantId, { state: "done", qty: "0" }); continue; }
+      set(l.variantId, { state: "saving", qty: String(quantity) });
+      const body: stockApi.FillBody = { variantId: l.variantId, quantity };
       const scope = `${formId}:${l.variantId}`;
       try {
         await stockApi.recordFill(body, idempotencyKeyFor(scope, body));
         settleIdempotencyKey(scope);
-        saved += qtyOf(l);
+        saved += quantity;
         set(l.variantId, { state: "done" });
       } catch (e) {
         set(l.variantId, { state: "failed" });
@@ -93,6 +101,7 @@ export function BatchFillSheet({ overview, fill, canFill, onSingle, onClose }: {
     void qc.invalidateQueries({ queryKey: booksApi.booksKeys.refills() });
     void qc.invalidateQueries({ queryKey: mfgApi.manufacturingKeys.all });
     if (saved) toast.success(`${num(saved)} bottle${saved === 1 ? "" : "s"} marked filled`);
+    if (trimmed) toast.info(`${num(trimmed)} bottle${trimmed === 1 ? " was" : "s were"} already recorded when their parcels were booked`);
   }
 
   const failed = lines.some((l) => l.state === "failed");

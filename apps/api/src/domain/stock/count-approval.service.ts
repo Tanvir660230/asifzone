@@ -38,7 +38,9 @@ export async function holdLossForApprovalInTx(
     tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { countLossApprovalThreshold: true } }),
     tx.productVariant.findUniqueOrThrow({ where: { id: line.variantId }, select: { costPrice: true, costState: { select: { avgUnitCost: true } }, product: { select: { costPrice: true } } } }),
   ]);
-  const unit = variant.costState?.avgUnitCost ?? variant.costPrice ?? variant.product.costPrice;
+  // a known positive cost, else the cost price; ৳0 means unvalued (a found count gain), so it is unknown, not free
+  const positive = (d: { toString(): string } | null | undefined) => (d !== null && d !== undefined && Number(d) > 0 ? Number(d) : null);
+  const unit = positive(variant.costState?.avgUnitCost) ?? positive(variant.costPrice) ?? positive(variant.product.costPrice);
   const value = unit === null || unit === undefined ? null : toMajorNumber(toMinor(Number(unit) * -line.difference, business.baseCurrency), business.baseCurrency);
   if (value !== null && toMinor(value, business.baseCurrency) < toMinor(Number(settings.countLossApprovalThreshold), business.baseCurrency)) return null;
   const held = await tx.stockCountApproval.create({

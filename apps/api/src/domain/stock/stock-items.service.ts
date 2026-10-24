@@ -63,9 +63,9 @@ export function classify(i: Classifiable): StockStatus {
 
 export function suggestReorder(i: { usedPerDay: number | null; available: number; leadTimeDays: number; coverDays: number; today: string }): { suggested: number; orderBy: string } | null {
   if (!i.usedPerDay || i.usedPerDay <= 0) return null;
-  const available = Math.max(0, i.available);
-  const suggested = Math.max(0, Math.ceil(i.usedPerDay * (i.leadTimeDays + i.coverDays) - 1e-9) - available);
-  const lasts = Math.floor(available / i.usedPerDay);
+  // owed bottles may already claim more than is on the shelf (available < 0): that shortfall is part of what to buy
+  const suggested = Math.max(0, Math.ceil(i.usedPerDay * (i.leadTimeDays + i.coverDays) - 1e-9 - i.available));
+  const lasts = Math.floor(Math.max(0, i.available) / i.usedPerDay);
   return { suggested, orderBy: addDays(i.today, Math.max(0, lasts - i.leadTimeDays)) };
 }
 
@@ -74,7 +74,7 @@ const pad = (n: number) => String(Math.max(0, Math.min(999_999, Math.round(n))))
 
 /** A sort key: NEEDS_FILL most owed first, OUT, LOW fewest days first, OK by name — then SKU, so the order is total. */
 export function rankOf(r: { status: StockStatus; owed: number; daysLeft: number | null; name: string; sku: string }): string {
-  const second = r.status === "NEEDS_FILL" ? pad(999_999 - r.owed) : r.status === "LOW" ? pad(r.daysLeft ?? 0) : r.name.toLowerCase();
+  const second = r.status === "NEEDS_FILL" ? pad(999_999 - r.owed) : r.status === "LOW" ? pad(r.daysLeft ?? 999_998) : r.name.toLowerCase();
   return `${STATUS_ORDER[r.status]}|${second}|${r.sku}`;
 }
 
@@ -122,8 +122,41 @@ function decodeCursor(cursor: string | undefined): number {
   throw financeError(400, "STOCK_CURSOR_INVALID", "This page link is no longer valid — reload the list");
 }
 
+type AllStock = { items: StockListItem[]; today: string; hub: Awaited<ReturnType<typeof stockHub>>; claimed: Map<string, number> };
+
+/** Paging, typing a search and the filter chips re-read the same list: it is kept while nothing it rests on has moved —
+ * stock movements, orders, products, sizes, recipes and settings — and for at most MEMO_MS (the day rolls over). */
+const MEMO_MS = 30_000;
+const memo = new Map<string, { version: string; at: number; value: Promise<AllStock> }>();
+async function versionOf(): Promise<string> {
+  // stock and orders move the figures; products and variants (selling rule, fill to order, new sizes), recipes and
+  // settings change what they mean
+  const [moved, orders, settings, products, variants, recipes] = await Promise.all([
+    prisma.stockMovement.aggregate({ _max: { createdAt: true }, _count: { _all: true } }),
+    prisma.order.aggregate({ _max: { updatedAt: true } }),
+    prisma.stockItemSetting.aggregate({ _max: { updatedAt: true } }),
+    prisma.product.aggregate({ _max: { updatedAt: true } }),
+    prisma.productVariant.aggregate({ _max: { updatedAt: true } }),
+    prisma.billOfMaterials.aggregate({ _max: { updatedAt: true } }),
+  ]);
+  return [moved._max.createdAt, moved._count._all, orders._max.updatedAt, settings._max.updatedAt, products._max.updatedAt, variants._max.updatedAt, recipes._max.updatedAt]
+    .map((x) => (x instanceof Date ? x.getTime() : x))
+    .join("|");
+}
+
 /** Every item, classified and sorted — the list's source and what Today summarises. */
-export async function allStockItems(viewer: { canSeeCost: boolean }): Promise<{ items: StockListItem[]; today: string; hub: Awaited<ReturnType<typeof stockHub>>; claimed: Map<string, number> }> {
+export async function allStockItems(viewer: { canSeeCost: boolean }): Promise<AllStock> {
+  const key = viewer.canSeeCost ? "cost" : "plain";
+  const version = await versionOf();
+  const hit = memo.get(key);
+  if (hit && hit.version === version && Date.now() - hit.at < MEMO_MS) return hit.value;
+  const value = computeStockItems(viewer);
+  memo.set(key, { version, at: Date.now(), value });
+  value.catch(() => memo.delete(key));
+  return value;
+}
+
+async function computeStockItems(viewer: { canSeeCost: boolean }): Promise<AllStock> {
   const [hub, recipes, { business }] = await Promise.all([stockHub(viewer), recipesByVariant(), getFinanceContext()]);
   const today = businessToday(business);
   const flat = hub.groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.key })));
