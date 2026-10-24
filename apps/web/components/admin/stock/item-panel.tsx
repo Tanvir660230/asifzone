@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { stockKeys } from "@/lib/api/stock";
 import { listSuppliers, purchasingKeys } from "@/lib/api/purchasing";
 import { setItemSettings, type StockListItem } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
+import { ItemThumb } from "./item-thumb";
 import { num, spacedUnit, variantWords } from "./stock-shared";
 
 /**
@@ -21,20 +23,63 @@ import { num, spacedUnit, variantWords } from "./stock-shared";
  * history (the trace) and its selling rule; a material or product shows the reorder suggestion and the settings behind
  * it — usual supplier, days to arrive, days of stock to keep.
  */
-export function ItemPanel({ item, showCost, canAdjust, onTrace, onPolicy, onClose }: {
-  item: StockListItem;
-  showCost: boolean;
-  canAdjust: boolean;
+export interface ItemActions {
   onTrace: () => void;
   onPolicy?: () => void;
-  onClose: () => void;
-}) {
+  /** The one thing to do with it now: fill what's owed, reorder what runs out, count it. */
+  onFill?: () => void;
+  onReorder?: () => void;
+  onCount?: () => void;
+}
+
+const subtitleOf = (item: StockListItem) => (item.group === "FILL_TO_ORDER" ? `${spacedUnit(variantWords(item))} · filled when orders come` : item.group === "MATERIAL" ? "Material" : variantWords(item));
+
+/** On a phone: the item in a sheet. (On wide screens the page shows ItemDetail in its side column instead.) */
+export function ItemPanel({ item, showCost, canAdjust, actions, onClose }: { item: StockListItem; showCost: boolean; canAdjust: boolean; actions: ItemActions; onClose: () => void }) {
+  return (
+    <Modal open onClose={onClose} title={item.productName} description={subtitleOf(item)} widthClassName="max-w-lg">
+      <ItemDetail item={item} showCost={showCost} canAdjust={canAdjust} actions={actions} />
+    </Modal>
+  );
+}
+
+/** The item beside the list on wide screens: its picture and name, then the same detail. */
+export function ItemRail({ item, showCost, canAdjust, actions, onClose }: { item: StockListItem; showCost: boolean; canAdjust: boolean; actions: ItemActions; onClose: () => void }) {
+  return (
+    <section aria-label={item.label} className="space-y-5" data-testid="stock-item-rail">
+      <button type="button" onClick={onClose} className="inline-flex items-center gap-1 text-sm text-fg-muted transition-colors duration-fast hover:text-fg" data-testid="stock-item-back">
+        <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Activity
+      </button>
+      <div className="flex items-center gap-4">
+        <ItemThumb imageUrl={item.imageUrl} name={item.productName} unit={item.unit} attar={item.group === "FILL_TO_ORDER"} size="lg" />
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold leading-snug tracking-tight text-fg">{item.productName}</h2>
+          <p className="text-sm text-fg-muted">{subtitleOf(item)}</p>
+        </div>
+      </div>
+      <ItemDetail item={item} showCost={showCost} canAdjust={canAdjust} actions={actions} />
+    </section>
+  );
+}
+
+function ItemDetail({ item, showCost, canAdjust, actions }: { item: StockListItem; showCost: boolean; canAdjust: boolean; actions: ItemActions }) {
   const unit = item.unit === "pcs" ? "" : ` ${spacedUnit(item.unit)}`;
   const attar = item.group === "FILL_TO_ORDER";
+  const { onTrace, onPolicy } = actions;
+  const next = item.status === "NEEDS_FILL" && actions.onFill
+    ? <Button onClick={actions.onFill} data-testid="stock-item-fill">Mark {num(item.policy?.owed ?? 0)} filled</Button>
+    : (item.status === "OUT" || item.status === "LOW") && !attar && actions.onReorder
+      ? <Button onClick={actions.onReorder} data-testid="stock-item-reorder-now">Reorder{item.reorder?.suggested ? ` ${num(item.reorder.suggested)}${unit || " pcs"}` : ""}</Button>
+      : null;
   return (
-    <Modal open onClose={onClose} title={item.productName} description={attar ? `${variantWords(item)} · filled when orders come` : item.group === "MATERIAL" ? "Material" : variantWords(item)} widthClassName="max-w-lg">
       <div className="space-y-6" data-testid="stock-item-panel">
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line-subtle sm:grid-cols-4">
+        {(next || actions.onCount) && (
+          <div className="flex flex-wrap gap-2">
+            {next}
+            {actions.onCount && <Button variant="outline" onClick={actions.onCount} data-testid="stock-item-count">Count it</Button>}
+          </div>
+        )}
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line-subtle">
           <Figure label={attar ? "Filled" : "In stock"} value={`${num(Math.max(0, item.stock))}${unit}`} />
           <Figure label="On orders" value={num(item.reserved)} />
           <Figure label={attar ? "Can sell" : "Lasts"} value={attar ? (item.canSell === null ? "No limit" : num(item.canSell)) : item.daysLeft === null ? "—" : `${num(item.daysLeft)} days`} />
@@ -46,8 +91,8 @@ export function ItemPanel({ item, showCost, canAdjust, onTrace, onPolicy, onClos
             {(item.policy?.owed ?? 0) > 0 && <p className="text-sm text-fg">{num(item.policy!.owed)} bottle{item.policy!.owed === 1 ? "" : "s"} sold and waiting to be filled.</p>}
             {item.limitedBy && <p className="text-sm text-fg-muted">{item.limitedBy.name} runs out first — buy more of it to sell more.</p>}
             <div className="flex flex-wrap gap-2">
-              <Button onClick={onTrace} data-testid="stock-item-trace">Full history</Button>
-              {onPolicy && <Button variant="outline" onClick={onPolicy} data-testid="stock-item-policy">Selling rule</Button>}
+              <Button variant="outline" onClick={onTrace} data-testid="stock-item-trace">Full history</Button>
+              {onPolicy && <Button variant="ghost" onClick={onPolicy} data-testid="stock-item-policy">Selling rule</Button>}
             </div>
           </div>
         ) : (
@@ -56,7 +101,6 @@ export function ItemPanel({ item, showCost, canAdjust, onTrace, onPolicy, onClos
 
         <Link href={`/admin/inventory?variantId=${item.variantId}`} className="inline-block text-sm font-medium text-fg underline underline-offset-4" data-testid="stock-item-movements">Every stock movement</Link>
       </div>
-    </Modal>
   );
 }
 

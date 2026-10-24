@@ -28,6 +28,8 @@ export interface StockListItem extends StockItem {
   limitedBy: { variantId: string; name: string } | null;
   reorder: { suggested: number; orderBy: string } | null;
   settings: ItemSettings;
+  /** The size's picture, else the product's first; null when it has none. */
+  imageUrl: string | null;
 }
 
 export interface StockListQuery {
@@ -85,6 +87,7 @@ export const smartKeys = {
   today: () => [...stockKeys.all, "today"] as const,
   list: (q: Omit<StockListQuery, "cursor">) => [...stockKeys.all, "list", q] as const,
   approvals: () => [...stockKeys.all, "approvals"] as const,
+  activity: (limit: number) => [...stockKeys.all, "activity", limit] as const,
 };
 
 const qs = (q: Record<string, string | number | undefined>) => {
@@ -102,3 +105,23 @@ export const decideStockApproval = (id: string, body: { decision: "APPROVE" | "R
   apiFetch<{ id: string; status: StockApproval["status"]; replayed: boolean }>(`${BASE}/approvals/${id}/decision`, { method: "POST", body });
 /** Try again on a booked parcel's fill that couldn't be recorded: the same fill is sent once more. */
 export const retryAutoFill = (id: string) => apiFetch<{ id: string; resolved: boolean; replayed: boolean }>(`${BASE}/auto-fill-failures/${id}/retry`, { method: "POST", body: {} });
+
+export type StockEventKind = "BOUGHT" | "FILLED" | "AUTO_FILLED" | "COUNTED" | "APPROVED" | "REJECTED" | "FILL_PROBLEM";
+export interface StockEvent {
+  id: string;
+  kind: StockEventKind;
+  at: string;
+  by: string | null;
+  items: Array<{ variantId: string; name: string; imageUrl: string | null; change: number | null; unit: string }>;
+  /** BOUGHT: supplier · COUNTED: items counted · FILL_PROBLEM: order number. */
+  context: string | null;
+  value: number | null;
+  pending: boolean;
+  note: string | null;
+}
+export interface StockActivity {
+  events: StockEvent[];
+  today: { date: string; purchases: number; bottlesFilled: number; counts: number; decisions: number };
+}
+/** What happened to the stock, newest first, and what was done today. */
+export const getStockActivity = (limit = 30) => apiFetch<StockActivity>(`${BASE}/activity?limit=${limit}`);

@@ -3,23 +3,22 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { SearchInput } from "@/components/ui/search-input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SegmentedControl } from "@/components/ui/tabs";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { getErrorMessage } from "@/lib/api-client";
 import type { StockGroupKey } from "@/lib/api/stock";
 import { listStockItems, smartKeys, type StockListItem, type StockStatus } from "@/lib/api/stock-smart";
 import { cn } from "@/lib/utils";
+import { Highlight, ItemThumb } from "./item-thumb";
+import { figureOf } from "./stock-search-box";
 import { num, spacedUnit, variantWords } from "./stock-shared";
 
 /**
- * Every stock item in one list (docs/STOCK_HUB.md §7): searched, filtered by status and kind, and sorted by what needs doing
- * first — all on the server, a page at a time, so it reads the same with 20 items or 2,000. A row opens the item.
+ * Every stock item in one list (docs/STOCK_HUB.md §7), each with its picture, what needs doing and how long it lasts —
+ * searched (the box above), filtered and sorted by what needs doing first, all on the server and a page at a time, so it
+ * reads the same with 20 items or 2,000. Status and kind live in the URL. A row opens the item.
  */
 
 const PAGE = 50;
@@ -37,20 +36,29 @@ function StatusPill({ item }: { item: StockListItem }) {
   return <Badge variant="neutral">OK</Badge>;
 }
 
-/** "Attar oil — ZAYAN ELIXIR" on the Zayan Elixir row reads "Attar oil". */
-const shortMaterial = (material: string, product: string) => material.replace(new RegExp(`\\s*—\\s*${product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`, "i"), "").trim() || material;
-
-const unitOf = (i: StockListItem) => (i.unit === "pcs" ? "" : ` ${spacedUnit(i.unit)}`);
-const lasts = (d: number | null) => (d === null ? "—" : d === 0 ? "None left" : `${num(d)} day${d === 1 ? "" : "s"}`);
-
-function subLine(i: StockListItem): string {
-  if (i.group === "FILL_TO_ORDER") return `${spacedUnit(variantWords(i))} · attar${i.limitedBy ? ` · ${shortMaterial(i.limitedBy.name, i.productName).toLowerCase()} runs out first` : ""}`;
-  if (i.group === "MATERIAL") return "Material";
-  return variantWords(i);
+/** How long it lasts against the days of stock it should keep: a full bar is a full cover. Nothing to show without use. */
+function Lasts({ item }: { item: StockListItem }) {
+  if (item.group === "FILL_TO_ORDER" || item.daysLeft === null) return <span className="text-xs text-fg-subtle">{item.group === "FILL_TO_ORDER" ? "" : "no recent use"}</span>;
+  const share = Math.max(0, Math.min(1, item.daysLeft / Math.max(1, item.settings.coverDays)));
+  const tone = item.status === "OUT" || item.daysLeft === 0 ? "bg-danger-600" : item.daysLeft <= item.settings.leadTimeDays + 7 ? "bg-warning-600" : "bg-success-600";
+  return (
+    <span className="flex items-center gap-2" title={`${num(item.daysLeft)} days at the last 30 days' pace`}>
+      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-ink-900/[0.07]" aria-hidden="true"><span className={cn("block h-full origin-left rounded-full", tone)} style={{ transform: `scaleX(${share})` }} /></span>
+      <span className="w-14 text-xs tabular-nums text-fg-muted">{item.daysLeft === 0 ? "none left" : `${num(item.daysLeft)} days`}</span>
+    </span>
+  );
 }
 
-export function StockList({ hasFillToOrder, onOpen }: { hasFillToOrder: boolean; onOpen: (item: StockListItem) => void }) {
-  // the filters live in the URL (?status=&kind=&q=), so Back and a shared link keep them
+const shortMaterial = (material: string, product: string) => material.replace(new RegExp(`\\s*—\\s*${product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`, "i"), "").trim() || material;
+
+function metaOf(i: StockListItem): string {
+  if (i.group === "FILL_TO_ORDER") return [spacedUnit(variantWords(i)), "attar", i.limitedBy ? `${shortMaterial(i.limitedBy.name, i.productName).toLowerCase()} runs out first` : null].filter(Boolean).join(" · ");
+  if (i.group === "MATERIAL") return "Material";
+  return variantWords(i) === i.sku ? "Product" : variantWords(i);
+}
+
+export function StockList({ hasFillToOrder, q, selectedId, onOpen }: { hasFillToOrder: boolean; q: string; selectedId: string | null; onOpen: (item: StockListItem) => void }) {
+  // the filters live in the URL (?status=&kind=), so Back and a shared link keep them
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -60,17 +68,15 @@ export function StockList({ hasFillToOrder, onOpen }: { hasFillToOrder: boolean;
   };
   const [status, setStatus] = useState<StatusFilter>(() => fromUrl<StatusFilter>("status", ["ALL", "NEEDS_FILL", "OUT", "LOW", "OK", "EMPTY"], "ALL"));
   const [group, setGroup] = useState<GroupFilter>(() => fromUrl<GroupFilter>("kind", ["ALL", "FILL_TO_ORDER", "MATERIAL", "FINISHED"], "ALL"));
-  const [search, setSearch] = useState(() => params.get("q") ?? "");
-  const q = useDebouncedValue(search.trim(), 250);
   useEffect(() => {
     const next = new URLSearchParams(params.toString());
     const put = (k: string, v: string, empty: string) => (v && v !== empty ? next.set(k, v) : next.delete(k));
     put("status", status, "ALL");
     put("kind", group, "ALL");
-    put("q", q, "");
     const s = next.toString();
     if (s !== params.toString()) router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
-  }, [status, group, q, params, pathname, router]);
+  }, [status, group, params, pathname, router]);
+
   const filters = { status: status === "ALL" ? undefined : status, group: group === "ALL" ? undefined : group, q: q || undefined, limit: PAGE };
   const list = useInfiniteQuery({
     queryKey: smartKeys.list(filters),
@@ -87,40 +93,33 @@ export function StockList({ hasFillToOrder, onOpen }: { hasFillToOrder: boolean;
 
   return (
     <section aria-labelledby="stock-all" className="space-y-3" data-testid="stock-list">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="stock-all" className="text-lg font-semibold tracking-tight text-fg">All stock</h2>
-        {counts && <p className="text-sm tabular-nums text-fg-muted">{num(counts.ALL)} item{counts.ALL === 1 ? "" : "s"}</p>}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h2 id="stock-all" className="text-lg font-semibold tracking-tight text-fg">
+          {q ? <>Matches for “{q}”</> : "All stock"} {counts && <span className="ml-1 text-sm font-normal tabular-nums text-fg-muted">{num(counts.ALL)}</span>}
+        </h2>
+        <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <SegmentedControl aria-label="Kind" value={group} onChange={setGroup} options={groups.map((g) => ({ value: g, testId: `stock-kind-${g}`, label: g === "ALL" ? "Everything" : GROUP_LABEL[g] }))} />
+        </div>
       </div>
-      <div className="space-y-2">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by name or SKU" wrapperClassName="md:w-80" data-testid="stock-search" />
-          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-            <SegmentedControl aria-label="Kind" value={group} onChange={setGroup} options={groups.map((g) => ({ value: g, testId: `stock-kind-${g}`, label: g === "ALL" ? "Everything" : GROUP_LABEL[g] }))} />
-          </div>
-        </div>
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-          <SegmentedControl
-            aria-label="Show"
-            value={status}
-            onChange={setStatus}
-            options={statuses.map((s) => ({ value: s, testId: `stock-filter-${s}`, label: <>{STATUS_LABEL[s]}{counts && <span className="tabular-nums text-fg-subtle">{num(counts[s])}</span>}</> }))}
-          />
-        </div>
+      <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <SegmentedControl
+          aria-label="Show"
+          value={status}
+          onChange={setStatus}
+          options={statuses.map((s) => ({ value: s, testId: `stock-filter-${s}`, label: <>{STATUS_LABEL[s]}{counts && <span className="tabular-nums text-fg-subtle">{num(counts[s])}</span>}</> }))}
+        />
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_8rem_6rem_6rem_6rem_1rem] gap-4 border-b border-line-subtle bg-surface-muted px-4 py-2 text-xs font-medium text-fg-muted md:grid">
-          <span>Item</span><span>Status</span><span className="text-right">In stock</span><span className="text-right">Can sell</span><span className="text-right">Lasts</span><span />
-        </div>
+      <div className="overflow-hidden rounded-2xl bg-surface shadow">
         {list.isLoading ? (
-          <div className="space-y-3 p-4" aria-busy="true" aria-label="Loading stock">
-            {[0, 1, 2, 3, 4].map((k) => <Skeleton key={k} className="h-10 w-full" />)}
+          <div className="space-y-1 p-2" aria-busy="true" aria-label="Loading stock">
+            {[0, 1, 2, 3, 4, 5].map((k) => <div key={k} className="flex items-center gap-3 p-2"><Skeleton className="h-11 w-11 rounded-xl" /><div className="flex-1 space-y-2"><Skeleton className="h-4 w-1/2" /><Skeleton className="h-3 w-1/3" /></div></div>)}
           </div>
         ) : list.isError ? (
           <p className="px-4 py-6 text-sm text-fg-muted">{getErrorMessage(list.error, "The stock list couldn't be loaded.")} <button type="button" onClick={() => list.refetch()} className="font-medium text-fg underline underline-offset-4">Try again</button></p>
         ) : items.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-fg-muted" data-testid="stock-list-empty">
-            {q ? <>Nothing matches “{q}”.</> : status !== "ALL" ? <>Nothing is {STATUS_LABEL[status].toLowerCase()} right now.</> : "No stock-tracked items yet."}
+          <p className="px-4 py-10 text-center text-sm text-fg-muted" data-testid="stock-list-empty">
+            {q ? <>Nothing matches “{q}”. Try fewer words, or check the kind and status above.</> : status !== "ALL" ? <>Nothing is {STATUS_LABEL[status].toLowerCase()} right now.</> : "No stock-tracked items yet."}
           </p>
         ) : (
           <ul className={cn("divide-y divide-line-subtle transition-opacity duration-base", list.isPlaceholderData && "opacity-60")}>
@@ -129,23 +128,21 @@ export function StockList({ hasFillToOrder, onOpen }: { hasFillToOrder: boolean;
                 <button
                   type="button"
                   onClick={() => onOpen(i)}
+                  aria-current={selectedId === i.variantId ? "true" : undefined}
                   data-testid={`stock-row-${i.sku}`}
-                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-fast hover:bg-ink-900/[0.03] focus-visible:bg-ink-900/[0.04] md:grid-cols-[minmax(0,1fr)_8rem_6rem_6rem_6rem_1rem] md:gap-4"
+                  className={cn(
+                    "grid w-full grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 text-left transition-colors duration-fast hover:bg-ink-900/[0.025] focus-visible:bg-ink-900/[0.04] sm:px-4 md:grid-cols-[2.75rem_minmax(0,1fr)_7rem_8.5rem_7rem]",
+                    selectedId === i.variantId && "bg-accent/[0.06] hover:bg-accent/[0.08]",
+                  )}
                 >
+                  <ItemThumb imageUrl={i.imageUrl} name={i.productName} unit={i.unit} attar={i.group === "FILL_TO_ORDER"} />
                   <span className="min-w-0">
-                    <span className="block truncate text-[15px] text-fg">{i.productName}</span>
-                    <span className="block truncate text-xs text-fg-muted">{subLine(i)}</span>
+                    <span className="line-clamp-2 text-[15px] leading-snug text-fg"><Highlight text={i.productName} query={q} /></span>
+                    <span className="block truncate text-xs text-fg-muted"><Highlight text={metaOf(i)} query={q} /><span className="md:hidden"> · {figureOf(i, true)}</span></span>
                   </span>
-                  <span className="justify-self-end md:justify-self-start"><StatusPill item={i} /></span>
-                  <span className="col-span-2 flex gap-3 text-xs tabular-nums text-fg-muted md:hidden">
-                    <span>{num(Math.max(0, i.stock))}{unitOf(i)} in stock</span>
-                    {i.canSell !== null && i.group === "FILL_TO_ORDER" && <span>sells {num(i.canSell)}</span>}
-                    <span>{i.daysLeft === null ? "no recent use" : i.daysLeft === 0 ? "none left" : `lasts ${lasts(i.daysLeft).toLowerCase()}`}</span>
-                  </span>
-                  <span className="hidden text-right tabular-nums text-fg md:block"><span className="sr-only">In stock </span>{num(Math.max(0, i.stock))}{unitOf(i)}</span>
-                  <span className="hidden text-right tabular-nums text-fg md:block"><span className="sr-only">Can sell </span>{i.canSell === null ? "No limit" : num(i.canSell)}</span>
-                  <span className="hidden text-right tabular-nums text-fg-muted md:block"><span className="sr-only">Lasts </span>{lasts(i.daysLeft)}</span>
-                  <ChevronRight aria-hidden="true" className="hidden h-4 w-4 text-fg-subtle md:block" />
+                  <span className="hidden text-right text-sm tabular-nums text-fg md:block">{figureOf(i)}</span>
+                  <span className="hidden md:block"><Lasts item={i} /></span>
+                  <span className="justify-self-end"><StatusPill item={i} /></span>
                 </button>
               </li>
             ))}
@@ -156,7 +153,8 @@ export function StockList({ hasFillToOrder, onOpen }: { hasFillToOrder: boolean;
             <Button variant="ghost" size="sm" loading={list.isFetchingNextPage} onClick={() => list.fetchNextPage()} data-testid="stock-load-more">Show more</Button>
           </div>
         )}
-      </Card>
+      </div>
     </section>
   );
 }
+

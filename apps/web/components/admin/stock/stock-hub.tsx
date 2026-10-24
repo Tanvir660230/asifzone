@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Droplets, PackagePlus, Boxes } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
@@ -17,11 +16,15 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as stockApi from "@/lib/api/stock";
 import type { StockProblem, StockPurchase } from "@/lib/api/stock";
-import { getStockToday, retryAutoFill, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
+import { getStockActivity, getStockToday, retryAutoFill, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
+import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
 import { BatchFillSheet } from "./batch-fill-sheet";
@@ -30,13 +33,15 @@ import { ReorderSheet } from "./reorder-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
 import { GuidedCount } from "./guided-count";
-import { ItemPanel } from "./item-panel";
+import { ActivityPanel } from "./activity-panel";
+import { ItemPanel, ItemRail, type ItemActions } from "./item-panel";
+import { StockSearchBox, type QuickAction } from "./stock-search-box";
 import { PolicySheet } from "./policy-sheet";
 import { StockList } from "./stock-list";
 import { TodayList } from "./today-list";
 import { TraceSheet } from "./trace-sheet";
 import type { ProductGroup } from "./stock-shared";
-import { byProduct, num } from "./stock-shared";
+import { byProduct } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
 type Sheet = "bought" | "reorder" | "filled" | "batch-fill" | "counted" | "guided-count" | null;
@@ -64,6 +69,24 @@ export function StockHub() {
     onSuccess: () => { toast.success("Bottles recorded as filled"); void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all }); },
     onError: (e) => toast.error(getErrorMessage(e, "The fill still couldn't be recorded")),
   });
+  const activity = useQuery({ queryKey: smartKeys.activity(30), queryFn: () => getStockActivity(30), enabled: allowed });
+  // the search lives in the URL (?q=) beside the list's filters
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [search, setSearch] = useState(() => params.get("q") ?? "");
+  const debouncedSearch = useDebouncedValue(search.trim(), 250);
+  useEffect(() => {
+    const next = new URLSearchParams(params.toString());
+    if (debouncedSearch) next.set("q", debouncedSearch);
+    else next.delete("q");
+    const s = next.toString();
+    if (s !== params.toString()) router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
+  }, [debouncedSearch, params, pathname, router]);
+  // wide screens show the item (or the activity) beside the list; phones switch between Stock and Activity
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const [phoneView, setPhoneView] = useState<"stock" | "activity">("stock");
+  const [countFor, setCountFor] = useState<string[] | null>(null);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -77,6 +100,24 @@ export function StockHub() {
     { key: "filled" as const, label: "Filled bottles", icon: Droplets, allowed: can("manufacturing.view") && groupOf("FILL_TO_ORDER").length > 0, variant: "outline" as const },
     { key: "counted" as const, label: "Count", icon: ClipboardCheck, allowed: can("inventory.adjust"), variant: "outline" as const },
   ].filter((a) => a.allowed);
+
+  /** The one thing to do with an item, from the search box or the item itself. */
+  function doAction(i: StockListItem, a: QuickAction) {
+    if (!live) { toast.info(GO_LIVE); return; }
+    if (a === "fill") setSheet(today.data?.fill ? "batch-fill" : "filled");
+    else if (a === "reorder") { setBoughtStart({ supplierName: null, lines: [{ variantId: i.variantId, qty: Math.max(1, i.reorder?.suggested ?? 1), lastUnitCost: null }] }); setSheet("bought"); }
+    else { setCountFor([i.variantId]); setSheet("guided-count"); }
+  }
+  const itemActions = (i: StockListItem): ItemActions => ({
+    onTrace: () => { setTraceOf(i); if (!wide) setItemOf(null); },
+    onPolicy: can("inventory.adjust") ? () => {
+      const product = byProduct(groupOf("FILL_TO_ORDER")).find((p) => p.productId === i.productId);
+      if (product) { setPolicyFor(product); if (!wide) setItemOf(null); }
+    } : undefined,
+    onFill: live && can("manufacturing.view") ? () => doAction(i, "fill") : undefined,
+    onReorder: live && can("purchasing.receive") ? () => doAction(i, "reorder") : undefined,
+    onCount: live && can("inventory.adjust") ? () => doAction(i, "count") : undefined,
+  });
 
   const summary = data ? [
     data.totalValue !== null ? `${formatPrice(data.totalValue)} at cost` : null,
@@ -146,21 +187,39 @@ export function StockHub() {
         <ErrorState title="Stock couldn't be loaded" description={getErrorMessage(overview.error, "Check your connection and try again.")} onRetry={() => overview.refetch()} variant="bordered" />
       ) : data ? (
         <>
-          <TodayList
-            data={today.data}
-            isLoading={today.isLoading}
-            isError={today.isError}
-            onRetry={() => today.refetch()}
-            actions={live ? {
-              onFill: can("manufacturing.view") ? () => setSheet("batch-fill") : undefined,
-              onReorder: can("purchasing.receive") ? () => setSheet("reorder") : undefined,
-              onCount: can("inventory.adjust") ? () => setSheet("guided-count") : undefined,
-              onApproval: setApprovalOf,
-              onRetryFill: can("manufacturing.approve") ? (id) => retryFill.mutate(id) : undefined,
-            } : {}}
-          />
-          <StockList hasFillToOrder={groupOf("FILL_TO_ORDER").length > 0} onOpen={setItemOf} />
-          {can("purchasing.view") && <RecentPurchases query={purchasesQ} />}
+          <StockSearchBox value={search} onChange={setSearch} onOpen={setItemOf} onAction={(i, a) => doAction(i, a)} />
+          {!wide && (
+            <SegmentedControl aria-label="View" size="md" value={phoneView} onChange={setPhoneView} options={[{ value: "stock", label: "Stock", testId: "stock-view-stock" }, { value: "activity", label: "Activity", testId: "stock-view-activity" }]} />
+          )}
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <div className={cn("min-w-0 space-y-8", !wide && phoneView !== "stock" && "hidden")}>
+              {!search.trim() && (
+                <TodayList
+                  data={today.data}
+                  done={activity.data?.today}
+                  isLoading={today.isLoading}
+                  isError={today.isError}
+                  onRetry={() => today.refetch()}
+                  actions={live ? {
+                    onFill: can("manufacturing.view") ? () => setSheet("batch-fill") : undefined,
+                    onReorder: can("purchasing.receive") ? () => setSheet("reorder") : undefined,
+                    onCount: can("inventory.adjust") ? () => { setCountFor(null); setSheet("guided-count"); } : undefined,
+                    onApproval: setApprovalOf,
+                    onRetryFill: can("manufacturing.approve") ? (id) => retryFill.mutate(id) : undefined,
+                  } : {}}
+                />
+              )}
+              <StockList hasFillToOrder={groupOf("FILL_TO_ORDER").length > 0} q={debouncedSearch} selectedId={wide ? itemOf?.variantId ?? null : null} onOpen={setItemOf} />
+            </div>
+            {/* the side column: the item being looked at, else what happened */}
+            <aside className={cn("min-w-0 lg:sticky lg:top-6 lg:self-start", !wide && phoneView !== "activity" && "hidden")}>
+              {wide && itemOf ? (
+                <ItemRail item={itemOf} showCost={showCost} canAdjust={can("inventory.adjust")} actions={itemActions(itemOf)} onClose={() => setItemOf(null)} />
+              ) : (
+                <ActivityPanel />
+              )}
+            </aside>
+          </div>
         </>
       ) : null}
 
@@ -171,56 +230,15 @@ export function StockHub() {
       {data && sheet === "filled" && <FilledSheet overview={data} canFill={can("manufacturing.approve")} onClose={() => setSheet(null)} />}
       {data && sheet === "batch-fill" && today.data?.fill && <BatchFillSheet overview={data} fill={today.data.fill} canFill={can("manufacturing.approve")} onSingle={() => setSheet("filled")} onClose={() => setSheet(null)} />}
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
-      {data && sheet === "guided-count" && today.data?.count && <GuidedCount overview={data} due={today.data.count.due.map((d) => d.variantId)} showCost={showCost} onClose={() => setSheet(null)} />}
+      {data && sheet === "guided-count" && (countFor ?? today.data?.count?.due.map((d) => d.variantId)) && (
+        <GuidedCount overview={data} due={countFor ?? today.data!.count!.due.map((d) => d.variantId)} showCost={showCost} onClose={() => { setSheet(null); setCountFor(null); }} />
+      )}
       {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
       {traceOf && <TraceSheet item={traceOf} showCost={showCost} onClose={() => setTraceOf(null)} />}
-      {itemOf && (
-        <ItemPanel
-          item={itemOf}
-          showCost={showCost}
-          canAdjust={can("inventory.adjust")}
-          onTrace={() => { setTraceOf(itemOf); setItemOf(null); }}
-          onPolicy={can("inventory.adjust") ? () => {
-            const product = byProduct(groupOf("FILL_TO_ORDER")).find((p) => p.productId === itemOf.productId);
-            if (product) { setPolicyFor(product); setItemOf(null); }
-          } : undefined}
-          onClose={() => setItemOf(null)}
-        />
-      )}
+      {itemOf && !wide && <ItemPanel item={itemOf} showCost={showCost} canAdjust={can("inventory.adjust")} actions={itemActions(itemOf)} onClose={() => setItemOf(null)} />}
       {approvalOf && <ApprovalSheet id={approvalOf} canDecide={can("inventory.approve")} onClose={() => setApprovalOf(null)} />}
       {finishing && <FinishDialog purchase={finishing} canOwnerMoney={can("finance.sensitive")} onClose={() => setFinishing(null)} />}
     </div>
-  );
-}
-
-function RecentPurchases({ query }: { query: { data?: { purchases: StockPurchase[] }; isLoading: boolean; isError: boolean; refetch: () => unknown } }) {
-  const rows = (query.data?.purchases ?? []).slice(0, 5);
-  return (
-    <section aria-labelledby="stock-recent" className="space-y-3" data-testid="stock-recent">
-      <h2 id="stock-recent" className="text-lg font-semibold tracking-tight text-fg">Recent purchases</h2>
-      {query.isLoading ? <Skeleton className="h-24 w-full rounded-xl" /> : query.isError ? (
-        <p className="text-sm text-fg-muted">Recent purchases couldn&apos;t be loaded. <button type="button" className="font-medium text-fg underline underline-offset-4" onClick={() => query.refetch()}>Try again</button></p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-fg-muted">None yet. Everything you record with Received goods shows here.</p>
-      ) : (
-        <Card className="p-0">
-          <ul className="divide-y divide-line-subtle">
-            {rows.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-4 py-3" data-testid="stock-recent-row">
-                <span className="min-w-0">
-                  <span className="block text-[15px] text-fg">{p.lines.map((l) => `${num(l.quantity)} ${l.unit === "pcs" ? "×" : l.unit} ${l.name}`).join(", ")}</span>
-                  <span className="block text-xs text-fg-muted">{formatBookDate(p.date)} · {p.supplier.name} · paid from {p.paidFrom.kind === "OWNER" ? "the owner's own money" : p.paidFrom.name}</span>
-                </span>
-                <span className="flex items-center gap-2">
-                  {!p.complete ? <Badge variant="warning">Not finished</Badge> : p.paymentStatus === "PENDING_APPROVAL" ? <Badge variant="info">Payment awaits approval</Badge> : null}
-                  {p.total !== null && <span className="tabular-nums text-fg">{formatPrice(p.total)}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-    </section>
   );
 }
 
