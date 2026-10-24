@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   AdjustOrderPriceInput,
   ReclassifyPaymentInput,
+  ReceiveReturnedParcelInput,
   ReconcilePartialDeliveryInput,
   RecordPaymentInput,
   RecordRefundInput,
@@ -67,10 +68,11 @@ export function useOrderDetailCommands(orderId: string) {
   });
   // A parcel cancelled after it shipped: its units go back into stock only once it is physically here (inventory recovery F-d).
   const receiveReturn = useMutation({
-    mutationFn: () => adminOrdersApi.receiveReturnedParcel(orderId, {}),
-    onSuccess: () => {
+    mutationFn: (input: ReceiveReturnedParcelInput) => adminOrdersApi.receiveReturnedParcel(orderId, input),
+    onSuccess: (_data, input) => {
       refresh();
-      toast.success("Parcel received — units are back in stock");
+      const off = (input.lines ?? []).reduce((n, l) => n + (l.damaged ?? 0) + (l.lost ?? 0), 0);
+      toast.success(off ? "Parcel received — good units are back in stock, the rest written off" : "Parcel received — units are back in stock");
     },
     onError: fail("Failed to receive the parcel"),
   });

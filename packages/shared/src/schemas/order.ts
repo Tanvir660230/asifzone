@@ -242,24 +242,47 @@ export const adjustOrderPriceSchema = z.object({
 
 /** Admin resolves a PARTIALLY_DELIVERED order (Steadfast "partial_delivered") by declaring how
  * many units of each line item actually came back — anything not listed (or listed as 0) is
- * assumed kept by the customer. See reconcilePartialDelivery in order.service.ts. */
+ * assumed kept by the customer. `damaged`: how many of the returned units can't be sold again (written off).
+ * See reconcilePartialDelivery in order.service.ts. */
 export const reconcilePartialDeliverySchema = z.object({
   items: z
     .array(
-      z.object({
-        orderItemId: z.string().cuid(),
-        returnedQuantity: z.number().int().min(0).max(10000),
-      }),
+      z
+        .object({
+          orderItemId: z.string().cuid(),
+          returnedQuantity: z.number().int().min(0).max(10000),
+          damaged: z.number().int().min(0).max(10000).optional(),
+        })
+        .refine((e) => (e.damaged ?? 0) <= e.returnedQuantity, { message: "Damaged can't be more than what came back", path: ["damaged"] }),
     )
     .min(1)
-    .max(100),
+    .max(100)
+    .refine((items) => new Set(items.map((e) => e.orderItemId)).size === items.length, { message: "Each item can be listed once" }),
 });
 
 /** A parcel cancelled after shipping, physically back at the shop (inventory recovery F-d). `lines`: what came back,
- * when not the whole parcel; omitted = every unit still outstanding. */
+ * when not the whole parcel; omitted = every unit still outstanding, all sellable. Per line, `quantity` units came back,
+ * `damaged` of them can't be sold again (written off), and `lost` more never came back (the courier lost them) — both
+ * close the line without adding sellable stock. Lines left out stay outstanding. */
 export const receiveReturnedParcelSchema = z.object({
-  lines: z.array(z.object({ orderItemId: z.string().cuid(), quantity: z.number().int().min(1).max(10000) })).min(1).max(100).optional(),
+  lines: z
+    .array(
+      z
+        .object({
+          orderItemId: z.string().cuid(),
+          quantity: z.number().int().min(0).max(10000),
+          damaged: z.number().int().min(0).max(10000).optional(),
+          lost: z.number().int().min(0).max(10000).optional(),
+        })
+        .refine((l) => (l.damaged ?? 0) <= l.quantity, { message: "Damaged can't be more than what came back", path: ["damaged"] })
+        .refine((l) => l.quantity + (l.lost ?? 0) > 0, { message: "Nothing to receive on this line", path: ["quantity"] }),
+    )
+    .min(1)
+    .max(100)
+    .refine((lines) => new Set(lines.map((l) => l.orderItemId)).size === lines.length, { message: "Each item can be listed once" })
+    .optional(),
   note: z.string().trim().max(300).optional().nullable(),
+  damageNote: z.string().trim().max(200).optional().nullable(),
 });
 export type ReceiveReturnedParcelInput = z.infer<typeof receiveReturnedParcelSchema>;
 

@@ -15,6 +15,7 @@ import {
 import { bulkUpdateOrderStatus, deleteOrder, receiveReturnedParcel, reconcilePartialDelivery, restoreOrder, updateOrderStatus } from "./order.service";
 import { refundOrderPayment, settlePaymentSession } from "../payments/payment.service";
 import { reviewReturnRequest } from "../return-requests/return-request.service";
+import { recordItemReturn } from "./order-adjustments.service";
 
 // docs/ORDER_STATE_MACHINE.md — every status change goes through one transactional matrix. Each test here would
 // have passed a wrong state (or double-counted stock) under the pre-Phase-1 "any status → any status" code.
@@ -280,6 +281,125 @@ describe("order state machine", () => {
       await updateOrderStatus(order.id, { status: "RETURNED" }, admin);
       expect(await stockOf(v.id)).toBe(10); // the remaining 2, not 3 more
       await assertInventoryInvariants(v.id);
+    });
+  });
+
+  describe("parcel received back: good, damaged, lost", () => {
+    const shipThenCancel = async (orderId: string) => {
+      await updateOrderStatus(orderId, { status: "SHIPPED" }, admin);
+      await updateOrderStatus(orderId, { status: "CANCELLED" }, admin);
+    };
+
+    it("puts the good units back, writes the damaged one off (outside the order), and leaves the rest outstanding", async () => {
+      const { variants } = await createStockedProduct({ stocks: [10] });
+      const v = variants[0]!;
+      const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
+      await shipThenCancel(order.id);
+      expect(await stockOf(v.id)).toBe(7);
+      const [line] = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+
+      await receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line!.id, quantity: 2, damaged: 1 }], damageNote: "box crushed" });
+      expect(await stockOf(v.id)).toBe(8); // 1 good back; the damaged one came back and went straight out
+      const written = await prisma.stockMovement.findMany({ where: { sourceType: "OrderParcelReceipt", sourceId: order.id } });
+      expect(written.map((m) => [m.reason, m.change, m.orderId])).toEqual([["DAMAGED", -1, null]]);
+      expect(written[0]!.note).toContain(order.orderNumber);
+      expect(written[0]!.note).toContain("box crushed");
+      const history = await prisma.orderStatusHistory.findFirstOrThrow({ where: { orderId: order.id }, orderBy: { createdAt: "desc" } });
+      expect(history.note).toContain("1 good, 1 damaged");
+      expect(history.note).toContain("1 still out");
+      await assertInventoryInvariants(v.id);
+
+      // The last unit never comes back: the courier lost it. It closes the parcel without touching sellable stock.
+      await receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line!.id, quantity: 0, lost: 1 }] });
+      expect(await stockOf(v.id)).toBe(8);
+      const lost = await prisma.stockMovement.findMany({ where: { sourceType: "OrderParcelReceipt", sourceId: order.id, reason: "LOST" } });
+      expect(lost.map((m) => m.change)).toEqual([-1]);
+      await expect(receiveReturnedParcel(order.id, admin, {})).rejects.toMatchObject({ details: { code: "NOTHING_TO_RECEIVE" } });
+      await assertInventoryInvariants(v.id);
+    });
+
+    it("refuses more damaged or lost units than are still outstanding, and changes nothing", async () => {
+      const { variants } = await createStockedProduct({ stocks: [5] });
+      const v = variants[0]!;
+      const order = await placeOrder([{ variantId: v.id, quantity: 2 }]);
+      await shipThenCancel(order.id);
+      const [line] = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+      await expectRefused(receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line!.id, quantity: 2, lost: 1 }] }));
+      await expectRefused(receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line!.id, quantity: 1, damaged: 2 }] }));
+      expect(await stockOf(v.id)).toBe(3);
+      expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: line!.id } })).restockedQuantity).toBe(0);
+    });
+
+    it("a partial delivery reconciled with a damaged unit: it comes back, is written off, and the return record says so", async () => {
+      const { variants } = await createStockedProduct({ stocks: [10] });
+      const v = variants[0]!;
+      const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
+      await updateOrderStatus(order.id, { status: "SHIPPED" }, admin);
+      await updateOrderStatus(order.id, { status: "PARTIALLY_DELIVERED" }, admin);
+      const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
+      await expectRefused(reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 1, damaged: 2 }] }, admin));
+      await reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 2, damaged: 1 }] }, admin);
+      expect(await stockOf(v.id)).toBe(8); // 7 + 2 back − 1 damaged
+      const rr = await prisma.returnRequest.findFirstOrThrow({ where: { orderId: order.id } });
+      expect(rr.lines).toMatchObject([{ orderItemId: line.id, quantity: 2, restocked: 1, writtenOff: 1 }]);
+      expect(await prisma.stockMovement.count({ where: { variantId: v.id, reason: "DAMAGED", orderId: null } })).toBe(1);
+      await assertInventoryInvariants(v.id);
+    });
+
+    it("approving a customer return with a damaged unit returns the order and writes that unit off", async () => {
+      const { variants } = await createStockedProduct({ stocks: [10] });
+      const v = variants[0]!;
+      const order = await placeOrder([{ variantId: v.id, quantity: 2 }]);
+      await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
+      const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
+      const request = await prisma.returnRequest.create({ data: { orderId: order.id, customerId: order.customerId!, reason: "Torn" } });
+      await expectRefused(reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 3 }] }, admin));
+      expect((await prisma.returnRequest.findUniqueOrThrow({ where: { id: request.id } })).status).toBe("PENDING");
+
+      await reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }] }, admin);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("RETURNED");
+      expect(await stockOf(v.id)).toBe(9);
+      const out = await prisma.stockMovement.findMany({ where: { sourceType: "OrderParcelReceipt", sourceId: order.id } });
+      expect(out.map((m) => [m.reason, m.change])).toEqual([["DAMAGED", -1]]);
+      await assertInventoryInvariants(v.id);
+    });
+
+    it("a customer return's damaged units are capped at what THIS approval brought back, repeated lines added up", async () => {
+      const { variants } = await createStockedProduct({ stocks: [10] });
+      const v = variants[0]!;
+      const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
+      await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
+      const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
+      // 2 of 3 already came back through an item return; the customer return brings back the last one.
+      await recordItemReturn(order.id, { items: [{ orderItemId: line.id, quantity: 2, restock: true }], reason: "size", compensation: "NONE" }, admin, `dmg-cap-${order.id}`);
+      expect(await stockOf(v.id)).toBe(9);
+      const request = await prisma.returnRequest.create({ data: { orderId: order.id, customerId: order.customerId!, reason: "Torn" } });
+      await expectRefused(reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }, { orderItemId: line.id, quantity: 1 }] }, admin));
+      expect(await stockOf(v.id)).toBe(9);
+      await reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }] }, admin);
+      expect(await stockOf(v.id)).toBe(9); // the last unit came back and was written off; the 2 earlier ones stay
+      await assertInventoryInvariants(v.id);
+    });
+
+    it("refuses the same item listed twice when a parcel is received", async () => {
+      const { variants } = await createStockedProduct({ stocks: [5] });
+      const order = await placeOrder([{ variantId: variants[0]!.id, quantity: 2 }]);
+      await shipThenCancel(order.id);
+      const [line] = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+      await expectRefused(receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line!.id, quantity: 1, damaged: 1 }, { orderItemId: line!.id, quantity: 1 }] }));
+      const res = await (await asOwner()).post(`/api/orders/${order.id}/receive-return`, { lines: [{ orderItemId: line!.id, quantity: 1, damaged: 1 }, { orderItemId: line!.id, quantity: 1 }] });
+      expect(res.status).toBe(400);
+      expect(await stockOf(variants[0]!.id)).toBe(3);
+    });
+
+    it("the HTTP route takes damaged counts", async () => {
+      const { variants } = await createStockedProduct({ stocks: [5] });
+      const order = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
+      await shipThenCancel(order.id);
+      const [line] = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+      const res = await (await asOwner()).post(`/api/orders/${order.id}/receive-return`, { lines: [{ orderItemId: line!.id, quantity: 1, damaged: 1 }] });
+      expect(res.status).toBe(200);
+      expect(await stockOf(variants[0]!.id)).toBe(4);
     });
   });
 

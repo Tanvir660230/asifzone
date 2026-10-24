@@ -6,6 +6,7 @@ import { AlertTriangle, Copy, ExternalLink, PackageX, RefreshCw, Truck, Unlink }
 import { CLOSED_ORDER_STATUSES, courierBookingBlocker, formatVariantLabel, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import { COURIER_PROVIDER_LABEL, type OrderPermissions } from "../order-domain";
 import type { OrderCommands } from "../use-order-commands";
 import { BlockedHint, DetailSection, Fact } from "./detail-section";
 import { CourierNotePanel } from "./courier-note-panel";
+import { UnitStepper } from "./unit-stepper";
 import type { OrderDetailCommands } from "./use-order-detail-commands";
 
 const LOSS_REASON = { CANCELLED_POST_BOOKING: "Cancelled after booking", PARTIAL_RETURN: "Partial return" } as const;
@@ -23,7 +25,11 @@ const LOSS_REASON = { CANCELLED_POST_BOOKING: "Cancelled after booking", PARTIAL
 /** Declare which units of a partially delivered order came back; the server restocks them and logs the courier loss. */
 function PartialDelivery({ order, detail, canManage }: { order: Order; detail: OrderDetailCommands; canManage: boolean }) {
   const [returned, setReturned] = useState<Record<string, number>>({});
-  useEffect(() => setReturned({}), [order.id]);
+  const [damaged, setDamaged] = useState<Record<string, number>>({});
+  useEffect(() => {
+    setReturned({});
+    setDamaged({});
+  }, [order.id]);
 
   if (order.partialDeliveryReconciledAt) {
     const units = order.items.reduce((sum, i) => sum + i.returnedQuantity, 0);
@@ -37,7 +43,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
     <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="partial-delivery">
       <p className="flex items-start gap-2 text-sm text-warning-800">
         <PackageX size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        The courier reported a partial delivery. Enter how many units of each item came back so they can be restocked; leave 0 for anything the customer kept.
+        The courier reported a partial delivery. Enter how many units of each item came back and how many of those are damaged — good units are restocked, damaged ones written off. Leave 0 for anything the customer kept.
       </p>
       <ul className="space-y-2">
         {order.items.map((item) => (
@@ -46,20 +52,40 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
               <p className="truncate font-medium text-ink-900">{item.productNameSnapshot}</p>
               <p className="text-xs text-ink-500">{[formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/"), `Ordered ${item.quantity}`].filter(Boolean).join(" · ")}</p>
             </div>
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-500">
-              Returned
-              <Input
-                type="number"
-                min={0}
-                max={item.quantity}
-                step={1}
-                className="w-20"
-                disabled={!canManage}
-                aria-label={`Units of ${item.productNameSnapshot} returned`}
-                value={returned[item.id] ?? 0}
-                onChange={(e) => setReturned({ ...returned, [item.id]: Math.max(0, Math.min(item.quantity, Math.round(Number(e.target.value) || 0))) })}
-              />
-            </label>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-ink-500">
+                Returned
+                <Input
+                  type="number"
+                  min={0}
+                  max={item.quantity}
+                  step={1}
+                  className="w-20"
+                  disabled={!canManage}
+                  aria-label={`Units of ${item.productNameSnapshot} returned`}
+                  value={returned[item.id] ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(item.quantity, Math.round(Number(e.target.value) || 0)));
+                    setReturned({ ...returned, [item.id]: v });
+                    if ((damaged[item.id] ?? 0) > v) setDamaged({ ...damaged, [item.id]: v });
+                  }}
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-ink-500">
+                Damaged
+                <Input
+                  type="number"
+                  min={0}
+                  max={returned[item.id] ?? 0}
+                  step={1}
+                  className="w-20"
+                  disabled={!canManage || !(returned[item.id] ?? 0)}
+                  aria-label={`Returned units of ${item.productNameSnapshot} that are damaged`}
+                  value={damaged[item.id] ?? 0}
+                  onChange={(e) => setDamaged({ ...damaged, [item.id]: Math.max(0, Math.min(returned[item.id] ?? 0, Math.round(Number(e.target.value) || 0))) })}
+                />
+              </label>
+            </div>
           </li>
         ))}
       </ul>
@@ -68,7 +94,11 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
           <Button
             size="sm"
             loading={detail.reconcile.isPending}
-            onClick={() => detail.reconcile.mutate({ items: order.items.map((i) => ({ orderItemId: i.id, returnedQuantity: returned[i.id] ?? 0 })) })}
+            onClick={() =>
+              detail.reconcile.mutate({
+                items: order.items.map((i) => ({ orderItemId: i.id, returnedQuantity: returned[i.id] ?? 0, damaged: Math.min(damaged[i.id] ?? 0, returned[i.id] ?? 0) })),
+              })
+            }
           >
             Restock returned units & reconcile
           </Button>
@@ -78,30 +108,109 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
   );
 }
 
+type ParcelLine = { back: number; damaged: number; lost: boolean };
+
 /** A cancelled order whose units are still out: it was cancelled after it shipped, so the parcel is on its way back. Its
- * units go back into stock only when someone has it in hand (inventory recovery F-d) — never on the courier's word. */
+ * units go back into stock only when someone has it in hand (inventory recovery F-d) — never on the courier's word. Staff
+ * say per item how many came back and how many of those are damaged; anything that didn't come back either stays
+ * outstanding or is marked lost by the courier. Only the good units become sellable stock. */
 function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: OrderDetailCommands; canManage: boolean }) {
+  const [lines, setLines] = useState<Record<string, ParcelLine>>({});
+  const [damageNote, setDamageNote] = useState("");
+  useEffect(() => {
+    setLines({});
+    setDamageNote("");
+  }, [order.id]);
+
   const out = order.items.map((i) => ({ item: i, units: i.quantity - i.restockedQuantity })).filter((l) => l.units > 0);
   if (!out.length) return null;
   const total = out.reduce((s, l) => s + l.units, 0);
+  const lineOf = (id: string, units: number): ParcelLine => lines[id] ?? { back: units, damaged: 0, lost: false };
+  const set = (id: string, units: number, patch: Partial<ParcelLine>) => {
+    const next = { ...lineOf(id, units), ...patch };
+    next.damaged = Math.min(next.damaged, next.back);
+    setLines({ ...lines, [id]: next });
+  };
+
+  let good = 0;
+  let damaged = 0;
+  let lost = 0;
+  let waiting = 0;
+  for (const { item, units } of out) {
+    const l = lineOf(item.id, units);
+    good += l.back - l.damaged;
+    damaged += l.damaged;
+    if (l.lost) lost += units - l.back;
+    else waiting += units - l.back;
+  }
+  const nothing = good + damaged + lost === 0;
+  const summary = [`${good} good`, damaged ? `${damaged} damaged` : "", lost ? `${lost} lost` : ""].filter(Boolean).join(", ");
+
+  const receive = () =>
+    detail.receiveReturn.mutate(
+      {
+        lines: out
+          .map(({ item, units }) => {
+            const l = lineOf(item.id, units);
+            return { orderItemId: item.id, quantity: l.back, damaged: l.damaged, lost: l.lost ? units - l.back : 0 };
+          })
+          .filter((l) => l.quantity + l.lost > 0),
+        damageNote: damaged ? damageNote.trim() || null : null,
+      },
+      { onSuccess: () => setLines({}) },
+    );
+
   return (
     <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="parcel-coming-back">
       <p className="flex items-start gap-2 text-sm text-warning-800">
         <PackageX size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        Cancelled after it shipped — the parcel is coming back. {total} unit(s) go back into stock when you have it in hand.
+        Cancelled after it shipped — the parcel is coming back. {total} unit(s) go back into stock when you have it in hand. Check each item: damaged
+        units are written off instead of restocked.
       </p>
-      <ul className="space-y-1 text-sm text-ink-700">
-        {out.map(({ item, units }) => (
-          <li key={item.id} className="flex justify-between gap-3">
-            <span className="min-w-0 truncate">{item.productNameSnapshot}{formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/") ? ` · ${formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/")}` : ""}</span>
-            <span className="shrink-0 tabular-nums">{units}</span>
-          </li>
-        ))}
+      <ul className="space-y-2">
+        {out.map(({ item, units }) => {
+          const l = lineOf(item.id, units);
+          const variant = formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/");
+          const missing = units - l.back;
+          return (
+            <li key={item.id} className="space-y-2.5 rounded-lg border border-line-subtle bg-surface p-2.5 text-sm" data-testid="parcel-line">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-ink-900">{item.productNameSnapshot}</p>
+                <p className="text-xs text-ink-500">{[variant, `${units} out with the courier`].filter(Boolean).join(" · ")}</p>
+              </div>
+              {canManage && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-600">
+                  <span className="flex items-center gap-2">
+                    <span className="w-[4.5rem] sm:w-auto">Came back</span>
+                    <UnitStepper label={`Units of ${item.productNameSnapshot} that came back`} value={l.back} max={units} onChange={(v) => set(item.id, units, { back: v })} />
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="w-[4.5rem] sm:w-auto">Damaged</span>
+                    <UnitStepper label={`Damaged units of ${item.productNameSnapshot}`} value={l.damaged} max={l.back} onChange={(v) => set(item.id, units, { damaged: v })} />
+                  </span>
+                </div>
+              )}
+              {canManage && missing > 0 && (
+                <label className="flex items-center gap-2 text-xs text-ink-600">
+                  <Checkbox checked={l.lost} onChange={(e) => set(item.id, units, { lost: e.target.checked })} />
+                  {missing} didn&apos;t come back — the courier lost {missing === 1 ? "it" : "them"}
+                  {!l.lost && <span className="text-ink-400">(otherwise {missing === 1 ? "it stays" : "they stay"} outstanding)</span>}
+                </label>
+              )}
+            </li>
+          );
+        })}
       </ul>
+      {canManage && damaged > 0 && (
+        <Field htmlFor="parcel-damage-note" label="What was wrong? (optional)">
+          <Input id="parcel-damage-note" placeholder="e.g. box crushed, bottle leaked" maxLength={200} value={damageNote} onChange={(e) => setDamageNote(e.target.value)} />
+        </Field>
+      )}
       {canManage && (
-        <div className="flex justify-end">
-          <Button size="sm" className="max-sm:w-full" loading={detail.receiveReturn.isPending} onClick={() => detail.receiveReturn.mutate()} data-testid="parcel-received">
-            Parcel received
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+          {waiting > 0 && <p className="text-xs text-ink-500">{waiting} unit(s) stay outstanding</p>}
+          <Button size="sm" className="max-sm:w-full" disabled={nothing} loading={detail.receiveReturn.isPending} onClick={receive} data-testid="parcel-received">
+            Receive — {summary}
           </Button>
         </div>
       )}

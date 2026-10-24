@@ -25,8 +25,8 @@ the only application code allowed to change `ProductVariant.stock` or write `Sto
 | `RESTOCK` | goods received; opening stock of a new variant | + | `adjustVariantStock`, `recordInitialStock` |
 | `ADJUSTMENT` | manual correction (either sign); product-form stock edits; variant removed | ± | `adjustVariantStock`, `setVariantStockFromForm`, `zeroVariantStock` |
 | `IMPORT` *(new)* | stock set by a CSV import (a declared count) | ± | `setVariantStockCount`, `recordInitialStock` |
-| `DAMAGED` *(new)* | units written off as damaged | − | `adjustVariantStock` |
-| `LOST` *(new)* | units written off as lost / shrinkage | − | `adjustVariantStock` |
+| `DAMAGED` *(new)* | units written off as damaged (manual, or a return that came back damaged) | − | `adjustVariantStock`, `writeOffReturnedUnits`, `writeOffParcelUnits` |
+| `LOST` *(new)* | units written off as lost / shrinkage (manual, or a parcel the courier lost) | − | `adjustVariantStock`, `writeOffParcelUnits` |
 
 Historical rows keep their original reason (older cancellations are `ADJUSTMENT` with an `orderId`).
 

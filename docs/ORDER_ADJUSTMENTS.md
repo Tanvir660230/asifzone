@@ -189,6 +189,19 @@ reversed, D8), timeline note with the admin. The original lines, prices and tota
 the returned value out (`returned` input). Every unit back → the order moves to RETURNED through the state machine.
 Duplicates: Idempotency-Key replay; returning the same units twice → 409.
 
+### 8a. Damaged or lost on every other way back (2026-10-25)
+
+Whatever way units come back, staff say on the spot which can't be sold again, so nobody has to go through Stock › Adjust:
+
+| Path | Input | Write-off | Booked by |
+|---|---|---|---|
+| Parcel cancelled after shipping, received back (`POST /orders/:id/receive-return`, Delivery card) | per line `quantity` came back, `damaged` of them, `lost` (never came back — the courier lost them); lines left out stay outstanding | `writeOffParcelUnits`: DAMAGED / LOST at the line's cost, `orderId` null, `sourceType "OrderParcelReceipt"`, `sourceId` the order | the movement itself (`ledger: "MOVEMENT"`, Dr 5200 shrinkage / Cr inventory) — no sale was recognised, so no return record |
+| Partial delivery reconcile | per line `returnedQuantity`, `damaged` | `writeOffReturnedUnits` | the return record's `lines[].writtenOff` (same as §8) |
+| Customer return request approved (Return requests page) | `damaged[{orderItemId, quantity}]` | `writeOffParcelUnits` after T7 restocked everything | the movement itself |
+
+The timeline says what happened ("Parcel received back — 1 good, 1 damaged (box crushed), 1 still out"). Damaged or lost
+can never exceed what is still outstanding on the line (400, nothing changes).
+
 ## 9. Exchange (D15)
 
 Unchanged mechanics (D6, `createExchangeOrder`): current effective price, replacement taken from stock before the original
