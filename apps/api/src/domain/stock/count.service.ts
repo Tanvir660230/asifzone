@@ -14,6 +14,10 @@
  * (ordered, not filled): a loss of filled bottles may take it further down, never below −(units waiting), i.e. counted ≥ 0.
  * Idempotent by the request's key (hub-entry.ts); each line's adjustment carries the line as its source, so a retry never
  * books it twice.
+ *
+ * A loss counted by someone without inventory.approve and worth at least the business's countLossApprovalThreshold (at
+ * the average cost, else the cost price; unknown counts as over) is not booked: the count is kept and a StockCountApproval
+ * waits for the owner (count-approval.service), in the same transaction, so a retry finds it.
  */
 import type { Prisma } from "@prisma/client";
 import { stockCountsSchema, type StockCountReason, type StockCountsInput } from "@clothing-brand/shared";
@@ -24,6 +28,7 @@ import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { businessDateOf, financeError } from "../finance/finance-values";
 import { recordStockCountInTx } from "../finance/stock-check.service";
 import { financeTransaction } from "../finance/finance-tx";
+import { holdLossForApprovalInTx } from "./count-approval.service";
 import { claimEntry, completeEntry, fingerprintOf, releaseEntry, renewLease, saveSteps, unitOf, variantLabel } from "./hub-entry";
 
 /** Order statuses whose units are still on the shelf (packed at most; not yet handed to the courier). */
@@ -47,8 +52,8 @@ export async function reservedNotDispatched(db: Db, variantIds?: string[]): Prom
 }
 
 const LOSSES = new Set<StockCountReason>(["DAMAGED", "LOST", "SAMPLE"]);
-const MOVEMENT_REASON: Record<StockCountReason, "DAMAGED" | "LOST" | "ADJUSTMENT"> = { DAMAGED: "DAMAGED", LOST: "LOST", SAMPLE: "ADJUSTMENT", FOUND: "ADJUSTMENT", COUNT_FIX: "ADJUSTMENT" };
-const REASON_WORD: Record<StockCountReason, string> = { DAMAGED: "damaged", LOST: "lost", SAMPLE: "sample", FOUND: "found", COUNT_FIX: "count fix" };
+export const MOVEMENT_REASON: Record<StockCountReason, "DAMAGED" | "LOST" | "ADJUSTMENT"> = { DAMAGED: "DAMAGED", LOST: "LOST", SAMPLE: "ADJUSTMENT", FOUND: "ADJUSTMENT", COUNT_FIX: "ADJUSTMENT" };
+export const REASON_WORD: Record<StockCountReason, string> = { DAMAGED: "damaged", LOST: "lost", SAMPLE: "sample", FOUND: "found", COUNT_FIX: "count fix" };
 
 /** A difference and its reason must agree: a shortfall needs a loss reason or a count fix; a gain is found or a fix. */
 function reasonProblem(name: string, difference: number, reason: StockCountReason | null | undefined): string | null {
@@ -69,6 +74,7 @@ interface CountLine {
   difference?: number;
   stockCountId?: string;
   movementId?: string | null;
+  pendingApprovalId?: string | null;
   done?: boolean;
 }
 interface CountSteps {
@@ -152,15 +158,19 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
         }
         // kept with what should have been on the shelf, so Finance → Stock check shows the true difference
         const stockCountId = seen ? seen.id : (await recordStockCountInTx(tx, business, { variantId: line.variantId, counted: line.counted, countDate: date, note: line.note, expected, sourceId }, actor)).id;
-        if (!difference) return { expected, difference, stockCountId, movementId: null, adjusted: null };
+        if (!difference) return { expected, difference, stockCountId, movementId: null, adjusted: null, pendingApprovalId: null };
+        if (difference < 0) {
+          const held = await holdLossForApprovalInTx(tx, business, { stockCountId, variantId: line.variantId, difference, reason, note: line.note }, actor);
+          if (held) return { expected, difference, stockCountId, movementId: null, adjusted: null, pendingApprovalId: held };
+        }
         // A gain comes in unvalued (F-b): no income is booked for units nobody bought — the owner enters their cost from the
         // bill (Finance › Exceptions) or approves an estimate. A loss leaves at the running average, as before.
         const adjusted = await adjustVariantStockInTx(tx, line.variantId, difference, MOVEMENT_REASON[reason], actor.adminId, note, { source, floor: line.fillToOrder ? waiting : 0, unvaluedGain: true });
         const mv = await tx.stockMovement.findFirstOrThrow({ where: { variantId: line.variantId, sourceType: source.type, sourceId: source.id }, select: { id: true } });
-        return { expected, difference, stockCountId, movementId: mv.id, adjusted };
+        return { expected, difference, stockCountId, movementId: mv.id, adjusted, pendingApprovalId: null };
       });
       if (booked.adjusted) afterAdjustment(booked.adjusted);
-      Object.assign(line, { expected: booked.expected, difference: booked.difference, stockCountId: booked.stockCountId, movementId: booked.movementId, done: true });
+      Object.assign(line, { expected: booked.expected, difference: booked.difference, stockCountId: booked.stockCountId, movementId: booked.movementId, pendingApprovalId: booked.pendingApprovalId, done: true });
       await saveSteps(lease, steps as never);
     }
     await completeEntry(lease, steps as never);
@@ -176,7 +186,7 @@ function outcome(id: string, date: string, s: CountSteps, replayed: boolean) {
     id,
     date,
     replayed,
-    lines: s.lines.map((l) => ({ variantId: l.variantId, expected: l.expected ?? 0, counted: l.counted, difference: l.difference ?? 0, movementId: l.movementId ?? null })),
+    lines: s.lines.map((l) => ({ variantId: l.variantId, expected: l.expected ?? 0, counted: l.counted, difference: l.difference ?? 0, movementId: l.movementId ?? null, pendingApprovalId: l.pendingApprovalId ?? null })),
   };
 }
 

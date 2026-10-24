@@ -28,3 +28,11 @@ export const stockItemsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type StockItemsQuery = z.input<typeof stockItemsQuerySchema>;
+
+/** Deciding a count loss that waits for the owner (POST /stock/approvals/:id/decision). */
+export const stockApprovalDecisionSchema = z.object({
+  decision: z.enum(["APPROVE", "REJECT"]),
+  note: z.string().trim().max(300).optional().nullable().transform((v) => (v ? v : null)),
+});
+export type StockApprovalDecisionInput = z.input<typeof stockApprovalDecisionSchema>;
+export const stockApprovalsQuerySchema = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional() });

@@ -730,6 +730,7 @@ model ProductVariant {
   /// Manufacturing — Restrict: a variant used in a BOM or a production order keeps its history.
   bomMaterialLines          BillOfMaterialsLine[]      @relation("BomMaterial")
   stockCounts               StockCount[]
+  stockCountApprovals       StockCountApproval[]
   materialRolls             MaterialRoll[]
   bomFinishedLines          BillOfMaterialsLine[]      @relation("BomFinishedVariant")
   productionLines           ProductionOrderLine[]
@@ -3300,6 +3301,9 @@ model FinanceBusiness {
   autoProfitShares            Boolean                   @default(false)
   /// Inventory recovery: an owner alert is raised for any inventory gain (5210 count adjustment) at or above this amount.
   inventoryGainAlertThreshold Decimal                   @default(1000) @db.Decimal(18, 2)
+  /// Smart stock page: a count loss by someone without inventory.approve worth at least this (at the average cost) waits for
+  /// the owner (StockCountApproval) instead of moving the stock.
+  countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
   /// What the last night's run did, for the settings page.
   autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())
@@ -3328,6 +3332,7 @@ model FinanceBusiness {
   verifications               FinanceVerification[]
   smsBalanceSnapshots         SmsBalanceSnapshot[]
   stockCounts                 StockCount[]
+  stockCountApprovals         StockCountApproval[]
   materialRolls               MaterialRoll[]
   stockHubEntries             StockHubEntry[]
   landedCosts                 LandedCost[]
@@ -6133,6 +6138,7 @@ model StockCount {
   countedByAdminId String?
   /// The stock hub count line that recorded it (`<entry id>:<line>`): a retry finds it instead of counting twice.
   sourceId         String?         @unique
+  approval         StockCountApproval?
   createdAt        DateTime        @default(now())
 
   @@index([variantId, countDate])
@@ -6351,4 +6357,38 @@ model StockItemSetting {
   coverDays           Int            @default(30)
   updatedByAdminId    String?
   updatedAt           DateTime       @updatedAt
+}
+
+enum StockCountApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A count loss waiting for the owner (docs/STOCK_HUB.md §7): recorded by someone without inventory.approve and worth at
+/// least FinanceBusiness.countLossApprovalThreshold. The count itself is kept (StockCount); approving applies the difference
+/// recorded here — never one worked out again — through the ordinary stock adjustment; rejecting moves nothing.
+model StockCountApproval {
+  id                 String                   @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  stockCountId       String                   @unique
+  stockCount         StockCount               @relation(fields: [stockCountId], references: [id], onDelete: Restrict)
+  variantId          String
+  variant            ProductVariant           @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  /// counted − expected at the count (negative)
+  difference         Int
+  reason             String
+  note               String?
+  /// the loss at the average cost then; null when the item had no cost
+  value              Decimal?                 @db.Decimal(18, 2)
+  status             StockCountApprovalStatus @default(PENDING)
+  requestedByAdminId String?
+  decidedByAdminId   String?
+  decidedAt          DateTime?
+  decisionNote       String?
+  movementId         String?                  @unique
+  createdAt          DateTime                 @default(now())
+
+  @@index([businessId, status])
 }
