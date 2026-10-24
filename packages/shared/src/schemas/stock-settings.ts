@@ -1,0 +1,18 @@
+/**
+ * Per-item stock settings (docs/STOCK_HUB.md §7): who the item is usually bought from, how many days it takes to arrive and
+ * how many days of stock a reorder should cover. They drive the reorder suggestion on /admin/stock.
+ */
+import { z } from "zod";
+
+export const STOCK_ITEM_DEFAULTS = { preferredSupplierId: null, leadTimeDays: 3, coverDays: 30 } as const;
+
+export const stockItemSettingsSchema = z
+  .object({
+    preferredSupplierId: z.string().trim().min(1).max(64).nullable(),
+    leadTimeDays: z.number().int("Whole days").min(0).max(120, "At most 120 days"),
+    coverDays: z.number().int("Whole days").min(7, "At least 7 days").max(180, "At most 180 days"),
+  })
+  .strict();
+
+export type StockItemSettingsInput = z.input<typeof stockItemSettingsSchema>;
+export type StockItemSettings = z.output<typeof stockItemSettingsSchema>;

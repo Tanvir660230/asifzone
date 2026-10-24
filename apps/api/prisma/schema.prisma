@@ -739,6 +739,7 @@ model ProductVariant {
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
   valuationEntries          InventoryValuationEntry[]
   costState                 InventoryCostState?
+  stockSetting              StockItemSetting?
   cartItems                 CartItem[]
   stockAlerts               StockAlert[]
   createdAt                 DateTime                   @default(now())
@@ -4584,6 +4585,7 @@ model Supplier {
   payments                TreasuryMovement[]
   allocations             SupplierAllocation[]
   recurringCommitments    RecurringCommitment[]
+  stockItemSettings       StockItemSetting[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -6335,4 +6337,18 @@ model ProfitShareAdjustment {
   createdAt         DateTime                    @default(now())
 
   @@index([partnerId, period])
+}
+
+/// Per-item stock settings (docs/STOCK_HUB.md §7): the usual supplier, days to arrive and days a reorder should cover —
+/// read by the reorder suggestion on /admin/stock. No row = the defaults (STOCK_ITEM_DEFAULTS).
+model StockItemSetting {
+  id                  String         @id @default(cuid())
+  variantId           String         @unique
+  variant             ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  preferredSupplierId String?
+  preferredSupplier   Supplier?      @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  leadTimeDays        Int            @default(3)
+  coverDays           Int            @default(30)
+  updatedByAdminId    String?
+  updatedAt           DateTime       @updatedAt
 }
