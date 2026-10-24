@@ -17,6 +17,8 @@ import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { financeError } from "../finance/finance-values";
 import { UNLIMITED_UNITS } from "./fill-capacity.service";
 import { getItemSettings, type ItemSettings } from "./item-settings.service";
+import { imagesFor } from "./stock-images";
+import { searchScore, searchWords } from "./stock-search";
 import { stockHub, type StockHubGroupKey, type StockHubItem } from "./stock-hub.service";
 
 export interface StockListItem extends StockHubItem {
@@ -29,6 +31,8 @@ export interface StockListItem extends StockHubItem {
   limitedBy: { variantId: string; name: string } | null;
   reorder: { suggested: number; orderBy: string } | null;
   settings: ItemSettings;
+  /** The size's picture, else the product's first (stock-images.ts); null when it has none. */
+  imageUrl: string | null;
 }
 
 type Classifiable = Pick<StockHubItem, "stock" | "makeable" | "low" | "usedPerDay" | "reserved"> & { policy: { owed: number; policy: string } | null };
@@ -160,7 +164,7 @@ async function computeStockItems(viewer: { canSeeCost: boolean }): Promise<AllSt
   const [hub, recipes, { business }] = await Promise.all([stockHub(viewer), recipesByVariant(), getFinanceContext()]);
   const today = businessToday(business);
   const flat = hub.groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.key })));
-  const settings = await getItemSettings(flat.map((i) => i.variantId));
+  const [settings, images] = await Promise.all([getItemSettings(flat.map((i) => i.variantId)), imagesFor(flat.map((i) => i.variantId))]);
   const byId = new Map(flat.map((i) => [i.variantId, i]));
   const materialStock = new Map(flat.filter((i) => i.group === "MATERIAL").map((i) => [i.variantId, i.stock]));
   // what owed bottles will take from each material when they are filled
@@ -182,6 +186,7 @@ async function computeStockItems(viewer: { canSeeCost: boolean }): Promise<AllSt
       limitedBy: limit ? { variantId: limit, name: byId.get(limit)?.productName ?? "" } : null,
       reorder: i.group === "FILL_TO_ORDER" ? null : suggestReorder({ usedPerDay: i.usedPerDay, available, leadTimeDays: s.leadTimeDays, coverDays: s.coverDays, today }),
       settings: s,
+      imageUrl: images.get(i.variantId) ?? null,
     };
   });
   items.sort((a, b) => {
@@ -196,8 +201,16 @@ export async function listStockItems(raw: StockItemsQuery, viewer: { canSeeCost:
   const query = stockItemsQuerySchema.parse(raw);
   const offset = decodeCursor(query.cursor);
   const { items } = await allStockItems(viewer);
-  const needle = query.q?.toLowerCase();
-  const scoped = items.filter((i) => (!query.group || i.group === query.group) && (!needle || i.sku.toLowerCase().includes(needle) || i.name.toLowerCase().includes(needle) || i.productName.toLowerCase().includes(needle)));
+  // forgiving search (stock-search.ts): every word must match, typos allowed; the closest matches come first, ties keep
+  // the urgency order
+  const inGroup = items.filter((i) => !query.group || i.group === query.group);
+  const scoped = query.q
+    ? inGroup
+        .map((i, at) => ({ i, at, score: searchScore(query.q!, searchWords(i)) }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score || a.at - b.at)
+        .map((x) => x.i)
+    : inGroup;
   const counts: Record<StockStatus | "ALL", number> = { ALL: scoped.length, NEEDS_FILL: 0, OUT: 0, LOW: 0, OK: 0, EMPTY: 0 };
   for (const i of scoped) counts[i.status]++;
   const filtered = query.status ? scoped.filter((i) => i.status === query.status) : scoped;

@@ -535,8 +535,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +12: share periods (list, prepare, verify, post, retry), corrections (list, propose, detect, approve, reject), rates (phase 3)
     // +2: inventory recovery — receive a parcel cancelled after shipping; a fill-to-order product's stock policy
     // +3: Filled as a hub entry, an item's stock trace, an order's attar fill status (phase 3)
-    // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill
-    expect(routes).toHaveLength(730);
+    // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill; +1: the activity
+    expect(routes).toHaveLength(731);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
