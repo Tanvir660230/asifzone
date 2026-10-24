@@ -18,6 +18,9 @@ export function useNavBadges(): Record<NavBadgeSource, number> {
   return {
     orders: (attention.orderStats?.pending ?? 0) + (attention.orderStats?.returnRequestsPending ?? 0),
     messages: (attention.pendingReviews ?? 0) + (attention.unreadFeedback ?? 0),
+    // The module adds both up; its pages show their own share, so a count on Messages points at the page it belongs to.
+    inbox: attention.unreadFeedback ?? 0,
+    reviews: attention.pendingReviews ?? 0,
     finance: attention.financeAlerts ?? 0,
   };
 }

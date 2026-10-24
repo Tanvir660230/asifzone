@@ -186,17 +186,17 @@ export default function ExecutiveOverviewPage() {
                 tone="accent"
               />
               <StatTile
-                label="Customers"
+                label="Customers who ordered"
                 value={customerInsights ? customerInsights.totalCustomers.toLocaleString(DISPLAY_LOCALE) : "…"}
                 icon={<Users size={20} />}
               />
               <StatTile label="Conversion rate (lifetime)" value={`${overview.conversionRatePct.toFixed(1)}%`} icon={<Target size={20} />} />
               <StatTile label="Avg order value" value={formatPrice(Math.round(overview.aovLifetime))} icon={<Receipt size={20} />} />
               <StatTile
-                label="Refund rate"
-                value={`${overview.refundRatePct.toFixed(1)}%`}
+                label="Return rate"
+                value={`${overview.returnRatePct.toFixed(1)}%`}
                 icon={<Undo2 size={20} />}
-                tone={overview.refundRatePct > 5 ? "warning" : "default"}
+                tone={overview.returnRatePct > 10 ? "warning" : "default"}
               />
               <StatTile
                 label="Realised net sales growth (30d)"
