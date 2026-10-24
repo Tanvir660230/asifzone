@@ -81,6 +81,15 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   await filled.getByRole("button", { name: "Done" }).click();
   const afterFill = await overview(page);
   expect(itemOf(afterFill, attar!.variantId).stock).toBe(before.stock + 1);
+  await expect(filled).toBeHidden(NAV);
+
+  // ── the size's trace: its recipe, and the fill just made ───────────────────────────────────────────────────────────
+  await page.locator(`[data-testid="stock-fill-trace"][data-sku="${attar!.sku}"]`).click();
+  const trace = page.getByTestId("stock-trace");
+  await expect(trace.getByTestId("stock-trace-recipe")).toBeVisible(NAV);
+  await expect(trace.getByTestId("stock-trace-fill").first()).toContainText(/1 bottle/);
+  await page.keyboard.press("Escape");
+  await expect(trace).toBeHidden(NAV);
 
   // ── Counted: the oil is 1 ml short — a reason is required, then the difference is booked ───────────────────────────
   const oilNow = itemOf(afterFill, oil!.variantId);

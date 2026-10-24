@@ -1,6 +1,6 @@
 /**
  * Request schemas of the stock hub (docs/STOCK_HUB.md, /admin/stock): Bought — one form for a purchase (items, extras,
- * who paid) — and Counted. Money is sent in MAJOR units with at most 2 decimals, like the rest of the finance API.
+ * who paid) — Counted and Filled. Money is sent in MAJOR units with at most 2 decimals, like the rest of the finance API.
  */
 import { z } from "zod";
 import { isBusinessDate } from "../finance/periods";
@@ -15,6 +15,7 @@ export const STOCK_PURCHASE_MAX_TOTAL = 10_000_000_000;
 const positive = financeAmountSchema.refine((v) => v > 0, "Amount must be more than zero").refine((v) => v <= STOCK_PURCHASE_MAX_AMOUNT, "At most 1,000,000,000");
 const quantity = z.number().int("Whole units (stock units: ml, pcs…)").min(1).max(1_000_000);
 const onceEach = (lines: Array<{ variantId: string }>) => new Set(lines.map((l) => l.variantId)).size === lines.length;
+const materialOnce = (lines: Array<{ materialVariantId: string }>) => new Set(lines.map((l) => l.materialVariantId)).size === lines.length;
 /** Who pays: a money account (cash, bank, wallet) or the owner's own money (owner-only). */
 const paidFrom = z.union([z.object({ financialAccountId: id }).strict(), z.object({ ownerPocket: z.literal(true) }).strict()]);
 
@@ -84,3 +85,20 @@ export const stockPolicySchema = z
   .refine((p) => p.policy !== "BACKORDER" || (p.backorderLimit ?? 0) > 0, { message: "Say how many units may be sold before they are filled", path: ["backorderLimit"] })
   .refine((p) => !(p.variants ?? []).some((v) => v.policy === "BACKORDER") || (p.backorderLimit ?? 0) > 0, { message: "A size on backorder needs the backorder limit", path: ["backorderLimit"] });
 export type StockPolicyInput = z.input<typeof stockPolicySchema>;
+
+/**
+ * Filled (inventory recovery phase 3): bottles filled from the approved recipe. `used`: what was really used of a material
+ * when it differs from the recipe (it then becomes the bottles' cost). `wasted`: material spilt or spoilt on top of that —
+ * it leaves stock too and is part of the bottles' cost, and needs `wasteReason`. Every quantity in the material's stock unit.
+ */
+export const stockFillSchema = z
+  .object({
+    variantId: id,
+    quantity: z.number().int("Whole bottles").min(1).max(100_000),
+    used: z.array(z.object({ materialVariantId: id, quantity: z.number().int().min(0).max(100_000_000) })).max(30).refine(materialOnce, "Each material once").optional(),
+    wasted: z.array(z.object({ materialVariantId: id, quantity: z.number().int().min(1).max(100_000_000) })).max(30).refine(materialOnce, "Each material once").optional(),
+    wasteReason: optionalText(300),
+    note: optionalText(300),
+  })
+  .refine((f) => !(f.wasted ?? []).length || (f.wasteReason ?? "").length >= 3, { message: "Say why material was wasted (spilt, broken bottle…)", path: ["wasteReason"] });
+export type StockFillInput = z.input<typeof stockFillSchema>;

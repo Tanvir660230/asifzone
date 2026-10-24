@@ -135,3 +135,8 @@ export function variantLabel(v: { size: string | null; color: string | null; pro
 
 /** The unit stock is counted in: a material's stock unit (ml, pcs…); finished goods in pieces. */
 export const unitOf = (p: { kind: string; stockUnit: string | null }) => (p.kind === "MATERIAL" ? p.stockUnit?.trim() || "pcs" : "pcs");
+
+/** Volumes and weights (ml, l, g, kg) are what a recipe fills from — raw material; anything counted in pieces, rolls or
+ * metres is packaging (bottles, boxes, stickers, poly). Read from the stock unit, so it needs no setting per material. */
+const RAW_UNITS = new Set(["ml", "l", "litre", "liter", "g", "gm", "gram", "kg"]);
+export const materialRole = (unit: string): "RAW" | "PACKAGING" => (RAW_UNITS.has(unit.trim().toLowerCase()) ? "RAW" : "PACKAGING");

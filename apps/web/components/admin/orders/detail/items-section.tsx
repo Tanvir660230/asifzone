@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Package, ShoppingBag } from "lucide-react";
-import { adjustOrderPriceSchema, formatVariantLabel, priceAdjustmentBlocker, type Order } from "@clothing-brand/shared";
+import { useQuery } from "@tanstack/react-query";
+import { adjustOrderPriceSchema, formatVariantLabel, PRE_SHIPMENT_STATUSES, priceAdjustmentBlocker, type Order } from "@clothing-brand/shared";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getOrderFillStatus, type OrderFillLine } from "@/lib/api/admin-orders";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formatPrice, storeCurrencySymbol } from "@/lib/format";
@@ -23,6 +26,16 @@ function Row({ label, value, tone, strong }: { label: string; value: string; ton
   );
 }
 
+/** A filled-to-order line: its bottles filled and ready to pack, or still to be filled (Stock › Filled). */
+function FillBadge({ line }: { line: OrderFillLine }) {
+  if (line.status === "READY") return <Badge variant="success" className="mt-1" data-testid="order-item-fill">Filled — ready to pack</Badge>;
+  return (
+    <Badge variant="warning" className="mt-1" data-testid="order-item-fill">
+      {line.status === "PARTLY_FILLED" ? `${line.filled} of ${line.units} filled — ${line.toFill} to fill` : `Awaiting filling (${line.toFill})`}
+    </Badge>
+  );
+}
+
 /** 3 — what was ordered (snapshots, with returned / restocked units) and the order's totals as the server stored them;
  * the negotiated price adjustment lives here, gated by the shared guard the API also applies. */
 export function ItemsSection({ order, detail, perms }: { order: Order; detail: OrderDetailCommands; perms: OrderPermissions }) {
@@ -35,6 +48,15 @@ export function ItemsSection({ order, detail, perms }: { order: Order; detail: O
 
   const adjustment = Number(order.priceAdjustment);
   const blocker = priceAdjustmentBlocker(order, order.payment?.paid ?? 0);
+  // Attar bottles filled to order: is each line's bottle filled yet? Only while the parcel is still being made up.
+  const onShelf = PRE_SHIPMENT_STATUSES.includes(order.status) && !order.courierConsignmentId;
+  const fillQ = useQuery({
+    queryKey: ["admin-order-fill-status", order.id, order.updatedAt],
+    queryFn: ({ signal }) => getOrderFillStatus(order.id, { signal }),
+    enabled: onShelf,
+    staleTime: 30_000,
+  });
+  const fillOf = new Map((fillQ.data?.lines ?? []).map((l) => [l.orderItemId, l]));
 
   function save() {
     if (!draft) return;
@@ -76,6 +98,7 @@ export function ItemsSection({ order, detail, perms }: { order: Order; detail: O
                 {item.returnedQuantity > 0 && <span className="ml-2 font-medium text-warning-700">{item.returnedQuantity} returned</span>}
                 {item.restockedQuantity > 0 && <span className="ml-2 text-ink-400">{item.restockedQuantity} back in stock</span>}
               </p>
+              {onShelf && fillOf.has(item.id) && <FillBadge line={fillOf.get(item.id)!} />}
             </div>
             <span className="shrink-0 text-sm font-medium tabular-nums text-ink-900">{formatPrice(orderLineAmount(item))}</span>
           </li>

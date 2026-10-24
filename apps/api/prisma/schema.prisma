@@ -6159,6 +6159,8 @@ model MaterialRoll {
 enum StockHubEntryKind {
   PURCHASE
   COUNT
+  /// Stock › Filled (inventory recovery phase 3): bottles filled from the recipe's materials, as one resumable entry.
+  FILL
 }
 
 /// Stock hub (docs/STOCK_HUB.md): one Bought or Counted entry made on /admin/stock, keyed by its Idempotency-Key. Each
@@ -6170,7 +6172,7 @@ model StockHubEntry {
   businessId       String
   business         FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
   kind             StockHubEntryKind
-  /// `purchase:<key>` / `count:<key>`.
+  /// `purchase:<key>` / `count:<key>` / `fill:<key>`.
   idempotencyKey   String
   /// The request it was made for: the same key with a different request is refused.
   fingerprint      String

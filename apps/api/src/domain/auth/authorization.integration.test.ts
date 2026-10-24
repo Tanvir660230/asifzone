@@ -326,6 +326,8 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/v1/finance/landed-costs",
   "POST /api/v1/finance/landed-costs",
   "POST /api/v1/finance/quick-refills",
+  // Stock › Filled as a hub entry (inventory recovery phase 3): manufacturing.approve, like the quick refill it replaces
+  "POST /api/v1/finance/stock/fills",
   "GET /api/v1/finance/profit",
   "GET /api/v1/finance/profit/daily",
   "GET /api/v1/finance/profit/launch",
@@ -528,7 +530,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +2: a partner's statement and the owner's summary (partner finance phase 2, owner-only); +1: a partner's capital (phase 4)
     // +12: share periods (list, prepare, verify, post, retry), corrections (list, propose, detect, approve, reject), rates (phase 3)
     // +2: inventory recovery — receive a parcel cancelled after shipping; a fill-to-order product's stock policy
-    expect(routes).toHaveLength(721);
+    // +3: Filled as a hub entry, an item's stock trace, an order's attar fill status (phase 3)
+    expect(routes).toHaveLength(724);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

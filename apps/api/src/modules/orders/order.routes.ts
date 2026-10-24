@@ -101,6 +101,7 @@ orderRouter.patch(
   validate(reconcilePartialDeliverySchema),
   orderController.reconcilePartialDelivery,
 );
+orderRouter.get("/:id/fill-status", requireAdmin, requirePermission("orders.read"), orderController.fillStatus);
 orderRouter.post("/:id/receive-return", requireAdmin, requirePermission("orders.manage"), validate(receiveReturnedParcelSchema), orderController.receiveReturnedParcel);
 orderRouter.post("/:id/refunds", requireAdmin, requirePermission("refunds.manage"), validate(recordRefundSchema), orderController.createRefund);
 orderRouter.get("/:id/refunds", requireAdmin, requirePermission("orders.read"), orderController.listRefunds);

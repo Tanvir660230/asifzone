@@ -17,6 +17,7 @@ import {
   unlinkCourierBooking,
 } from "../courier/courier.service";
 import { can } from "../../domain/auth/authorization";
+import { orderFillStatus } from "../../domain/stock/fill-status.service";
 
 /** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
 export function idempotencyKeyOf(req: Request): string | null {
@@ -146,6 +147,11 @@ export const adjustPrice = asyncHandler(async (req: Request, res: Response) => {
 
 export const reconcilePartialDelivery = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.reconcilePartialDelivery(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+/** Attar lines on the shelf: filled and ready, partly filled, or awaiting filling (inventory recovery phase 3). */
+export const fillStatus = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await orderFillStatus(req.params.id!));
 });
 
 export const receiveReturnedParcel = asyncHandler(async (req: Request, res: Response) => {

@@ -27,6 +27,7 @@ import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
 import { FillGroup, FinishedGroup, MaterialGroup } from "./stock-row";
 import { PolicySheet } from "./policy-sheet";
+import { TraceSheet } from "./trace-sheet";
 import type { ProductGroup } from "./stock-shared";
 import { num } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
@@ -34,7 +35,8 @@ import { ProblemAlert } from "./stock-problem";
 type Sheet = "bought" | "filled" | "counted" | null;
 const GO_LIVE = "Stock costing starts at go-live";
 
-/** /admin/stock (docs/STOCK_HUB.md): everything in stock in three groups, and the three things the owner records. */
+/** /admin/stock (docs/STOCK_HUB.md): everything in stock — attar filled to order, raw materials, packaging, ready goods —
+ * and the three things the owner records. An attar size opens its trace (materials, fills, waiting orders, cost). */
 export function StockHub() {
   const { can, ready } = useCapabilities();
   const allowed = can("inventory.view");
@@ -44,6 +46,7 @@ export function StockHub() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [finishing, setFinishing] = useState<StockPurchase | null>(null);
   const [policyFor, setPolicyFor] = useState<ProductGroup | null>(null);
+  const [traceOf, setTraceOf] = useState<stockApi.StockItem | null>(null);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -126,8 +129,9 @@ export function StockHub() {
         <ErrorState title="Stock couldn't be loaded" description={getErrorMessage(overview.error, "Check your connection and try again.")} onRetry={() => overview.refetch()} variant="bordered" />
       ) : data ? (
         <>
-          <FillGroup items={groupOf("FILL_TO_ORDER")} onPolicy={can("inventory.adjust") ? setPolicyFor : undefined} />
-          <MaterialGroup items={groupOf("MATERIAL")} rolls={data.rolls} showCost={showCost} />
+          <FillGroup items={groupOf("FILL_TO_ORDER")} onPolicy={can("inventory.adjust") ? setPolicyFor : undefined} onTrace={setTraceOf} />
+          <MaterialGroup kind="RAW" items={groupOf("MATERIAL").filter((i) => i.materialKind === "RAW")} rolls={[]} showCost={showCost} />
+          <MaterialGroup kind="PACKAGING" items={groupOf("MATERIAL").filter((i) => i.materialKind !== "RAW")} rolls={data.rolls} showCost={showCost} />
           <FinishedGroup items={groupOf("FINISHED")} showCost={showCost} />
           {can("purchasing.view") && <RecentPurchases query={purchasesQ} />}
         </>
@@ -137,6 +141,7 @@ export function StockHub() {
       {data && sheet === "filled" && <FilledSheet overview={data} canFill={can("manufacturing.approve")} onClose={() => setSheet(null)} />}
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
       {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
+      {traceOf && <TraceSheet item={traceOf} showCost={showCost} onClose={() => setTraceOf(null)} />}
       {finishing && <FinishDialog purchase={finishing} canOwnerMoney={can("finance.sensitive")} onClose={() => setFinishing(null)} />}
     </div>
   );

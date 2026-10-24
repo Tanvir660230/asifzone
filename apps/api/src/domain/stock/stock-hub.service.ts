@@ -21,7 +21,7 @@ import { businessDateOf, financeError, toMajorNumber, toMinor } from "../finance
 import { listRolls } from "../finance/stock-check.service";
 import { fillCapacity, fillCapacityChanged } from "./fill-capacity.service";
 import { expectedOnShelf, reservedNotDispatched } from "./count.service";
-import { unitOf, variantLabel } from "./hub-entry";
+import { materialRole, unitOf, variantLabel } from "./hub-entry";
 
 export const USE_WINDOW_DAYS = 30;
 export const LOW_AT = 10;
@@ -54,6 +54,8 @@ export interface StockHubItem {
   /** Fill-to-order only: how it sells past the filled bottles and what the materials make (the variant's override, else
    * the product's), its backorder limit, and the bottles sold but not yet filled. Null for every other item. */
   policy: { policy: StockPolicy; overridden: boolean; backorderLimit: number | null; owed: number } | null;
+  /** Materials only: RAW (oil, by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
+  materialKind: "RAW" | "PACKAGING" | null;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -108,6 +110,7 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
     groups[key].push({
       variantId: v.id, productId: v.product.id, sku: v.sku, name: variantLabel(v), productName: v.product.name, size: v.size, color: v.color, unit: unitOf(v.product),
       stock: v.stock, reserved: waiting, expectedOnShelf: expectedOnShelf(v.stock, waiting), makeable,
+      materialKind: key === "MATERIAL" ? materialRole(unitOf(v.product)) : null,
       policy: key === "FILL_TO_ORDER" ? { policy: v.stockPolicy ?? v.product.stockPolicy, overridden: v.stockPolicy !== null, backorderLimit: v.product.backorderLimit, owed: Math.max(0, -v.stock) } : null,
       avgCost: viewer.canSeeCost && v.costState?.avgUnitCost != null ? Number(v.costState.avgUnitCost) : null,
       value: valueMinor === null ? null : toMajorNumber(valueMinor, cur),
