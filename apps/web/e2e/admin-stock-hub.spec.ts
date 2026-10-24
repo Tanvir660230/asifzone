@@ -52,6 +52,14 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   await bought.getByTestId("bought-amount").fill("300");
   await expect(bought.getByTestId("bought-per-unit")).toContainText("per ml");
   await bought.getByTestId("bought-paid-from").selectOption("owner");
+  // the bill's unit total must match the lines; a mismatch is refused before anything is written
+  await bought.getByTestId("bought-document-total").fill("12");
+  await bought.getByTestId("bought-save").click();
+  await expect(bought.getByText("The items add up to 10, the bill says 12")).toBeVisible();
+  await bought.getByTestId("bought-document-total").fill("10");
+  await bought.getByTestId("bought-save").click();
+  await expect(bought.getByTestId("bought-review-row")).toHaveCount(1);
+  await expect(bought.getByTestId("bought-review-total")).toHaveText("10");
   await bought.getByTestId("bought-save").click();
   await expect(bought).toBeHidden(NAV);
   await expect(page.getByTestId("stock-recent-row").first()).toContainText("10 ml");

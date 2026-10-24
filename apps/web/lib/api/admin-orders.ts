@@ -11,6 +11,7 @@ import type {
   AdminCreateOrderInput,
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
+  ReceiveReturnedParcelInput,
   OrderQueueId,
 } from "@clothing-brand/shared";
 import { apiDownload, apiFetch, type FetchSignal } from "../api-client";
@@ -159,6 +160,12 @@ export function clearOrderHold(id: string) {
  * replaces whatever adjustment was already on the order, it isn't additive. */
 export function adjustOrderPrice(id: string, input: AdjustOrderPriceInput) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/price`, { method: "PATCH", body: input });
+}
+
+/** A parcel cancelled after it shipped has physically come back: restocks every unit still out (or the given lines).
+ * Refused when nothing is left to receive. */
+export function receiveReturnedParcel(id: string, input: ReceiveReturnedParcelInput) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/receive-return`, { method: "POST", body: input });
 }
 
 /** Resolves a PARTIALLY_DELIVERED order — declares how many units of each line item actually came

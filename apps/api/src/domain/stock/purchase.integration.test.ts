@@ -135,7 +135,7 @@ afterAll(async () => {
   await cleanupFixtures();
 });
 
-const oilPurchase = (paidFrom: object, extras = [{ description: "Transport", amount: 400 }]) => ({ lines: [{ variantId: oil, quantity: 500, amount: 12000 }], extras, paidFrom });
+const oilPurchase = (paidFrom: object, extras = [{ description: "Transport", amount: 400 }]) => ({ lines: [{ variantId: oil, quantity: 500, amount: 12000 }], documentTotal: 500, extras, paidFrom });
 
 describe("Bought — before go-live", () => {
   it("refused before costing is active, with the reason, and nothing is written", async () => {
@@ -185,7 +185,7 @@ describe("Bought", () => {
     expect(await stock(oil)).toBe(500);
 
     // a double tap: two requests with one key at the same moment
-    const body = { lines: [{ variantId: bottle, quantity: 166, amount: 8300 }], paidFrom: { financialAccountId: bank } };
+    const body = { lines: [{ variantId: bottle, quantity: 166, amount: 8300 }], documentTotal: 166, paidFrom: { financialAccountId: bank } };
     const [a, b] = await Promise.all([api().post("/stock/purchases", body, `sp-tap-${RUN}`), api().post("/stock/purchases", body, `sp-tap-${RUN}`)]);
     expect([a.status, b.status].sort(), JSON.stringify([a.body, b.body])).toEqual(expect.arrayContaining([201]));
     for (const x of [a, b]) expect([200, 201, 409]).toContain(x.status);
@@ -196,14 +196,14 @@ describe("Bought", () => {
     expect(await avg(bottle)).toBe(50);
 
     // the same key for a different purchase is refused
-    const other = await api().post("/stock/purchases", { ...body, lines: [{ variantId: bottle, quantity: 1, amount: 50 }] }, `sp-tap-${RUN}`);
+    const other = await api().post("/stock/purchases", { ...body, lines: [{ variantId: bottle, quantity: 1, amount: 50 }], documentTotal: 1 }, `sp-tap-${RUN}`);
     expect(other.status).toBe(409);
     expect(other.body.details?.code).toBe("IDEMPOTENCY_KEY_REUSED");
     await booksMatch();
   });
 
   it("paid from bKash lowers its balance; a payment refused mid-way resumes on retry without writing twice", async () => {
-    const body = { supplierName: "Chawkbazar Bottle House", reference: "INV-77", lines: [{ variantId: cap, quantity: 3, amount: 1000 }], paidFrom: { financialAccountId: bkash } };
+    const body = { supplierName: "Chawkbazar Bottle House", reference: "INV-77", lines: [{ variantId: cap, quantity: 3, amount: 1000 }], documentTotal: 3, paidFrom: { financialAccountId: bkash } };
     const before = await counts();
     // not enough in the wallet: refused before anything is written (no goods in without their payment)
     const short = await api().post("/stock/purchases", body, `sp-bkash-${RUN}`);
@@ -282,10 +282,10 @@ describe("Bought", () => {
   it("refuses what isn't stock, and an actor who can't post receipts, bills and payments", async () => {
     const untracked = await createStockedProduct({ stocks: [0] });
     await prisma.product.update({ where: { id: untracked.product.id }, data: { trackInventory: false } });
-    const r = await api().post("/stock/purchases", { lines: [{ variantId: untracked.variants[0]!.id, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-untracked-${RUN}`);
+    const r = await api().post("/stock/purchases", { lines: [{ variantId: untracked.variants[0]!.id, quantity: 1, amount: 10 }], documentTotal: 1, paidFrom: { financialAccountId: bank } }, `sp-untracked-${RUN}`);
     expect(r.status).toBe(400);
     const clerk: FinanceActor = { type: "ADMIN", adminId: admin, label: "clerk@test", permissions: ["purchasing.receive", "purchasing.read"] };
-    await expect(recordPurchase({ lines: [{ variantId: oil, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, clerk, `sp-clerk-${RUN}`)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(recordPurchase({ lines: [{ variantId: oil, quantity: 1, amount: 10 }], documentTotal: 1, paidFrom: { financialAccountId: bank } }, clerk, `sp-clerk-${RUN}`)).rejects.toMatchObject({ statusCode: 403 });
     const noKey = await api().post("/stock/purchases", oilPurchase({ financialAccountId: bank }));
     expect(noKey.status).toBe(400);
   });
@@ -293,7 +293,7 @@ describe("Bought", () => {
 
 describe("Bought — review fixes", () => {
   it("a request that outlived its lease can't post a second receipt: the retry that took over finishes, the late one is refused", async () => {
-    const body = { lines: [{ variantId: bottle, quantity: 10, amount: 500 }], paidFrom: { financialAccountId: bank } };
+    const body = { lines: [{ variantId: bottle, quantity: 10, amount: 500 }], documentTotal: 10, paidFrom: { financialAccountId: bank } };
     const key = `sp-lease-${RUN}`;
     const before = await counts();
     const stockBefore = await stock(bottle);
@@ -324,14 +324,14 @@ describe("Bought — review fixes", () => {
   it("not enough money, a date before the books or in a closed month: refused before anything is written", async () => {
     const before = await counts();
     const entries = await prisma.stockHubEntry.count();
-    const early = await api().post("/stock/purchases", { date: "2026-08-15", lines: [{ variantId: cap, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-early2-${RUN}`);
+    const early = await api().post("/stock/purchases", { date: "2026-08-15", lines: [{ variantId: cap, quantity: 1, amount: 10 }], documentTotal: 1, paidFrom: { financialAccountId: bank } }, `sp-early2-${RUN}`);
     expect(early.status, JSON.stringify(early.body)).toBe(409);
     expect(early.body.details?.code).toBe("BEFORE_OPENING_DATE");
     const { business } = await getFinanceContext();
     const sept = await prisma.financialPeriod.findFirstOrThrow({ where: { businessId: business.id, startDate: new Date("2026-09-01T00:00:00Z") } });
     await changePeriodStatus(sept.id, "close", "test: September is closed", OWNER);
     try {
-      const closed = await api().post("/stock/purchases", { date: "2026-09-15", lines: [{ variantId: cap, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-closed-${RUN}`);
+      const closed = await api().post("/stock/purchases", { date: "2026-09-15", lines: [{ variantId: cap, quantity: 1, amount: 10 }], documentTotal: 1, paidFrom: { financialAccountId: bank } }, `sp-closed-${RUN}`);
       expect(closed.status, JSON.stringify(closed.body)).toBe(409);
       expect(closed.body.details?.code).toBe("PERIOD_CLOSED");
     } finally {
@@ -345,7 +345,7 @@ describe("Bought — review fixes", () => {
     const held = await createSupplier({ legalName: `Held Traders ${RUN}`, displayName: `Held Traders ${RUN}` } as never, OWNER);
     await setSupplierStatus(held.id, { status: "ON_HOLD", reason: "disputed delivery" }, OWNER);
     const before = await counts();
-    const r = await api().post("/stock/purchases", { supplierName: `Held Traders ${RUN}`, lines: [{ variantId: cap, quantity: 1, amount: 10 }], paidFrom: { financialAccountId: bank } }, `sp-held-${RUN}`);
+    const r = await api().post("/stock/purchases", { supplierName: `Held Traders ${RUN}`, lines: [{ variantId: cap, quantity: 1, amount: 10 }], documentTotal: 1, paidFrom: { financialAccountId: bank } }, `sp-held-${RUN}`);
     expect(r.status, JSON.stringify(r.body)).toBe(409);
     expect(r.body.details?.code).toBe("SUPPLIER_ON_HOLD");
     expect(r.body.error).toMatch(/on hold/);
@@ -354,10 +354,10 @@ describe("Bought — review fixes", () => {
   });
 
   it("caps the amounts: each at most 1,000,000,000 and the purchase at most 10,000,000,000", async () => {
-    const huge = await api().post("/stock/purchases", { lines: [{ variantId: cap, quantity: 1, amount: 2_000_000_000 }], paidFrom: { financialAccountId: bank } }, `sp-huge-${RUN}`);
+    const huge = await api().post("/stock/purchases", { lines: [{ variantId: cap, quantity: 1, amount: 2_000_000_000 }], documentTotal: 1, paidFrom: { financialAccountId: bank } }, `sp-huge-${RUN}`);
     expect(huge.status).toBe(400);
     const many = await api().post("/stock/purchases", {
-      lines: [{ variantId: cap, quantity: 1, amount: 1_000_000_000 }],
+      lines: [{ variantId: cap, quantity: 1, amount: 1_000_000_000 }], documentTotal: 1,
       extras: Array.from({ length: 10 }, (_, i) => ({ description: `x${i}`, amount: 1_000_000_000 })),
       paidFrom: { financialAccountId: bank },
     }, `sp-many-${RUN}`);
@@ -365,7 +365,7 @@ describe("Bought — review fixes", () => {
   });
 
   it("a purchase stuck mid-way is finished from another account; GET says what is pending", async () => {
-    const body = { supplierName: "Finish Test Traders", lines: [{ variantId: cap, quantity: 2, amount: 600 }], paidFrom: { financialAccountId: bkash } };
+    const body = { supplierName: "Finish Test Traders", lines: [{ variantId: cap, quantity: 2, amount: 600 }], documentTotal: 2, paidFrom: { financialAccountId: bkash } };
     hooks.beforePayment = async () => {
       throw financeError(409, "INSUFFICIENT_FUNDS", "bKash was emptied meanwhile");
     };
@@ -398,7 +398,7 @@ describe("Bought — review fixes", () => {
   });
 
   it("a retry by staff of a purchase the owner switched to his own money is refused: 403, nothing written", async () => {
-    const body = { supplierName: "Owner Switch Traders", lines: [{ variantId: cap, quantity: 1, amount: 200 }], paidFrom: { financialAccountId: bkash } };
+    const body = { supplierName: "Owner Switch Traders", lines: [{ variantId: cap, quantity: 1, amount: 200 }], documentTotal: 1, paidFrom: { financialAccountId: bkash } };
     hooks.beforePayment = async () => {
       throw financeError(409, "INSUFFICIENT_FUNDS", "bKash was emptied meanwhile");
     };

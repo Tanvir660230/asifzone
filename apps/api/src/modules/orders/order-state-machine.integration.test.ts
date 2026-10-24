@@ -12,7 +12,7 @@ import {
   placeOrder,
   stockOf,
 } from "../../test-fixtures";
-import { bulkUpdateOrderStatus, deleteOrder, reconcilePartialDelivery, restoreOrder, updateOrderStatus } from "./order.service";
+import { bulkUpdateOrderStatus, deleteOrder, receiveReturnedParcel, reconcilePartialDelivery, restoreOrder, updateOrderStatus } from "./order.service";
 import { refundOrderPayment, settlePaymentSession } from "../payments/payment.service";
 import { reviewReturnRequest } from "../return-requests/return-request.service";
 
@@ -156,8 +156,12 @@ describe("order state machine", () => {
       ]);
       const final = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
       // SHIPPED → CANCELLED is legal (returned to origin) and CANCELLED → SHIPPED is not, so either order of
-      // commits ends CANCELLED with the stock back exactly once.
+      // commits ends CANCELLED. Cancelled before it shipped, the stock is back at once; cancelled after, it stays out until
+      // the parcel is received (inventory recovery F-d) — either way it comes back exactly once.
       expect(final.status).toBe("CANCELLED");
+      const shippedFirst = (await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: "SHIPPED" } })) > 0;
+      expect(await stockOf(v.id)).toBe(shippedFirst ? 8 : 10);
+      if (shippedFirst) await receiveReturnedParcel(order.id, admin, {});
       expect(await stockOf(v.id)).toBe(10);
       await assertInventoryInvariants(v.id);
     });

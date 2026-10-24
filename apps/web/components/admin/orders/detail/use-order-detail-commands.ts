@@ -65,6 +65,15 @@ export function useOrderDetailCommands(orderId: string) {
     },
     onError: fail("Failed to reconcile"),
   });
+  // A parcel cancelled after it shipped: its units go back into stock only once it is physically here (inventory recovery F-d).
+  const receiveReturn = useMutation({
+    mutationFn: () => adminOrdersApi.receiveReturnedParcel(orderId, {}),
+    onSuccess: () => {
+      refresh();
+      toast.success("Parcel received — units are back in stock");
+    },
+    onError: fail("Failed to receive the parcel"),
+  });
   // Money-creating commands carry an Idempotency-Key: a retry of the same submission is recorded once (Phase 9).
   const refund = useMutation({
     mutationFn: (input: RecordRefundInput) => paymentsAdminApi.createRefund(orderId, input, idempotencyKeyFor(`refund:${orderId}`, input)),
@@ -113,7 +122,7 @@ export function useOrderDetailCommands(orderId: string) {
     onError: fail("Failed to change the payment"),
   });
 
-  return { details, hold, clearHold, price, reconcile, refund, completeRefund, payment, remark, storeCredit };
+  return { details, hold, clearHold, price, reconcile, receiveReturn, refund, completeRefund, payment, remark, storeCredit };
 }
 
 export type OrderDetailCommands = ReturnType<typeof useOrderDetailCommands>;

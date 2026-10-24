@@ -80,8 +80,11 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
   const [supplier, setSupplier] = useState("");
   const [date, setDate] = useState(todayLocal());
   const [paidFrom, setPaidFrom] = useState("");
+  const [documentTotal, setDocumentTotal] = useState("");
   const [problem, setProblem] = useState<StockProblem | null>(null);
   const [tried, setTried] = useState(false);
+  // Last look before anything is written: every colour / size and the total, against the bill (inventory recovery F-c).
+  const [reviewing, setReviewing] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
 
   const added = new Set(lines.map((l) => l.choice.id));
@@ -111,10 +114,23 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
   const supplierError = supplier.trim().length === 1 ? "At least 2 letters" : null;
   const account = accounts.find((a) => a.id === paidFrom);
   const shortOf = account && NO_OVERDRAFT.has(account.kind) && account.currentBalance * 100 < totalMinor ? account : null;
-  const valid = lines.length > 0 && lineErrors.every((e) => !e) && extraErrors.every((e) => !e) && !supplierError && Boolean(paidFrom) && date <= todayLocal();
+  const unitsEntered = totals.reduce((s, t) => s + t.qty, 0);
+  const documentUnits = qtyOf(documentTotal);
+  const documentError = !documentUnits
+    ? "Enter the total units printed on the bill or receipt"
+    : lines.length && documentUnits !== unitsEntered ? `The items add up to ${num(unitsEntered)}, the bill says ${num(documentUnits)} — check each line` : null;
+  const valid = lines.length > 0 && lineErrors.every((e) => !e) && extraErrors.every((e) => !e) && !supplierError && !documentError && Boolean(paidFrom) && date <= todayLocal();
+  // what will be received, one row per colour / size — shown before saving
+  const arriving = lines.flatMap((l) => l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0).map((v) => ({
+    id: v.variantId,
+    label: l.choice.grid ? `${l.choice.label} · ${[colorOf(v), sizeOf(v)].filter(Boolean).join(" ") || v.sku}` : l.choice.label,
+    qty: qtyOf(l.qty[v.variantId]),
+    unit: l.choice.grid ? "pcs" : v.unit,
+  })));
 
   const body = (): stockApi.PurchaseBody => ({
     date,
+    documentTotal: documentUnits,
     supplierName: supplier.trim() || null,
     lines: lines.flatMap((l, i) => {
       const vs = l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0);
@@ -142,18 +158,23 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
       const p = stockApi.describeStockError(e, "The purchase couldn't be recorded");
       const partial = !p.code || !stockApi.CHECKED_BEFORE_WRITING.has(p.code);
       setProblem(partial && !(e instanceof ApiError && e.status === 400) ? { ...p, detail: `${p.detail} If part of it was saved, it shows at the top of Stock with a Finish button.` } : p);
+      setReviewing(false);
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
       requestAnimationFrame(() => errorRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
     },
   });
 
   // Typed work isn't lost to a stray Escape, the close button or Cancel: those ask first.
-  const dirty = lines.length > 0 || extras.some((e) => e.description.trim() || e.amount.trim()) || supplier.trim() !== "";
+  const dirty = lines.length > 0 || extras.some((e) => e.description.trim() || e.amount.trim()) || supplier.trim() !== "" || documentTotal.trim() !== "";
   const guard = useDiscardGuard(dirty, onClose, "Discard this purchase?");
 
   const submit = () => {
     setTried(true);
-    if (valid) return save.mutate();
+    if (valid && reviewing) return save.mutate();
+    if (valid) {
+      setProblem(null);
+      return setReviewing(true);
+    }
     // take the owner to the first thing to fix (in page order: a line, the search when nothing is added, an extra, who paid)
     requestAnimationFrame(() => {
       const form = document.getElementById("stock-bought-form");
@@ -172,14 +193,46 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
       footer={guard.prompt ?? (
         <>
           <p className="mr-auto self-center text-sm text-fg-muted max-sm:order-last" aria-live="polite">Total <span className="font-semibold tabular-nums text-fg">{formatPrice(totalMinor / 100)}</span></p>
-          <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>
-          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">Record purchase</Button>
+          {reviewing
+            ? <Button type="button" variant="outline" onClick={() => setReviewing(false)} disabled={save.isPending} data-testid="bought-edit">Edit</Button>
+            : <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>}
+          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? "Confirm and record" : "Review purchase"}</Button>
         </>
       )}
     >
       <form id="stock-bought-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
         {problem && <div ref={errorRef}><ProblemAlert problem={problem} /></div>}
 
+        {reviewing && (
+          <section aria-labelledby="bought-review" className="space-y-3" data-testid="bought-review">
+            <div>
+              <h3 id="bought-review" className="text-sm font-medium text-fg">Check against the bill</h3>
+              <p className="text-sm text-fg-muted">This is what goes into stock. Edit if any size is wrong.</p>
+            </div>
+            <Table data-no-stack="" className="w-full text-sm">
+              <caption className="sr-only">Units arriving per item</caption>
+              <thead>
+                <tr><th scope="col" className="text-left font-medium text-fg-muted">Item</th><th scope="col" className="text-right font-medium text-fg-muted">Units</th></tr>
+              </thead>
+              <tbody>
+                {arriving.map((a) => (
+                  <tr key={a.id} data-testid="bought-review-row">
+                    <td className="py-1.5 pr-3 text-fg">{a.label}</td>
+                    <td className="py-1.5 text-right tabular-nums text-fg">{num(a.qty)} {a.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-line-subtle">
+                  <th scope="row" className="pt-2 text-left font-medium text-fg">Total · matches the bill</th>
+                  <td className="pt-2 text-right font-semibold tabular-nums text-fg" data-testid="bought-review-total">{num(unitsEntered)}</td>
+                </tr>
+              </tfoot>
+            </Table>
+          </section>
+        )}
+
+        <div className={cn("space-y-6", reviewing && "hidden")}>
         <section aria-labelledby="bought-items" className="space-y-3">
           <h3 id="bought-items" className="text-sm font-medium text-fg">Items</h3>
           {lines.map((l, i) => (
@@ -250,6 +303,16 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
             <Input id="bought-date" type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field
+            htmlFor="bought-document-total"
+            label="Units on the bill"
+            required
+            className="sm:col-span-2"
+            hint={documentError && tried ? undefined : `Typed from the supplier's bill or receipt. The items above add up to ${num(unitsEntered)}.`}
+            error={tried ? documentError : undefined}
+          >
+            <Input id="bought-document-total" inputMode="numeric" className="tabular-nums sm:max-w-40" value={documentTotal} onChange={(e) => setDocumentTotal(e.target.value)} data-testid="bought-document-total" />
+          </Field>
+          <Field
             htmlFor="bought-paid-from"
             label="Paid from"
             required
@@ -269,6 +332,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, onClose }: { o
             </Select>
           </Field>
         </section>
+        </div>
       </form>
     </Modal>
   );

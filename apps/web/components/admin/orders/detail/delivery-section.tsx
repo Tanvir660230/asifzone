@@ -78,6 +78,37 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
   );
 }
 
+/** A cancelled order whose units are still out: it was cancelled after it shipped, so the parcel is on its way back. Its
+ * units go back into stock only when someone has it in hand (inventory recovery F-d) — never on the courier's word. */
+function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: OrderDetailCommands; canManage: boolean }) {
+  const out = order.items.map((i) => ({ item: i, units: i.quantity - i.restockedQuantity })).filter((l) => l.units > 0);
+  if (!out.length) return null;
+  const total = out.reduce((s, l) => s + l.units, 0);
+  return (
+    <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="parcel-coming-back">
+      <p className="flex items-start gap-2 text-sm text-warning-800">
+        <PackageX size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+        Cancelled after it shipped — the parcel is coming back. {total} unit(s) go back into stock when you have it in hand.
+      </p>
+      <ul className="space-y-1 text-sm text-ink-700">
+        {out.map(({ item, units }) => (
+          <li key={item.id} className="flex justify-between gap-3">
+            <span className="min-w-0 truncate">{item.productNameSnapshot}{formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/") ? ` · ${formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/")}` : ""}</span>
+            <span className="shrink-0 tabular-nums">{units}</span>
+          </li>
+        ))}
+      </ul>
+      {canManage && (
+        <div className="flex justify-end">
+          <Button size="sm" className="max-sm:w-full" loading={detail.receiveReturn.isPending} onClick={() => detail.receiveReturn.mutate()} data-testid="parcel-received">
+            Parcel received
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 5 — getting the parcel to the customer: the courier booking (book, sync, unlink — through the courier abstraction's
  * endpoints), a manual carrier fallback, partial-delivery reconciliation and the courier-loss ledger. */
 export function DeliverySection({
@@ -177,6 +208,7 @@ export function DeliverySection({
         {(booked || open) && <CourierNotePanel order={order} detail={detail} canEdit={perms.manage && !deleted} />}
 
         {order.status === "PARTIALLY_DELIVERED" && <PartialDelivery order={order} detail={detail} canManage={perms.manage && !deleted} />}
+        {order.status === "CANCELLED" && !deleted && <ParcelComingBack order={order} detail={detail} canManage={perms.manage} />}
 
         {order.courierLosses && order.courierLosses.length > 0 && (
           <div>

@@ -1699,6 +1699,35 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   return order;
 }
 
+/** A parcel cancelled after it shipped is back at the shop (inventory recovery F-d): its units go back into stock now —
+ * never at the cancellation, when the parcel was still with the courier. `lines` limits it to what actually came back
+ * (omitted = everything still outstanding). Idempotent per order line (releaseOrderLines' restockedQuantity guard): a
+ * second press, or two admins at once, puts nothing more back (NOTHING_TO_RECEIVE). The timeline records who received it. */
+export async function receiveReturnedParcel(orderId: string, adminId: string, input: { lines?: Array<{ orderItemId: string; quantity: number }>; note?: string | null }) {
+  const { order, replenished, moved } = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
+      SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (!locked) throw AppError.notFound("Order not found");
+    if (locked.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+    if (locked.status !== "CANCELLED") {
+      throw new AppError(409, "Only a cancelled order's parcel is received back here — returns of delivered orders go through Returned or a return request", { code: "NOT_AWAITING_RETURN" });
+    }
+    const result = await releaseOrderLines(tx, orderId, "release", { adminId, note: input.note?.trim() || "Parcel received back — stock restored", lines: input.lines });
+    if (!result.released.length) throw new AppError(409, "Nothing is waiting to come back on this order — its stock was already restored", { code: "NOTHING_TO_RECEIVE" });
+    const units = result.released.reduce((s, r) => s + r.quantity, 0);
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: { statusHistory: { create: { status: "CANCELLED", note: `Parcel received back — ${units} unit(s) restocked${input.note?.trim() ? ` (${input.note.trim()})` : ""}`, changedByAdminId: adminId } } },
+      include,
+    });
+    return { order: updated, replenished: result.replenished, moved: result.released.map((r) => r.variantId) };
+  });
+  notifyReplenished(replenished);
+  notifyStockMoved(moved);
+  return order;
+}
+
 const PARTIAL_DELIVERY_RETURN_REASON = "Courier partial delivery — rejected by customer";
 
 /** PAYMENT_LEDGER §5c backfill: partial deliveries reconciled before their return record carried values (`lines` null),

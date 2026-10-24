@@ -10,6 +10,7 @@ import type { StockItem, StockRoll } from "@/lib/api/stock";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { byProduct, colorOf, num, sizeOf, spacedUnit, spreadWords, variantWords, type ProductGroup } from "./stock-shared";
+import { POLICY_WORDS, productPolicy } from "./policy-sheet";
 
 /**
  * One group of the overview: a heading with its own summary, then a calm list — columns from `sm` up (the header row is
@@ -147,7 +148,8 @@ function VariantGrid({ items }: { items: StockItem[] }) {
 
 const FILL_COLS = "sm:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem_7rem]";
 
-export function FillGroup({ items }: { items: StockItem[] }) {
+/** `onPolicy`: who may correct stock may also set how an attar sells past its filled bottles (inventory recovery phase 2). */
+export function FillGroup({ items, onPolicy }: { items: StockItem[]; onPolicy?: (product: ProductGroup) => void }) {
   const products = useMemo(() => byProduct(items), [items]);
   const toFill = items.reduce((s, i) => s + Math.max(0, -i.stock), 0);
   return (
@@ -162,7 +164,17 @@ export function FillGroup({ items }: { items: StockItem[] }) {
       {products.length === 0 && <Empty>No attar is set to fill to order yet.</Empty>}
       {products.map((p) => (
         <li key={p.productId} className="py-1" data-testid="stock-fill-product">
-          <p className="px-4 pb-1 pt-2 text-[15px] font-medium text-fg">{p.name}</p>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pb-1 pt-2">
+            <p className="text-[15px] font-medium text-fg">{p.name}</p>
+            <p className="flex items-baseline gap-2 text-xs text-fg-muted" data-testid="stock-fill-policy">
+              {(() => {
+                const pol = productPolicy(p.items);
+                const mixed = p.items.some((i) => i.policy?.overridden);
+                return pol ? <span>{POLICY_WORDS[pol.policy].label}{pol.policy === "BACKORDER" && pol.backorderLimit ? ` (up to ${num(pol.backorderLimit)})` : ""}{mixed ? " · some sizes differ" : ""}</span> : null;
+              })()}
+              {onPolicy && <button type="button" className="min-h-8 font-medium text-fg underline underline-offset-2 hover:text-accent" onClick={() => onPolicy(p)} data-testid="stock-fill-policy-change">Change</button>}
+            </p>
+          </div>
           <ul>
             {p.items.map((i) => {
               const toFillNow = Math.max(0, -i.stock);

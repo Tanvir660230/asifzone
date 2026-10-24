@@ -27,6 +27,8 @@ export interface StockItem {
   expectedOnShelf: number;
   /** Fill to order only: bottles the recipe can still make from the free materials. */
   makeable: number | null;
+  /** Fill-to-order only: how it sells past the filled bottles; `owed` = bottles sold, not yet filled. */
+  policy: { policy: StockPolicy; overridden: boolean; backorderLimit: number | null; owed: number } | null;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -76,6 +78,8 @@ export interface PurchaseBody {
   reference?: string | null;
   note?: string | null;
   lines: Array<{ variantId: string; quantity: number; amount: number }>;
+  /** Total units on the supplier's bill — the lines must add up to it. */
+  documentTotal: number;
   extras: Array<{ description: string; amount: number }>;
   paidFrom: PaidFrom;
 }
@@ -85,6 +89,8 @@ export interface PurchaseResult { receiptId: string | null; invoiceId: string | 
 export type CountReason = "DAMAGED" | "LOST" | "SAMPLE" | "FOUND" | "COUNT_FIX";
 export interface CountBody {
   date?: string;
+  /** Products counted as a whole grid: every size must be on the sheet (0 when none). */
+  products?: string[];
   lines: Array<{ variantId: string; counted: number; reason?: CountReason | null; note?: string | null }>;
 }
 export interface CountResult {
@@ -105,6 +111,10 @@ export const listStockPurchases = (limit = 20) => apiFetch<{ purchases: StockPur
 export const recordStockPurchase = (body: PurchaseBody, idempotencyKey: string) => apiFetch<PurchaseResult>(`${BASE}/purchases`, { method: "POST", body, idempotencyKey });
 export const finishStockPurchase = (id: string, body: { paidFrom?: PaidFrom }) => apiFetch<PurchaseResult>(`${BASE}/purchases/${id}/finish`, { method: "POST", body });
 export const recordStockCount = (body: CountBody, idempotencyKey: string) => apiFetch<CountResult>(`${BASE}/counts`, { method: "POST", body, idempotencyKey });
+
+export type StockPolicy = "TRACKED" | "UNLIMITED" | "BACKORDER";
+export interface StockPolicyBody { policy: StockPolicy; backorderLimit?: number | null; variants?: Array<{ variantId: string; policy: StockPolicy | null }>; reason: string }
+export const setStockPolicy = (productId: string, body: StockPolicyBody) => apiFetch<{ productId: string; policy: StockPolicy; backorderLimit: number | null }>(`${BASE}/products/${productId}/policy`, { method: "PUT", body });
 
 // ── errors ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ import { ensureManufacturingSetup } from "../../domain/manufacturing/manufacturi
 import { createMaterial } from "../../domain/manufacturing/materials.service";
 import { approveBom, createBom } from "../../domain/manufacturing/boms.service";
 import { fillCapacity, fillToOrderFloors, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
-import { adjustVariantStock, recordSale, stockMovedSettled, stockShortfalls } from "../inventory/inventory.service";
+import { adjustVariantStock, adjustVariantStockInTx, afterAdjustment, recordSale, stockMovedSettled, stockShortfalls } from "../inventory/inventory.service";
 import { getProductBySlug, listProducts, updateProduct } from "../products/product.service";
 import { getCategoryStockMap, getCategoryStockOverview } from "../categories/category.service";
 import { createReturnRequest, previewExchange, reviewReturnRequest } from "../return-requests/return-request.service";
@@ -29,6 +29,14 @@ import { quickRefill } from "../../domain/manufacturing/quick-refill.service";
 import { processFinancialEvent } from "../../domain/finance/events.service";
 import { projectOrder } from "../../domain/finance/commerce-accounting.service";
 import { runReconciliation } from "../../domain/finance/reconciliation.service";
+
+/** A manual increase as the stock hub's count makes it (adjustVariantStockInTx): the Adjust endpoint refuses increases once
+ * costing is live (inventory recovery F-a), but the valuation of an increase is still what these tests pin down. */
+const internalIncrease = async (variantId: string, delta: number, reason: "RESTOCK" | "ADJUSTMENT", adminId: string, note: string) => {
+  const r = await prisma.$transaction((tx) => adjustVariantStockInTx(tx, variantId, delta, reason, adminId, note));
+  afterAdjustment(r);
+  return r.variant;
+};
 
 // Stock hub Task 4 (docs/STOCK_HUB.md §3): a fill-to-order variant sells max(0, stock) + makeable on the website, in the
 // quote and at checkout; its stock goes negative for unfilled orders (the costing deficit), and the checkout locks the
@@ -339,7 +347,7 @@ describe("fill to order beyond the checkout", () => {
     const customer = await prisma.customer.create({ data: { name: "VT attar filled", email: `vt-fto-filled-${RUN}@example.com` } });
     const alert = await prisma.stockAlert.create({ data: { customerId: customer.id, variantId: p.variant } });
     try {
-      await adjustVariantStock(p.variant, 2, "RESTOCK", admin, "two bottles filled"); // 0 → 2: a back-in-stock crossing for an ordinary product
+      await internalIncrease(p.variant, 2, "RESTOCK", admin, "two bottles filled"); // 0 → 2: a back-in-stock crossing for an ordinary product
       await stockMovedSettled();
       await new Promise((r) => setTimeout(r, 300));
       expect((await prisma.stockAlert.findUniqueOrThrow({ where: { id: alert.id } })).notifiedAt).toBeNull();

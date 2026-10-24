@@ -33,14 +33,52 @@ interface CapacityInputs {
   recipes: RecipeLine[];
   materialStock: Map<string, number>;
   filled: Map<string, number>;
+  /** Per variant whose stock policy lets it sell past what the materials make: UNLIMITED_UNITS for UNLIMITED, the backorder
+   * limit for BACKORDER. Absent = TRACKED. */
+  extra: Map<string, number>;
+}
+
+/** What an UNLIMITED variant can sell on top of its filled and makeable units: far more than any cart may hold
+ * (MAX_LINE_QUANTITY), so it never blocks; each unit sold past the bottles is a costed deficit, filled later. */
+export const UNLIMITED_UNITS = 1_000_000;
+
+/** The policy's allowance (0 for TRACKED): UNLIMITED_UNITS, or the most bottles a BACKORDER variant may owe beyond what its
+ * materials can fill. Pure. */
+export function policyExtra(policy: "TRACKED" | "UNLIMITED" | "BACKORDER", backorderLimit: number | null): number {
+  if (policy === "UNLIMITED") return UNLIMITED_UNITS;
+  if (policy === "BACKORDER") return Math.max(0, backorderLimit ?? 0);
+  return 0;
+}
+
+/**
+ * Makeable units with each variant's stock policy applied — what the shop may sell past its filled bottles.
+ *   UNLIMITED  makeable + UNLIMITED_UNITS
+ *   BACKORDER  makeable + (limit − bottles already owed that the materials can't cover): the limit caps the owed bottles
+ *              with no material behind them, so it runs out as backorders are sold and comes back as they are filled
+ */
+function sellableBeyondFilled(inputs: CapacityInputs): Map<string, number> {
+  const made = makeableUnits(inputs);
+  for (const [id, extra] of inputs.extra) {
+    let allowance = extra;
+    const owed = Math.max(0, -(inputs.filled.get(id) ?? 0));
+    if (extra < UNLIMITED_UNITS && owed > 0) {
+      // what the materials could fill if this variant owed nothing (other variants' unfilled orders still claim theirs)
+      const coverable = makeableUnits({ ...inputs, filled: new Map(inputs.filled).set(id, 0) }).get(id) ?? 0;
+      allowance = Math.max(0, extra - Math.max(0, owed - coverable));
+    }
+    made.set(id, Math.min(UNLIMITED_UNITS, (made.get(id) ?? 0) + allowance));
+  }
+  return made;
 }
 
 /** Every fill-to-order product's recipe lines, expanded per variant. Pure read; no stock. */
-async function loadRecipes(db: Db): Promise<{ recipes: RecipeLine[]; variantIds: string[] }> {
+async function loadRecipes(db: Db): Promise<{ recipes: RecipeLine[]; variantIds: string[]; extra: Map<string, number> }> {
   const products = await db.product.findMany({
     where: { fillToOrder: true },
     select: {
-      variants: { select: { id: true } },
+      stockPolicy: true,
+      backorderLimit: true,
+      variants: { select: { id: true, stockPolicy: true } },
       billsOfMaterials: {
         where: { status: "APPROVED" },
         orderBy: { version: "desc" },
@@ -51,9 +89,14 @@ async function loadRecipes(db: Db): Promise<{ recipes: RecipeLine[]; variantIds:
   });
   const recipes: RecipeLine[] = [];
   const variantIds: string[] = [];
+  const extra = new Map<string, number>();
   for (const p of products) {
     const own = p.variants.map((v) => v.id);
     variantIds.push(...own);
+    for (const v of p.variants) {
+      const more = policyExtra(v.stockPolicy ?? p.stockPolicy, p.backorderLimit);
+      if (more > 0) extra.set(v.id, more);
+    }
     for (const l of p.billsOfMaterials[0]?.lines ?? []) {
       // A line for a variant no longer on the product limits nothing; a line without one applies to every variant.
       const targets = l.finishedVariantId ? own.filter((id) => id === l.finishedVariantId) : own;
@@ -62,13 +105,13 @@ async function loadRecipes(db: Db): Promise<{ recipes: RecipeLine[]; variantIds:
       }
     }
   }
-  return { recipes, variantIds };
+  return { recipes, variantIds, extra };
 }
 
 /** Recipes plus current stock. `lock` = the variants whose rows are taken FOR UPDATE first, in id order (the lock order
  * inventory.service uses), so the stock read afterwards is current for them. */
 async function loadInputs(db: Db, lock: (recipes: RecipeLine[]) => string[]): Promise<CapacityInputs> {
-  const { recipes, variantIds } = await loadRecipes(db);
+  const { recipes, variantIds, extra } = await loadRecipes(db);
   const materialIds = [...new Set(recipes.map((r) => r.materialVariantId))];
   const toLock = [...new Set(lock(recipes))].sort();
   if (toLock.length) await db.$queryRaw`SELECT id FROM "ProductVariant" WHERE id IN (${Prisma.join(toLock)}) ORDER BY id FOR UPDATE`;
@@ -79,6 +122,7 @@ async function loadInputs(db: Db, lock: (recipes: RecipeLine[]) => string[]): Pr
     recipes,
     materialStock: new Map(materialIds.map((id) => [id, stock.get(id) ?? 0])),
     filled: new Map(variantIds.map((id) => [id, stock.get(id) ?? 0])),
+    extra,
   };
 }
 
@@ -104,7 +148,7 @@ export function fillCapacityChanged(): void {
 
 function memoisedCapacity(db: Db): Promise<Map<string, number>> {
   if (memo && memo.version === memoVersion && Date.now() - memo.at < FILL_MEMO_TTL_MS) return memo.made;
-  const made = loadInputs(db, () => []).then(makeableUnits);
+  const made = loadInputs(db, () => []).then(sellableBeyondFilled);
   const entry = { version: memoVersion, at: Date.now(), made };
   memo = entry;
   // A failed read is never served again.
@@ -119,17 +163,18 @@ function memoisedCapacity(db: Db): Promise<Map<string, number>> {
  * limits the answer (the free material still accounts for every fill-to-order variant's unfilled orders). `lockMaterials`
  * takes FOR UPDATE on the material rows of those variants, in id order — call it inside the transaction that sells.
  * `cached`: a shop page's read, served from the short-lived memo above (a variant the memo doesn't know — made
- * fill-to-order since — is read live). Ignored with `lockMaterials`.
+ * fill-to-order since — is read live). Ignored with `lockMaterials`. Includes what each variant's stock policy adds
+ * (UNLIMITED / BACKORDER); `materialsOnly`: what the materials alone can make (the stock hub's "can make").
  */
-export async function fillCapacity(db: Db, opts: { variantIds?: string[]; lockMaterials?: boolean; cached?: boolean } = {}): Promise<Map<string, number>> {
+export async function fillCapacity(db: Db, opts: { variantIds?: string[]; lockMaterials?: boolean; cached?: boolean; materialsOnly?: boolean } = {}): Promise<Map<string, number>> {
   const wanted = opts.variantIds ? new Set(opts.variantIds) : null;
-  if (opts.cached && !opts.lockMaterials) {
+  if (opts.cached && !opts.lockMaterials && !opts.materialsOnly) {
     const all = await memoisedCapacity(db);
     if (!wanted) return all;
     if ([...wanted].every((id) => all.has(id))) return new Map([...wanted].map((id) => [id, all.get(id)!]));
   }
   const inputs = await loadInputs(db, (recipes) => (opts.lockMaterials ? materialsOf(recipes, wanted ?? new Set(recipes.map((r) => r.finishedVariantId))) : []));
-  const made = makeableUnits(inputs);
+  const made = opts.materialsOnly ? makeableUnits(inputs) : sellableBeyondFilled(inputs);
   if (!wanted) return made;
   return new Map([...made].filter(([id]) => wanted.has(id)));
 }
@@ -207,7 +252,7 @@ export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string
   for (const line of lines) {
     const s = filled.get(line.variantId);
     if (s === undefined) continue; // not a fill-to-order variant
-    const m = makeableUnits({ ...inputs, filled }).get(line.variantId) ?? 0;
+    const m = sellableBeyondFilled({ ...inputs, filled }).get(line.variantId) ?? 0;
     floors.set(line.variantId, m + Math.max(0, -s));
     available.set(line.variantId, sellable(s, m));
     // What this line will claim, so the next line sees the material it leaves (never more than it may take).

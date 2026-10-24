@@ -24,6 +24,7 @@ import {
   issueStoreCreditSchema,
   createPaymentLinkSchema,
   sendPaymentLinkSchema,
+  receiveReturnedParcelSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
@@ -100,6 +101,7 @@ orderRouter.patch(
   validate(reconcilePartialDeliverySchema),
   orderController.reconcilePartialDelivery,
 );
+orderRouter.post("/:id/receive-return", requireAdmin, requirePermission("orders.manage"), validate(receiveReturnedParcelSchema), orderController.receiveReturnedParcel);
 orderRouter.post("/:id/refunds", requireAdmin, requirePermission("refunds.manage"), validate(recordRefundSchema), orderController.createRefund);
 orderRouter.get("/:id/refunds", requireAdmin, requirePermission("orders.read"), orderController.listRefunds);
 orderRouter.post("/:id/refunds/:refundId/complete", requireAdmin, requirePermission("refunds.manage"), validate(completeRefundSchema), orderController.completeRefundRequest);
