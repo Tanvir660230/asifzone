@@ -6,7 +6,7 @@ import { ensureCommerceAccounting } from "./commerce-setup.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { applyOrderModification } from "../../modules/orders/order-modification.service";
 import { reviewReturnRequest } from "../../modules/return-requests/return-request.service";
-import { adjustVariantStock, recordSale } from "../../modules/inventory/inventory.service";
+import { adjustVariantStock, adjustVariantStockInTx, afterAdjustment, recordSale } from "../../modules/inventory/inventory.service";
 import { loadOrderFacts } from "../metrics/facts.repository";
 import { getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
@@ -15,6 +15,14 @@ import { processFinancialEvent } from "./events.service";
 import { projectOrder } from "./commerce-accounting.service";
 import { runReconciliation } from "./reconciliation.service";
 import type { FinanceActor } from "./finance-audit";
+
+/** A manual increase as the stock hub's count makes it (adjustVariantStockInTx): the Adjust endpoint refuses increases once
+ * costing is live (inventory recovery F-a), but the valuation of an increase is still what these tests pin down. */
+const internalIncrease = async (variantId: string, delta: number, reason: "RESTOCK" | "ADJUSTMENT", adminId: string, note: string) => {
+  const r = await prisma.$transaction((tx) => adjustVariantStockInTx(tx, variantId, delta, reason, adminId, note));
+  afterAdjustment(r);
+  return r.variant;
+};
 
 // Financial Core Phase 4B (docs/FINANCE_PHASE_4.md §9): inventory costing wired into the real commerce paths — checkout,
 // oversell, order modification, exchange, cancellation, trash / restore, item returns, manual adjustments — against the
@@ -205,7 +213,7 @@ describe("concurrency", () => {
     expect(Math.round(((await balance("cogs.cost_adjustments")) - before.adj) * 100)).toBe(-40_000);
     // Stock comes back (a manual restock — receipts arrive in 4D): it covers the deficit first; the provisional cost and
     // the cost of the covering units net to zero in 5150 here (same cost) — no journal was rewritten.
-    await adjustVariantStock(pool.C!.id, 4, "RESTOCK", admin, "found in the back room");
+    await internalIncrease(pool.C!.id, 4, "RESTOCK", admin, "found in the back room");
     await postPending();
     expect(await stockOf(pool.C!.id)).toBe(0);
     expect(await stateOf(pool.C!.id)).toMatchObject({ valuedQty: 0, deficitQty: 0 });
@@ -394,7 +402,7 @@ describe("manual stock adjustments", () => {
     const I = pool.I!.id;
     const before = { inv: await balance("asset.inventory"), shrink: await balance("cogs.inventory_shrinkage"), count: await balance("cogs.count_adjustments"), grni: await balance("liability.grni") };
     await adjustVariantStock(I, -2, "DAMAGED", admin, "water damage");
-    await adjustVariantStock(I, 3, "RESTOCK", admin, "found during count");
+    await internalIncrease(I, 3, "RESTOCK", admin, "found during count");
     await postPending();
     const entries = (await entriesOf(I)).slice(-2);
     expect(entries.map((e) => [e.kind, e.costBasis, e.valuationStatus, Number(e.valueChange)])).toEqual([["OUTFLOW", "AVERAGE", "KNOWN", -200], ["INFLOW", "AVERAGE", "ESTIMATED", 300]]);
@@ -410,7 +418,7 @@ describe("manual stock adjustments", () => {
     const p = await createStockedProduct({ stocks: [0], basePrice: 700 });
     const v = p.variants[0]!.id;
     const events = await prisma.financialEvent.count();
-    await adjustVariantStock(v, 5, "RESTOCK", admin, "opening count");
+    await internalIncrease(v, 5, "RESTOCK", admin, "opening count");
     expect(await stateOf(v)).toMatchObject({ unvaluedQty: 5, valuedQty: 0, avg: null });
     expect(await prisma.financialEvent.count()).toBe(events);
   });
@@ -423,7 +431,7 @@ describe("the books and the valuation converge", () => {
     const quotedB = await quote(K, 2);
     const a = await order(K, 2);
     const b = await paidOversell(K, 2, quotedB); // settles after stock ran out: 1 unit short
-    await adjustVariantStock(K, 1, "RESTOCK", admin, "cover the shortfall");
+    await internalIncrease(K, 1, "RESTOCK", admin, "cover the shortfall");
     for (const o of [a, b]) {
       await deliver(o.id);
       await projectOrder(o.id);

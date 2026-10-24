@@ -527,7 +527,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: the catalog stock policy the product form reads (fill to order, costing live)
     // +2: a partner's statement and the owner's summary (partner finance phase 2, owner-only); +1: a partner's capital (phase 4)
     // +12: share periods (list, prepare, verify, post, retry), corrections (list, propose, detect, approve, reject), rates (phase 3)
-    expect(routes).toHaveLength(719);
+    // +2: inventory recovery — receive a parcel cancelled after shipping; a fill-to-order product's stock policy
+    expect(routes).toHaveLength(721);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

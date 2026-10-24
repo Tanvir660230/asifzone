@@ -255,6 +255,14 @@ export const reconcilePartialDeliverySchema = z.object({
     .max(100),
 });
 
+/** A parcel cancelled after shipping, physically back at the shop (inventory recovery F-d). `lines`: what came back,
+ * when not the whole parcel; omitted = every unit still outstanding. */
+export const receiveReturnedParcelSchema = z.object({
+  lines: z.array(z.object({ orderItemId: z.string().cuid(), quantity: z.number().int().min(1).max(10000) })).min(1).max(100).optional(),
+  note: z.string().trim().max(300).optional().nullable(),
+});
+export type ReceiveReturnedParcelInput = z.infer<typeof receiveReturnedParcelSchema>;
+
 export const validateCouponSchema = z.object({
   code: z.string().min(1).max(64),
   subtotal: z.number().positive(),

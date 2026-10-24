@@ -217,6 +217,13 @@ enum OrderLineCostSource {
   NONE
 }
 
+/// How a fill-to-order product sells past its filled and makeable units (Product.stockPolicy).
+enum StockPolicy {
+  TRACKED
+  UNLIMITED
+  BACKORDER
+}
+
 enum StockMovementReason {
   ORDER
   RESTOCK
@@ -490,6 +497,11 @@ model Product {
   /// Filled to order (attar, docs/STOCK_HUB.md): a variant's stock is filled bottles and may go negative (ordered, not yet
   /// filled); the shop sells max(0, stock) + what the approved recipe can still make from free materials (fill-capacity).
   fillToOrder        Boolean                  @default(false)
+  /// Inventory recovery phase 2: how a fill-to-order product sells past what is filled and makeable — TRACKED (only what
+  /// is filled + makeable from free materials), UNLIMITED (never blocks; each sale is a costed deficit filled later),
+  /// BACKORDER (up to backorderLimit units per variant beyond that). A product that is not fill-to-order is always TRACKED.
+  stockPolicy        StockPolicy              @default(TRACKED)
+  backorderLimit     Int?
   /// CourierNoteRule ids ticked on this product ("perfume — don't open", "fragile") — on top of its category's. No FK, same
   /// as Category.courierNoteRuleIds. Read when a courier is booked (modules/courier/courier-note.ts).
   courierNoteRuleIds String[]                 @default([])
@@ -699,6 +711,8 @@ model ProductVariant {
   freeDelivery              Boolean?
   /// This variant alone shown and sold as sold out whatever its stock (the 6ml, while the 12ml sells) — see Product.markedSoldOut.
   markedSoldOut             Boolean                    @default(false)
+  /// Overrides the product's stockPolicy for this variant (null = the product's).
+  stockPolicy               StockPolicy?
   /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
   imageId                   String?
   image                     ProductImage?              @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
@@ -3283,6 +3297,8 @@ model FinanceBusiness {
   autoPayoutsToOwner          Boolean                   @default(false)
   /// Partners' monthly profit shares are booked when each month ends.
   autoProfitShares            Boolean                   @default(false)
+  /// Inventory recovery: an owner alert is raised for any inventory gain (5210 count adjustment) at or above this amount.
+  inventoryGainAlertThreshold Decimal                   @default(1000) @db.Decimal(18, 2)
   /// What the last night's run did, for the settings page.
   autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())

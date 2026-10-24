@@ -28,11 +28,11 @@ export async function getBusinessSettings() {
     openingBalancesStatus: batch?.status ?? null,
     postedJournals: posted,
     openingDateLocked: batch?.status === "POSTED" || posted > 0,
-    ...(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true, inventoryCostingActivatedAt: true } })),
+    ...(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true, inventoryCostingActivatedAt: true, inventoryGainAlertThreshold: true } })),
   };
 }
 
-export async function updateBusinessSettings(input: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; reason?: string | null }, actor: FinanceActor) {
+export async function updateBusinessSettings(input: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; reason?: string | null }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   return inTransaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "FinanceBusiness" WHERE id = ${business.id} FOR UPDATE`;
@@ -59,6 +59,7 @@ export async function updateBusinessSettings(input: { name?: string; fiscalYearS
         await recordFinanceAudit(tx, { businessId: business.id, actor, action: "opening.date_followed", entityType: "OpeningBalanceBatch", entityId: batch.id, before: batch, after: updatedBatch, reason: input.reason });
       }
     }
+    if (input.inventoryGainAlertThreshold !== undefined) data.inventoryGainAlertThreshold = input.inventoryGainAlertThreshold;
     if (!Object.keys(data).length) return before;
     const after = await tx.financeBusiness.update({ where: { id: business.id }, data });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "business.update", entityType: "FinanceBusiness", entityId: business.id, before, after, reason: input.reason });

@@ -26,6 +26,8 @@ import { BoughtSheet } from "./bought-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
 import { FillGroup, FinishedGroup, MaterialGroup } from "./stock-row";
+import { PolicySheet } from "./policy-sheet";
+import type { ProductGroup } from "./stock-shared";
 import { num } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
@@ -41,6 +43,7 @@ export function StockHub() {
   const purchasesQ = useQuery({ queryKey: stockApi.stockKeys.purchases(), queryFn: () => stockApi.listStockPurchases(20), enabled: allowed && can("purchasing.view") });
   const [sheet, setSheet] = useState<Sheet>(null);
   const [finishing, setFinishing] = useState<StockPurchase | null>(null);
+  const [policyFor, setPolicyFor] = useState<ProductGroup | null>(null);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -123,7 +126,7 @@ export function StockHub() {
         <ErrorState title="Stock couldn't be loaded" description={getErrorMessage(overview.error, "Check your connection and try again.")} onRetry={() => overview.refetch()} variant="bordered" />
       ) : data ? (
         <>
-          <FillGroup items={groupOf("FILL_TO_ORDER")} />
+          <FillGroup items={groupOf("FILL_TO_ORDER")} onPolicy={can("inventory.adjust") ? setPolicyFor : undefined} />
           <MaterialGroup items={groupOf("MATERIAL")} rolls={data.rolls} showCost={showCost} />
           <FinishedGroup items={groupOf("FINISHED")} showCost={showCost} />
           {can("purchasing.view") && <RecentPurchases query={purchasesQ} />}
@@ -133,6 +136,7 @@ export function StockHub() {
       {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} onClose={() => setSheet(null)} />}
       {data && sheet === "filled" && <FilledSheet overview={data} canFill={can("manufacturing.approve")} onClose={() => setSheet(null)} />}
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
+      {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
       {finishing && <FinishDialog purchase={finishing} canOwnerMoney={can("finance.sensitive")} onClose={() => setFinishing(null)} />}
     </div>
   );

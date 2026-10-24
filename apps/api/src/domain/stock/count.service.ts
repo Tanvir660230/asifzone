@@ -5,8 +5,10 @@
  *
  * (an order takes its units out of stock when it is placed, but they stay on the shelf until the parcel leaves — so a count
  * made while orders wait unpacked shows no false loss). Each line is kept as a StockCount (the existing record of counts),
- * and a difference is booked through inventory.service at the running average: DAMAGED / LOST as they are, a sample given
- * away as ADJUSTMENT noted "sample", FOUND / COUNT_FIX as ADJUSTMENT. A shortfall needs its reason. Nothing is typed over.
+ * and a difference is booked through inventory.service: a loss at the running average (DAMAGED / LOST as they are, a sample
+ * given away as ADJUSTMENT noted "sample"); a gain (FOUND / COUNT_FIX, as ADJUSTMENT) comes in unvalued — no income is
+ * booked for it, and it waits as stock received without a cost until the owner enters the cost (inventory recovery F-b).
+ * A shortfall needs its reason. Nothing is typed over.
  *
  * Works for finished goods and materials alike (oil in ml). A fill-to-order variant's stock may already be below zero
  * (ordered, not filled): a loss of filled bottles may take it further down, never below −(units waiting), i.e. counted ≥ 0.
@@ -87,6 +89,13 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
   if (input.date && input.date > today) throw financeError(400, "STOCK_COUNT_FUTURE", "A count can't be dated in the future");
 
   const ids = input.lines.map((l) => l.variantId);
+  // A product counted as a whole grid: every active size / colour must be on the sheet (F-c), checked before any write.
+  if (input.products?.length) {
+    const grid = await prisma.productVariant.findMany({ where: { productId: { in: input.products }, isActive: true }, select: { id: true, sku: true } });
+    const listed = new Set(ids);
+    const missing = grid.filter((g) => !listed.has(g.id)).map((g) => g.sku);
+    if (missing.length) throw financeError(400, "COUNT_SCOPE_INCOMPLETE", `Not on the sheet: ${missing.join(", ")} — enter 0 for a size you have none of`, { missing });
+  }
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: ids } },
     select: { id: true, stock: true, size: true, color: true, product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, fillToOrder: true, deletedAt: true } } },
@@ -144,7 +153,9 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
         // kept with what should have been on the shelf, so Finance → Stock check shows the true difference
         const stockCountId = seen ? seen.id : (await recordStockCountInTx(tx, business, { variantId: line.variantId, counted: line.counted, countDate: date, note: line.note, expected, sourceId }, actor)).id;
         if (!difference) return { expected, difference, stockCountId, movementId: null, adjusted: null };
-        const adjusted = await adjustVariantStockInTx(tx, line.variantId, difference, MOVEMENT_REASON[reason], actor.adminId, note, { source, floor: line.fillToOrder ? waiting : 0 });
+        // A gain comes in unvalued (F-b): no income is booked for units nobody bought — the owner enters their cost from the
+        // bill (Finance › Exceptions) or approves an estimate. A loss leaves at the running average, as before.
+        const adjusted = await adjustVariantStockInTx(tx, line.variantId, difference, MOVEMENT_REASON[reason], actor.adminId, note, { source, floor: line.fillToOrder ? waiting : 0, unvaluedGain: true });
         const mv = await tx.stockMovement.findFirstOrThrow({ where: { variantId: line.variantId, sourceType: source.type, sourceId: source.id }, select: { id: true } });
         return { expected, difference, stockCountId, movementId: mv.id, adjusted };
       });

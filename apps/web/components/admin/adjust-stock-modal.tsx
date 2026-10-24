@@ -1,6 +1,7 @@
 "use client";
 
 import { formatVariantLabel } from "@clothing-brand/shared";
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AdjustStockInput, ManualStockReason } from "@clothing-brand/shared";
@@ -37,6 +38,8 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
   const [reason, setReason] = useState<ManualStockReason>("ADJUSTMENT");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The server refused an increase: once stock costing is live new stock comes in through Stock › Bought or Filled.
+  const [viaHub, setViaHub] = useState(false);
 
   const searchQuery = useQuery({
     queryKey: ["inventory-product-search", search],
@@ -59,6 +62,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
     setReason("ADJUSTMENT");
     setNote("");
     setError(null);
+    setViaHub(false);
   }
 
   function handleClose() {
@@ -69,6 +73,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setViaHub(false);
 
     const variantId = prefill?.variantId ?? selectedVariantId;
     if (!variantId) {
@@ -88,13 +93,19 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
       handleClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to adjust stock");
+      setViaHub(err instanceof ApiError && (err.details as { code?: string } | undefined)?.code === "STOCK_VIA_HUB");
     }
   }
 
   return (
     <Modal open={open} onClose={handleClose} title="Adjust stock">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <p className="text-sm text-danger-600">{error}</p>}
+        {error && (
+          <div className="space-y-1 text-sm text-danger-600" role="alert">
+            <p>{error}</p>
+            {viaHub && <Link href="/admin/stock" className="font-medium underline underline-offset-2">Open Stock</Link>}
+          </div>
+        )}
 
         {prefill ? (
           <div className="rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-sm text-ink-700">{prefill.label}</div>
@@ -172,7 +183,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
             <Label htmlFor="stock-reason">Reason</Label>
             <Select id="stock-reason" value={reason} onChange={(e) => setReason(e.target.value as ManualStockReason)}>
               <option value="ADJUSTMENT">Adjustment / correction</option>
-              <option value="RESTOCK">Restock (new stock arrived)</option>
+              <option value="RESTOCK">Restock (only before stock costing starts — then use Stock › Bought)</option>
               <option value="DAMAGED">Damaged (write-off — enter a negative number)</option>
               <option value="LOST">Lost / shrinkage (write-off — enter a negative number)</option>
             </Select>

@@ -68,6 +68,16 @@ export default function FinanceExceptionsPage() {
     onSuccess: () => { refresh(); toast.success("Cost policy changed"); },
     onError: (err) => toast.error(getErrorMessage(err, "Couldn't change the policy")),
   });
+  // Owner alert for stock gains booked as income (5210) at or above this value (inventory recovery F-e).
+  const [gainLimit, setGainLimit] = useState<string | null>(null);
+  const currentLimit = business.data ? String(Number(business.data.inventoryGainAlertThreshold)) : "";
+  const gainLimitValue = gainLimit ?? currentLimit;
+  const gainLimitOk = /^\d+(\.\d{1,2})?$/.test(gainLimitValue.trim());
+  const saveGainLimit = useMutation({
+    mutationFn: () => financeApi.updateBusiness({ inventoryGainAlertThreshold: Number(gainLimitValue), reason: "Owner set the stock gain alert threshold" }),
+    onSuccess: () => { refresh(); setGainLimit(null); toast.success("Alert threshold saved"); },
+    onError: (err) => toast.error(getErrorMessage(err, "Couldn't save the threshold")),
+  });
 
   if (ready && !allowed) {
     return (
@@ -92,6 +102,22 @@ export default function FinanceExceptionsPage() {
           </Button>
         )}
       </Card>
+      {can("finance.configure") && business.data && (
+        <Card className="p-4">
+          <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); if (gainLimitOk) saveGainLimit.mutate(); }}>
+            <Field
+              htmlFor="gain-alert-threshold"
+              label="Alert me when a stock gain is worth"
+              hint="Stock booked as income (5210) with no purchase or fill behind it — such as manual restocks made before 24 Oct 2026 — raises an owner alert when one entry is worth this much or more. New counts never book income."
+              error={!gainLimitOk ? "Enter an amount, e.g. 1000" : undefined}
+              className="min-w-0 flex-1"
+            >
+              <Input id="gain-alert-threshold" inputMode="decimal" className="tabular-nums sm:max-w-40" value={gainLimitValue} onChange={(e) => setGainLimit(e.target.value)} data-testid="gain-alert-threshold" />
+            </Field>
+            <Button type="submit" size="sm" variant="outline" loading={saveGainLimit.isPending} disabled={!gainLimitOk || gainLimitValue === currentLimit}>Save</Button>
+          </form>
+        </Card>
+      )}
       <div className="flex flex-wrap gap-3">
         <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-44">
           <option value="OPEN">Open</option>

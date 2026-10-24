@@ -148,6 +148,10 @@ export const reconcilePartialDelivery = asyncHandler(async (req: Request, res: R
   res.json({ order: await orderService.reconcilePartialDelivery(req.params.id!, req.body, req.admin!.adminId) });
 });
 
+export const receiveReturnedParcel = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.receiveReturnedParcel(req.params.id!, req.admin!.adminId, req.body) });
+});
+
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.deleteOrder(req.params.id!, req.admin!.adminId) });
 });

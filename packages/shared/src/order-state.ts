@@ -70,7 +70,10 @@ function rule(from: OrderStatus, to: OrderStatus): OrderTransitionRule | null {
       ...NONE,
       id: "T6",
       event: "order.cancelled",
-      stock: "release",
+      // Before shipping the goods never left: they go straight back on sale. After shipping the parcel is still with the
+      // courier — its units come back only when it is physically received (order.service receiveReturnedParcel), so
+      // stock never shows a cap the shop does not have (inventory recovery F-d).
+      stock: isPreShipment(from) ? "release" : "none",
       courierLoss: true,
       alertIfPaid: "order.cancelled_but_paid",
       customerSms: "CANCELLED",
@@ -173,6 +176,9 @@ export function describeOrderTransitionConsequences(
     out.push({ tone: "blocked", text: "Needs a recorded refund first — record it under Payments, then mark the order refunded." });
   }
   if (rule.stock === "release") out.push({ tone: "warning", text: "Reserved stock goes back to inventory." });
+  if (rule.id === "T6" && rule.stock === "none") {
+    out.push({ tone: "info", text: "The parcel is already with the courier — its units go back into stock when you mark it received on the order." });
+  }
   if (rule.stock === "return") out.push({ tone: "warning", text: "Every unit not already restocked goes back to inventory as a customer return." });
   if (rule.codCollected && ctx.paymentMethod === "COD" && !moneyHeld) {
     out.push({ tone: "info", text: "Cash on delivery is recorded as collected — the balance due is added to the payment ledger." });

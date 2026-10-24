@@ -505,20 +505,44 @@ export async function recordPackagingUse(tx: Tx, orderId: string, items: Array<{
 
 // --- manual adjustments -------------------------------------------------------------------------
 
-/** Admin stock adjustment (Inventory → Adjust). Never below zero; DAMAGED/LOST must reduce stock, RESTOCK must
- * add (validated by adjustStockSchema, re-checked here since this is the authority).
+/** Admin stock adjustment (Inventory → Adjust, and the assistant's tool). Never below zero; DAMAGED/LOST must reduce stock,
+ * RESTOCK must add (validated by adjustStockSchema, re-checked here since this is the authority).
+ * Once stock costing is live, a tracked item's stock only RISES through a document — Stock › Bought (a purchase with its
+ * cost), Stock › Filled (bottles made from their materials) or Stock › Counted (an evidenced count) — so a manual increase
+ * here is refused (STOCK_VIA_HUB): it would carry no cost source and book the value as a gain (inventory recovery F-a/F-b).
+ * Write-offs and decreases are unchanged.
  * `source`: the document line the adjustment is for (a stock hub count line) — written on the movement, and an adjustment
  * already made for it is not made again (a retry). `floor`: how far below zero stock may go (a fill-to-order variant whose
  * unfilled orders already took it below zero, docs/STOCK_HUB.md §3); 0 otherwise. */
 export async function adjustVariantStock(variantId: string, delta: number, reason: ManualStockReason, adminId: string, note?: string | null, opts: AdjustOptions = {}) {
-  const result = await prisma.$transaction((tx) => adjustVariantStockInTx(tx, variantId, delta, reason, adminId, note, opts));
+  const result = await prisma.$transaction(async (tx) => {
+    if (delta > 0) await assertManualIncreaseAllowed(tx, variantId);
+    return adjustVariantStockInTx(tx, variantId, delta, reason, adminId, note, opts);
+  });
   afterAdjustment(result);
   return result.variant;
+}
+
+/** F-a/F-b: refuses a manual increase of a tracked item once costing is live (see adjustVariantStock). */
+async function assertManualIncreaseAllowed(tx: Tx, variantId: string) {
+  if (!(await activeCostingInTx(tx))) return;
+  const v = await tx.productVariant.findUnique({ where: { id: variantId }, select: { product: { select: { trackInventory: true, fillToOrder: true } } } });
+  if (!v || !v.product.trackInventory) return;
+  throw new AppError(
+    409,
+    v.product.fillToOrder
+      ? "Stock costing is live: bottles come into stock only when they are filled. Record them on Stock › Filled (or Stock › Bought for bought-in bottles)."
+      : "Stock costing is live: received goods come into stock only with their purchase. Record them on Stock › Bought (or Stock › Counted to correct a count).",
+    { code: "STOCK_VIA_HUB" },
+  );
 }
 
 export interface AdjustOptions {
   source?: { type: string; id: string };
   floor?: number;
+  /** An increase comes in with no value (held unvalued, raised as stock received without a cost) instead of at the running
+   * average against 5210 — a count gain is never booked as income on its own (inventory recovery F-b). */
+  unvaluedGain?: boolean;
 }
 export interface AdjustResult {
   variant: Prisma.ProductVariantGetPayload<object>;
@@ -546,8 +570,9 @@ export async function adjustVariantStockInTx(tx: Tx, variantId: string, delta: n
   }
   const mv = await tx.stockMovement.create({ data: { ...movement(variantId, delta, reason, { adminId, note }), ...source } });
   // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
-  // known) and booked against shrinkage / count adjustments — never as a purchase.
-  await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
+  // known) and booked against shrinkage / count adjustments — never as a purchase. `unvaluedGain`: a gain carries no value.
+  const basis = opts.unvaluedGain && delta > 0 ? { kind: "SNAPSHOT" as const, unitCostMinor: null } : { kind: "AVERAGE" as const };
+  await value(tx, [{ movement: mv, basis, ledger: "MOVEMENT" }]);
   return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0, moved: true };
 }
 

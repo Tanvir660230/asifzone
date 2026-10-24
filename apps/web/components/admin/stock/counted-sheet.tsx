@@ -60,12 +60,18 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
   const problems = all.map((i) => [i.variantId, problemOf(i)] as const).filter(([, p]) => p);
   const badInput = all.some((i) => (counted[i.variantId]?.trim() ?? "") !== "" && !/^\d+$/.test(counted[i.variantId]!.trim()));
   const differ = entered.filter((i) => diffOf(i) !== 0).length;
-  const valid = entered.length > 0 && problems.length === 0 && !badInput && date <= todayLocal();
+  // Caps and clothes are counted as a whole grid (inventory recovery F-c): once one size is entered, every size is — a size
+  // left empty is not silently kept at its old figure. The server checks the same for the products sent as `products`.
+  const enteredIds = new Set(entered.map((i) => i.variantId));
+  const grids = byProduct(all.filter((i) => i.group === "FINISHED")).filter((p) => p.items.length > 1 && p.items.some((i) => enteredIds.has(i.variantId)));
+  const partial = grids.filter((p) => p.items.some((i) => !enteredIds.has(i.variantId)));
+  const valid = entered.length > 0 && problems.length === 0 && !badInput && partial.length === 0 && date <= todayLocal();
 
   const save = useMutation({
     mutationFn: () => {
       const body: stockApi.CountBody = {
         date,
+        ...(grids.length ? { products: grids.map((p) => p.productId) } : {}),
         lines: entered.map((i) => {
           const d = diffOf(i);
           const r = reason[i.variantId] || (d > 0 ? "FOUND" : null);
@@ -143,6 +149,11 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
       }} noValidate>
         {problem && <ProblemAlert problem={problem} />}
         {tried && !entered.length && <p className="ui-field-error" role="alert">Count at least one item</p>}
+        {partial.length > 0 && (
+          <p className={tried ? "ui-field-error" : "text-sm text-warning-700"} role={tried ? "alert" : undefined} data-testid="counted-partial-grid">
+            Count every size of {partial.map((p) => p.name).join(", ")} — enter 0 for a size you have none of.
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-end">
           <SearchInput value={query} onChange={setQuery} placeholder="Find an item…" aria-label="Find an item to count" />
           <Field htmlFor="counted-date" label="Counted on"><Input id="counted-date" type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} /></Field>

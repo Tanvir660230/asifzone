@@ -27,10 +27,19 @@ export const stockPurchaseSchema = z
     reference: optionalText(100),
     note: optionalText(500),
     lines: z.array(z.object({ variantId: id, quantity, amount: positive })).min(1).max(100).refine(onceEach, "Each item once — add the quantities together"),
+    /** Total units on the supplier's invoice or receipt, typed from the document: the lines must add up to it, so a size
+     * typed into the wrong row or a missing size is caught before anything is written (inventory recovery F-c). */
+    documentTotal: z.number().int().min(1).max(100_000_000),
     extras: z.array(z.object({ description: z.string().trim().min(1).max(120), amount: positive })).max(20).default([]),
     paidFrom,
   })
-  .refine((p) => [...p.lines, ...p.extras].reduce((s, x) => s + x.amount, 0) <= STOCK_PURCHASE_MAX_TOTAL, { message: "A purchase is at most 10,000,000,000 in all", path: ["lines"] });
+  .refine((p) => [...p.lines, ...p.extras].reduce((s, x) => s + x.amount, 0) <= STOCK_PURCHASE_MAX_TOTAL, { message: "A purchase is at most 10,000,000,000 in all", path: ["lines"] })
+  .superRefine((p, ctx) => {
+    const entered = p.lines.reduce((s, l) => s + l.quantity, 0);
+    if (entered !== p.documentTotal) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentTotal"], message: `The lines add up to ${entered} units but the document says ${p.documentTotal} — check each size before saving` });
+    }
+  });
 export type StockPurchaseInput = z.input<typeof stockPurchaseSchema>;
 
 /** Finishing a purchase stuck mid-way: optionally from another account (only while nothing has been paid for it). */
@@ -43,9 +52,12 @@ export const stockPurchaseListQuerySchema = z.object({ limit: z.coerce.number().
 export const STOCK_COUNT_REASONS = ["DAMAGED", "LOST", "SAMPLE", "FOUND", "COUNT_FIX"] as const;
 export type StockCountReason = (typeof STOCK_COUNT_REASONS)[number];
 
-/** Counted: what is on the shelf for each item; a shortfall needs a reason. */
+/** Counted: what is on the shelf for each item; a shortfall needs a reason. `products`: products counted as a whole grid —
+ * every active size and colour of each must then be on the sheet (0 when none), so a size left out is refused, not
+ * silently kept at its old figure (inventory recovery F-c). */
 export const stockCountsSchema = z.object({
   date: businessDate.optional(),
+  products: z.array(id).max(100).optional(),
   lines: z
     .array(z.object({ variantId: id, counted: z.number().int().min(0).max(10_000_000), reason: z.enum(STOCK_COUNT_REASONS).optional().nullable(), note: optionalText(300) }))
     .min(1)
@@ -53,3 +65,22 @@ export const stockCountsSchema = z.object({
     .refine(onceEach, "Each item once"),
 });
 export type StockCountsInput = z.input<typeof stockCountsSchema>;
+
+/** How a fill-to-order product sells past what is filled and makeable (inventory recovery phase 2): TRACKED — only what
+ * is filled plus what the free materials can make; UNLIMITED — never blocks, each unit sold past the bottles is a costed
+ * deficit filled later; BACKORDER — up to `backorderLimit` units per variant beyond that. Caps, clothing and every other
+ * product that is not filled to order stay TRACKED. */
+export const STOCK_POLICIES = ["TRACKED", "UNLIMITED", "BACKORDER"] as const;
+export type StockPolicy = (typeof STOCK_POLICIES)[number];
+
+export const stockPolicySchema = z
+  .object({
+    policy: z.enum(STOCK_POLICIES),
+    backorderLimit: z.number().int().min(1).max(10_000).optional().nullable(),
+    /** Per-variant overrides (null = follow the product). */
+    variants: z.array(z.object({ variantId: id, policy: z.enum(STOCK_POLICIES).nullable() })).max(200).optional(),
+    reason: z.string().trim().min(3).max(300),
+  })
+  .refine((p) => p.policy !== "BACKORDER" || (p.backorderLimit ?? 0) > 0, { message: "Say how many units may be sold before they are filled", path: ["backorderLimit"] })
+  .refine((p) => !(p.variants ?? []).some((v) => v.policy === "BACKORDER") || (p.backorderLimit ?? 0) > 0, { message: "A size on backorder needs the backorder limit", path: ["backorderLimit"] });
+export type StockPolicyInput = z.input<typeof stockPolicySchema>;

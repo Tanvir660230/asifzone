@@ -44,6 +44,93 @@ async function latestCheckRuns(businessId: string) {
     ORDER BY "checkKey", "createdAt" DESC`;
 }
 
+/** How far back the inventory alerts look at stock movements. */
+const INVENTORY_ALERT_DAYS = 30;
+/** Stock that rose without a document behind it: a manual adjustment, a count that found more, an import. */
+const UNDOCUMENTED_GAINS = ["ADJUSTMENT", "RESTOCK", "IMPORT"] as const;
+/** How a filled bottle legitimately comes into stock: a fill, or a parcel / cancellation putting one back. */
+const BOTTLE_SOURCES = new Set(["PRODUCTION_RECEIPT", "RETURN", "CANCELLATION"]);
+
+type AddAlert = (a: Omit<FinanceAlert, "amount"> & { amount?: number | null }) => void;
+
+/** Inventory recovery F-e: each alert names the item, the quantity, when it happened and what to do. */
+async function inventoryAlerts(
+  business: { id: string; baseCurrency: string; timezone: string },
+  checkRuns: Array<{ checkKey: string; status: string }>,
+  add: AddAlert,
+) {
+  const cur = business.baseCurrency;
+  const since = new Date(Date.now() - INVENTORY_ALERT_DAYS * 86_400_000);
+  const at = new Intl.DateTimeFormat("en-GB", { timeZone: business.timezone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  const line = (m: { change: number; createdAt: Date; reason: string; variant: { sku: string } }) => `${m.variant.sku} ${m.change > 0 ? "+" : ""}${m.change} (${m.reason.toLowerCase()}, ${at.format(m.createdAt)})`;
+  const list = (xs: string[]) => xs.slice(0, 5).join(" · ") + (xs.length > 5 ? ` … and ${xs.length - 5} more` : "");
+
+  const [settings, gains, bottles, unvalued] = await Promise.all([
+    prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { inventoryGainAlertThreshold: true } }),
+    prisma.stockMovement.findMany({
+      where: { createdAt: { gte: since }, change: { gt: 0 }, reason: { in: [...UNDOCUMENTED_GAINS] }, valuationEntry: { isNot: null } },
+      select: { change: true, createdAt: true, reason: true, variant: { select: { sku: true } }, valuationEntry: { select: { valueChange: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.stockMovement.findMany({
+      where: { createdAt: { gte: since }, change: { gt: 0 }, variant: { product: { fillToOrder: true } } },
+      select: { change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    // read from the movements, not the exceptions the commerce sync raises later, so a receipt without a cost shows at once
+    prisma.stockMovement.findMany({
+      where: { createdAt: { gte: since }, change: { gt: 0 }, valuationEntry: { valuationStatus: "MISSING" } },
+      select: { id: true, change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  // … less the ones the owner has already dealt with on Finance › Exceptions (acknowledged or costed)
+  const settled = unvalued.length
+    ? new Set((await prisma.financeException.findMany({ where: { businessId: business.id, key: { in: unvalued.map((m) => `stock:${m.id}`) }, status: { not: "OPEN" } }, select: { key: true } })).map((e) => e.key))
+    : new Set<string>();
+  const receipts = unvalued.filter((m) => !settled.has(`stock:${m.id}`));
+
+  // gains booked to 5210 (count adjustments) at or above the owner's threshold: profit nobody bought
+  const threshold = toMinor(settings.inventoryGainAlertThreshold, cur);
+  const big = gains.filter((g) => toMinor(g.valuationEntry!.valueChange, cur) >= threshold);
+  add({
+    key: "inventory.gains",
+    severity: "critical",
+    title: "Stock gains booked as profit",
+    detail: `${list(big.map(line))}. Each one added stock value and counted it as income (5210) without a purchase or fill behind it.`,
+    count: big.length,
+    amount: toMajorNumber(big.reduce((s, g) => s + toMinor(g.valuationEntry!.valueChange, cur), 0), cur),
+    href: "/admin/stock",
+    action: "Record the real purchase or fill, or count the item again",
+  });
+
+  const unfilled = bottles.filter((m) => !BOTTLE_SOURCES.has(m.reason));
+  add({
+    key: "inventory.bottles_without_fill",
+    severity: "warning",
+    title: "Bottles added without a fill",
+    detail: `${list(unfilled.map(line))}. Filled bottles come from Stock › Filled, which also takes the oil and the empty bottles out.`,
+    count: unfilled.length,
+    href: "/admin/stock",
+    action: "Record the fill on Stock › Filled, or count the bottles again",
+  });
+
+  add({
+    key: "inventory.unvalued_receipts",
+    severity: "warning",
+    title: "Stock received without a cost",
+    detail: `${list(receipts.map(line))}. The books can't value these units until their cost is entered.`,
+    count: receipts.length,
+    href: "/admin/finance/exceptions",
+    action: "Enter the cost from the bill, or count the item again",
+  });
+
+  const valuation = checkRuns.find((r) => r.checkKey === "inventory.valuation_vs_ledger");
+  if (valuation && (valuation.status === "DIFFERENCE" || valuation.status === "ERROR")) {
+    add({ key: "inventory.valuation_difference", severity: "critical", title: "Stock value and the books disagree", detail: "The inventory valuation does not match the inventory accounts in the ledger.", count: 1, href: "/admin/finance/checks", action: "Open the inventory check" });
+  }
+}
+
 export async function financeAlerts() {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
@@ -80,6 +167,7 @@ export async function financeAlerts() {
 
   add({ key: "treasury.approvals", severity: "warning", title: "Money movements waiting for approval", detail: "Payments and transfers are not in the books until they are approved or rejected.", count: approvals._count._all, amount: approvals._sum.amount ? major(toMinor(approvals._sum.amount, cur)) : null, href: "/admin/finance/accounts", action: "Review approvals" });
   add({ key: "exceptions.open", severity: "warning", title: "Open finance exceptions", detail: "Missing costs and unmatched records the books will not guess about.", count: exceptions._count._all, amount: exceptions._sum.amount ? major(toMinor(exceptions._sum.amount, cur)) : null, href: "/admin/finance/exceptions", action: "Review exceptions" });
+  await inventoryAlerts(business, checkRuns, add);
 
   // money owed and cash: from the cash forecast, so the figures agree with it
   const forecast = await cashForecast({ weeks: 13 });
