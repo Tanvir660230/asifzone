@@ -248,3 +248,33 @@ test("Reorder opens Received goods with the suggested amounts; a price far above
     await expect(line.getByTestId("bought-price-check")).toContainText("more than last time");
   }
 });
+
+test("this week's count goes one item at a time and saves one count", async ({ page }) => {
+  await login(page);
+  const today = (await (await page.request.get(`${API}/api/v1/finance/stock/today`)).json()) as Today;
+  test.skip(!today.count || !(await overview(page)).costingActive, "nothing due to count on this database");
+  await page.getByTestId("today-count-open").click();
+  const sheet = page.getByTestId("guided-count");
+  await expect(sheet).toBeVisible(NAV);
+  // type what the books say on every screen: everything matches, so nothing moves
+  for (let n = 0; n < 200 && (await sheet.getByTestId("guided-step").isVisible()); n++) {
+    const says = (await sheet.getByTestId("guided-step").innerText()).match(/The books say ([\d,]+)/)![1]!.replace(/,/g, "");
+    await sheet.getByTestId("guided-qty").fill(says);
+    await expect(sheet.getByTestId("guided-match")).toBeVisible();
+    await page.getByTestId("guided-next").click();
+  }
+  await expect(sheet.getByTestId("guided-summary")).toContainText("0 short");
+  await page.getByTestId("guided-save").click();
+  await expect(sheet.getByTestId("guided-done")).toContainText("all match the books", NAV);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("a count loss waiting for the owner can be approved from Today", async ({ page }) => {
+  await login(page);
+  const today = (await (await page.request.get(`${API}/api/v1/finance/stock/today`)).json()) as Today;
+  test.skip(today.approvals.length === 0, "no count loss waiting on this database (only staff counts wait)");
+  await page.getByTestId("today-approval-open").first().click();
+  await expect(page.getByTestId("approval-sheet")).toBeVisible(NAV);
+  await page.getByTestId("approval-approve").click();
+  await expect(page.getByTestId("approval-sheet")).toBeHidden(NAV);
+});

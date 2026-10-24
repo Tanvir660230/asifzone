@@ -29,6 +29,7 @@ import { BoughtSheet, type BoughtStart } from "./bought-sheet";
 import { ReorderSheet } from "./reorder-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
+import { GuidedCount } from "./guided-count";
 import { ItemPanel } from "./item-panel";
 import { PolicySheet } from "./policy-sheet";
 import { StockList } from "./stock-list";
@@ -38,7 +39,7 @@ import type { ProductGroup } from "./stock-shared";
 import { byProduct, num } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
 
-type Sheet = "bought" | "reorder" | "filled" | "batch-fill" | "counted" | null;
+type Sheet = "bought" | "reorder" | "filled" | "batch-fill" | "counted" | "guided-count" | null;
 const GO_LIVE = "Stock costing starts at go-live";
 
 /** /admin/stock (docs/STOCK_HUB.md §7): Today — what to fill, reorder, count and approve — then every item in one
@@ -147,7 +148,7 @@ export function StockHub() {
             actions={live ? {
               onFill: can("manufacturing.view") ? () => setSheet("batch-fill") : undefined,
               onReorder: can("purchasing.receive") ? () => setSheet("reorder") : undefined,
-              onCount: can("inventory.adjust") ? () => setSheet("counted") : undefined,
+              onCount: can("inventory.adjust") ? () => setSheet("guided-count") : undefined,
               onApproval: setApprovalOf,
             } : {}}
           />
@@ -163,6 +164,7 @@ export function StockHub() {
       {data && sheet === "filled" && <FilledSheet overview={data} canFill={can("manufacturing.approve")} onClose={() => setSheet(null)} />}
       {data && sheet === "batch-fill" && today.data?.fill && <BatchFillSheet overview={data} fill={today.data.fill} canFill={can("manufacturing.approve")} onSingle={() => setSheet("filled")} onClose={() => setSheet(null)} />}
       {data && sheet === "counted" && <CountedSheet overview={data} onClose={() => setSheet(null)} />}
+      {data && sheet === "guided-count" && today.data?.count && <GuidedCount overview={data} due={today.data.count.due.map((d) => d.variantId)} showCost={showCost} onClose={() => setSheet(null)} />}
       {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
       {traceOf && <TraceSheet item={traceOf} showCost={showCost} onClose={() => setTraceOf(null)} />}
       {itemOf && (

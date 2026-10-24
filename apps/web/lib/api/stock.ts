@@ -99,7 +99,8 @@ export interface CountResult {
   id: string;
   date: string;
   replayed: boolean;
-  lines: Array<{ variantId: string; expected: number; counted: number; difference: number; movementId: string | null }>;
+  /** pendingApprovalId: a loss over the limit, kept as a count, waiting for the owner (docs/STOCK_HUB.md §7). */
+  lines: Array<{ variantId: string; expected: number; counted: number; difference: number; movementId: string | null; pendingApprovalId?: string | null }>;
 }
 
 export const stockKeys = {
