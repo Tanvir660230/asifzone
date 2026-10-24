@@ -235,7 +235,7 @@ function WideLabel({ view, detail, onBarcodeReady }: PartProps) {
           <CourierNote order={order} className="mt-[0.3em] text-[0.88em]" />
         </div>
         <div className="flex w-[38%] shrink-0 flex-col gap-[0.35em]">
-          <Payment view={view} amountEm={1.45} stacked />
+          <Payment view={view} amountEm={1.6} caption="COD" />
           {detail.qr !== "none" && order.courierTrackingLink && (
             <div className="self-center" style={{ width: `${qrEm(detail, 4.6)}em`, height: `${qrEm(detail, 4.6)}em` }}>
               <QrCodeSvg value={order.courierTrackingLink} size={128} fill />
@@ -333,12 +333,14 @@ function FieldLabel({ children }: { children: string }) {
   return <span className="text-[0.7em] font-semibold uppercase tracking-[0.1em]">{children}</span>;
 }
 
-function Payment({ view, className = "", amountEm, stacked = false }: { view: LabelView; className?: string; amountEm: number; stacked?: boolean }) {
+/** The amount to collect, boxed: caption left, amount right on one line. `caption` is the short "COD" in a wide label's
+ * narrow column. */
+function Payment({ view, className = "", amountEm, caption = "Cash on delivery" }: { view: LabelView; className?: string; amountEm: number; caption?: string }) {
   if (view.cod > 0) {
     return (
-      <div className={`flex border-[0.14em] border-ink-900 px-[0.55em] py-[0.28em] ${stacked ? "flex-col" : "items-center justify-between gap-[0.5em]"} ${className}`}>
-        <span className="text-[0.8em] font-bold uppercase leading-tight tracking-[0.12em]">{stacked ? "COD" : "Cash on delivery"}</span>
-        <span className="font-extrabold leading-none tabular-nums" style={{ fontSize: `${amountEm}em` }}>
+      <div className={`flex items-center justify-between gap-[0.5em] border-[0.14em] border-ink-900 px-[0.55em] py-[0.28em] ${className}`}>
+        <span className="text-[0.8em] font-bold uppercase leading-tight tracking-[0.12em]">{caption}</span>
+        <span className="whitespace-nowrap font-extrabold leading-none tabular-nums" style={{ fontSize: `${amountEm}em` }}>
           {formatPrice(view.cod)}
         </span>
       </div>
