@@ -100,9 +100,10 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
 
   if (result) {
     return (
-      <Modal open onClose={onClose} title="Counted" description={`Recorded for ${formatBookDate(result.date)}.`} widthClassName="max-w-2xl" footer={<Button onClick={onClose} data-testid="counted-close">Done</Button>}>
+      <Modal open onClose={onClose} title="Count" description={`Recorded for ${formatBookDate(result.date)}.`} widthClassName="max-w-2xl" footer={<Button onClick={onClose} data-testid="counted-close">Done</Button>}>
         <div className="space-y-3" data-testid="counted-result">
-          <p className="flex items-center gap-2 text-[15px] text-fg"><CheckCircle2 className="h-5 w-5 text-success-600" aria-hidden="true" /> {num(result.lines.length)} counted, {num(result.lines.filter((l) => l.difference).length)} booked as a difference</p>
+          <p className="flex items-center gap-2 text-[15px] text-fg"><CheckCircle2 className="h-5 w-5 text-success-600" aria-hidden="true" /> {num(result.lines.length)} counted, {num(result.lines.filter((l) => l.difference && !l.pendingApprovalId).length)} booked as a difference</p>
+          {result.lines.some((l) => l.pendingApprovalId) && <p className="text-sm text-warning-700" data-testid="counted-waiting">Losses over the limit wait for the owner&apos;s approval. The stock changes once approved.</p>}
           <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm">
             {result.lines.map((l) => {
               const i = byId.get(l.variantId);
@@ -110,7 +111,7 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
                 <li key={l.variantId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 px-3 py-2.5" data-testid="counted-result-line">
                   <span className="min-w-0 text-fg">{i ? i.productName : "Item"}<span className="block text-xs text-fg-muted">{i && variantWords(i) !== i.sku ? `${spacedUnit(variantWords(i))} · ` : ""}expected {num(l.expected)}, counted {num(l.counted)}</span></span>
                   <span className={cn("self-center text-right tabular-nums", l.difference < 0 ? "text-danger-700" : l.difference > 0 ? "text-success-700" : "text-fg-muted")}>
-                    {l.difference === 0 ? "Matches" : `${l.difference > 0 ? "+" : "−"}${num(Math.abs(l.difference))} booked`}
+                    {l.difference === 0 ? "Matches" : `${l.difference > 0 ? "+" : "−"}${num(Math.abs(l.difference))} ${l.pendingApprovalId ? "waits for approval" : "booked"}`}
                   </span>
                 </li>
               );
@@ -125,7 +126,7 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
     <Modal
       open
       onClose={guard.requestClose}
-      title="Counted"
+      title="Count"
       description="Enter what is on the shelf. Leave a line empty if you didn't count it."
       widthClassName="max-w-2xl"
       footer={guard.prompt ?? (

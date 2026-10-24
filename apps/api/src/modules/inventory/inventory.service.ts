@@ -531,8 +531,8 @@ async function assertManualIncreaseAllowed(tx: Tx, variantId: string) {
   throw new AppError(
     409,
     v.product.fillToOrder
-      ? "Stock costing is live: bottles come into stock only when they are filled. Record them on Stock › Filled (or Stock › Bought for bought-in bottles)."
-      : "Stock costing is live: received goods come into stock only with their purchase. Record them on Stock › Bought (or Stock › Counted to correct a count).",
+      ? "Stock costing is live: bottles come into stock only when they are filled. Record them on Stock › Filled bottles (or Stock › Received goods for bought-in bottles)."
+      : "Stock costing is live: received goods come into stock only with their purchase. Record them on Stock › Received goods (or Stock › Count to correct a count).",
     { code: "STOCK_VIA_HUB" },
   );
 }

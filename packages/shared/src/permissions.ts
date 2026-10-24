@@ -58,6 +58,7 @@ export const PERMISSIONS = [
   "analytics.export",
   "inventory.read",
   "inventory.adjust",
+  "inventory.approve", // a count loss over the limit (docs/STOCK_HUB.md §7) — OWNER only
   "ops.read", // outbox status, reliability report, drift reports
   "ops.repair", // outbox retry, payment-ledger repair, read-model rebuild
   // financial core (docs/FINANCE_PHASE_1.md §7) — OWNER-only until the owner decides on a finance role (F0-5)
@@ -123,6 +124,8 @@ export const OWNER_ONLY_PERMISSIONS = [
   "manufacturing.approve",
   // Courier costs: STAFF records what the rider / customer reported; verifying and reconciling stay with the owner and finance.
   "courier_costs.verify",
+  // Stock: STAFF counts, but a count loss over the limit waits for the owner.
+  "inventory.approve",
 ] as const satisfies readonly Permission[];
 
 const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);

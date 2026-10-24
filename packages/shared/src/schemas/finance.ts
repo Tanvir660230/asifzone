@@ -21,9 +21,11 @@ export const financeBusinessUpdateSchema = z
     openingDate: businessDate.optional(),
     /** Owner alert for an inventory gain (5210 count adjustment) at or above this amount, major units. */
     inventoryGainAlertThreshold: financeAmountSchema.optional(),
+    /** A count loss by staff at or above this amount (at the average cost) waits for the owner, major units. */
+    countLossApprovalThreshold: financeAmountSchema.optional(),
     reason: optionalText(500),
   })
-  .refine((v) => v.name !== undefined || v.fiscalYearStartMonth !== undefined || v.openingDate !== undefined || v.inventoryGainAlertThreshold !== undefined, "Nothing to change");
+  .refine((v) => v.name !== undefined || v.fiscalYearStartMonth !== undefined || v.openingDate !== undefined || v.inventoryGainAlertThreshold !== undefined || v.countLossApprovalThreshold !== undefined, "Nothing to change");
 
 export const ledgerAccountCreateSchema = z.object({
   code: z.string().trim().regex(/^[0-9A-Z][0-9A-Z.-]{0,15}$/, "Codes use digits, capitals, '.' and '-' (max 16)"),

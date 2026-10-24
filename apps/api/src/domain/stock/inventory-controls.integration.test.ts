@@ -74,7 +74,7 @@ describe("F-a / F-b: no free restock once costing is live", () => {
     const r = await as(owner)(request(app).post(`/api/inventory/variants/${cap}/adjust`)).send({ delta: 50, reason: "RESTOCK", note: "new caps" });
     expect(r.status, JSON.stringify(r.body)).toBe(409);
     expect(r.body.details?.code).toBe("STOCK_VIA_HUB");
-    expect(String(r.body.error ?? r.body.message)).toMatch(/Bought|Filled/);
+    expect(String(r.body.error ?? r.body.message)).toMatch(/Received goods|Filled bottles/);
     expect(await stockOf(cap)).toBe(stock);
     expect(await movementsOf(cap)).toBe(moves);
     expect(await countAdjustmentCredits()).toBe(gains);

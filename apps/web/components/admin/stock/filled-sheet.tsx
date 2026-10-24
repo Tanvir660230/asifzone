@@ -110,7 +110,7 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
     <Modal
       open
       onClose={onClose}
-      title="Filled"
+      title="Filled bottles"
       description="Bottles filled from the oil, bottles, boxes and stickers in stock."
       widthClassName="max-w-xl"
       footer={done ? (

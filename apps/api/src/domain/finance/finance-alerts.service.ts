@@ -109,10 +109,10 @@ async function inventoryAlerts(
     key: "inventory.bottles_without_fill",
     severity: "warning",
     title: "Bottles added without a fill",
-    detail: `${list(unfilled.map(line))}. Filled bottles come from Stock › Filled, which also takes the oil and the empty bottles out.`,
+    detail: `${list(unfilled.map(line))}. Filled bottles come from Stock › Filled bottles, which also takes the oil and the empty bottles out.`,
     count: unfilled.length,
     href: "/admin/stock",
-    action: "Record the fill on Stock › Filled, or count the bottles again",
+    action: "Record the fill with Stock › Filled bottles, or count the bottles again",
   });
 
   add({

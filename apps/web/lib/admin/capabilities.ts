@@ -73,6 +73,7 @@ export const CAPABILITIES = {
   "products.import": { permission: "products.import" },
   "inventory.view": { permission: "inventory.read" },
   "inventory.adjust": { permission: "inventory.adjust" },
+  "inventory.approve": { permission: "inventory.approve" },
   // customers & messages
   "customers.view": { permission: "customers.read" },
   "customers.manage": { permission: "customers.manage" },

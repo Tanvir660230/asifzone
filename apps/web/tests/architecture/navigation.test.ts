@@ -190,8 +190,10 @@ describe("navigation manifest — derivation", () => {
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(11);
     expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
-    // Inventory groups stock and production (docs/MANUFACTURING.md); a lone module still shows none (Customers).
-    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
+    // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels and Production, whose
+    // own pages are its tabs; a lone module still shows none (Customers).
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/manufacturing"]);
+    expect(sectionTabsFor("/admin/manufacturing/boms", access("OWNER")).map((t) => t.href)).toEqual(["/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
     expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
 
@@ -208,7 +210,9 @@ describe("navigation manifest — derivation", () => {
     expect(sectionBarFor("/admin/orders/abc123", access("OWNER"))).toBeNull();
     expect(sectionBarFor("/admin/products/abc123/edit", access("OWNER"))).toBeNull();
     // Inventory holds Stock and Manufacturing (docs/MANUFACTURING.md), so it has a section bar of its own
-    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(expect.arrayContaining(["/admin/stock", "/admin/inventory", "/admin/manufacturing", "/admin/manufacturing/materials"]));
+    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/manufacturing"]);
+    // a Production page keeps the module bar on "Production"
+    expect(sectionBarFor("/admin/manufacturing/materials", access("OWNER"))?.activeHref).toBe("/admin/manufacturing");
     expect(sectionBarFor("/admin/manufacturing/production-orders/po1", access("OWNER"))).toBeNull(); // a detail view
   });
 
