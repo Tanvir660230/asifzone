@@ -53,6 +53,8 @@ async function eventually(check: () => Promise<boolean>, timeoutMs = 5_000) {
 const PD_10_1_ROUTES = ["DELETE /api/coupons/:id/permanent", "DELETE /api/categories/:id/permanent"];
 const OWNER_ONLY_ROUTES = [
   ...PD_10_1_ROUTES,
+  // Stock correction (docs/STOCK_HUB.md §10): inventory.approve — it moves stock and the books back
+  "POST /api/inventory/movements/:movementId/reverse",
   "GET /api/auth/admins",
   "PATCH /api/auth/admins/:id/active",
   "PATCH /api/auth/admins/:id",
@@ -544,7 +546,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +3: Filled as a hub entry, an item's stock trace, an order's attar fill status (phase 3)
     // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill; +1: the activity
     // +5: 2-step sign-in (admin audit phase 2) — own setup / enable / disable, an owner's reset, an owner's sign-out-everywhere
-    expect(routes).toHaveLength(746);
+    expect(routes).toHaveLength(747);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

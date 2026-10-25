@@ -48,3 +48,8 @@ export function adjustStock(variantId: string, input: AdjustStockInput) {
 export function getStockReconciliation() {
   return apiFetch<{ discrepancies: StockDiscrepancy[] }>("/api/inventory/reconciliation");
 }
+
+/** Stock correction (docs/STOCK_HUB.md §10): undo one hand-made entry exactly — owner only. */
+export function reverseStockMovement(movementId: string, body: { reason: string; acknowledgeLaterCount?: boolean }) {
+  return apiFetch<{ movement: StockMovement; stock: number }>(`/api/inventory/movements/${movementId}/reverse`, { method: "POST", body });
+}

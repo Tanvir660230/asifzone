@@ -17,11 +17,15 @@ export interface StockMovement {
   id: string;
   variantId: string;
   change: number;
-  reason: "ORDER" | "RESTOCK" | "ADJUSTMENT" | "RETURN";
+  reason: "ORDER" | "RESTOCK" | "ADJUSTMENT" | "RETURN" | "CANCELLATION" | "IMPORT" | "DAMAGED" | "LOST" | "PURCHASE_RECEIPT" | "PURCHASE_RETURN" | "PRODUCTION_ISSUE" | "PRODUCTION_RETURN" | "PRODUCTION_RECEIPT" | "PACKAGING_USE";
   orderId: string | null;
   adminId: string | null;
   note: string | null;
   createdAt: string;
+  /** Stock correction (docs/STOCK_HUB.md §10): this entry undoes that one / was undone by that one. */
+  reversesMovementId?: string | null;
+  reverses?: { id: string; createdAt: string; change: number } | null;
+  reversedBy?: { id: string; createdAt: string } | null;
   variant?: {
     sku: string;
     size: string;

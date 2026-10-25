@@ -404,6 +404,11 @@ async function postReversal(tx: AppTransactionClient, business: FinanceBusinessI
   if (original.kind === "TREASURY" && owner !== "treasury") {
     throw financeError(409, "JOURNAL_OWNED_BY_MOVEMENT", "This journal belongs to a money movement — reverse the movement instead", { sourceId: original.sourceId });
   }
+  // A stock valuation's journal is undone only with the stock (reverse the stock entry, docs/STOCK_HUB.md §10): reversing it
+  // alone would leave the stock's value and the books apart.
+  if (original.sourceType === "InventoryValuationEntry" && owner === null) {
+    throw financeError(409, "JOURNAL_OWNED_BY_STOCK", "This journal is a stock entry's value — reverse the stock entry on the stock movements page instead", { sourceId: original.sourceId });
+  }
   // Anything on a partner's accounts is undone only through a correction (partner-adjustments), where the evidence is
   // linked and what they are owed is checked — never by reversing or correcting the journal here.
   if (owner === null) {

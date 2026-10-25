@@ -77,6 +77,21 @@ async function lockException(tx: AppTransactionClient, businessId: string, id: s
   return tx.financeException.findUniqueOrThrow({ where: { id } });
 }
 
+/**
+ * A stock movement was reversed exactly (docs/STOCK_HUB.md §10): the open "stock received / removed without a value"
+ * exception of the reversed movement has nothing left to decide — the pair nets to nothing — so it is acknowledged with the
+ * correction named, in the caller's transaction. Exceptions already decided stay as they are.
+ */
+export async function settleReversedStockExceptionsInTx(tx: AppTransactionClient, movementId: string, reversalId: string, note: string, actor: FinanceActor) {
+  const open = await tx.financeException.findMany({ where: { key: `stock:${movementId}`, status: "OPEN" }, select: { id: true, businessId: true } });
+  for (const e of open) {
+    const resolutionNote = `Reversed by stock correction ${reversalId}: ${note}`;
+    await tx.financeException.update({ where: { id: e.id }, data: { status: "ACKNOWLEDGED", resolution: "ACKNOWLEDGED", resolutionNote, resolvedByAdminId: actor.type === "ADMIN" ? actor.adminId : null, resolvedAt: new Date() } });
+    await recordFinanceAudit(tx, { businessId: e.businessId, actor, action: "exception.acknowledge", entityType: "FinanceException", entityId: e.id, before: { status: "OPEN" }, after: { status: "ACKNOWLEDGED" }, reason: resolutionNote });
+  }
+  return open.length;
+}
+
 export async function acknowledgeException(id: string, note: string, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   return financeTransaction(async (tx) => {
