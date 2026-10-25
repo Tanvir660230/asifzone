@@ -76,18 +76,18 @@ async function inventoryAlerts(
     prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { inventoryGainAlertThreshold: true } }),
     prisma.stockMovement.findMany({
       where: { createdAt: { gte: since }, change: { gt: 0 }, ...NOT_CORRECTED, reason: { in: [...UNDOCUMENTED_GAINS] }, valuationEntry: { isNot: null } },
-      select: { change: true, createdAt: true, reason: true, variant: { select: { sku: true } }, valuationEntry: { select: { valueChange: true } } },
+      select: { variantId: true, change: true, createdAt: true, reason: true, variant: { select: { sku: true } }, valuationEntry: { select: { valueChange: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.stockMovement.findMany({
       where: { createdAt: { gte: since }, change: { gt: 0 }, ...NOT_CORRECTED, variant: { product: { fillToOrder: true } } },
-      select: { change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
+      select: { variantId: true, change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
       orderBy: { createdAt: "desc" },
     }),
     // read from the movements, not the exceptions the commerce sync raises later, so a receipt without a cost shows at once
     prisma.stockMovement.findMany({
       where: { createdAt: { gte: since }, change: { gt: 0 }, ...NOT_CORRECTED, valuationEntry: { valuationStatus: "MISSING" } },
-      select: { id: true, change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
+      select: { id: true, variantId: true, change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
       orderBy: { createdAt: "desc" },
     }),
   ]);
@@ -95,11 +95,21 @@ async function inventoryAlerts(
   const settled = unvalued.length
     ? new Set((await prisma.financeException.findMany({ where: { businessId: business.id, key: { in: unvalued.map((m) => `stock:${m.id}`) }, status: { not: "OPEN" } }, select: { key: true } })).map((e) => e.key))
     : new Set<string>();
-  const receipts = unvalued.filter((m) => !settled.has(`stock:${m.id}`));
+  // … and the ones the shelf was counted again after: each alert's own advice is "count the item again", and a count sets
+  // the stock (and its book value) to what is really there — the 24 Oct attar restocks were put right that way next day.
+  const ids = [...new Set([...gains, ...bottles, ...unvalued].map((m) => m.variantId))];
+  const lastCount = new Map<string, Date>();
+  if (ids.length) {
+    for (const c of await prisma.stockCount.groupBy({ by: ["variantId"], where: { variantId: { in: ids } }, _max: { createdAt: true } })) {
+      if (c._max.createdAt) lastCount.set(c.variantId, c._max.createdAt);
+    }
+  }
+  const open = (m: { variantId: string; createdAt: Date }) => !(lastCount.get(m.variantId)! > m.createdAt);
+  const receipts = unvalued.filter((m) => !settled.has(`stock:${m.id}`) && open(m));
 
   // gains booked to 5210 (count adjustments) at or above the owner's threshold: profit nobody bought
   const threshold = toMinor(settings.inventoryGainAlertThreshold, cur);
-  const big = gains.filter((g) => toMinor(g.valuationEntry!.valueChange, cur) >= threshold);
+  const big = gains.filter((g) => open(g) && toMinor(g.valuationEntry!.valueChange, cur) >= threshold);
   add({
     key: "inventory.gains",
     severity: "critical",
@@ -111,7 +121,7 @@ async function inventoryAlerts(
     action: "Record the real purchase or fill, or count the item again",
   });
 
-  const unfilled = bottles.filter((m) => !BOTTLE_SOURCES.has(m.reason));
+  const unfilled = bottles.filter((m) => !BOTTLE_SOURCES.has(m.reason) && open(m));
   add({
     key: "inventory.bottles_without_fill",
     severity: "warning",

@@ -26,9 +26,14 @@ Nothing is typed over. Once stock costing is live, the product form no longer ed
 - **Packaging per parcel**, when a parcel leaves: one black poly on every parcel (a packing rule; the material leaves
   stock into packaging cost). Bubble poly is cut from a roll, so it is tracked as a roll (Finance › Stock check: open a
   roll, finish it with the parcels it wrapped), not per parcel.
-- **Sale costs**: every order line takes its cost from the moving average. A fill-to-order bottle sold before any of
-  its variant was ever valued takes its **recipe's standard cost** (§3) — the line is costed (`INVENTORY_PROVISIONAL`),
-  recognised at delivery like any sale, and the fill settles the difference.
+- **Sale costs**: every order line takes its cost from the moving average. A fill-to-order bottle sold while its variant
+  has no average takes its **recipe's standard cost** (§3) — the line is costed (`INVENTORY_PROVISIONAL`),
+  recognised at delivery like any sale, and the fill settles the difference. Since 2026-10-26 also when unvalued bottles
+  are on hand (one back from a cancelled order): before, the next sale took it at no cost and raised a missing cost each
+  time (ZAYAN, 41 lines in October).
+- **Stock alerts settle on a count**: a gain, a fill-less bottle or a receipt without a cost stops alerting once the item
+  is counted again after it (each alert's own advice; the count sets stock and value to the shelf), as does an entry
+  undone with §10.
 - **Low-stock warnings**: days left from the last 30 days' use; low at 10 days or less, or when a fill-to-order
   product can make 10 or fewer.
 

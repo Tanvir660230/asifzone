@@ -558,6 +558,24 @@ describe("fill to order — the recipe cost at sale time", () => {
     expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: teak.variant } })).toMatchObject({ valuedQty: 1, deficitQty: 0 });
     expect(await balance("cogs.cost_adjustments")).toBe(adjBefore);
   });
+
+  it("unvalued bottles on hand (a cancelled never-costed sale came back) still sell at the recipe — no missing cost", async () => {
+    // ZAYAN, 26 Oct 2026: a bottle back from a cancelled order sits unvalued; the next sale took it at no cost and raised
+    // a missing cost, again and again. With no average the recipe's standard cost applies whatever is on hand.
+    const amber = await attar([{ material: () => oil, qty: "6" }, { material: () => bottle6, qty: "1" }]);
+    await postPending();
+    const found = await prisma.$transaction((tx) => adjustVariantStockInTx(tx, amber.variant, 1, "ADJUSTMENT", admin, "back on the shelf", { unvaluedGain: true }));
+    afterAdjustment(found);
+    expect(await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: amber.variant } })).toMatchObject({ unvaluedQty: 1, valuedQty: 0 }); // no average
+    const order = await placeOrder([{ variantId: amber.variant, quantity: 1 }], { customerPhone: "01712000034" });
+    const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id }, select: { unitCostSnapshot: true, unitCostSource: true } });
+    expect(line).toMatchObject({ unitCostSnapshot: RECIPE * 100, unitCostSource: "INVENTORY_PROVISIONAL" });
+    await deliver(order.id);
+    expect(await prisma.financeException.count({ where: { orderId: order.id, kind: "MISSING_COST" } })).toBe(0);
+    expect(await balance("cogs.goods", order.id)).toBe(RECIPE);
+    expect(await checks()).toEqual(ALL_MATCHED);
+    await assertInventoryInvariants(amber.variant);
+  });
 });
 
 // After the first fill a fill-to-order variant has a moving average — and selling beyond its filled bottles is still the
