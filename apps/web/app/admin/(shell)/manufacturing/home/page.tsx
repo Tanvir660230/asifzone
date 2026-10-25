@@ -40,12 +40,13 @@ export default function ProductionHomePage() {
     { href: "/admin/stock?bought=new", label: "Bought", detail: "Oil, bottles, boxes — in litres, dozens or pieces", icon: PackagePlus, tint: "bg-info-100 text-info-700", show: can("purchasing.receive") },
     { href: "/admin/stock?fill=1", label: "Filled", detail: "Bottles filled — oil and bottles leave stock at cost", icon: Droplets, tint: "bg-success-100 text-success-700", show: can("manufacturing.view") },
     { href: "/admin/manufacturing/boms", label: "Recipes", detail: "What goes into one bottle or piece", icon: ListTree, tint: "bg-warning-100 text-warning-700", show: true },
-    { href: "/admin/finance/profit", label: "Price & profit", detail: "What each sale costs and earns", icon: ChartNoAxesCombined, tint: "bg-ink-100 text-ink-700", show: can("finance.view") },
+    { href: "/admin/finance/product-costs", label: "Price & profit", detail: "What each sale costs and earns", icon: ChartNoAxesCombined, tint: "bg-ink-100 text-ink-700", show: can("costing.view") },
   ].filter((a) => a.show);
   const d = q.data;
   const needs = d ? [
     ...(d.owed.length ? [{ key: "owed", tone: "danger", title: `${num(d.owed.reduce((s, o) => s + o.owed, 0))} ordered, not filled yet`, detail: d.owed.map((o) => `${o.name} ${num(o.owed)}`).join(" · "), href: "/admin/stock?fill=1", action: "Fill" }] : []),
     ...d.noRecipe.map((p) => ({ key: `r-${p.productId}`, tone: "danger", title: `${p.name} has no recipe`, detail: "It can't be filled until a recipe is approved", href: "/admin/manufacturing/boms", action: "Add recipe" })),
+    ...(d.belowTarget?.length ? [{ key: "margin", tone: d.belowTarget.some((x) => x.loss) ? "danger" : "warning", title: `${num(d.belowTarget.length)} ${d.belowTarget.length === 1 ? "size earns" : "sizes earn"} less than the target`, detail: d.belowTarget.slice(0, 3).map((x) => `${x.name} ${x.marginPct === null ? "" : `${x.marginPct.toFixed(1)}%`}`.trim()).join(" · "), href: "/admin/finance/product-costs", action: "Check prices" }] : []),
     ...d.lowMaterials.map((m) => ({ key: `m-${m.variantId}`, tone: "warning", title: `${m.name} is low`, detail: `${num(m.stock)} ${m.unit} left${m.daysLeft !== null ? ` · about ${num(m.daysLeft)} days` : ""}`, href: `/admin/stock?bought=${m.variantId}`, action: "Bought" })),
   ] : [];
 

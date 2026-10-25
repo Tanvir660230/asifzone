@@ -834,6 +834,19 @@ export const NAV_NODES: readonly NavNode[] = [
     description: "Daily profit, sales and ad spend for any period, with a chart — and what each order and product earned.",
     keywords: ["profit", "daily profit", "today", "margin", "ad spend", "roas", "chart", "contribution", "per order", "per product", "launch", "loss", "lav", "labh"],
   },
+  // Cost & profit planning (docs/COST_SHEET.md): what one sale of each size costs and earns, and the shop / category defaults.
+  {
+    id: "finance.product-costs",
+    label: "Product costs",
+    kind: "page",
+    parent: "finance.books",
+    domain: "manage",
+    route: "/admin/finance/product-costs",
+    capability: "costing.view",
+    order: -0.9,
+    description: "What one sale of each product and size costs — making and selling — the profit left, and the price for your target.",
+    keywords: ["cost", "cost sheet", "unit cost", "margin", "price", "pricing", "making cost", "recipe cost", "delivery cost", "suggested price", "target margin", "khoroch", "dam"],
+  },
   {
     id: "finance.statements",
     label: "Financial statements",

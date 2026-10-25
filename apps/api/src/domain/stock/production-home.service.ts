@@ -1,6 +1,7 @@
 /**
  * Production home (docs/STOCK_HUB.md §9, /admin/inventory/production): the one page for making things — what needs the
- * owner (bottles owed, a filled-to-order product without a recipe, materials running low), how many of each size the
+ * owner (bottles owed, a filled-to-order product without a recipe, materials running low, sizes below their target
+ * margin), how many of each size the
  * materials in stock can still make and which material runs out first, and the latest fills.
  *
  * "Can still make" reads the latest approved recipe of every product, the business-supplied lines only, against the
@@ -11,6 +12,7 @@ import { prisma } from "../../config/prisma";
 import { getFinanceContext } from "../finance/finance-context";
 import { stockHub } from "./stock-hub.service";
 import { unitOf, variantLabel } from "./hub-entry";
+import { productCosts } from "../finance/cost-sheet.service";
 
 export interface CanMakeRow {
   productId: string;
@@ -74,11 +76,13 @@ export async function canStillMake(): Promise<CanMakeRow[]> {
 
 export async function productionHome(viewer: { canSeeCost: boolean }) {
   const { business } = await getFinanceContext();
-  const [hub, make, fillProducts, fills] = await Promise.all([
+  const [hub, make, fillProducts, fills, costs] = await Promise.all([
     stockHub(viewer),
     canStillMake(),
     prisma.product.findMany({ where: { fillToOrder: true, deletedAt: null, kind: "FINISHED" }, select: { id: true, name: true, billsOfMaterials: { where: { status: "APPROVED" }, select: { id: true }, take: 1 } }, orderBy: { name: "asc" } }),
     prisma.stockHubEntry.findMany({ where: { businessId: business.id, kind: "FILL", completedAt: { not: null } }, orderBy: { createdAt: "desc" }, take: 6, select: { id: true, entryDate: true, steps: true } }),
+    // the margin check reads costs — only for someone who may see them
+    viewer.canSeeCost ? productCosts() : Promise.resolve(null),
   ]);
   const group = (k: string) => hub.groups.find((g) => g.key === k)?.items ?? [];
   const owed = group("FILL_TO_ORDER").filter((i) => (i.policy?.owed ?? 0) > 0).map((i) => ({ variantId: i.variantId, productId: i.productId, name: i.name, owed: i.policy!.owed }));
@@ -98,6 +102,8 @@ export async function productionHome(viewer: { canSeeCost: boolean }) {
     owed,
     noRecipe: fillProducts.filter((p) => !p.billsOfMaterials.length).map((p) => ({ productId: p.id, name: p.name })),
     lowMaterials,
+    /** Sizes whose planned profit is below their target margin, worst first (costing.read only; null otherwise). */
+    belowTarget: costs === null ? null : costs.products.flatMap((p) => p.sizes.filter((z) => z.belowTarget).map((z) => ({ productId: p.productId, name: `${p.name} ${z.label}`.trim(), marginPct: z.marginPct, loss: z.profit < 0 }))).sort((a, b) => (a.marginPct ?? -1e9) - (b.marginPct ?? -1e9)),
     canMake: make,
     recentFills: fills.map((f, i) => {
       const s = steps[i]!;

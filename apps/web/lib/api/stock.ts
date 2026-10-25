@@ -291,6 +291,8 @@ export interface ProductionHome {
   owed: Array<{ variantId: string; productId: string; name: string; owed: number }>;
   noRecipe: Array<{ productId: string; name: string }>;
   lowMaterials: Array<{ variantId: string; name: string; stock: number; unit: string; daysLeft: number | null }>;
+  /** Sizes below their target margin (null without costing access). */
+  belowTarget: Array<{ productId: string; name: string; marginPct: number | null; loss: boolean }> | null;
   canMake: Array<{ productId: string; productName: string; variantId: string; sku: string; label: string; canMake: number; limiting: { variantId: string; name: string; stock: number; unit: string } | null }>;
   recentFills: Array<{ id: string; date: string; number: string | null; name: string; quantity: number | null }>;
 }

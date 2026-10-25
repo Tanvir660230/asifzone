@@ -30,6 +30,7 @@ import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/c
 import { FreeDeliveryField } from "@/components/admin/free-delivery-field";
 import { SoldOutField } from "@/components/admin/sold-out-field";
 import { StockingField } from "@/components/admin/stock/stocking-field";
+import { CostSheetField } from "@/components/admin/cost-sheet/cost-sheet-field";
 import * as aiApi from "@/lib/api/ai";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { storeCurrencyCode, stripHtml } from "@/lib/format";
@@ -351,6 +352,12 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
           </p>
         )}
       </FormSection>
+
+      {initial && (
+        <FormSection title="Cost & profit" description="What one sale of each size costs — making, packing, delivery, fees, returns, ads — and what it earns.">
+          <CostSheetField productId={initial.id} />
+        </FormSection>
+      )}
 
       <FormSection title="Tax" description="Leave blank to use the store's tax settings.">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">

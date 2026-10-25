@@ -46,6 +46,8 @@ import {
   stockPolicySchema,
   stockFillSchema,
   stockingSchema,
+  costProfileSchema,
+  costProfileScopeParams,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
 import * as autopilot from "../../domain/finance/autopilot.service";
@@ -77,6 +79,7 @@ import { setStockPolicy, stockHub } from "../../domain/stock/stock-hub.service";
 import { recordFill } from "../../domain/stock/fill.service";
 import { getStocking, setStocking } from "../../domain/stock/stocking.service";
 import { productionHome } from "../../domain/stock/production-home.service";
+import * as costSheets from "../../domain/finance/cost-sheet.service";
 import { stockTrace } from "../../domain/stock/trace.service";
 
 /**
@@ -241,6 +244,14 @@ ownerBooksRouter.get("/stock", requirePermission("inventory.read"), asyncHandler
 // How a fill-to-order product sells past its filled bottles (inventory recovery phase 2): who may correct stock decides it.
 ownerBooksRouter.put("/stock/products/:id/policy", requirePermission("inventory.adjust"), validate(stockPolicySchema), asyncHandler(async (req, res) => res.json(await setStockPolicy(id(req), req.body, await actorOf(req)))));
 // How it's stocked — ready, filled to order or a material (stocking.service): the same people who set the selling rule.
+// Cost & profit planning (cost-sheet.service, docs/COST_SHEET.md): costs are costing.read's; setting them is costing.adjust's.
+ownerBooksRouter.get("/cost-sheets/products", requirePermission("costing.read"), asyncHandler(async (_req, res) => res.json(await costSheets.productCosts())));
+ownerBooksRouter.get("/cost-sheets/products/:id", requirePermission("costing.read"), asyncHandler(async (req, res) => res.json(await costSheets.productCostSheet(id(req)))));
+ownerBooksRouter.get("/cost-sheets/defaults", requirePermission("costing.read"), asyncHandler(async (_req, res) => res.json(await costSheets.costDefaults())));
+ownerBooksRouter.put("/cost-sheets/:scope/:scopeId?", requirePermission("costing.adjust"), validate(costProfileSchema), asyncHandler(async (req, res) => {
+  const p = costProfileScopeParams.parse({ scope: req.params.scope, scopeId: req.params.scopeId ?? "" });
+  res.json(await costSheets.saveCostProfile(p.scope, p.scopeId, req.body, await actorOf(req)));
+}));
 // Production home (production-home.service): what needs the owner, what the materials can still make, the latest fills.
 ownerBooksRouter.get("/stock/production-home", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await productionHome({ canSeeCost: req.admin!.permissions.includes("costing.read") }))));
 ownerBooksRouter.get("/stock/products/:id/stocking", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await getStocking(id(req)))));
