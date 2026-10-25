@@ -45,6 +45,7 @@ import {
   ledgerRangeQuerySchema,
   statementPeriodQuerySchema,
   expenseCreateSchema,
+  expenseImportSchema,
   budgetCreateSchema,
   budgetLinesSchema,
   budgetQuerySchema,
@@ -115,6 +116,7 @@ import * as periods from "../../domain/finance/periods.service";
 import * as journals from "../../domain/finance/journal.service";
 import * as ledger from "../../domain/finance/ledger.service";
 import * as statements from "../../domain/finance/statements.service";
+import * as expenseImport from "../../domain/finance/expense-import.service";
 import * as expenses from "../../domain/finance/expenses.service";
 import * as fixedAssets from "../../domain/finance/fixed-assets.service";
 import * as loans from "../../domain/finance/loans.service";
@@ -223,6 +225,9 @@ financeRouter.get("/statements/cash-flow", requirePermission("finance.read"), va
 
 // ── expenses & recurring commitments (docs/FINANCE_EXPENSES.md) ─────────────────────────────────────────────────────────
 financeRouter.get("/expenses", requirePermission("finance.read"), validate(expenseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await expenses.listExpenses(req.query as never))));
+// Expenses from a file: preview (writes nothing), then commit (each row as a hand-typed expense; the same file twice records nothing new)
+financeRouter.post("/expenses/import/preview", requirePermission("finance.transact"), validate(expenseImportSchema), asyncHandler(async (req, res) => res.json(await expenseImport.previewExpenseImport(req.body.csv))));
+financeRouter.post("/expenses/import/commit", requirePermission("finance.transact"), validate(expenseImportSchema), asyncHandler(async (req, res) => res.json(await expenseImport.commitExpenseImport(req.body, await actorOf(req)))));
 financeRouter.get("/expenses/summary", requirePermission("finance.read"), validate(statementPeriodQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await expenses.expenseSummary(req.query as never))));
 financeRouter.post("/expenses", requirePermission("finance.transact"), validate(expenseCreateSchema), asyncHandler(async (req, res) => {
   const r = await expenses.recordExpense(req.body, await actorOf(req), idempotencyKeyOf(req));

@@ -23,6 +23,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { ExpenseImportModal, NewCategoryModal } from "@/components/admin/finance/expense-import";
 
 const PERIOD_BADGE: Record<CommitmentPeriod["status"], { variant: "success" | "warning" | "danger" | "neutral"; label: string }> = {
   PAID: { variant: "success", label: "paid" }, AWAITING_APPROVAL: { variant: "warning", label: "awaiting approval" }, OVERDUE: { variant: "danger", label: "overdue" }, DUE: { variant: "neutral", label: "due" },
@@ -42,6 +43,8 @@ export default function ExpensesPage() {
   const [to, setTo] = useState(today);
   const [recording, setRecording] = useState<{ commitment?: Commitment; period?: CommitmentPeriod } | null>(null);
   const [newCommitment, setNewCommitment] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [newCategory, setNewCategory] = useState(false);
   useCreateParam("expense", () => setRecording({}));
   const period = { from: from || undefined, to: to || undefined };
   const summary = useQuery({ queryKey: financeApi.expenseKeys.summary(period), queryFn: () => financeApi.getExpenseSummary(period), enabled: allowed && !(from && to && from > to) });
@@ -66,6 +69,8 @@ export default function ExpensesPage() {
         description="Operating costs paid from cash, a bank or a wallet, and what you owe every month. Costs bought on credit are supplier bills."
         action={can("finance.transact") && (
           <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setImporting(true)} data-testid="import-expenses">From a file</Button>
+            {can("finance.configure") && <Button size="sm" variant="outline" onClick={() => setNewCategory(true)} data-testid="new-category">New category</Button>}
             <Button size="sm" variant="outline" onClick={() => setNewCommitment(true)} data-testid="new-commitment">Recurring cost</Button>
             <Button size="sm" onClick={() => setRecording({})} data-testid="record-expense"><Plus className="h-4 w-4" /> Record expense</Button>
           </div>
@@ -144,6 +149,8 @@ export default function ExpensesPage() {
       </section>
 
       {recording && <ExpenseModal preset={recording} onClose={() => setRecording(null)} onDone={() => { setRecording(null); refresh(); }} />}
+      {importing && <ExpenseImportModal onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />}
+      {newCategory && <NewCategoryModal onClose={() => setNewCategory(false)} onDone={() => setNewCategory(false)} />}
       {newCommitment && <CommitmentModal onClose={() => setNewCommitment(false)} onDone={() => { setNewCommitment(false); refresh(); }} />}
     </div>
   );

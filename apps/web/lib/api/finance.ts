@@ -809,3 +809,17 @@ export const ownerMoney = (body: { kind: "INVEST" | "WITHDRAW"; financialAccount
   apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/owner/money`, { method: "POST", body, idempotencyKey });
 export const getOwnerPayouts = () => apiFetch<{ payouts: OwnerPayout[] }>(`${BASE}/equity/owner/payouts`);
 export const markPayoutsTaken = (settlementIds: string[]) => apiFetch<{ taken: Array<{ settlementId: string; status: string }> }>(`${BASE}/equity/owner/payouts-taken`, { method: "POST", body: { settlementIds } });
+
+// ── expenses from a file (docs/FINANCE_EXPENSES.md §6) ────────────────────────────────────────────────────────────────
+export interface ExpenseImportRow {
+  line: number; date: string | null; category: { id: string; code: string; name: string } | null; amount: number | null;
+  paidFrom: { kind: "ACCOUNT"; id: string; name: string } | { kind: "OWNER"; funding: "REIMBURSE" | "CAPITAL"; cashAccountId: string } | null;
+  payee: string | null; description: string; reference: string | null; status: "OK" | "DUPLICATE" | "PROBLEM"; problem: string | null;
+}
+export interface ExpenseImportPreview { fileKey: string; rows: ExpenseImportRow[]; totals: { ok: number; duplicates: number; problems: number; amount: number } }
+export const previewExpenseImport = (csv: string) => apiFetch<ExpenseImportPreview>(`${BASE}/expenses/import/preview`, { method: "POST", body: { csv } });
+export const commitExpenseImport = (csv: string, includeDuplicates: boolean) =>
+  apiFetch<{ recorded: number; failed: number; skipped: number; results: Array<{ line: number; status: "RECORDED" | "FAILED"; problem?: string }> }>(`${BASE}/expenses/import/commit`, { method: "POST", body: { csv, includeDuplicates } });
+/** A new expense category: a postable expense account of the chart, numbered after the last one. */
+export const createExpenseCategory = (body: { code: string; name: string; parentId: string | null }) =>
+  apiFetch<ChartAccount>(`${BASE}/accounts`, { method: "POST", body: { ...body, type: "EXPENSE", isPostable: true } });

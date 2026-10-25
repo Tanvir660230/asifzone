@@ -153,6 +153,12 @@ export const expenseCreateSchema = z
   })
   .refine((v) => Boolean(v.commitmentId) || (Boolean(v.expenseAccountId) && v.amount != null && Boolean(v.fromFinancialAccountId)), "Give the expense account, the amount and the money account (or pay a commitment)")
   .refine((v) => !v.commitmentId || Boolean(v.periodKey), "Name the period this pays");
+/** Expenses from a file (docs/FINANCE_EXPENSES.md §6): the CSV text, previewed before anything is written. */
+export const expenseImportSchema = z.object({
+  csv: z.string().min(1).max(2_000_000),
+  /** Also record the rows that look already recorded. */
+  includeDuplicates: z.boolean().optional(),
+});
 export const expenseListQuerySchema = z.object({
   from: businessDate.optional(), to: businessDate.optional(), expenseAccountId: id.optional(), costBehaviour: z.enum(COST_BEHAVIOURS).optional(), commitmentId: id.optional(),
   page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(50),
