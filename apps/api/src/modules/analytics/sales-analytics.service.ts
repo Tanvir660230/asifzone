@@ -21,7 +21,7 @@ import {
   type OrderFact,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
-import { cacheGet, cacheSet } from "../../config/redis";
+import { cacheGet, cacheSet, cacheSwr } from "../../config/redis";
 import { computeMetrics, loadFactsForRange, minorToMajor } from "../../domain/metrics/metrics.service";
 import { OPERATIONAL_ORDER_WHERE, SALE_ORDER_WHERE } from "../../domain/metrics/sale-order";
 import { resolveLegacyWindow, resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
@@ -66,7 +66,13 @@ export async function getOrderStatusCounts() {
   return grouped.map((g) => ({ status: g.status, count: g._count._all }));
 }
 
-export async function getDashboardSummary() {
+/** The dashboard's 30-day pulse: served from a minute-old copy while a fresh one computes (it reads every order and page
+ * view of 60 days — seconds cold, and the dashboard asks on every visit). */
+export function getDashboardSummary() {
+  return cacheSwr("analytics:dashboard-summary", { freshSeconds: CACHE_TTL_SECONDS, staleSeconds: 10 * 60 }, computeDashboardSummary);
+}
+
+async function computeDashboardSummary() {
   const range = await resolveStoreRange({ preset: "last_30_days" });
   const prev = previousRange(range);
   const [cur, before, pendingOrders, visitorRows, courierLossCount] = await Promise.all([

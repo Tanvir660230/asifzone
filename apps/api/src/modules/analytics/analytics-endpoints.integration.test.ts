@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
+import { cacheDelByPrefix } from "../../config/redis";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { updateOrderStatus } from "../orders/order.service";
 
@@ -71,6 +72,7 @@ describe("every analytics and BI endpoint answers on the metrics SSOT", () => {
 
   it("the dashboard's headline (realised net sales) equals the metrics API for the same 30-business-day range", async () => {
     const api = await asOwner();
+    await cacheDelByPrefix("swr:analytics:dashboard-summary"); // the summary is served from a cached copy
     const [dashboard, metrics] = await Promise.all([
       api.get("/api/analytics/summary"),
       api.get("/api/v1/metrics?metrics=realised_net_sales,orders_realised,aov&preset=last_30_days"),
