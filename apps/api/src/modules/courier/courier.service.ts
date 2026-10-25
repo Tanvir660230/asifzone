@@ -162,6 +162,17 @@ async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, d
   });
 }
 
+/** Owner, 2026-10-25 (admin audit, docs/BUSINESS_DECISIONS.md D-AA3): a parcel booked with Steadfast is leaving, so the
+ * order becomes SHIPPED at booking — through PACKED when it hadn't been packed yet, so the timeline keeps every step.
+ * Steadfast reports no pickup, so nothing else would ever move it on. */
+async function shipOnBooking(orderId: string, status: OrderStatus) {
+  if (PRE_PACKED_ORDER_STATUSES.includes(status)) {
+    await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast" });
+    status = "PACKED";
+  }
+  if (status === "PACKED") await updateOrderStatus(orderId, { status: "SHIPPED", note: "Booked with Steadfast — handed to the courier" });
+}
+
 /** The auto-fill plan (docs/STOCK_HUB.md §7) must never stop a booking: if it can't be read, nothing is filled. */
 async function planAutoFillSafely(orderIds: string[]): Promise<AutoFillPlan> {
   try {
@@ -229,9 +240,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
     },
   });
 
-  if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
-    await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
-  }
+  await shipOnBooking(orderId, order.status);
   await syncOrderShipmentsSafely(orderId);
   await fillForBookedOrder(orderId, String(consignment.consignment_id), fillPlan);
 
@@ -343,9 +352,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierNoteSent: courierNotes.get(order.id) ?? null,
       },
     });
-    if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
-      await updateOrderStatus(order.id, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
-    }
+    await shipOnBooking(order.id, order.status);
     await syncOrderShipmentsSafely(order.id);
     await fillForBookedOrder(order.id, String(result.consignment_id), fillPlan);
     booked.push({ orderId: order.id, orderNumber: order.orderNumber, trackingNumber: result.tracking_code });
