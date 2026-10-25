@@ -21,6 +21,8 @@ import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useAttentionCounts } from "@/hooks/use-attention-counts";
 import { useCapabilities } from "@/hooks/use-capability";
 import * as analyticsApi from "@/lib/api/admin-analytics";
+import * as booksApi from "@/lib/api/finance-books";
+import { addDays } from "@/lib/profit-period";
 import { computeTrendPct, formatPrice, formatPriceWhole, formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -103,10 +105,18 @@ export default function DashboardPage() {
     enabled: canAnalytics,
     refetchInterval: 30_000,
   });
+  // Profit comes from the books (after goods, packing, courier, fees, ads and running costs), the figure Finance shows —
+  // not the order lines' cost snapshots, which miss every line sold before its product had a cost.
+  const canBooks = can("finance.view");
+  const profitRange = useMemo(() => {
+    const to = new Date().toLocaleDateString("en-CA");
+    return { from: addDays(to, -29), to };
+  }, []);
   const { data: profit } = useQuery({
-    queryKey: ["analytics-profit-trend", 30],
-    queryFn: () => analyticsApi.getProfitTrend(30),
-    enabled: belowFold,
+    queryKey: booksApi.booksKeys.profitDaily(profitRange),
+    queryFn: () => booksApi.getProfitByDay(profitRange),
+    enabled: belowFold && canBooks,
+    staleTime: 60_000,
   });
   const { data: funnel } = useQuery({
     queryKey: ["analytics-funnel"],
@@ -125,11 +135,6 @@ export default function DashboardPage() {
     enabled: belowFold,
   });
 
-  const profitTotals = useMemo(() => {
-    if (!profit) return null;
-    const t = profit.series.reduce((acc, p) => ({ revenue: acc.revenue + p.revenue, profit: acc.profit + p.profit }), { revenue: 0, profit: 0 });
-    return { ...t, marginPct: t.revenue > 0 ? (t.profit / t.revenue) * 100 : null };
-  }, [profit]);
 
   return (
     <div className="space-y-10">
@@ -316,15 +321,14 @@ export default function DashboardPage() {
               trendLabel="vs previous 30 days"
               href="/admin/analytics/sales"
             />
-            <MetricCard
-              label="Gross profit"
-              // No recorded costs at all means profit is unknown, not zero.
-              value={
-                profitTotals && profit && profit.costCoverage.recorded > 0 ? formatPrice(Math.round(profitTotals.profit)) : profit ? "No cost data" : "—"
-              }
-              detail={profitTotals && profit && profit.costCoverage.recorded > 0 && profitTotals.marginPct !== null ? `${profitTotals.marginPct.toFixed(0)}% margin` : undefined}
-              href="/admin/analytics/sales?view=financial"
-            />
+            {canBooks && (
+              <MetricCard
+                label="Profit"
+                value={profit ? formatPrice(Math.round(profit.totals.profit)) : "—"}
+                detail={profit && profit.totals.marginPct !== null ? `${profit.totals.marginPct.toFixed(0)}% of sales, after every cost` : undefined}
+                href="/admin/finance/profit?view=30d"
+              />
+            )}
             <MetricCard
               label="Orders"
               value={summary ? String(summary.orders30d) : "—"}
@@ -347,12 +351,6 @@ export default function DashboardPage() {
               href="/admin/analytics/marketing?view=visitors"
             />
           </div>
-          {profit && profit.costCoverage.missing > 0 && (
-            <p className="mt-3 text-xs text-fg-muted">
-              Gross profit counts only order lines with a recorded cost — {profit.costCoverage.missing} line
-              {profit.costCoverage.missing === 1 ? "" : "s"} in this window have none.
-            </p>
-          )}
         </section>
       )}
 
