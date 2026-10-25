@@ -102,6 +102,15 @@ function waLink(phone: string): string {
   return `https://wa.me/${toBdInternationalDigits(phone)}`;
 }
 
+/** What the customer's delivered orders came to. Orders still on their way count nothing yet, so a customer with orders but
+ * none delivered shows a dash, not a misleading ৳0. */
+function SpentValue({ customer }: { customer: { totalSpent: number; totalOrders: number } }) {
+  if (customer.totalSpent === 0 && customer.totalOrders > 0) {
+    return <span className="font-normal text-ink-400" title="No delivered order yet">—</span>;
+  }
+  return <>{formatPrice(customer.totalSpent)}</>;
+}
+
 function CustomerCardSkeleton({ first = false }: { first?: boolean }) {
   return (
     <div className={cn("animate-pulse border-t border-ink-100 p-3.5", first && "border-t-0")}>
@@ -589,7 +598,7 @@ export default function CustomersPage() {
                 <th aria-sort={ariaSortFor("totalSpent")} className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
-                      Spent
+                      Delivered
                     </SortableHeader>
                   </div>
                 </th>
@@ -654,7 +663,7 @@ export default function CustomersPage() {
                     <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
                     <td className="hidden max-w-[220px] truncate px-4 py-3.5 text-ink-500 xl:table-cell" title={customer.email ?? undefined}>{customer.email ?? "—"}</td>
                     <td className="px-4 py-3.5 text-right tabular-nums text-ink-700">{customer.totalOrders}</td>
-                    <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</td>
+                    <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900"><SpentValue customer={customer} /></td>
                     <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">
                       {customer.lastOrderAt ? formatStoreDate(customer.lastOrderAt) : "—"}
                     </td>
@@ -719,7 +728,7 @@ export default function CustomersPage() {
                   <span className="block truncate text-xs text-ink-400">{customer.phone ?? customer.email ?? "—"}</span>
                 </span>
               </button>
-              <span className="shrink-0 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</span>
+              <span className="shrink-0 text-right font-medium tabular-nums text-ink-900"><SpentValue customer={customer} /></span>
             </div>
 
             {/* One line under the name: order history, tag, then the contact buttons — no ruled-off rows. */}

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getCurrentCustomer } from "@/lib/customer-auth";
 import { ApiError } from "@/lib/api-client";
 import { pixelIdentify } from "@/lib/pixels";
@@ -34,9 +34,12 @@ export function useCurrentCustomer() {
   return query;
 }
 
-/** For guest-allowed pages (checkout) — same session query, but never redirects; a 401 just means "not logged in". */
+/** For guest-allowed pages (checkout) — same session query, but never redirects; a 401 just means "not logged in".
+ * Storefront components also render inside the admin (product preview, Storefront Studio): there is no shopper there, so
+ * the session isn't asked for (it was a 401 on every admin preview). */
 export function useOptionalCustomer() {
-  const query = useQuery({ queryKey: QUERY_KEY, queryFn: getCurrentCustomer, retry: false });
+  const inAdmin = usePathname()?.startsWith("/admin") ?? false;
+  const query = useQuery({ queryKey: QUERY_KEY, queryFn: getCurrentCustomer, retry: false, enabled: !inAdmin });
   useIdentifyForPixels(query.data?.customer);
   return query;
 }

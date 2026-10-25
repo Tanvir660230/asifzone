@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/empty-state";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import type { ProductAction, ProductActionKind } from "@/lib/api/admin-analytics";
+import { productEditHref } from "@/lib/admin-routes";
 import { cn } from "@/lib/utils";
 
 const KINDS: Record<ProductActionKind, { label: string; icon: LucideIcon; tone: string }> = {
@@ -35,7 +36,7 @@ function ActionRow({ a }: { a: ProductAction }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[14px] leading-snug text-fg">
-          <Link href={`/admin/products/${a.productId}`} className="font-semibold hover:underline">
+          <Link href={productEditHref(a.productId)} className="font-semibold hover:underline">
             {a.name}
           </Link>
           <span className="text-fg-muted"> · </span>
