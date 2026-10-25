@@ -55,3 +55,16 @@ Each month also says what is still to settle before it can be closed:
 
 `readyToClose` is true only when the month is over, still open, and all three are zero. Nothing here closes a month — that
 stays in Month-end, by the owner. A month opens to its delivered orders, least-earning first (from `/finance/profit`).
+
+## 6. Stock corrections apart (2026-10-26)
+
+Every day (and month, and total) also carries `stockCorrections` — count differences (5210 `cogs.count_adjustments`) and
+cost corrections (5150 `cogs.cost_adjustments` / `cogs.purchase_price_differences`), positive = a cost, negative = a gain —
+and `salesProfit`, the profit from selling before them. `goods` is now only the goods sold (5100) and shrinkage (5200,
+5220: damaged, lost, waste — real costs). `profit` is still the books' net (= `salesProfit − stockCorrections`), so the
+days still add up to the income statement.
+
+On the pages: the chart's Profit bars, the dashboard's glance (yesterday, 7 days, 14 bars) are the profit from selling; a
+correction shows in the bar's tooltip and as "Stock corrections" in Where the money went; the headline stays the books'
+figure with a line "Includes stock corrections of … — from selling alone …"; Month by month has a "Stock fixes" column.
+A correction day is therefore never read as a selling loss or gain (24/25 Oct 2026: +2.8 lakh / −2.8 lakh of fixes).

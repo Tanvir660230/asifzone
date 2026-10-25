@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { sellable, type ManualStockReason, type StockMovementListQuery } from "@clothing-brand/shared";
+import { businessDate, sellable, type ManualStockReason, type StockMovementListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
@@ -71,11 +71,11 @@ type MovementRow = { id: string; variantId: string; change: number; reason: stri
 /** Hands movements just written to the costing service (same transaction — the stock change and its value are atomic). */
 async function value(
   tx: Tx,
-  items: Array<{ movement: MovementRow; basis: MovementToValue["basis"]; ledger: MovementToValue["ledger"]; knownCause?: boolean }>,
+  items: Array<{ movement: MovementRow; basis: MovementToValue["basis"]; ledger: MovementToValue["ledger"]; knownCause?: boolean; bookOn?: Date }>,
   scope?: CostingScope | null,
   known?: Map<string, VariantCosting>,
 ) {
-  return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger, knownCause: i.knownCause })), scope, known);
+  return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger, knownCause: i.knownCause, bookOn: i.bookOn })), scope, known);
 }
 
 /** Fire-and-forget back-in-stock emails for variants whose stock just went from 0 to positive. Call after commit.
@@ -665,7 +665,7 @@ export async function reverseStockMovement(movementId: string, input: ReverseInp
     if (scope && orig.valuationEntry) {
       const cur = scope.business.baseCurrency;
       await value(tx, [{
-        movement: mv, ledger: "MOVEMENT", knownCause: true,
+        movement: mv, ledger: "MOVEMENT", knownCause: true, bookOn: await correctionBookingDay(tx, scope, orig.createdAt),
         basis: { kind: "REVERSAL", of: { bookMinor: toMinor(orig.valuationEntry.bookValue, cur), unvaluedQtyChange: orig.valuationEntry.unvaluedQtyChange, status: orig.valuationEntry.valuationStatus } },
       }], scope);
     }
@@ -674,6 +674,14 @@ export async function reverseStockMovement(movementId: string, input: ReverseInp
   });
   afterAdjustment(result);
   return { movement: result.movement, stock: result.variant.stock };
+}
+
+/** When the books take a correction: on the day of the entry it undoes, so the two cancel on that day — unless that month is
+ * closed (or soft-closed), when it is booked today like any late correction. */
+async function correctionBookingDay(tx: Tx, scope: CostingScope, entryAt: Date): Promise<Date | undefined> {
+  const month = businessDate(entryAt, scope.business.timezone).slice(0, 7);
+  const period = await tx.financialPeriod.findUnique({ where: { businessId_startDate: { businessId: scope.business.id, startDate: new Date(`${month}-01T00:00:00Z`) } }, select: { status: true } });
+  return !period || period.status === "OPEN" ? entryAt : undefined;
 }
 
 /** Units of a variant on orders not yet handed to the courier (still PENDING…PACKED) — how far a fill-to-order size may owe. */

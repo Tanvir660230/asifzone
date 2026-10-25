@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
-import { PERMISSIONS } from "@clothing-brand/shared";
+import { businessDate, PERMISSIONS } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { signAccessToken } from "../../lib/jwt";
@@ -16,6 +16,7 @@ import { processFinancialEvent } from "../finance/events.service";
 import { runReconciliation } from "../finance/reconciliation.service";
 import { reverseJournal } from "../finance/journal.service";
 import { financeAlerts } from "../finance/finance-alerts.service";
+import { profitByDay } from "../finance/profit.service";
 import { adjustVariantStockInTx, afterAdjustment, reverseStockMovement } from "../../modules/inventory/inventory.service";
 import { recordCounts } from "./count.service";
 
@@ -142,5 +143,33 @@ describe("reversing a mistaken entry exactly", () => {
     const ok = await as(request(app).post(`/api/inventory/movements/${m.id}/reverse`)).send({ reason: "typed by mistake" });
     expect(ok.status).toBe(200);
     expect(ok.body.stock).toBe(0);
+  });
+
+  it("the correction is booked on the mistake's own day, and profit shows it as a stock correction, not goods sold", async () => {
+    const ctx = await getFinanceContext();
+    const day = (d: Date) => businessDate(d, ctx.business.timezone);
+    const today = day(new Date());
+    // The entry is dated on another day than its correction (costing went live today, so that day is tomorrow): the
+    // correction must follow the entry's day, not the day it was made — the 24/25 Oct gain-then-loss can't recur.
+    const entryAt = new Date(Date.now() + 86_400_000);
+    const window = { from: today, to: day(entryAt) };
+    await postPending(); // earlier tests' entries in first, so only this one is measured
+    const before = await profitByDay(window);
+    const mistake = await restock(a, 10);
+    await prisma.stockMovement.update({ where: { id: mistake.id }, data: { createdAt: entryAt } });
+    await postPending();
+    const r = await reverseStockMovement(mistake.id, { reason: "typed by mistake" }, OWNER);
+    await postPending();
+    const entry = await prisma.inventoryValuationEntry.findUniqueOrThrow({ where: { stockMovementId: r.movement.id } });
+    const journal = await prisma.journalEntry.findFirstOrThrow({ where: { sourceType: "InventoryValuationEntry", sourceId: entry.id } });
+    expect(journal.entryDate.toISOString().slice(0, 10)).toBe(day(entryAt));
+
+    const after = await profitByDay(window);
+    for (const d of after.days) expect(d.salesProfit - d.stockCorrections).toBeCloseTo(d.profit, 2);
+    // the gain and its correction moved stock corrections only — never goods sold or the profit from selling
+    expect(after.totals.goods).toBeCloseTo(before.totals.goods, 2);
+    expect(after.totals.salesProfit).toBeCloseTo(before.totals.salesProfit, 2);
+    expect(after.totals.stockCorrections).toBeCloseTo(before.totals.stockCorrections, 2); // they cancel
+    expect(await checks()).toEqual(MATCHED);
   });
 });

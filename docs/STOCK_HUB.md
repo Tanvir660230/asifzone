@@ -350,6 +350,14 @@ levels › Movements › **Undo** (owner only, `inventory.approve`; `POST /api/i
   acknowledged with the correction named. A stock entry's journal can no longer be reversed on its own from the journal
   screen (`JOURNAL_OWNED_BY_STOCK`) — that would split the stock's value from the books.
 
+- **Booked on the entry's own day** (2026-10-26): the correction's valuation and journal take the date of the entry it
+  undoes (`MovementToValue.bookOn`, `correctionBookingDay` in `inventory.service.ts`), so a mistake and its correction
+  cancel on one day — never a gain one day and a loss the next (the 24/25 Oct attar case). When that month is closed or
+  soft-closed the correction is booked today, like any late correction. The stock movement itself is dated now.
+- **Why the 24 Oct mistake can't recur:** once costing is live a tracked item's stock never rises by hand (Inventory ›
+  Adjust, the product form and the assistant all refuse it, `STOCK_VIA_HUB`), and a count that finds more comes in without a
+  value (no income) — guarded by `inventory-controls.integration.test.ts`. Stock and value rise only by Bought or Filled.
+
 ## 11. A product's kit (2026-10-25)
 
 Product › Pricing & Inventory › **What goes out with one sale** (`GET /api/v1/finance/stock/products/:id/kit`,

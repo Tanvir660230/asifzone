@@ -145,6 +145,12 @@ function Hero({ totals, prior, compareWith, label }: { totals: ProfitTotals; pri
         from <span className="font-medium tabular-nums text-fg">{money(totals.sales)}</span> in sales
         {totals.marginPct !== null && totals.sales > 0 && <> · you keep <span className="font-medium tabular-nums text-fg">{money(Math.max(0, totals.marginPct))}</span> of every {formatPrice(100)}</>}
       </p>
+      {Math.round(totals.stockCorrections) !== 0 && (
+        <p className="mt-2 text-sm text-fg-muted" data-testid="profit-corrections">
+          Includes stock corrections of <span className="font-medium tabular-nums text-fg">{money(-totals.stockCorrections)}</span> (count fixes, cost corrections) — from selling alone,{" "}
+          <span className={cn("font-medium tabular-nums", totals.salesProfit < 0 ? "text-danger-600" : "text-fg")}>{totals.salesProfit < 0 ? `${money(-totals.salesProfit)} loss` : `${money(totals.salesProfit)} profit`}</span>.
+        </p>
+      )}
       {diff !== null && diff !== 0 && <Delta className="mt-3" diff={diff} good="up" text={`${diff > 0 ? "more" : "less"} than ${compareWith}`} />}
       {diff === 0 && <p className="mt-3 text-sm text-fg-muted">The same as {compareWith}.</p>}
     </Card>
@@ -250,6 +256,14 @@ function WhereItWent({ totals }: { totals: ProfitTotals }) {
                 </Link>
               </li>
             ))}
+            {Math.round(totals.stockCorrections) !== 0 && (
+              <li className="flex items-center gap-3 py-2.5 text-sm">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-ink-400" aria-hidden="true" />
+                <span className="min-w-0 flex-1"><span className="block text-fg">Stock corrections</span><span className="hidden text-xs text-fg-muted sm:block">count fixes and cost corrections, not sales</span></span>
+                <span className="w-12" />
+                <span className="w-24 text-right tabular-nums text-fg">{money(totals.stockCorrections)}</span>
+              </li>
+            )}
             <li className="flex items-center gap-3 py-2.5 text-sm font-medium">
               <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", loss ? "bg-danger-500" : "bg-success-500")} aria-hidden="true" />
               <span className="flex-1 text-fg">{loss ? "Lost" : "You keep"}</span>
