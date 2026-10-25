@@ -11,6 +11,7 @@ import { cashForecast } from "./budgets.service";
 import { assetRegister } from "./fixed-assets.service";
 import { listLoans } from "./loans.service";
 import { listReconciliationChecks } from "./reconciliation.service";
+import { unpaidDeliveredCod } from "./courier-payouts.service";
 import { dueDates } from "./expenses.service";
 import { payrollOverview, payrollStartMonth } from "./payroll.service";
 
@@ -28,6 +29,8 @@ export interface FinanceAlert {
 }
 
 const STALE_EVENT_MS = 15 * 60_000;
+/** The Steadfast check flags delivered COD parcels unpaid after this many days (its own default). */
+const COURIER_UNPAID_DAYS = 7;
 const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const monthIndex = (key: string) => Number(key.slice(0, 4)) * 12 + Number(key.slice(5, 7)) - 1;
 const monthKey = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
@@ -140,7 +143,7 @@ export async function financeAlerts() {
   const add = (a: Omit<FinanceAlert, "amount"> & { amount?: number | null }) => { if (a.count > 0) alerts.push({ amount: null, ...a }); };
 
   const stale = new Date(Date.now() - STALE_EVENT_MS);
-  const [openingBatch, failedEvents, waitingEvents, approvals, exceptions, readyToClose, checkRuns, periods] = await Promise.all([
+  const [openingBatch, failedEvents, waitingEvents, approvals, exceptions, readyToClose, checkRuns, periods, unpaidCod] = await Promise.all([
     prisma.openingBalanceBatch.findUnique({ where: { businessId: business.id }, select: { status: true } }),
     prisma.financialEvent.count({ where: { businessId: business.id, status: "FAILED" } }),
     prisma.financialEvent.count({ where: { businessId: business.id, status: "RECEIVED", receivedAt: { lt: stale } } }),
@@ -149,12 +152,15 @@ export async function financeAlerts() {
     prisma.productionOrder.findMany({ where: { businessId: business.id, status: "RECEIVED" }, select: { id: true, number: true }, orderBy: { number: "asc" } }),
     latestCheckRuns(business.id),
     prisma.financialPeriod.findMany({ where: { businessId: business.id, status: { not: "CLOSED" }, endDate: { lt: day(addDays(today, -5)) } }, orderBy: { startDate: "asc" }, select: { startDate: true } }),
+    business.openingDate ? unpaidDeliveredCod(business, COURIER_UNPAID_DAYS, 20_000) : null,
   ]);
 
   // Until the opening balances are posted the books record nothing — every other finance page reads empty.
   if (!business.openingDate) add({ key: "books.not_started", severity: "critical", title: "The books haven't started", detail: "Choose the date your books start — nothing is recorded in Finance until then.", count: 1, href: "/admin/finance/opening", action: "Start the books" });
   else if (openingBatch?.status !== "POSTED") add({ key: "books.not_started", severity: "warning", title: "Opening balances not posted", detail: `Books start on ${business.openingDate}. Enter what you had and owed that day, then post it — sales are recorded from then on.`, count: 1, href: "/admin/finance/opening", action: "Finish starting the books" });
   add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
+  // The courier holds the cash for delivered COD parcels until it pays out — money the owner should chase.
+  if (unpaidCod) add({ key: "courier.unpaid", severity: "warning", title: "Unpaid by Steadfast", detail: `Delivered more than ${COURIER_UNPAID_DAYS} days ago and not in any payout yet: ${unpaidCod.orders.slice(0, 4).map((o) => o.orderNumber).join(" · ")}${unpaidCod.orders.length > 4 ? " …" : ""}. Ask Steadfast for the payout, then import it.`, count: unpaidCod.orders.length, amount: major(unpaidCod.orders.reduce((s, o) => s + toMinor(o.total, cur), 0)), href: "/admin/finance/courier", action: "Open Steadfast check" });
   add({ key: "events.waiting", severity: "warning", title: "Financial events waiting to post", detail: "Received more than 15 minutes ago and still not posted.", count: waitingEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
 
   const labels = new Map<string, string>(listReconciliationChecks().map((c) => [c.key, c.label]));

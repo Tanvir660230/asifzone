@@ -112,7 +112,7 @@ export default function ProfitPage() {
           )}
         </>
       )}
-      {opening && launch.data && (
+      {opening && launch.data?.period && (
         <Card className="space-y-3 p-5 sm:p-6" data-testid="launch-report">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight text-fg">Before the books started</h2>

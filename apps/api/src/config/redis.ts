@@ -69,3 +69,56 @@ export async function cacheDelByPrefix(prefix: string): Promise<void> {
     // best-effort
   }
 }
+
+interface SwrEnvelope<T> {
+  v: T;
+  /** When the value was computed (epoch ms). */
+  at: number;
+}
+/** Computations in flight in this process, by key — concurrent callers share one. */
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * Stale-while-revalidate (admin audit phase 5) for heavy, read-only reports. A value younger than `freshSeconds` is
+ * served as is; an older one (up to `freshSeconds + staleSeconds`) is served at once while ONE background refresh
+ * replaces it (a short Redis lock keeps two processes from both refreshing); a miss computes, and concurrent misses in
+ * this process share that computation. Only the very first visit ever waits. Without Redis it simply computes.
+ * Not for figures someone acts on and expects to change the moment they fix something (finance alerts) — use plain
+ * cacheGet / cacheSet there.
+ */
+export async function cacheSwr<T>(
+  key: string,
+  { freshSeconds, staleSeconds }: { freshSeconds: number; staleSeconds: number },
+  compute: () => Promise<T>,
+  opts: { redisAvailable?: () => boolean } = {},
+): Promise<T> {
+  const computeAndStore = (): Promise<T> => {
+    const running = inFlight.get(key) as Promise<T> | undefined;
+    if (running) return running;
+    const p = (async () => {
+      try {
+        const v = await compute();
+        if (opts.redisAvailable?.() !== false) await cacheSet(`swr:${key}`, { v, at: Date.now() } satisfies SwrEnvelope<T>, freshSeconds + staleSeconds);
+        return v;
+      } finally {
+        inFlight.delete(key);
+      }
+    })();
+    inFlight.set(key, p);
+    return p;
+  };
+
+  if (opts.redisAvailable?.() === false) return compute();
+  const hit = await cacheGet<SwrEnvelope<T>>(`swr:${key}`);
+  if (!hit) return computeAndStore();
+  if (Date.now() - hit.at > freshSeconds * 1000 && !inFlight.has(key)) {
+    // One refresher across processes: whoever takes the lock refreshes; everyone keeps serving the stale value.
+    const locked = await redis.set(namespace.cache(`swr-lock:${key}`), "1", "EX", 30, "NX").catch(() => null);
+    if (locked === "OK") {
+      void computeAndStore()
+        .catch((err) => logger.error("[cache] background refresh failed", { key, detail: err instanceof Error ? err.message : String(err) }))
+        .finally(() => void redis.del(namespace.cache(`swr-lock:${key}`)).catch(() => undefined));
+    }
+  }
+  return hit.v;
+}

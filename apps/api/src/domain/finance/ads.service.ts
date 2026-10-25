@@ -623,7 +623,35 @@ export async function listCampaigns(q: { from?: string; to?: string }) {
     });
   }
   const totals = out.reduce((t, c) => ({ spend: t.spend + c.spend, orders: t.orders + c.orders, revenue: t.revenue + c.revenue }), { spend: 0, orders: 0, revenue: 0 });
-  return { period: { from, to }, campaigns: out, totals: { spend: Math.round(totals.spend * 100) / 100, orders: totals.orders, revenue: Math.round(totals.revenue * 100) / 100 }, meta: { connected: getProviders().adSpend.configured() } };
+  const unlinkedTags = await unlinkedCampaignTags(campaigns, from, to, business.timezone);
+  return { period: { from, to }, campaigns: out, totals: { spend: Math.round(totals.spend * 100) / 100, orders: totals.orders, revenue: Math.round(totals.revenue * 100) / 100 }, unlinkedTags, meta: { connected: getProviders().adSpend.configured() } };
+}
+
+/**
+ * The utm_campaign values visitors arrived with in the period that no campaign claims (by its id or name) — Meta puts the
+ * campaign's numeric id there, so a campaign typed in by hand without it never gets its orders. Most-visited first, with
+ * the orders those sessions placed, so the owner can link each tag to its campaign.
+ */
+async function unlinkedCampaignTags(campaigns: Array<{ externalId: string | null; name: string }>, from: string, to: string, tz: string) {
+  const claimed = new Set(campaigns.flatMap((c) => [c.externalId, c.name]).filter((x): x is string => Boolean(x)).map((x) => x.toLowerCase()));
+  const start = new Date(`${addDays(from, -1)}T00:00:00Z`);
+  const end = new Date(`${addDays(to, 1)}T23:59:59Z`);
+  const views = await prisma.pageView.findMany({ where: { utmCampaign: { not: null }, createdAt: { gte: start, lte: end } }, select: { sessionId: true, utmCampaign: true, createdAt: true }, distinct: ["sessionId", "utmCampaign"] });
+  const sessionsByTag = new Map<string, Set<string>>();
+  for (const v of views) {
+    const d = businessDate(v.createdAt, tz);
+    if (d < from || d > to || claimed.has(v.utmCampaign!.toLowerCase())) continue;
+    const set = sessionsByTag.get(v.utmCampaign!) ?? new Set<string>();
+    set.add(v.sessionId);
+    sessionsByTag.set(v.utmCampaign!, set);
+  }
+  if (!sessionsByTag.size) return [];
+  const ordered = await prisma.order.findMany({ where: { deletedAt: null, sessionId: { in: [...new Set([...sessionsByTag.values()].flatMap((s) => [...s]))] } }, select: { sessionId: true } });
+  const orderSessions = ordered.map((o) => o.sessionId!);
+  return [...sessionsByTag]
+    .map(([tag, sessions]) => ({ tag, sessions: sessions.size, orders: orderSessions.filter((s) => sessions.has(s)).length }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, 20);
 }
 
 async function attributedOrders(c: { externalId: string | null; name: string; landingPath: string | null }, from: string, to: string, tz: string) {

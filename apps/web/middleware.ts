@@ -108,7 +108,8 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    if (isLoginPage && hasSession) {
+    // The console has no page at /admin itself: its home is the dashboard (a bare /admin used to show the 404 page).
+    if ((isLoginPage && hasSession) || pathname === "/admin" || pathname === "/admin/") {
       return NextResponse.redirect(new URL("/admin/dashboard", req.url));
     }
 

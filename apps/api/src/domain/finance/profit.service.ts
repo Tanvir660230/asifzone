@@ -258,7 +258,11 @@ export async function launchReport(q: { from?: string; to?: string }) {
   const to = q.to ?? (business.openingDate ? addDays(business.openingDate, -1) : businessToday(business));
   const first = await prisma.order.findFirst({ where: { deletedAt: null }, orderBy: { createdAt: "asc" }, select: { createdAt: true } });
   const from = q.from ?? (first ? businessDate(first.createdAt, business.timezone) : to);
-  if (from > to) throw financeError(400, "PERIOD_RANGE", "The period starts before it ends");
+  if (from > to) {
+    if (q.from && q.to) throw financeError(400, "PERIOD_RANGE", "The period starts before it ends");
+    // The books open before the first order: there were no weeks before the books, so there is nothing to estimate.
+    return { period: null, estimate: true as const, orders: { delivered: 0, returned: 0 }, sales: 0, cogs: 0, courier: 0, ads: 0, contribution: 0, courierRateCard: false, missingCost: [] };
+  }
   const tz = business.timezone;
   const orders = await prisma.order.findMany({
     where: { deletedAt: null, status: { in: ["DELIVERED", "PARTIALLY_DELIVERED", "RETURNED", "CANCELLED"] }, createdAt: { gte: new Date(`${addDays(from, -1)}T00:00:00Z`), lte: new Date(`${addDays(to, 1)}T23:59:59Z`) } },

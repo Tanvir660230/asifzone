@@ -222,6 +222,8 @@ function ModuleRow({
 }) {
   const { node, href, children } = item;
   const Icon = node.icon ? NAV_ICONS[node.icon] : undefined;
+  const badges = useNavBadges();
+  const childBadge = (child: NavItem) => (child.node.badge ? badges[child.node.badge] : 0);
   const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -294,11 +296,16 @@ function ModuleRow({
                 onClick={onNavigate}
                 aria-current={childActive ? "page" : undefined}
                 className={cn(
-                  "flex h-7 items-center truncate rounded-md px-2.5 text-[13px] transition-colors duration-fast ease-smooth",
+                  "flex h-7 items-center gap-2 rounded-md px-2.5 text-[13px] transition-colors duration-fast ease-smooth",
                   childActive ? "bg-ink-900/[0.06] font-medium text-fg" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
                 )}
               >
-                {child.node.label}
+                <span className="truncate">{child.node.label}</span>
+                {childBadge(child) > 0 && (
+                  <span className="ml-auto shrink-0 text-[11px] font-semibold tabular-nums text-ink-500" aria-label={`${childBadge(child)} waiting`}>
+                    {formatBadge(childBadge(child))}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -312,8 +319,9 @@ function ModuleRow({
             {badge > 0 && <span className="text-[11px] tabular-nums opacity-70">{formatBadge(badge)}</span>}
           </Link>
           {children.map((child) => (
-            <Link key={child.node.id} href={child.href} onClick={onNavigate} aria-current={trail.has(child.node.id) ? "page" : undefined} className="ui-menu-item">
+            <Link key={child.node.id} href={child.href} onClick={onNavigate} aria-current={trail.has(child.node.id) ? "page" : undefined} className="ui-menu-item justify-between">
               {child.node.label}
+              {childBadge(child) > 0 && <span className="text-[11px] tabular-nums opacity-70">{formatBadge(childBadge(child))}</span>}
             </Link>
           ))}
         </div>

@@ -55,3 +55,18 @@ export function sealIntegrationValue(field: string, plain: string): string {
 export function openIntegrationValue(field: string, sealed: string): string | null {
   return openWith(integrationKey(), sealed, `integration:${field}`);
 }
+
+/** 2-step sign-in secrets (modules/auth/two-step.service.ts): TOTP_ENCRYPTION_KEY, else the admin JWT secret. Bound to the
+ * admin, so a secret copied onto another admin's row does not open. */
+function totpKey(): Buffer {
+  return createHash("sha256").update(`secret-box:totp:v1:${process.env.TOTP_ENCRYPTION_KEY || env.jwtAccessSecret}`).digest();
+}
+
+export function sealTotpSecret(adminId: string, plain: string): string {
+  return sealWith(totpKey(), plain, `admin-totp:${adminId}`);
+}
+
+/** null when it can't be opened (key changed, tampered, or another admin's). */
+export function openTotpSecret(adminId: string, sealed: string): string | null {
+  return openWith(totpKey(), sealed, `admin-totp:${adminId}`);
+}

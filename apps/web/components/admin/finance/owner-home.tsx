@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ChevronRight, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Plus } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getErrorMessage } from "@/lib/api-client";
+import { alertKeys, getFinanceAlerts, type FinanceAlert } from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { OwnerHome as Home, OwnerMonth } from "@/lib/api/finance-books";
 import { formatPrice as formatExact } from "@/lib/format";
@@ -38,7 +39,13 @@ export function OwnerHome() {
   const [month, setMonth] = useState<string | undefined>(undefined);
   const [adding, setAdding] = useState<{ kind?: QuickAddKind; partnerId?: string } | null>(null);
   const q = useQuery({ queryKey: booksApi.ownerHomeKey(month), queryFn: () => booksApi.getOwnerHome(month) });
+  // The same alerts as Needs attention (shared cache with the sidebar badge): a critical one must never sit behind
+  // "Nothing needs you right now".
+  const alerts = useQuery({ queryKey: alertKeys.all, queryFn: getFinanceAlerts });
+  const critical = alerts.data?.alerts.filter((a) => a.severity === "critical") ?? [];
   const d = q.data;
+  const current = !month || (d ? month === d.today.slice(0, 7) : false);
+  const stockGain = current ? alerts.data?.alerts.find((a) => a.key === "inventory.gains" && (a.amount ?? 0) > 0) : undefined;
 
   return (
     <div className="space-y-6" data-testid="owner-home">
@@ -56,8 +63,8 @@ export function OwnerHome() {
       {d && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <div className="space-y-6">
-            <MonthStory month={d.month} last={d.lastMonth} current={!month || month === d.today.slice(0, 7)} />
-            <Todo items={d.todo} onPay={(partnerId) => setAdding({ kind: "PAY_PARTNER", partnerId })} />
+            <MonthStory month={d.month} last={d.lastMonth} current={current} stockGain={stockGain} />
+            <Todo items={d.todo} critical={critical} onPay={(partnerId) => setAdding({ kind: "PAY_PARTNER", partnerId })} />
           </div>
           <div className="space-y-6">
             <Money money={d.money} />
@@ -90,7 +97,7 @@ const SHARES: Array<{ key: keyof Pick<OwnerMonth, "goods" | "delivery" | "ads" |
   { key: "other", label: "Other costs", hint: "packaging, hosting, fees", color: "bg-ink-300", href: "/admin/finance/expenses" },
 ];
 
-function MonthStory({ month, last, current }: { month: OwnerMonth; last: OwnerMonth; current: boolean }) {
+function MonthStory({ month, last, current, stockGain }: { month: OwnerMonth; last: OwnerMonth; current: boolean; stockGain?: FinanceAlert }) {
   const loss = month.profit < 0;
   const base = month.sales > 0 ? month.sales : 0;
   const per100 = (v: number) => (base ? Math.round((Math.max(0, v) / base) * 100) : 0);
@@ -108,6 +115,14 @@ function MonthStory({ month, last, current }: { month: OwnerMonth; last: OwnerMo
           from <span className="font-medium text-fg tabular-nums">{formatPrice(month.sales)}</span> in sales.{" "}
           {last.sales > 0 && <>Last month: <span className="tabular-nums">{formatPrice(Math.abs(last.profit))}</span> {last.profit < 0 ? "loss" : "profit"}.</>}
         </p>
+        {stockGain && (
+          <Link href={stockGain.href} className="!mt-3 flex items-start gap-2 rounded-xl bg-warning-50 px-3.5 py-3 text-sm text-warning-700 hover:bg-warning-100" data-testid="owner-month-stock-gain">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              This profit includes <span className="font-medium tabular-nums">{formatPrice(stockGain.amount ?? 0)}</span> of stock added without a purchase or a fill. The real profit is lower until that stock is counted again or its purchase is recorded.
+            </span>
+          </Link>
+        )}
       </div>
 
       {base > 0 ? (
@@ -157,8 +172,8 @@ function todoText(t: Home["todo"][number]): string {
   }
 }
 
-function Todo({ items, onPay }: { items: Home["todo"]; onPay: (partnerId: string) => void }) {
-  if (!items.length) {
+function Todo({ items, critical, onPay }: { items: Home["todo"]; critical: FinanceAlert[]; onPay: (partnerId: string) => void }) {
+  if (!items.length && !critical.length) {
     return (
       <p className="flex items-start gap-2 px-1 text-sm text-fg-muted" data-testid="owner-todo-empty">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-600" /> Nothing needs you right now. Sales, Steadfast payouts and partner shares are kept up to date automatically.
@@ -169,6 +184,18 @@ function Todo({ items, onPay }: { items: Home["todo"]; onPay: (partnerId: string
     <Card className="p-0" data-testid="owner-todo">
       <p className="px-5 pt-4 text-sm font-medium text-fg sm:px-6">Needs you</p>
       <ul className="divide-y divide-line-subtle">
+        {critical.map((a) => (
+          <li key={a.key}>
+            <Link href={a.href} className="flex items-center gap-3 px-5 py-3.5 text-sm hover:bg-surface-muted sm:px-6" data-testid="owner-todo-critical">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-danger-500" aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-fg">{a.title}{a.amount ? <> · <span className="tabular-nums">{formatPrice(a.amount)}</span></> : null}</span>
+                <span className="block text-xs text-fg-muted">{a.action}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted" />
+            </Link>
+          </li>
+        ))}
         {items.map((t, i) => (
           <li key={`${t.kind}-${i}`}>
             {t.kind === "PAY_PARTNER" ? (

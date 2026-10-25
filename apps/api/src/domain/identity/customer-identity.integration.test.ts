@@ -309,7 +309,7 @@ describe("Google sign-in requires email_verified (F-27)", () => {
     await expect(signInAdminWithGoogleIdentity({ sub: `ga-${RUN}-1`, email, emailVerified: false })).rejects.toMatchObject({ statusCode: 401 });
     expect((await prisma.adminUser.findUniqueOrThrow({ where: { id: admin.id } })).googleId).toBeNull();
     const ok = await signInAdminWithGoogleIdentity({ sub: `ga-${RUN}-1`, email, emailVerified: true });
-    expect(ok.admin.id).toBe(admin.id);
+    expect("admin" in ok && ok.admin.id).toBe(admin.id);
     await prisma.refreshToken.deleteMany({ where: { adminId: admin.id } });
   });
 });

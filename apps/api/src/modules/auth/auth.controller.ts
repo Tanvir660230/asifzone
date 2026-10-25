@@ -4,6 +4,8 @@ import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import { accessTokenCookieOptions, refreshTokenCookieOptions, csrfTokenCookieOptions } from "../../lib/cookies";
 import * as authService from "./auth.service";
+import * as twoStep from "./two-step.service";
+import { getSettings } from "../settings/settings.service";
 import { recordAudit } from "../../lib/audit";
 
 /** Phase 10 (G-7): admin-account changes are audited with the exact before/after, in place of the generic row. */
@@ -23,25 +25,73 @@ function issueCsrfCookie(res: Response) {
   res.cookie("csrf_token", crypto.randomBytes(24).toString("hex"), csrfTokenCookieOptions);
 }
 
-export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { accessToken, refreshToken, admin } = await authService.loginAdmin(req.body, req.headers["user-agent"]);
+type SignInResult = Awaited<ReturnType<typeof authService.loginAdmin>>;
+
+/** A finished sign-in sets the session cookies; one waiting for its 2-step code returns the challenge and sets nothing. */
+function sendSignIn(res: Response, result: SignInResult) {
+  if ("twoStepRequired" in result) {
+    res.json({ twoStepRequired: true, challenge: result.challenge });
+    return;
+  }
   issueCsrfCookie(res);
   res
-    .cookie("access_token", accessToken, accessTokenCookieOptions)
-    .cookie("refresh_token", refreshToken, refreshTokenCookieOptions)
-    .json({ admin });
+    .cookie("access_token", result.accessToken, accessTokenCookieOptions)
+    .cookie("refresh_token", result.refreshToken, refreshTokenCookieOptions)
+    .json({ admin: result.admin });
+}
+
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  sendSignIn(res, await authService.loginAdmin(req.body, req.headers["user-agent"]));
 });
 
 export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
-  const { accessToken, refreshToken, admin } = await authService.loginAdminWithGoogle(
-    req.body.idToken,
-    req.headers["user-agent"],
-  );
-  issueCsrfCookie(res);
-  res
-    .cookie("access_token", accessToken, accessTokenCookieOptions)
-    .cookie("refresh_token", refreshToken, refreshTokenCookieOptions)
-    .json({ admin });
+  sendSignIn(res, await authService.loginAdminWithGoogle(req.body.idToken, req.headers["user-agent"]));
+});
+
+/** The 2-step code after the password or Google. */
+export const loginTwoStep = asyncHandler(async (req: Request, res: Response) => {
+  sendSignIn(res, await authService.completeTwoStepSignIn(req.body.challenge, req.body.code, req.headers["user-agent"]));
+});
+
+export const twoStepSetup = asyncHandler(async (req: Request, res: Response) => {
+  const settings = await getSettings();
+  res.locals.auditHandled = true; // the secret must never reach the audit trail
+  res.json(await twoStep.startSetup(req.admin!.adminId, settings.storeName || "Store Console"));
+});
+
+export const twoStepEnable = asyncHandler(async (req: Request, res: Response) => {
+  const result = await twoStep.enable(req.admin!.adminId, req.body.code);
+  // Sessions signed in before it was on (one may be someone else's) end now; this device stays signed in.
+  const current = req.cookies?.refresh_token as string | undefined;
+  if (current) await authService.revokeOtherSessions(req.admin!.adminId, current);
+  else await authService.revokeAllRefreshTokens(req.admin!.adminId);
+  res.locals.auditHandled = true;
+  recordAudit({ adminId: req.admin!.adminId, action: "admins.two_step_on", entityType: "admins", entityId: req.admin!.adminId, ipAddress: req.ip ?? null });
+  res.json(result);
+});
+
+export const twoStepDisable = asyncHandler(async (req: Request, res: Response) => {
+  await twoStep.disable(req.admin!.adminId, req.body.code);
+  res.locals.auditHandled = true;
+  recordAudit({ adminId: req.admin!.adminId, action: "admins.two_step_off", entityType: "admins", entityId: req.admin!.adminId, ipAddress: req.ip ?? null });
+  res.status(204).send();
+});
+
+/** An owner resets a teammate's 2-step sign-in (lost phone, no recovery codes); their sessions end too. */
+export const resetAdminTwoStep = asyncHandler(async (req: Request, res: Response) => {
+  await twoStep.reset(req.params.id!);
+  await authService.revokeAllRefreshTokens(req.params.id!);
+  res.locals.auditHandled = true;
+  recordAudit({ adminId: req.admin!.adminId, action: "admins.two_step_reset", entityType: "admins", entityId: req.params.id!, ipAddress: req.ip ?? null });
+  res.status(204).send();
+});
+
+/** An owner signs a teammate out of every device (a lost phone, someone leaving). */
+export const revokeAdminSessions = asyncHandler(async (req: Request, res: Response) => {
+  const revoked = await authService.revokeAllRefreshTokens(req.params.id!);
+  res.locals.auditHandled = true;
+  recordAudit({ adminId: req.admin!.adminId, action: "admins.sessions_revoked", entityType: "admins", entityId: req.params.id!, ipAddress: req.ip ?? null, metadata: { revoked } });
+  res.json({ revoked });
 });
 
 export const logout = asyncHandler(async (req: Request, res: Response) => {

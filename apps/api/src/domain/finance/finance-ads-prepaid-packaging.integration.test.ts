@@ -196,6 +196,31 @@ describe("ad spend", () => {
   });
 });
 
+describe("ad tags not linked to a campaign", () => {
+  it("lists the utm_campaign values visitors arrived with that no campaign claims, with their orders; linking one moves its orders onto the campaign", async () => {
+    const tag = `1202${RUN.replace(/\D/g, "").slice(0, 10)}`;
+    const session = `s-unlinked-${RUN}`;
+    const at = new Date("2026-10-15T08:00:00Z");
+    await prisma.pageView.createMany({ data: [
+      { sessionId: session, path: "/", utmSource: "fb", utmCampaign: tag, createdAt: at },
+      { sessionId: `${session}-2`, path: "/", utmSource: "fb", utmCampaign: tag, createdAt: at },
+    ] });
+    const p = await createStockedProduct({ stocks: [5], basePrice: 900 });
+    const o = await placeOrder([{ variantId: p.variants[0]!.id, quantity: 1 }]);
+    await prisma.order.update({ where: { id: o.id }, data: { sessionId: session, createdAt: at } });
+
+    const before = (await api().get("/ads/campaigns?from=2026-10-01&to=2026-10-31")).body;
+    expect(before.unlinkedTags).toContainEqual({ tag, sessions: 2, orders: 1 });
+
+    const c = before.campaigns.find((x: { name: string }) => x.name === "Cap launch");
+    expect((await api().patch(`/ads/campaigns/${c.id}`, { externalId: tag })).status).toBe(200);
+    const after = (await api().get("/ads/campaigns?from=2026-10-01&to=2026-10-31")).body;
+    expect(after.unlinkedTags.map((t: { tag: string }) => t.tag)).not.toContain(tag);
+    expect(after.campaigns.find((x: { id: string }) => x.id === c.id).orders).toBe(1);
+    await prisma.pageView.deleteMany({ where: { sessionId: { startsWith: session } } });
+  });
+});
+
 describe("prepaid costs", () => {
   it("a year of hosting is paid now and moves into its expense month by month as each month ends", async () => {
     const r = await api().post("/prepaid", { name: "VPS hosting", expenseAccountId: acc["6400"], amount: 12000, serviceStart: "2026-09-15", serviceEnd: "2027-09-14", fromFinancialAccountId: bank, paidOn: "2026-09-15", payee: "Hostinger" }, `ppd-${RUN}`);

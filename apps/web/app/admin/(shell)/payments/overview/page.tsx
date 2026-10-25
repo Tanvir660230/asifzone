@@ -63,7 +63,7 @@ export default function PaymentsOverviewPage() {
       {/* Customer lookup */}
       <section>
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          Look Up a Customer&apos;s Payment Attempts
+          Look up a customer&apos;s payment attempts
         </h2>
         <Card className="p-4">
           <SearchInput
@@ -122,23 +122,23 @@ export default function PaymentsOverviewPage() {
           ) : (
             <>
               <StatTile
-                label="Payment Attempts"
+                label="Payment attempts"
                 value={overview.attemptsToday.toLocaleString(DISPLAY_LOCALE)}
                 icon={<Activity size={18} />}
               />
               <StatTile
-                label="Success Rate"
-                value={`${overview.successRateTodayPct.toFixed(1)}%`}
+                label="Success rate"
+                value={overview.attemptsToday > 0 ? `${overview.successRateTodayPct.toFixed(1)}%` : "—"}
                 icon={<CheckCircle2 size={18} />}
                 tone={overview.successRateTodayPct < 80 && overview.attemptsToday > 0 ? "warning" : "accent"}
               />
               <StatTile
-                label="Active Sessions"
+                label="Active sessions"
                 value={overview.activeSessionsCount.toLocaleString(DISPLAY_LOCALE)}
                 icon={<Clock size={18} />}
               />
               <StatTile
-                label="EPS Reconciliation Queue"
+                label="EPS reconciliation queue"
                 value={overview.epsReconciliationQueueDepth.toLocaleString(DISPLAY_LOCALE)}
                 icon={<RefreshCcw size={18} />}
                 tone={overview.epsReconciliationQueueDepth > 0 ? "warning" : "default"}
@@ -151,7 +151,7 @@ export default function PaymentsOverviewPage() {
             {overview.attemptsTodayByProvider.length === 0
               ? "No payment attempts yet today."
               : overview.attemptsTodayByProvider.map((g) => `${g.provider}: ${g.count}`).join(" · ")}
-            {" — EPS Reconciliation Queue is what the next 5-minute sweep is about to work through, not a backlog it's fallen behind on."}
+            {" — The EPS reconciliation queue is what the next 5-minute sweep is about to work through, not a backlog it's fallen behind on."}
           </p>
         )}
       </section>
@@ -166,14 +166,14 @@ export default function PaymentsOverviewPage() {
             <>
               <Link href="/admin/orders?cancelledButPaid=true">
                 <StatTile
-                  label="Cancelled but Paid"
+                  label="Cancelled but paid"
                   value={overview.cancelledButPaidCount.toLocaleString(DISPLAY_LOCALE)}
                   icon={<ShieldAlert size={18} />}
                   tone={overview.cancelledButPaidCount > 0 ? "warning" : "default"}
                 />
               </Link>
               <StatTile
-                label="Refunds This Month"
+                label="Refunds this month"
                 value={`${formatPrice(overview.refundsThisMonthAmount)} · ${overview.refundsThisMonthCount}`}
                 icon={<Undo2 size={18} />}
               />

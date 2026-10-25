@@ -23,10 +23,49 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
-import type { AdCampaign } from "@/lib/api/finance-books";
+import type { AdCampaign, UnlinkedAdTag } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 
 const today = () => new Date().toLocaleDateString("en-CA");
+
+/** Visitors arrive from Meta with the campaign's id as utm_campaign. Until a campaign carries that id, its orders can't be
+ * counted (it shows 0 orders) — this card names each unclaimed id with what it brought, and links it in one step. */
+function UnlinkedTags({ tags, campaigns, canLink, onLinked }: { tags: UnlinkedAdTag[]; campaigns: AdCampaign[]; canLink: boolean; onLinked: () => void }) {
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  const link = useMutation({
+    mutationFn: ({ tag, campaignId }: { tag: string; campaignId: string }) => booksApi.updateCampaign(campaignId, { externalId: tag }),
+    onSuccess: () => { toast.success("Linked — its orders now count for the campaign"); onLinked(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Couldn't link the tag")),
+  });
+  const open = campaigns.filter((c) => !c.externalId);
+  return (
+    <Card className="p-0" data-testid="unlinked-ad-tags">
+      <div className="space-y-1 px-5 pt-4 sm:px-6">
+        <h2 className="text-[15px] font-semibold text-fg">Ad visits not linked to a campaign</h2>
+        <p className="text-sm text-fg-muted">Meta sends each campaign&rsquo;s id with the visit. Pick the campaign each id belongs to and its orders start counting (find the id in Ads Manager › Campaign ID).</p>
+      </div>
+      <ul className="mt-3 divide-y divide-line-subtle border-t border-line-subtle">
+        {tags.map((t) => (
+          <li key={t.tag} className="flex flex-wrap items-center gap-3 px-5 py-3 sm:px-6">
+            <span className="min-w-0 flex-1">
+              <span className="block font-mono text-[13px] text-fg">{t.tag}</span>
+              <span className="block text-xs text-fg-muted tabular-nums">{t.sessions.toLocaleString("en-US")} visits · {t.orders} order{t.orders === 1 ? "" : "s"}</span>
+            </span>
+            {canLink && open.length > 0 && (
+              <span className="flex w-full gap-2 sm:w-auto">
+                <Select aria-label={`Campaign for ${t.tag}`} className="min-w-0 flex-1 sm:w-56" value={choice[t.tag] ?? ""} onChange={(e) => setChoice((c) => ({ ...c, [t.tag]: e.target.value }))}>
+                  <option value="">Choose campaign…</option>
+                  {open.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+                <Button size="sm" variant="outline" disabled={!choice[t.tag]} loading={link.isPending && link.variables?.tag === t.tag} onClick={() => link.mutate({ tag: t.tag, campaignId: choice[t.tag]! })}>Link</Button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 
 /** Owner's books §5: every campaign's daily spend — Meta's actual figure when connected, else the budget for the day —
  * booked out of the ad account, with the orders it brought and profit after ads. */
@@ -97,6 +136,9 @@ export default function AdSpendPage() {
             <StatTile label="Orders from the ads" value={String(d.totals.orders)} icon={<ShoppingBag />} />
             <StatTile label="Sales from the ads" value={formatPriceWhole(Math.round(d.totals.revenue))} icon={<TrendingUp />} />
           </section>
+          {(d.unlinkedTags?.length ?? 0) > 0 && d.campaigns.length > 0 && (
+            <UnlinkedTags tags={d.unlinkedTags!} campaigns={d.campaigns} canLink={can("finance.transact")} onLinked={refresh} />
+          )}
           {d.campaigns.length === 0 ? (
             <EmptyState icon={Megaphone} title="No campaigns yet" description="Add a campaign with its budget — or connect Meta and they come in by themselves." />
           ) : (
