@@ -7,9 +7,10 @@
  * PD-10.2 kept refunds, manual payments, price and loyalty adjustments, SMS, exports and financial analytics with STAFF.
  * Any further change is an owner decision and a change to this map only.
  */
-/** OWNER and STAFF run the store; FINANCE_ADMIN, ACCOUNTANT and FINANCE_VIEWER (Financial Core Phase 3,
- * docs/FINANCE_PHASE_3.md §11) work in the books only — they hold no commerce permission. */
-export const ADMIN_ROLES = ["OWNER", "STAFF", "FINANCE_ADMIN", "ACCOUNTANT", "FINANCE_VIEWER"] as const;
+/** OWNER and STAFF run the store; MANAGER (admin audit phase 2) runs the store and the books without the owner's own
+ * powers; FINANCE_ADMIN, ACCOUNTANT and FINANCE_VIEWER (Financial Core Phase 3, docs/FINANCE_PHASE_3.md §11) work in the
+ * books only — they hold no commerce permission. */
+export const ADMIN_ROLES = ["OWNER", "STAFF", "MANAGER", "FINANCE_ADMIN", "ACCOUNTANT", "FINANCE_VIEWER"] as const;
 export type AdminRoleName = (typeof ADMIN_ROLES)[number];
 
 export const PERMISSIONS = [
@@ -145,9 +146,29 @@ const ACCOUNTANT_PERMISSIONS = [
 ] as const satisfies readonly Permission[];
 const FINANCE_VIEWER_PERMISSIONS = ["finance.read", "suppliers.read", "purchasing.read", "ap.read", "costing.read", "manufacturing.read", "courier_costs.read"] as const satisfies readonly Permission[];
 
+/** What a MANAGER never holds (owner, 2026-10-25): staff accounts, settings, partner / payroll money, closing a month, big
+ * approvals, count losses over the limit, permanent deletes, repairs and confirming AI changes. Everything else — the
+ * store and the books day to day — it does. */
+export const MANAGER_EXCLUDED = [
+  "users.manage",
+  "settings.manage",
+  "finance.sensitive",
+  "finance.configure",
+  "finance.period_close",
+  "finance.approve_high_value",
+  "ai.execute",
+  "orders.delete",
+  "catalog.purge",
+  "promotions.purge",
+  "ops.repair",
+  "inventory.approve",
+] as const satisfies readonly Permission[];
+const managerExcluded = new Set<Permission>(MANAGER_EXCLUDED);
+
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRoleName, readonly Permission[]>> = Object.freeze({
   OWNER: Object.freeze([...PERMISSIONS]),
   STAFF: Object.freeze(PERMISSIONS.filter((p) => !ownerOnly.has(p))),
+  MANAGER: Object.freeze(PERMISSIONS.filter((p) => !managerExcluded.has(p))),
   FINANCE_ADMIN: Object.freeze([...FINANCE_ADMIN_PERMISSIONS]),
   ACCOUNTANT: Object.freeze([...ACCOUNTANT_PERMISSIONS]),
   FINANCE_VIEWER: Object.freeze([...FINANCE_VIEWER_PERMISSIONS]),

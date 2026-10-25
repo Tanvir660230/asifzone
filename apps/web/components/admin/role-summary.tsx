@@ -18,6 +18,7 @@ const LABEL: Record<string, string> = {
   "ai.use": "Use the AI assistant",
   "ai.execute": "Confirm changes the assistant proposes",
   "ops.repair": "Run repairs in System health",
+  "inventory.approve": "Approve stock count losses over the limit",
   // the books (docs/FINANCE_PHASE_1.md §7)
   "finance.read": "See the books, statements and finance reports",
   "finance.transact": "Record money movements, expenses and draft journals",
@@ -46,7 +47,20 @@ const FINANCE_INTRO: Record<string, string> = {
   ACCOUNTANT: "keeps the books day to day — nothing else in the Store Console. Can:",
   FINANCE_VIEWER: "reads the books and reports, and changes nothing. Can:",
 };
-const NAME: Record<string, string> = { OWNER: "Owner", STAFF: "Staff", FINANCE_ADMIN: "Finance admin", ACCOUNTANT: "Accountant", FINANCE_VIEWER: "Finance viewer" };
+/** Display names of the roles — the one list the account menu, the Team page and the forms use (naming only; what a role
+ * may do comes from the API's role map). */
+export const ROLE_NAMES: Record<string, string> = {
+  OWNER: "Owner",
+  STAFF: "Staff",
+  MANAGER: "Manager",
+  FINANCE_ADMIN: "Finance admin",
+  ACCOUNTANT: "Accountant",
+  FINANCE_VIEWER: "Finance viewer",
+};
+/** A store role that also keeps the books (MANAGER) says so; plain STAFF doesn't touch them. */
+const STORE_INTRO: Record<string, string> = {
+  MANAGER: "runs the store and the books day to day — orders, products, stock, customers, marketing, payments and finance entries — but can’t:",
+};
 
 /** Blueprint V2 security: the invite and edit forms show what the chosen role can do. Reads the role catalog from the same
  * query the Team page already made (no second request). */
@@ -61,11 +75,11 @@ export function RoleSummary({ role }: { role: string }) {
   return (
     <div className="rounded-xl bg-surface-muted px-3.5 py-3 text-[13px] text-fg-muted" aria-live="polite">
       <p>
-        <span className="font-medium text-fg">{NAME[entry.role] ?? entry.role}:</span>{" "}
+        <span className="font-medium text-fg">{ROLE_NAMES[entry.role] ?? entry.role}:</span>{" "}
         {entry.kind === "ALL"
           ? <>everything in the Store Console, including what Staff can&rsquo;t do:</>
           : entry.kind === "STORE"
-            ? <>runs the store day to day — orders, products, stock, customers, marketing and payments — but can&rsquo;t:</>
+            ? STORE_INTRO[entry.role] ?? <>runs the store day to day — orders, products, stock, customers, marketing and payments — but can&rsquo;t:</>
             : FINANCE_INTRO[entry.role] ?? "Can:"}
       </p>
       <ul className="mt-1.5 grid list-disc gap-x-6 gap-y-0.5 pl-5 sm:grid-cols-2">
