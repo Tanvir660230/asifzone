@@ -192,6 +192,9 @@ export const createBom = (body: Record<string, unknown>) => apiFetch<Bom>(`${BAS
 export const updateBom = (id: string, body: Record<string, unknown>) => apiFetch<Bom>(`${BASE}/boms/${id}`, { method: "PATCH", body });
 export const deleteBom = (id: string) => apiFetch<void>(`${BASE}/boms/${id}`, { method: "DELETE" });
 export const bomAction = (id: string, action: "approve" | "archive" | "copy") => apiFetch<Bom>(`${BASE}/boms/${id}/${action}`, { method: "POST", body: {} });
+/** What closed fills / production really used of each recipe material over the last `days`, against the need without wastage. */
+export interface BomWastage { bomId: string; days: number; lines: Array<{ materialVariantId: string; orders: number; need: number; used: number; actualPct: number | null }> }
+export const getBomWastage = (id: string) => apiFetch<BomWastage>(`${BASE}/boms/${id}/wastage`);
 
 export const listProductionOrders = (q: { status?: string; q?: string; page?: number; pageSize?: number } = {}) =>
   apiFetch<{ total: number; productionOrders: ProductionOrder[] }>(`${BASE}/production-orders${qs(q)}`);

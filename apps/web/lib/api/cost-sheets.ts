@@ -30,8 +30,10 @@ export interface Assumption { value: number; from: CostLevel }
 export interface Assumptions { insideDhakaPct: Assumption; codPct: Assumption; returnRatePct: Assumption; targetMarginPct: Assumption }
 export interface ProfileLine { kind: CostLineKind; variantId?: string | null; mode: CostLineMode; amount: number | null; label?: string | null }
 export interface CostProfile { insideDhakaPct: number | null; codPct: number | null; returnRatePct: number | null; targetMarginPct: number | null; notes: string | null; lines: ProfileLine[] }
-export interface ProductCostSheet { productId: string; name: string; categoryId: string; categoryName: string | null; assumptions: Assumptions; sizes: CostSheetSize[]; own: CostProfile | null; returnRateActual: number | null }
-export interface ProductCostRow extends Omit<ProductCostSheet, "sizes" | "own" | "returnRateActual"> {
+/** What the books booked per sale of the size over the last `actualDays` (courier fees include COD and return charges). */
+export interface ActualPerSale { units: number; price: number; making: number; packing: number; deliveryAndFees: number; ads: number; profit: number; marginPct: number | null }
+export interface ProductCostSheet { productId: string; name: string; categoryId: string; categoryName: string | null; assumptions: Assumptions; sizes: Array<CostSheetSize & { actual: ActualPerSale | null }>; own: CostProfile | null; returnRateActual: number | null; actualDays: number }
+export interface ProductCostRow extends Omit<ProductCostSheet, "sizes" | "own" | "returnRateActual" | "actualDays"> {
   sizes: Array<Omit<CostSheetSize, "lines"> & { making: number | null; selling: number }>;
 }
 

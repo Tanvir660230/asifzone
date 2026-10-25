@@ -192,9 +192,56 @@ export function CostSheetField({ productId }: { productId: string }) {
           )}
         </div>
       </div>
+      <PlannedVsActual size={size} preview={preview} price={size.price} days={sheet.actualDays} />
       <p className="text-xs text-fg-muted">A plan, not the books: the books keep what things really cost. {size.lines.some((l: CostSheetLine) => l.estimate) && "“Estimate” means a material has only its reference cost so far."}</p>
     </div>
   );
 }
 
 const numOrNull = (s: string | undefined) => (s === undefined || s.trim() === "" || !Number.isFinite(Number(s)) ? null : Number(s));
+
+/** Planned vs actual (docs/COST_SHEET.md §5): the sheet at today's price beside what the books booked per sale of this
+ * size over the last days — grouped as the books keep them (the courier's fee includes COD and return charges). */
+function PlannedVsActual({ size, preview, price, days }: { size: api.ProductCostSheet["sizes"][number]; preview: Array<{ kind: CostLineKind; fixed: number | null; percent: number }>; price: number; days: number }) {
+  const a = size.actual;
+  const sum = (kinds: CostLineKind[]) => {
+    const ls = preview.filter((l) => kinds.includes(l.kind));
+    return ls.some((l) => l.fixed === null) ? null : ls.reduce((s, l) => s + (l.fixed ?? 0) + (l.percent / 100) * price, 0);
+  };
+  const planned = { making: sum(["MAKING"]), packing: sum(["PACKAGING"]), deliveryAndFees: sum(["COURIER", "PAYMENT_FEE", "RETURN_RESERVE"]), ads: sum(["ADS"]) };
+  const allCosts = sum(["MAKING", "PACKAGING", "COURIER", "PAYMENT_FEE", "RETURN_RESERVE", "ADS", "LABOUR", "OTHER"]);
+  const rows: Array<{ label: string; plan: number | null; actual: number | null; costly: boolean }> = [
+    { label: "Price", plan: price, actual: a?.price ?? null, costly: false },
+    { label: "Making", plan: planned.making, actual: a?.making ?? null, costly: true },
+    { label: "Parcel packing", plan: planned.packing, actual: a?.packing ?? null, costly: true },
+    { label: "Delivery, COD, returns & fees", plan: planned.deliveryAndFees, actual: a?.deliveryAndFees ?? null, costly: true },
+    { label: "Ads", plan: planned.ads, actual: a?.ads ?? null, costly: true },
+    { label: "Profit per sale", plan: allCosts === null ? null : price - allCosts, actual: a?.profit ?? null, costly: false },
+  ];
+  return (
+    <div className="rounded-2xl border border-line-subtle" data-testid="planned-vs-actual">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pb-2 pt-4">
+        <p className="text-[15px] font-semibold text-fg">Planned vs actual</p>
+        <p className="text-sm text-fg-muted">{a ? `${a.units.toLocaleString("en-US")} sold in the last ${days} days` : `Nothing of ${size.label} sold and booked in the last ${days} days`}</p>
+      </div>
+      {a && (
+        <ul>
+          <li className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem] gap-2 border-t border-line-subtle px-4 py-2 text-xs text-fg-muted"><span /><span className="text-right">Plan</span><span className="text-right">Actual</span><span className="text-right">Diff.</span></li>
+          {rows.map((r) => {
+            const diff = r.plan !== null && r.actual !== null ? r.actual - r.plan : null;
+            // a cost above plan, or a price / profit below it, is the bad direction
+            const bad = diff !== null && Math.abs(diff) >= 0.5 && (r.costly ? diff > 0 : diff < 0);
+            return (
+              <li key={r.label} className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem] items-center gap-2 border-t border-line-subtle px-4 py-2.5 text-sm">
+                <span className={cn("text-fg", r.label === "Profit per sale" && "font-semibold")}>{r.label}</span>
+                <span className="text-right tabular-nums text-fg-muted">{r.plan === null ? "—" : formatPrice(r.plan)}</span>
+                <span className="text-right tabular-nums text-fg">{r.actual === null ? "—" : formatPrice(r.actual)}</span>
+                <span className={cn("text-right tabular-nums", bad ? "text-danger-700" : "text-fg-muted")}>{diff === null ? "" : `${diff > 0 ? "+" : diff < 0 ? "−" : ""}${formatPrice(Math.abs(diff))}`}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

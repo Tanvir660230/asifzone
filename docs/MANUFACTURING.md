@@ -81,6 +81,11 @@ archives the version approved before it in the same transaction (filling reads t
 orders already planned on the old one keep it). The admin calls them **Recipes**; the line picker offers materials only
 unless "also pick finished products" is ticked.
 
+**Real wastage** (`GET /boms/:id/wastage`, the recipe card): for each material, what closed fills and production of the
+product used over the last 90 days against the need without wastage — `(consumed + scrapped) ÷ (planned ÷ (1 + planned
+wastage)) − 1`. Where it differs from the recipe by half a point or more, *New version with the real wastage* copies the
+recipe to a draft with those figures; the owner checks and approves it — the recipe never changes by itself.
+
 **A line:**
 - names a stock-tracked material variant (never a variant of the product itself);
 - gives its `qtyPerUnit` (6 dp, in the material's stock unit);

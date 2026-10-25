@@ -52,3 +52,13 @@ you* lists sizes below their target to someone with `costing.read`.
 | `GET /api/v1/finance/cost-sheets/products/:id` | one product's sheet + its own profile (`costing.read`) |
 | `GET /api/v1/finance/cost-sheets/defaults` | the shop's and each category's profile (`costing.read`) |
 | `PUT /api/v1/finance/cost-sheets/:scope/:scopeId?` | save one level, replacing its lines (`costing.adjust`), audit-logged |
+
+## 5. Planned vs actual
+
+The product's sheet shows, per size, the plan at today's price beside what the books booked per sale over the last 30
+days — from the profit report's per-size figures (`sizes`: each order's goods cost, packaging, courier and gateway
+charges and its share of ad spend, shared over its lines by value, ÷ units sold). The books keep courier COD and
+return charges inside the courier's fee, so the comparison groups **delivery, COD, returns & fees** together. A cost
+above plan (or a price / profit below it) is marked.
+
+Real wastage for recipes is in docs/MANUFACTURING.md §4.

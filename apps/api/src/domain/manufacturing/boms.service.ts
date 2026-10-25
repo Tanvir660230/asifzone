@@ -211,3 +211,35 @@ export async function listBoms(q: { productId?: string; status?: BillOfMaterials
   const rows = await prisma.billOfMaterials.findMany({ where: { businessId: business.id, productId: q.productId, status: q.status }, include: BOM_INCLUDE, orderBy: [{ productId: "asc" }, { version: "desc" }], take: 500 });
   return { boms: rows.map(bomDto) };
 }
+
+/**
+ * Real wastage (docs/MANUFACTURING.md §4): what closed production of this product (fills included) really used of each of
+ * the recipe's materials over the last `days`, against the need without wastage — `(used ÷ need − 1) × 100`, where need =
+ * planned ÷ (1 + the planned wastage) and used = consumed + scrapped. A figure to review, never applied by itself: the
+ * owner copies the recipe to a new version with it.
+ */
+export async function recipeWastage(id: string, days = 90) {
+  const { business } = await getFinanceContext();
+  const bom = await load(prisma, business.id, id);
+  const since = new Date(Date.now() - days * 86_400_000);
+  const rows = await prisma.productionMaterialLine.findMany({
+    where: { productionOrder: { businessId: business.id, productId: bom.productId, status: "CLOSED", closedAt: { gte: since } }, materialVariantId: { in: bom.lines.map((l) => l.materialVariant.id) }, suppliedBy: "BUSINESS" },
+    select: { productionOrderId: true, materialVariantId: true, plannedQty: true, wastagePct: true, consumedQty: true, scrappedQty: true },
+  });
+  return {
+    bomId: id,
+    days,
+    lines: [...new Set(bom.lines.map((l) => l.materialVariant.id))].map((materialVariantId) => {
+      const mine = rows.filter((r) => r.materialVariantId === materialVariantId);
+      const need = mine.reduce((s, r) => s + r.plannedQty / (1 + Number(r.wastagePct ?? 0) / 100), 0);
+      const used = mine.reduce((s, r) => s + r.consumedQty + r.scrappedQty, 0);
+      return {
+        materialVariantId,
+        orders: new Set(mine.map((r) => r.productionOrderId)).size,
+        need: Math.round(need * 100) / 100,
+        used,
+        actualPct: need > 0 ? Math.round((used / need - 1) * 10_000) / 100 : null,
+      };
+    }),
+  };
+}

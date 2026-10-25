@@ -86,6 +86,7 @@ export default function BomsPage() {
                     </li>
                   ))}
                 </ul>
+                {b.status === "APPROVED" && <RealWastage bom={b} canChange={can("manufacturing.manage")} onDone={refresh} />}
                 <div className="flex flex-wrap gap-2">
                   {b.status === "DRAFT" && can("manufacturing.manage") && <Button size="sm" variant="outline" onClick={() => setEditing(b)}>Edit</Button>}
                   {b.status === "DRAFT" && can("manufacturing.approve") && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ id: b.id, action: "approve" })} data-testid="approve-bom">Approve</Button>}
@@ -165,5 +166,39 @@ function BomModal({ bom, onClose, onDone }: { bom: Bom | null; onClose: () => vo
         <Button size="sm" variant="outline" onClick={() => setLines((ls) => [...ls, { key: ++k, material: null, finishedVariantId: "", qtyPerUnit: "", wastagePct: "0", suppliedBy: "BUSINESS" }])}><Plus className="h-4 w-4" /> Material</Button>
       </div>
     </Modal>
+  );
+}
+
+/** Real wastage (docs/MANUFACTURING.md §4): what the last 90 days' fills and production really used of each material
+ * against the recipe. When a material's real wastage differs, a new draft version with the real figures is one tap — the
+ * owner still approves it. */
+function RealWastage({ bom, canChange, onDone }: { bom: Bom; canChange: boolean; onDone: () => void }) {
+  const q = useQuery({ queryKey: [...mfg.manufacturingKeys.boms({}), "wastage", bom.id], queryFn: () => mfg.getBomWastage(bom.id) });
+  const used = (q.data?.lines ?? []).filter((l) => l.orders > 0 && l.actualPct !== null);
+  // the recipe's wastage per material (the largest when a material has a line per size)
+  const recipePct = (materialVariantId: string) => Math.max(0, ...bom.lines.filter((l) => l.material.variantId === materialVariantId).map((l) => Number(l.wastagePct)));
+  const differ = used.filter((l) => Math.abs(l.actualPct! - recipePct(l.materialVariantId)) >= 0.5);
+  const make = useMutation({
+    mutationFn: async () => {
+      const copy = await mfg.bomAction(bom.id, "copy");
+      const real = new Map(differ.map((l) => [l.materialVariantId, Math.max(0, Math.min(99, l.actualPct!))]));
+      return mfg.updateBom(copy.id, { lines: copy.lines.map((l) => ({ materialVariantId: l.material.variantId, finishedVariantId: l.finishedVariant?.id ?? null, qtyPerUnit: l.qtyPerUnit, wastagePct: real.has(l.material.variantId) ? real.get(l.material.variantId)!.toFixed(2) : l.wastagePct, suppliedBy: l.suppliedBy })) });
+    },
+    onSuccess: (b) => { toast.success(`Version ${b.version} saved as a draft with the real wastage — check and approve it`); onDone(); },
+    onError: (err) => toast.error(getErrorMessage(err, "The new version couldn't be made")),
+  });
+  if (q.isLoading || q.isError || !used.length) return null;
+  return (
+    <div className="rounded-xl bg-surface-muted px-3 py-2.5 text-sm" data-testid="bom-real-wastage">
+      <p className="font-medium text-ink-900">Real wastage, last {q.data!.days} days</p>
+      <ul className="mt-1 space-y-0.5">
+        {used.map((l) => {
+          const name = bom.lines.find((x) => x.material.variantId === l.materialVariantId)?.material.name ?? "Material";
+          const off = Math.abs(l.actualPct! - recipePct(l.materialVariantId)) >= 0.5;
+          return <li key={l.materialVariantId} className="flex flex-wrap justify-between gap-2"><span className="min-w-0 text-ink-700">{name}</span><span className={off ? "tabular-nums text-warning-700" : "tabular-nums text-ink-600"}>recipe {recipePct(l.materialVariantId)}% · real {l.actualPct}% ({l.orders} {l.orders === 1 ? "fill" : "fills"})</span></li>;
+        })}
+      </ul>
+      {differ.length > 0 && canChange && <Button size="sm" variant="outline" className="mt-2" loading={make.isPending} onClick={() => make.mutate()} data-testid="bom-use-real-wastage">New version with the real wastage</Button>}
+    </div>
   );
 }

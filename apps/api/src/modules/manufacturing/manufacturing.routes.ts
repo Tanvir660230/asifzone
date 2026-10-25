@@ -72,6 +72,7 @@ manufacturingRouter.post("/materials/:id/restore", requirePermission("manufactur
 
 manufacturingRouter.get("/boms", requirePermission("manufacturing.read"), validate(bomListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await boms.listBoms(req.query as never))));
 manufacturingRouter.get("/boms/:id", requirePermission("manufacturing.read"), asyncHandler(async (req, res) => res.json(await boms.getBom(id(req)))));
+manufacturingRouter.get("/boms/:id/wastage", requirePermission("manufacturing.read"), asyncHandler(async (req, res) => res.json(await boms.recipeWastage(id(req)))));
 manufacturingRouter.post("/boms", requirePermission("manufacturing.manage"), validate(bomCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await boms.createBom(req.body, await actorOf(req)))));
 manufacturingRouter.patch("/boms/:id", requirePermission("manufacturing.manage"), validate(bomUpdateSchema), asyncHandler(async (req, res) => res.json(await boms.updateBom(id(req), req.body, await actorOf(req)))));
 manufacturingRouter.delete("/boms/:id", requirePermission("manufacturing.manage"), asyncHandler(async (req, res) => {

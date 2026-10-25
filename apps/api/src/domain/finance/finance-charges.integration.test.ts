@@ -257,6 +257,14 @@ describe("the courier's side of the books", () => {
     expect(r.body.totals.gateway).toBeGreaterThan(0);
     expect(Math.round((r.body.totals.contribution - r.body.totals.otherCosts) * 100) / 100).toBe(r.body.totals.netProfit);
     expect(r.body.orders.length).toBeGreaterThan(0);
+    // per size (planned vs actual, docs/COST_SHEET.md §5): every order shared over its lines — the sizes add up to the
+    // totals, give or take a paisa a line for the shares' rounding
+    const sizes = r.body.sizes as Array<{ units: number; sales: number; courier: number; contribution: number }>;
+    expect(sizes.length).toBeGreaterThan(0);
+    const near = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThanOrEqual(0.01 * Math.max(1, r.body.orders.length * 3));
+    near(sizes.reduce((s, z) => s + z.sales, 0), r.body.totals.sales);
+    near(sizes.reduce((s, z) => s + z.courier, 0), r.body.totals.courier);
+    near(sizes.reduce((s, z) => s + z.contribution, 0), r.body.totals.contribution);
     const launch = await owner().get("/profit/launch?from=2026-01-01&to=2099-12-31");
     expect(launch.status, JSON.stringify(launch.body)).toBe(200);
     expect(launch.body).toMatchObject({ estimate: true, courierRateCard: true });

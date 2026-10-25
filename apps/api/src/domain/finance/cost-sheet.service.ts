@@ -22,12 +22,13 @@ import type { CostLineKind, CostLineMode, CostProfileScope, Prisma } from "@pris
 import { COST_LINE_KINDS, costProfileSchema, type CostProfileInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
-import { getFinanceContext } from "./finance-context";
-import { financeError, toMajorNumber, toMinor } from "./finance-values";
+import { businessToday, getFinanceContext } from "./finance-context";
+import { FULL_VIEW, financeError, toMajorNumber, toMinor } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
 import { packagingFor } from "./packaging.service";
 import { rateCardFor, zoneOf } from "./charge-estimates";
 import { loadRateCards } from "./charge-projection";
+import { profitReport } from "./profit.service";
 
 type Level = "VARIANT" | "PRODUCT" | "CATEGORY" | "BUSINESS";
 export const DEFAULTS = { insideDhakaPct: 50, codPct: 100, targetMarginPct: 30 } as const;
@@ -264,7 +265,9 @@ export async function productCostSheet(productId: string) {
   const product = d.products.find((p) => p.id === productId);
   if (!product) throw financeError(404, "PRODUCT_NOT_FOUND", "Product not found");
   const own = d.profiles.find((p) => p.scope === "PRODUCT" && p.scopeId === productId);
-  return { ...sheetOf(d, product), own: own ? profileDto(own) : null, returnRateActual: d.returnRateActual };
+  const sheet = sheetOf(d, product);
+  const actual = await actualPerSale(sheet.sizes.map((s) => s.variantId));
+  return { ...sheet, sizes: sheet.sizes.map((s) => ({ ...s, actual: actual.get(s.variantId) ?? null })), own: own ? profileDto(own) : null, returnRateActual: d.returnRateActual, actualDays: ACTUAL_DAYS };
 }
 
 /** Every product's sizes with their cost per sale, profit and margin — the Product costs list. */
@@ -337,4 +340,30 @@ export async function saveCostProfile(scope: CostProfileScope, scopeId: string, 
     });
     return { scope, scopeId: key, removed: empty };
   });
+}
+
+export const ACTUAL_DAYS = 30;
+
+/**
+ * What the books really booked per sale of each size over the last 30 days (docs/COST_SHEET.md §5), from the
+ * profit report: each order's goods cost, packaging, courier and gateway charges and its share of ad spend, shared over its
+ * lines by value, divided by the units sold. Courier fees include COD and return charges.
+ */
+async function actualPerSale(variantIds: string[]) {
+  const { business } = await getFinanceContext();
+  const to = businessToday(business);
+  const from = new Date(new Date(`${to}T00:00:00Z`).getTime() - (ACTUAL_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const report = await profitReport({ from, to }, FULL_VIEW);
+  const want = new Set(variantIds);
+  const per = (v: number, units: number) => Math.round((v / units) * 100) / 100;
+  return new Map(report.sizes.filter((z) => want.has(z.variantId) && z.units > 0).map((z) => [z.variantId, {
+    units: z.units,
+    price: per(z.sales, z.units),
+    making: per(z.cogs, z.units),
+    packing: per(z.packaging, z.units),
+    deliveryAndFees: per(z.courier + z.gateway, z.units),
+    ads: per(z.ads, z.units),
+    profit: per(z.contribution, z.units),
+    marginPct: z.sales ? Math.round((z.contribution / z.sales) * 10_000) / 100 : null,
+  }]));
 }
