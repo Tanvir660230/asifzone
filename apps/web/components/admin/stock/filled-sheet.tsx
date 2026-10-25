@@ -184,7 +184,7 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
             {boms.isLoading ? <Skeleton className="h-24 w-full" /> : boms.isError ? (
               <p className="text-sm text-fg-muted">The recipe couldn&apos;t be loaded, so what it uses can&apos;t be shown. The fill still checks the stock.</p>
             ) : !recipe ? (
-              <p className="text-sm text-danger-700">{product?.name} has no approved recipe, so it can&apos;t be filled. <Link href="/admin/manufacturing/boms" className="font-medium underline underline-offset-4">Add it in Bills of materials</Link>.</p>
+              <p className="text-sm text-danger-700">{product?.name} has no approved recipe, so it can&apos;t be filled. <Link href="/admin/manufacturing/boms" className="font-medium underline underline-offset-4">Add it in Recipes</Link>.</p>
             ) : (
               <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm" data-testid="filled-uses-list">
                 {uses.map((u) => (

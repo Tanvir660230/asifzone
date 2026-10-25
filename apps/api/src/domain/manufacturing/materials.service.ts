@@ -77,7 +77,14 @@ export async function createMaterial(input: MaterialCreateInput, actor: FinanceA
   });
 }
 
-export async function updateMaterial(id: string, input: { name?: string; stockUnit?: string; description?: string | null; referenceCost?: number | null; addVariants?: MaterialVariantInput[] }, actor: FinanceActor, opts: { canSeeCost: boolean }) {
+export interface MaterialVariantRename {
+  id: string;
+  sku?: string;
+  spec?: string;
+  color?: string;
+}
+
+export async function updateMaterial(id: string, input: { name?: string; stockUnit?: string; description?: string | null; referenceCost?: number | null; addVariants?: MaterialVariantInput[]; variants?: MaterialVariantRename[] }, actor: FinanceActor, opts: { canSeeCost: boolean }) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   if (input.stockUnit !== undefined) checkUnit(input.stockUnit);
@@ -87,6 +94,18 @@ export async function updateMaterial(id: string, input: { name?: string; stockUn
     // Changing the unit of a material that already has stock would silently re-mean every quantity — refused.
     if (input.stockUnit !== undefined && input.stockUnit.trim() !== before.stockUnit && before.variants.some((v) => v.stock !== 0)) {
       throw financeError(409, "MATERIAL_UNIT_IN_USE", "This material has stock — its stock unit can't change");
+    }
+    // A rename keeps the size (its stock, history and every recipe line that names it); only the words change.
+    const renamed: string[] = [];
+    for (const r of input.variants ?? []) {
+      const v = before.variants.find((x) => x.id === r.id);
+      if (!v) throw financeError(400, "VARIANT_NOT_FOUND", "A size listed is not on this material");
+      if (r.sku !== undefined && r.sku !== v.sku) {
+        const clash = await tx.productVariant.findFirst({ where: { sku: { equals: r.sku, mode: "insensitive" }, id: { not: v.id } }, select: { id: true } });
+        if (clash) throw financeError(409, "SKU_TAKEN", `SKU already used: ${r.sku}`);
+      }
+      await tx.productVariant.update({ where: { id: v.id }, data: { sku: r.sku, size: r.spec, color: r.color } });
+      renamed.push(r.sku ?? v.sku);
     }
     if (input.addVariants?.length) {
       const taken = await tx.productVariant.findMany({ where: { sku: { in: input.addVariants.map((v) => v.sku) } }, select: { sku: true } });
@@ -101,8 +120,46 @@ export async function updateMaterial(id: string, input: { name?: string; stockUn
       },
       select: MATERIAL_SELECT,
     });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.update", entityType: "Product", entityId: id, before: { name: before.name, stockUnit: before.stockUnit }, after: { name: after.name, stockUnit: after.stockUnit, added: input.addVariants?.map((v) => v.sku) ?? [] } });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.update", entityType: "Product", entityId: id, before: { name: before.name, stockUnit: before.stockUnit }, after: { name: after.name, stockUnit: after.stockUnit, added: input.addVariants?.map((v) => v.sku) ?? [], renamed } });
     return redact(materialDto(after, cur, new Map()), opts.canSeeCost);
+  });
+}
+
+/**
+ * Archives a material no longer used: it leaves the lists and pickers, its history stays. Refused while any size holds stock
+ * (count it out first — archiving must not hide value) or is named by an approved recipe, an active packing rule or a roll
+ * in use (each would go on taking it).
+ */
+export async function archiveMaterial(id: string, actor: FinanceActor, opts: { canSeeCost: boolean }) {
+  const { business } = await getFinanceContext();
+  return financeTransaction(async (tx) => {
+    const m = await tx.product.findFirst({ where: { id, kind: "MATERIAL" }, select: MATERIAL_SELECT });
+    if (!m) throw financeError(404, "MATERIAL_NOT_FOUND", "Material not found");
+    if (m.deletedAt) return redact(materialDto(m, business.baseCurrency, new Map()), opts.canSeeCost);
+    const ids = m.variants.map((v) => v.id);
+    const stocked = m.variants.filter((v) => v.stock !== 0);
+    if (stocked.length) throw financeError(409, "MATERIAL_HAS_STOCK", `${stocked.map((v) => `${v.sku}: ${v.stock} ${m.stockUnit ?? ""}`.trim()).join(", ")} still in stock — count it to 0 first`);
+    const recipes = await tx.billOfMaterialsLine.findMany({ where: { materialVariantId: { in: ids }, bom: { status: "APPROVED" } }, select: { bom: { select: { version: true, product: { select: { name: true } } } } } });
+    if (recipes.length) {
+      const names = [...new Set(recipes.map((r) => `${r.bom.product.name} v${r.bom.version}`))];
+      throw financeError(409, "MATERIAL_IN_RECIPE", `Used by the approved recipe of ${names.join(", ")} — archive or replace that recipe first`);
+    }
+    if (await tx.packingRule.count({ where: { materialVariantId: { in: ids }, isActive: true } })) throw financeError(409, "MATERIAL_IN_PACKING_RULE", "An active packing rule uses it — turn that rule off first");
+    if (await tx.materialRoll.count({ where: { materialVariantId: { in: ids }, finishedOn: null } })) throw financeError(409, "MATERIAL_ROLL_OPEN", "A roll of it is still in use — finish the roll first");
+    const after = await tx.product.update({ where: { id }, data: { deletedAt: new Date() }, select: MATERIAL_SELECT });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.archive", entityType: "Product", entityId: id, before: { archived: false }, after: { archived: true, name: m.name } });
+    return redact(materialDto(after, business.baseCurrency, new Map()), opts.canSeeCost);
+  });
+}
+
+export async function restoreMaterial(id: string, actor: FinanceActor, opts: { canSeeCost: boolean }) {
+  const { business } = await getFinanceContext();
+  return financeTransaction(async (tx) => {
+    const m = await tx.product.findFirst({ where: { id, kind: "MATERIAL" }, select: { id: true, deletedAt: true } });
+    if (!m) throw financeError(404, "MATERIAL_NOT_FOUND", "Material not found");
+    const after = await tx.product.update({ where: { id }, data: { deletedAt: null }, select: MATERIAL_SELECT });
+    if (m.deletedAt) await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.restore", entityType: "Product", entityId: id, before: { archived: true }, after: { archived: false, name: after.name } });
+    return redact(materialDto(after, business.baseCurrency, new Map()), opts.canSeeCost);
   });
 }
 

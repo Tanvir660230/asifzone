@@ -149,11 +149,11 @@ export const purchasingDocKeys = {
   order: (id: string) => ["purchasing", "orders", "detail", id] as const,
   receipts: (q: object) => ["purchasing", "receipts", q] as const,
   returns: (q: object) => ["purchasing", "returns", q] as const,
-  variants: (q: string) => ["purchasing", "variants", q] as const,
+  variants: (q: string, kind?: "MATERIAL" | "FINISHED") => ["purchasing", "variants", q, kind ?? "any"] as const,
 };
 
 export const purchasingOverview = () => apiFetch<{ readiness: { ready: boolean; missing: string[] }; currency: string; settings: PurchasingSettings; costingActive: boolean }>(`${BASE}/status`);
-export const searchVariants = (q: string) => apiFetch<{ variants: PurchasableVariant[] }>(`${BASE}/variants${qs({ q, take: 20 })}`);
+export const searchVariants = (q: string, kind?: "MATERIAL" | "FINISHED") => apiFetch<{ variants: PurchasableVariant[] }>(`${BASE}/variants${qs({ q, take: 20, kind })}`);
 
 export const listPurchaseOrders = (q: { status?: string; supplierId?: string; q?: string; page?: number; pageSize?: number } = {}) =>
   apiFetch<{ total: number; purchaseOrders: PurchaseOrder[] }>(`${BASE}/purchase-orders${qs(q)}`);

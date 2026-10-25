@@ -37,6 +37,12 @@ export const materialUpdateSchema = z
     description: optionalText(2000),
     referenceCost: financeAmountSchema.nullable().optional(),
     addVariants: z.array(materialVariantSchema).max(100).optional(),
+    /** Renames existing sizes — SKU, spec or colour; a field left out stays as it is. */
+    variants: z
+      .array(z.object({ id, sku: materialVariantSchema.shape.sku.optional(), spec: z.string().trim().min(1).max(60).optional(), color: z.string().trim().max(60).optional() }))
+      .max(100)
+      .refine((vs) => new Set(vs.map((v) => v.id)).size === vs.length, "Each size once")
+      .optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "Nothing to change");
 export const materialListQuerySchema = z.object({ q: z.string().trim().max(100).optional(), includeArchived: z.enum(["true", "false"]).optional() });

@@ -87,7 +87,7 @@ function Recipe({ t, showCost }: { t: StockTrace; showCost: boolean }) {
       <Section title="Recipe" testId="stock-trace-recipe">
         <p className="text-sm text-danger-700" role="note">
           No approved recipe for this size, so it can&apos;t be filled and only filled bottles can be sold. Add the real recipe (how much oil, which bottle, box…
-          per bottle) in <Link href="/admin/manufacturing/boms" className="font-medium underline underline-offset-4">Bills of materials</Link>.
+          per bottle) in <Link href="/admin/manufacturing/boms" className="font-medium underline underline-offset-4">Recipes</Link>.
         </p>
       </Section>
     );

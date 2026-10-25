@@ -296,3 +296,17 @@ counts and every gain are booked at once, as before. While a loss waits, that it
 
 Inventory in the sidebar: **Stock**, **Stock levels** (movements, write-offs) and **Production**, whose pages — Overview,
 Production orders, Bills of materials, Materials — are tabs on it.
+
+## 8. How it's stocked (2026-10-25)
+
+Each product says how it is stocked — on its page (Pricing & Inventory › How it's stocked), `GET|PUT
+/api/v1/finance/stock/products/:id/stocking` (`inventory.read` / `inventory.adjust`), `stocking.service.ts`:
+
+| Mode | Means | Guard |
+|---|---|---|
+| Ready stock | sold from the shelf (`fillToOrder` off) | leaving fill-to-order needs no bottles owed; the selling rule resets to TRACKED |
+| Filled to order | `fillToOrder` on — stock = filled bottles, selling rule applies (§3) | needs stock tracking; without an approved recipe it warns and sells only filled bottles |
+| Material | `kind = MATERIAL`, inactive, unpublished, in the hidden materials category, with its stock unit | only a product never ordered and without a recipe; a material stays one |
+
+Only the setting changes — no stock, movement or valuation is written; the change is in the audit log with its reason.
+Materials' row actions open this page's sheets directly: `/admin/stock?bought=<variant>` and `?count=<variant>`.

@@ -67,6 +67,8 @@ manufacturingRouter.patch("/cost-categories/:id", requirePermission("manufacturi
 manufacturingRouter.get("/materials", requirePermission("manufacturing.read"), validate(materialListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await materials.listMaterials({ q: req.query.q as string | undefined, includeArchived: req.query.includeArchived === "true" }, costView(req)))));
 manufacturingRouter.post("/materials", requirePermission("manufacturing.manage"), validate(materialCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await materials.createMaterial(req.body, await actorOf(req), costView(req)))));
 manufacturingRouter.patch("/materials/:id", requirePermission("manufacturing.manage"), validate(materialUpdateSchema), asyncHandler(async (req, res) => res.json(await materials.updateMaterial(id(req), req.body, await actorOf(req), costView(req)))));
+manufacturingRouter.post("/materials/:id/archive", requirePermission("manufacturing.manage"), asyncHandler(async (req, res) => res.json(await materials.archiveMaterial(id(req), await actorOf(req), costView(req)))));
+manufacturingRouter.post("/materials/:id/restore", requirePermission("manufacturing.manage"), asyncHandler(async (req, res) => res.json(await materials.restoreMaterial(id(req), await actorOf(req), costView(req)))));
 
 manufacturingRouter.get("/boms", requirePermission("manufacturing.read"), validate(bomListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await boms.listBoms(req.query as never))));
 manufacturingRouter.get("/boms/:id", requirePermission("manufacturing.read"), asyncHandler(async (req, res) => res.json(await boms.getBom(id(req)))));

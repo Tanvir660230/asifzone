@@ -179,9 +179,11 @@ export const listCostCategories = (activeOnly = false) => apiFetch<{ categories:
 export const createCostCategory = (body: { code: string; name: string; group: CostGroup }) => apiFetch<CostCategory>(`${BASE}/cost-categories`, { method: "POST", body });
 export const updateCostCategory = (id: string, body: Partial<Pick<CostCategory, "name" | "group" | "isActive" | "sortOrder">>) => apiFetch<CostCategory>(`${BASE}/cost-categories/${id}`, { method: "PATCH", body });
 
-export const listMaterials = (q: { q?: string } = {}) => apiFetch<{ materials: Material[] }>(`${BASE}/materials${qs(q)}`);
+export const listMaterials = (q: { q?: string; includeArchived?: boolean } = {}) => apiFetch<{ materials: Material[] }>(`${BASE}/materials${qs({ q: q.q, includeArchived: q.includeArchived ? "true" : undefined })}`);
 export const createMaterial = (body: Record<string, unknown>) => apiFetch<Material>(`${BASE}/materials`, { method: "POST", body });
 export const updateMaterial = (id: string, body: Record<string, unknown>) => apiFetch<Material>(`${BASE}/materials/${id}`, { method: "PATCH", body });
+/** Archive (only with no stock and no approved recipe, packing rule or open roll using it) or bring back. */
+export const materialAction = (id: string, action: "archive" | "restore") => apiFetch<Material>(`${BASE}/materials/${id}/${action}`, { method: "POST", body: {} });
 
 export const listBoms = (q: { productId?: string; status?: BomStatus } = {}) => apiFetch<{ boms: Bom[] }>(`${BASE}/boms${qs(q)}`);
 export const createBom = (body: Record<string, unknown>) => apiFetch<Bom>(`${BASE}/boms`, { method: "POST", body });

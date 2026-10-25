@@ -29,6 +29,7 @@ import { buildCategoryOptions } from "@/components/admin/product-form-state";
 import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
 import { FreeDeliveryField } from "@/components/admin/free-delivery-field";
 import { SoldOutField } from "@/components/admin/sold-out-field";
+import { StockingField } from "@/components/admin/stock/stocking-field";
 import * as aiApi from "@/lib/api/ai";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { storeCurrencyCode, stripHtml } from "@/lib/format";
@@ -395,6 +396,12 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
           </Field>
         </div>
       </FormSection>
+
+      {initial && (
+        <FormSection title="How it's stocked" description="Ready on the shelf, filled to order from a recipe (attar), or a material used to make other products.">
+          <StockingField productId={initial.id} />
+        </FormSection>
+      )}
 
       <FormSection title="Show as sold out" description="Take the product, or only some variants (e.g. the 6ml), off sale without changing the stock.">
         <SoldOutField form={form} />

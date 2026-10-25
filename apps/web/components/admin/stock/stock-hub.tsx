@@ -87,6 +87,21 @@ export function StockHub() {
   const wide = useMediaQuery("(min-width: 1024px)");
   const [phoneView, setPhoneView] = useState<"stock" | "activity">("stock");
   const [countFor, setCountFor] = useState<string[] | null>(null);
+  // ?bought=<variant> / ?count=<variant> (from Materials' row actions) open that sheet once the overview is in, then
+  // leave the URL so a reload doesn't open it again
+  const deepLink = params.get("bought") ?? params.get("count");
+  const deepLinkKind = params.get("bought") ? "bought" : "count";
+  useEffect(() => {
+    if (!deepLink || !overview.data) return;
+    const next = new URLSearchParams(params.toString());
+    next.delete("bought");
+    next.delete("count");
+    const s = next.toString();
+    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
+    if (!overview.data.costingActive) { toast.info(GO_LIVE); return; }
+    if (deepLinkKind === "bought") { setBoughtStart({ supplierName: null, lines: [{ variantId: deepLink, qty: 1, lastUnitCost: null }] }); setSheet("bought"); }
+    else { setCountFor([deepLink]); setSheet("guided-count"); }
+  }, [deepLink, deepLinkKind, overview.data, params, pathname, router]);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 

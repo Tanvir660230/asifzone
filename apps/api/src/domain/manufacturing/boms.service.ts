@@ -146,13 +146,31 @@ async function transition(id: string, actor: FinanceActor, action: string, apply
   });
 }
 
-export const approveBom = (id: string, actor: FinanceActor) =>
-  transition(id, actor, "bom.approve", (b) => {
+/**
+ * Approves a draft. A product has one approved recipe at a time: the version approved before it is archived in the same
+ * transaction (filling and planning read the latest approved one, so leaving the old one approved only confused the lists).
+ * Production orders already planned on the old version keep it.
+ */
+export async function approveBom(id: string, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  return financeTransaction(async (tx) => {
+    const before = await lockBom(tx, business.id, id);
     if (!actorCan(actor, "manufacturing.approve")) throw financeError(403, "FORBIDDEN", "Approving a bill of materials needs manufacturing.approve");
-    if (b.status !== "DRAFT") throw financeError(409, "BOM_NOT_DRAFT", "Only a draft bill of materials is approved");
-    if (!b.lines.length) throw financeError(409, "BOM_EMPTY", "Add at least one material");
-    return { status: "APPROVED", approvedAt: new Date(), approvedByAdminId: actor.type === "ADMIN" ? actor.adminId : null };
+    if (before.status !== "DRAFT") throw financeError(409, "BOM_NOT_DRAFT", "Only a draft bill of materials is approved");
+    if (!before.lines.length) throw financeError(409, "BOM_EMPTY", "Add at least one material");
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`mfg-bom:${before.productId}`}))`;
+    const now = new Date();
+    const replaced = await tx.billOfMaterials.findMany({ where: { productId: before.productId, status: "APPROVED", id: { not: id } }, select: { id: true, version: true } });
+    if (replaced.length) await tx.billOfMaterials.updateMany({ where: { id: { in: replaced.map((r) => r.id) } }, data: { status: "ARCHIVED", archivedAt: now } });
+    await tx.billOfMaterials.update({ where: { id }, data: { status: "APPROVED", approvedAt: now, approvedByAdminId: actor.type === "ADMIN" ? actor.adminId : null } });
+    const after = await load(tx, business.id, id);
+    for (const r of replaced) {
+      await recordFinanceAudit(tx, { businessId: business.id, actor, action: "bom.archive", entityType: "BillOfMaterials", entityId: r.id, before: { status: "APPROVED" }, after: { status: "ARCHIVED", replacedBy: after.version } });
+    }
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "bom.approve", entityType: "BillOfMaterials", entityId: id, before: { status: before.status }, after: { status: after.status, replaced: replaced.map((r) => r.version) } });
+    return bomDto(after);
   });
+}
 
 export const archiveBom = (id: string, actor: FinanceActor) =>
   transition(id, actor, "bom.archive", (b) => {

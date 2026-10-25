@@ -86,6 +86,21 @@ export const stockPolicySchema = z
   .refine((p) => !(p.variants ?? []).some((v) => v.policy === "BACKORDER") || (p.backorderLimit ?? 0) > 0, { message: "A size on backorder needs the backorder limit", path: ["backorderLimit"] });
 export type StockPolicyInput = z.input<typeof stockPolicySchema>;
 
+/** How a product is stocked: READY — sold from the shelf; FILLED_TO_ORDER — filled from its recipe as orders come (attar);
+ * MATERIAL — used to make other products, never sold (only a product that has never been ordered). */
+export const STOCKING_MODES = ["READY", "FILLED_TO_ORDER", "MATERIAL"] as const;
+export type StockingMode = (typeof STOCKING_MODES)[number];
+
+export const stockingSchema = z
+  .object({
+    mode: z.enum(STOCKING_MODES),
+    /** The material's stock unit (ml, g, pcs…) — needed when it becomes a material. */
+    stockUnit: z.string().trim().min(1).max(16).optional(),
+    reason: z.string().trim().min(3).max(300),
+  })
+  .refine((s) => s.mode !== "MATERIAL" || !!s.stockUnit, { message: "Say the unit it is counted in (ml, g, pcs…)", path: ["stockUnit"] });
+export type StockingInput = z.input<typeof stockingSchema>;
+
 /**
  * Filled (inventory recovery phase 3): bottles filled from the approved recipe. `used`: what was really used of a material
  * when it differs from the recipe (it then becomes the bottles' cost). `wasted`: material spilt or spoilt on top of that —

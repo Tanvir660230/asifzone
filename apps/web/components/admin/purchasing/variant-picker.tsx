@@ -7,8 +7,9 @@ import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchasableVariant } from "@/lib/api/purchasing";
 
 /** Picks a stock-tracked variant by SKU or product name (purchasing.read lookup). Shows the chosen variant; "Change"
- * reopens the search. Used by purchase orders, receipts and returns (and manufacturing). */
-export function VariantPicker({ value, onChange, label = "Variant" }: { value: PurchasableVariant | null; onChange: (v: PurchasableVariant | null) => void; label?: string }) {
+ * reopens the search. Used by purchase orders, receipts and returns (and manufacturing — `kind` keeps a recipe's picker to
+ * materials). */
+export function VariantPicker({ value, onChange, label = "Variant", kind }: { value: PurchasableVariant | null; onChange: (v: PurchasableVariant | null) => void; label?: string; kind?: "MATERIAL" | "FINISHED" }) {
   const [term, setTerm] = useState("");
   const [debounced, setDebounced] = useState("");
   const listId = useId();
@@ -16,7 +17,7 @@ export function VariantPicker({ value, onChange, label = "Variant" }: { value: P
     const t = setTimeout(() => setDebounced(term.trim()), 250);
     return () => clearTimeout(t);
   }, [term]);
-  const results = useQuery({ queryKey: purchasingApi.purchasingDocKeys.variants(debounced), queryFn: () => purchasingApi.searchVariants(debounced), enabled: !value && debounced.length >= 2 });
+  const results = useQuery({ queryKey: purchasingApi.purchasingDocKeys.variants(debounced, kind), queryFn: () => purchasingApi.searchVariants(debounced, kind), enabled: !value && debounced.length >= 2 });
 
   if (value) {
     return (
