@@ -314,3 +314,11 @@ export interface OwnerHome {
 }
 export const ownerHomeKey = (month?: string) => ["finance", "owner-home", month ?? "now"] as const;
 export const getOwnerHome = (month?: string) => apiFetch<OwnerHome>(`${BASE}/owner-home${month ? `?month=${month}` : ""}`);
+
+/** Profit month by month since the books started, with how sure each month is (docs/FINANCE_PROFIT_DASHBOARD.md §5). */
+export interface ProfitMonth {
+  month: string; orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; profit: number;
+  marginPct: number | null; estimatedCostPct: number | null; openExceptions: number; unpaidByCourier: { parcels: number; amount: number };
+  status: "OPEN" | "SOFT_CLOSED" | "CLOSED"; readyToClose: boolean;
+}
+export const getProfitByMonth = () => apiFetch<{ currency: string; booksStartedOn: string | null; months: ProfitMonth[] }>(`${BASE}/profit/monthly`);

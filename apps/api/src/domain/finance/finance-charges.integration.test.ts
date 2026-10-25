@@ -276,6 +276,12 @@ describe("the courier's side of the books", () => {
     near(sizes.reduce((s, z) => s + z.sales, 0), r.body.totals.sales);
     near(sizes.reduce((s, z) => s + z.courier, 0), r.body.totals.courier);
     near(sizes.reduce((s, z) => s + z.contribution, 0), r.body.totals.contribution);
+    // month by month since the books started: the months add up to profit by day over the same span
+    const monthly = (await owner().get("/profit/monthly")).body as { booksStartedOn: string; months: Array<{ month: string; sales: number; profit: number; status: string }> };
+    expect(monthly.months.length).toBeGreaterThan(0);
+    const daily = (await owner().get(`/profit/daily?from=${monthly.booksStartedOn}`)).body as { totals: { sales: number; profit: number } };
+    expect(Math.abs(monthly.months.reduce((s, x) => s + x.sales, 0) - daily.totals.sales)).toBeLessThan(0.05);
+    expect(Math.abs(monthly.months.reduce((s, x) => s + x.profit, 0) - daily.totals.profit)).toBeLessThan(0.05);
     const launch = await owner().get("/profit/launch?from=2026-01-01&to=2099-12-31");
     expect(launch.status, JSON.stringify(launch.body)).toBe(200);
     expect(launch.body).toMatchObject({ estimate: true, courierRateCard: true });

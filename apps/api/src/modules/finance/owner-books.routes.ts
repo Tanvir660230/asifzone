@@ -54,6 +54,7 @@ import * as autopilot from "../../domain/finance/autopilot.service";
 import { ownerHome } from "../../domain/finance/owner-home.service";
 import * as stockCheck from "../../domain/finance/stock-check.service";
 import { prisma } from "../../config/prisma";
+import { AppError } from "../../lib/app-error";
 import { getFinanceContext } from "../../domain/finance/finance-context";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
@@ -181,6 +182,7 @@ ownerBooksRouter.post("/quick-refills", requirePermission("manufacturing.approve
 // ── profit (§8) and the launch weeks before the books (§9) ──────────────────────────────────────────────────────────
 ownerBooksRouter.get("/profit", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitReport(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/profit/daily", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitByDay(req.query as never))));
+ownerBooksRouter.get("/profit/monthly", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await profit.profitByMonth())));
 ownerBooksRouter.get("/profit/launch", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.launchReport(req.query as never))));
 
 // ── courier claims for lost parcels (§3.5); cancelling a landed cost (§7.1) ─────────────────────────────────────────
@@ -250,7 +252,9 @@ ownerBooksRouter.get("/cost-sheets/products", requirePermission("costing.read"),
 ownerBooksRouter.get("/cost-sheets/products/:id", requirePermission("costing.read"), asyncHandler(async (req, res) => res.json(await costSheets.productCostSheet(id(req)))));
 ownerBooksRouter.get("/cost-sheets/defaults", requirePermission("costing.read"), asyncHandler(async (_req, res) => res.json(await costSheets.costDefaults())));
 ownerBooksRouter.put("/cost-sheets/:scope/:scopeId?", requirePermission("costing.adjust"), validate(costProfileSchema), asyncHandler(async (req, res) => {
-  const p = costProfileScopeParams.parse({ scope: req.params.scope, scopeId: req.params.scopeId ?? "" });
+  const parsed = costProfileScopeParams.safeParse({ scope: req.params.scope, scopeId: req.params.scopeId ?? "" });
+  if (!parsed.success) throw new AppError(400, "Unknown level — BUSINESS, CATEGORY or PRODUCT", { code: "COST_PROFILE_SCOPE" });
+  const p = parsed.data;
   res.json(await costSheets.saveCostProfile(p.scope, p.scopeId, req.body, await actorOf(req)));
 }));
 // Production home (production-home.service): what needs the owner, what the materials can still make, the latest fills.
