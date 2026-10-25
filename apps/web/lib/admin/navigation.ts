@@ -265,12 +265,14 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "inventory.hub", label: "Stock", kind: "page", parent: "inventory", domain: "operate", route: "/admin/stock", capability: "inventory.view", order: -1, deprecatedRoutes: ["/admin/finance/refills?open=filled"], keywords: ["stock", "today", "received goods", "bought", "purchase", "reorder", "filled bottles", "refill", "attar", "count", "counted", "approve", "materials", "oil", "bottle", "caps"] },
   { id: "inventory.stock", label: "Stock levels", kind: "page", parent: "inventory", domain: "operate", route: "/admin/inventory", capability: "inventory.view", order: 0, keywords: ["stock", "adjust", "movements", "levels", "write off"] },
   // Production is one sidebar entry; its pages are tabs on it (the stock page covers day-to-day attar filling).
-  { id: "inventory.production", label: "Production", kind: "page", parent: "inventory", domain: "operate", index: "/admin/manufacturing", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "production"] },
-  { id: "inventory.production-overview", label: "Overview", title: "Production", breadcrumb: "Overview", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing", capability: "manufacturing.view", order: 0, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
+  { id: "inventory.production", label: "Production", kind: "page", parent: "inventory", domain: "operate", index: "/admin/manufacturing/home", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "production"] },
+  // Production home (docs/STOCK_HUB.md §9): bought, filled, recipes, price & profit — and what the materials can still make.
+  { id: "inventory.production-home", label: "Home", title: "Production", breadcrumb: "Home", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/home", capability: "manufacturing.view", order: -1, keywords: ["production", "can still make", "fill", "owed", "bottles", "low materials"] },
+  { id: "inventory.production-overview", label: "Overview", title: "Production overview", breadcrumb: "Overview", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing", capability: "manufacturing.view", order: 0, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
   { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
   { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
-  { id: "inventory.boms", label: "Bills of materials", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 2, keywords: ["bom", "recipe", "materials per unit"] },
-  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 3, keywords: ["raw materials", "fabric", "trims", "packaging"] },
+  { id: "inventory.boms", label: "Recipes", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 2, keywords: ["bom", "bill of materials", "recipe", "materials per unit"] },
+  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 3, keywords: ["raw materials", "oil", "bottle", "box", "sticker", "fabric", "trims", "packaging", "purchase unit", "litre", "dozen"] },
 
   {
     id: "customers",
@@ -806,6 +808,19 @@ export const NAV_NODES: readonly NavNode[] = [
     order: -1,
     description: "Daily profit, sales and ad spend for any period, with a chart — and what each order and product earned.",
     keywords: ["profit", "daily profit", "today", "margin", "ad spend", "roas", "chart", "contribution", "per order", "per product", "launch", "loss", "lav", "labh"],
+  },
+  // Cost & profit planning (docs/COST_SHEET.md): what one sale of each size costs and earns, and the shop / category defaults.
+  {
+    id: "finance.product-costs",
+    label: "Product costs",
+    kind: "page",
+    parent: "finance.books",
+    domain: "manage",
+    route: "/admin/finance/product-costs",
+    capability: "costing.view",
+    order: -0.9,
+    description: "What one sale of each product and size costs — making and selling — the profit left, and the price for your target.",
+    keywords: ["cost", "cost sheet", "unit cost", "margin", "price", "pricing", "making cost", "recipe cost", "delivery cost", "suggested price", "target margin", "khoroch", "dam"],
   },
   {
     id: "finance.statements",

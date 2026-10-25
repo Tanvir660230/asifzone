@@ -297,12 +297,13 @@ export async function listPurchaseOrders(q: { status?: PurchaseOrderStatus; supp
 
 
 /** Variants that can be bought (stock-tracked, product not in Trash), by SKU or product name — the purchasing pickers'
- * lookup. Read-only; carries no cost (that is costing.read's). */
-export async function searchPurchasableVariants(q: { q?: string; take: number }) {
+ * lookup. Read-only; carries no cost (that is costing.read's). `kind` narrows it to materials (a recipe's picker) or
+ * finished goods. */
+export async function searchPurchasableVariants(q: { q?: string; take: number; kind?: "MATERIAL" | "FINISHED" }) {
   const term = q.q?.trim();
   const rows = await prisma.productVariant.findMany({
     where: {
-      product: { trackInventory: true, deletedAt: null },
+      product: { trackInventory: true, deletedAt: null, ...(q.kind ? { kind: q.kind } : {}) },
       ...(term ? { OR: [{ sku: { contains: term, mode: "insensitive" } }, { product: { name: { contains: term, mode: "insensitive" } } }] } : {}),
     },
     select: { id: true, sku: true, size: true, color: true, stock: true, product: { select: { name: true } } },

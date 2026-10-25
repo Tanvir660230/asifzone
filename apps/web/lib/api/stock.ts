@@ -31,6 +31,8 @@ export interface StockItem {
   policy: { policy: StockPolicy; overridden: boolean; backorderLimit: number | null; owed: number } | null;
   /** Materials only: RAW (oil — by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
   materialKind: "RAW" | "PACKAGING" | null;
+  /** Materials only: how it is bought — one `label` (litre, dozen) is `factor` stock units. */
+  purchaseUnits: Array<{ label: string; factor: number }>;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -108,6 +110,7 @@ export const stockKeys = {
   overview: () => ["stock-hub", "overview"] as const,
   purchases: () => ["stock-hub", "purchases"] as const,
   trace: (variantId: string) => ["stock-hub", "trace", variantId] as const,
+  stocking: (productId: string) => ["stock-hub", "stocking", productId] as const,
 };
 
 export const getStockOverview = () => apiFetch<StockOverview>(BASE);
@@ -181,6 +184,13 @@ export const getStockTrace = (variantId: string) => apiFetch<StockTrace>(`${BASE
 export type StockPolicy = "TRACKED" | "UNLIMITED" | "BACKORDER";
 export interface StockPolicyBody { policy: StockPolicy; backorderLimit?: number | null; variants?: Array<{ variantId: string; policy: StockPolicy | null }>; reason: string }
 export const setStockPolicy = (productId: string, body: StockPolicyBody) => apiFetch<{ productId: string; policy: StockPolicy; backorderLimit: number | null }>(`${BASE}/products/${productId}/policy`, { method: "PUT", body });
+
+/** How a product is stocked (docs/STOCK_HUB.md §8) and what stands in the way of each other mode (null = allowed). */
+export type StockingMode = "READY" | "FILLED_TO_ORDER" | "MATERIAL";
+export interface Stocking { productId: string; mode: StockingMode; stockUnit: string | null; hasApprovedRecipe: boolean; owed: number; blocked: Record<StockingMode, string | null> }
+export const getStocking = (productId: string) => apiFetch<Stocking>(`${BASE}/products/${productId}/stocking`);
+export const setStocking = (productId: string, body: { mode: StockingMode; stockUnit?: string; reason: string }) =>
+  apiFetch<Stocking & { changed: boolean; warning: string | null }>(`${BASE}/products/${productId}/stocking`, { method: "PUT", body });
 
 // ── errors ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -274,3 +284,16 @@ export const PENDING_STEP_LABEL: Record<PurchaseStep, string> = {
   payment: "the payment",
   extras: "the extra costs",
 };
+
+// ── production home (docs/STOCK_HUB.md §9) ─────────────────────────────────────────────────────────────────────────────
+export interface ProductionHome {
+  costingActive: boolean;
+  owed: Array<{ variantId: string; productId: string; name: string; owed: number }>;
+  noRecipe: Array<{ productId: string; name: string }>;
+  lowMaterials: Array<{ variantId: string; name: string; stock: number; unit: string; daysLeft: number | null }>;
+  /** Sizes below their target margin (null without costing access). */
+  belowTarget: Array<{ productId: string; name: string; marginPct: number | null; loss: boolean }> | null;
+  canMake: Array<{ productId: string; productName: string; variantId: string; sku: string; label: string; canMake: number; limiting: { variantId: string; name: string; stock: number; unit: string } | null }>;
+  recentFills: Array<{ id: string; date: string; number: string | null; name: string; quantity: number | null }>;
+}
+export const getProductionHome = () => apiFetch<ProductionHome>(`${BASE}/production-home`);

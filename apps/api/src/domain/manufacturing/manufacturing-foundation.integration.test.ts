@@ -11,7 +11,7 @@ import { createSupplier } from "../finance/suppliers.service";
 import { searchPurchasableVariants } from "../finance/purchase-orders.service";
 import type { FinanceActor } from "../finance/finance-audit";
 import { DEFAULT_COST_CATEGORIES, MATERIALS_CATEGORY_SLUG, ensureManufacturingSetup, listCostCategories, manufacturingStatus } from "./manufacturing-setup.service";
-import { createMaterial, listMaterials, updateMaterial } from "./materials.service";
+import { archiveMaterial, createMaterial, listMaterials, restoreMaterial, updateMaterial } from "./materials.service";
 import { approveBom, copyBom, createBom, updateBom } from "./boms.service";
 import { approveProductionOrder, cancelProductionOrder, createProductionOrder, getProductionOrder, reopenProductionOrder, updateProductionOrder } from "./production-orders.service";
 
@@ -117,6 +117,39 @@ describe("bills of materials", () => {
     const v2 = await copyBom(bomId, OWNER);
     expect(v2).toMatchObject({ version: 2, status: "DRAFT" });
     expect(v2.lines).toHaveLength(3);
+  });
+
+  it("approving a new version archives the one approved before it — one approved recipe per product", async () => {
+    const other = await createStockedProduct({ stocks: [0], basePrice: 400 });
+    const v1 = await createBom({ productId: other.product.id, lines: [{ materialVariantId: label, qtyPerUnit: "1" }] }, OWNER);
+    await approveBom(v1.id, OWNER);
+    const v2 = await copyBom(v1.id, OWNER);
+    expect((await approveBom(v2.id, OWNER)).status).toBe("APPROVED");
+    const rows = await prisma.billOfMaterials.findMany({ where: { productId: other.product.id }, orderBy: { version: "asc" }, select: { version: true, status: true, archivedAt: true } });
+    expect(rows.map((r) => [r.version, r.status])).toEqual([[1, "ARCHIVED"], [2, "APPROVED"]]);
+    expect(rows[0]!.archivedAt).not.toBeNull();
+  });
+});
+
+describe("materials — edit and archive", () => {
+  it("rename a size's SKU, spec or colour in place; a SKU already used is refused", async () => {
+    const sku = `VT-LABEL-RN-${Date.now()}`;
+    const m = await updateMaterial((await prisma.productVariant.findUniqueOrThrow({ where: { id: label } })).productId, { variants: [{ id: label, sku, spec: "Woven 2 cm" }] }, OWNER, SEE);
+    expect(m.variants.find((v) => v.id === label)).toMatchObject({ sku, spec: "Woven 2 cm" });
+    const navySku = (await prisma.productVariant.findUniqueOrThrow({ where: { id: fabric.navy } })).sku;
+    await expect(updateMaterial(m.id, { variants: [{ id: label, sku: navySku.toLowerCase() }] }, OWNER, SEE)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(updateMaterial(m.id, { variants: [{ id: fabric.navy, spec: "x" }] }, OWNER, SEE)).rejects.toMatchObject({ statusCode: 400 }); // not its size
+  });
+
+  it("archive only an unused material with no stock; it leaves the list and can come back", async () => {
+    await expect(archiveMaterial(fabric.productId, OWNER, SEE)).rejects.toMatchObject({ statusCode: 409, details: { code: "MATERIAL_HAS_STOCK" } });
+    const labelProduct = (await prisma.productVariant.findUniqueOrThrow({ where: { id: label } })).productId;
+    await expect(archiveMaterial(labelProduct, OWNER, SEE)).rejects.toMatchObject({ statusCode: 409, details: { code: "MATERIAL_IN_RECIPE" } });
+    const spare = await createMaterial({ name: "Vitest Spare thread", stockUnit: "m", variants: [{ sku: `VT-THREAD-${Date.now()}`, spec: "Black" }] }, OWNER, SEE);
+    expect((await archiveMaterial(spare.id, OWNER, SEE)).archived).toBe(true);
+    expect((await listMaterials({ q: "Vitest Spare thread" }, SEE)).materials).toHaveLength(0);
+    expect((await listMaterials({ q: "Vitest Spare thread", includeArchived: true }, SEE)).materials[0]!.archived).toBe(true);
+    expect((await restoreMaterial(spare.id, OWNER, SEE)).archived).toBe(false);
   });
 });
 

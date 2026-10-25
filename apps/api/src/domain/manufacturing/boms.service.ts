@@ -146,13 +146,31 @@ async function transition(id: string, actor: FinanceActor, action: string, apply
   });
 }
 
-export const approveBom = (id: string, actor: FinanceActor) =>
-  transition(id, actor, "bom.approve", (b) => {
+/**
+ * Approves a draft. A product has one approved recipe at a time: the version approved before it is archived in the same
+ * transaction (filling and planning read the latest approved one, so leaving the old one approved only confused the lists).
+ * Production orders already planned on the old version keep it.
+ */
+export async function approveBom(id: string, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  return financeTransaction(async (tx) => {
+    const before = await lockBom(tx, business.id, id);
     if (!actorCan(actor, "manufacturing.approve")) throw financeError(403, "FORBIDDEN", "Approving a bill of materials needs manufacturing.approve");
-    if (b.status !== "DRAFT") throw financeError(409, "BOM_NOT_DRAFT", "Only a draft bill of materials is approved");
-    if (!b.lines.length) throw financeError(409, "BOM_EMPTY", "Add at least one material");
-    return { status: "APPROVED", approvedAt: new Date(), approvedByAdminId: actor.type === "ADMIN" ? actor.adminId : null };
+    if (before.status !== "DRAFT") throw financeError(409, "BOM_NOT_DRAFT", "Only a draft bill of materials is approved");
+    if (!before.lines.length) throw financeError(409, "BOM_EMPTY", "Add at least one material");
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`mfg-bom:${before.productId}`}))`;
+    const now = new Date();
+    const replaced = await tx.billOfMaterials.findMany({ where: { productId: before.productId, status: "APPROVED", id: { not: id } }, select: { id: true, version: true } });
+    if (replaced.length) await tx.billOfMaterials.updateMany({ where: { id: { in: replaced.map((r) => r.id) } }, data: { status: "ARCHIVED", archivedAt: now } });
+    await tx.billOfMaterials.update({ where: { id }, data: { status: "APPROVED", approvedAt: now, approvedByAdminId: actor.type === "ADMIN" ? actor.adminId : null } });
+    const after = await load(tx, business.id, id);
+    for (const r of replaced) {
+      await recordFinanceAudit(tx, { businessId: business.id, actor, action: "bom.archive", entityType: "BillOfMaterials", entityId: r.id, before: { status: "APPROVED" }, after: { status: "ARCHIVED", replacedBy: after.version } });
+    }
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "bom.approve", entityType: "BillOfMaterials", entityId: id, before: { status: before.status }, after: { status: after.status, replaced: replaced.map((r) => r.version) } });
+    return bomDto(after);
   });
+}
 
 export const archiveBom = (id: string, actor: FinanceActor) =>
   transition(id, actor, "bom.archive", (b) => {
@@ -192,4 +210,36 @@ export async function listBoms(q: { productId?: string; status?: BillOfMaterials
   const { business } = await getFinanceContext();
   const rows = await prisma.billOfMaterials.findMany({ where: { businessId: business.id, productId: q.productId, status: q.status }, include: BOM_INCLUDE, orderBy: [{ productId: "asc" }, { version: "desc" }], take: 500 });
   return { boms: rows.map(bomDto) };
+}
+
+/**
+ * Real wastage (docs/MANUFACTURING.md §4): what closed production of this product (fills included) really used of each of
+ * the recipe's materials over the last `days`, against the need without wastage — `(used ÷ need − 1) × 100`, where need =
+ * planned ÷ (1 + the planned wastage) and used = consumed + scrapped. A figure to review, never applied by itself: the
+ * owner copies the recipe to a new version with it.
+ */
+export async function recipeWastage(id: string, days = 90) {
+  const { business } = await getFinanceContext();
+  const bom = await load(prisma, business.id, id);
+  const since = new Date(Date.now() - days * 86_400_000);
+  const rows = await prisma.productionMaterialLine.findMany({
+    where: { productionOrder: { businessId: business.id, productId: bom.productId, status: "CLOSED", closedAt: { gte: since } }, materialVariantId: { in: bom.lines.map((l) => l.materialVariant.id) }, suppliedBy: "BUSINESS" },
+    select: { productionOrderId: true, materialVariantId: true, plannedQty: true, wastagePct: true, consumedQty: true, scrappedQty: true },
+  });
+  return {
+    bomId: id,
+    days,
+    lines: [...new Set(bom.lines.map((l) => l.materialVariant.id))].map((materialVariantId) => {
+      const mine = rows.filter((r) => r.materialVariantId === materialVariantId);
+      const need = mine.reduce((s, r) => s + r.plannedQty / (1 + Number(r.wastagePct ?? 0) / 100), 0);
+      const used = mine.reduce((s, r) => s + r.consumedQty + r.scrappedQty, 0);
+      return {
+        materialVariantId,
+        orders: new Set(mine.map((r) => r.productionOrderId)).size,
+        need: Math.round(need * 100) / 100,
+        used,
+        actualPct: need > 0 ? Math.round((used / need - 1) * 10_000) / 100 : null,
+      };
+    }),
+  };
 }

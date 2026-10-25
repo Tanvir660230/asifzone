@@ -118,8 +118,10 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
   });
   for (const l of lines) l.contribution = l.sales - l.cogs - l.packaging - l.courier - l.gateway - l.ads;
 
-  // Per product: each order's figures shared over its lines by line value.
+  // Per product: each order's figures shared over its lines by line value — by name (as sold) and, for planned vs actual
+  // (docs/COST_SHEET.md §5), by size with each cost kept apart.
   const products = new Map<string, { name: string; units: number; sales: number; costs: number; contribution: number }>();
+  const sizes = new Map<string, { variantId: string; units: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number }>();
   for (const l of lines) {
     const o = ordersById.get(l.orderId)!;
     const value = o.items.reduce((s, it) => s + toMinor(it.priceSnapshot, cur) * it.quantity, 0);
@@ -131,6 +133,12 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
       p.costs += Math.round((l.cogs + l.packaging + l.courier + l.gateway + l.ads) * share);
       p.contribution += Math.round(l.contribution * share);
       products.set(it.productNameSnapshot, p);
+      if (it.variantId) {
+        const z = sizes.get(it.variantId) ?? { variantId: it.variantId, units: 0, sales: 0, cogs: 0, packaging: 0, courier: 0, gateway: 0, ads: 0, contribution: 0 };
+        z.units += it.quantity;
+        for (const k of ["sales", "cogs", "packaging", "courier", "gateway", "ads", "contribution"] as const) z[k] += Math.round(l[k] * share);
+        sizes.set(it.variantId, z);
+      }
     }
   }
   const sum = (k: keyof OrderRow) => lines.reduce((s, l) => s + (l[k] as number), 0);
@@ -153,6 +161,8 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
       netProfit: net,
     },
     orders: lines.sort((a, b) => a.contribution - b.contribution).map((l) => ({ ...l, sales: m(l.sales), cogs: m(l.cogs), packaging: m(l.packaging), courier: m(l.courier), gateway: m(l.gateway), ads: m(l.ads), contribution: m(l.contribution) })),
+    /** Per size (variant), each cost apart — what planned vs actual reads. */
+    sizes: [...sizes.values()].map((z) => ({ ...z, sales: m(z.sales), cogs: m(z.cogs), packaging: m(z.packaging), courier: m(z.courier), gateway: m(z.gateway), ads: m(z.ads), contribution: m(z.contribution) })),
     products: [...products.values()].sort((a, b) => b.contribution - a.contribution).map((p) => ({ ...p, sales: m(p.sales), costs: m(p.costs), contribution: m(p.contribution), marginPct: p.sales ? Math.round((p.contribution / p.sales) * 10_000) / 100 : null })),
   };
 }

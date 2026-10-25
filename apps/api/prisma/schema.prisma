@@ -551,6 +551,7 @@ model Product {
   relatedTo          ProductRelation[]        @relation("RelatedToProducts")
   deletedAt          DateTime?
   billsOfMaterials   BillOfMaterials[]
+  purchaseUnits      MaterialPurchaseUnit[]
   productionOrders   ProductionOrder[]
   variants           ProductVariant[]
   images             ProductImage[]
@@ -3383,6 +3384,7 @@ model FinanceBusiness {
   partnerShareRates           PartnerShareRate[]
   profitSharePeriods          ProfitSharePeriod[]
   profitShareAdjustments      ProfitShareAdjustment[]
+  costProfiles                CostProfile[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -6162,6 +6164,88 @@ model StockCount {
 
 /// A roll of a material used up over many parcels (bubble poly). Opened and finished on dates; the parcels booked with
 /// the courier in between are its yield, so a cost per parcel exists only once a real roll has been finished.
+/// How a material is bought (docs/MANUFACTURING.md §3): a litre of oil is 1,000 ml, a dozen bottles 12 pcs. Received goods
+/// converts what was bought into the stock unit; stock and costs stay in the stock unit.
+/// Cost & profit planning (docs/COST_SHEET.md): what one sale of a product costs — making and selling — set at three levels.
+/// BUSINESS (scopeId "") holds the shop defaults, CATEGORY a category's, PRODUCT one product's; the nearest level that sets
+/// an assumption or a line wins, else the line is worked out (AUTO). A planning aid: nothing here is booked.
+enum CostProfileScope {
+  BUSINESS
+  CATEGORY
+  PRODUCT
+}
+
+enum CostLineKind {
+  MAKING
+  PACKAGING
+  COURIER
+  PAYMENT_FEE
+  RETURN_RESERVE
+  ADS
+  LABOUR
+  OTHER
+}
+
+/// AUTO: worked out from the books (recipe, packing rules, rate card…); FIXED: an amount per sale; PERCENT_OF_PRICE: a share of the price.
+enum CostLineMode {
+  AUTO
+  FIXED
+  PERCENT_OF_PRICE
+}
+
+model CostProfile {
+  id               String            @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  scope            CostProfileScope
+  /// "" for BUSINESS; the category or product id otherwise.
+  scopeId          String            @default("")
+  /// Share of parcels delivered inside Dhaka, percent.
+  insideDhakaPct   Decimal?          @db.Decimal(5, 2)
+  /// Share of sales paid cash on delivery, percent (the rest online).
+  codPct           Decimal?          @db.Decimal(5, 2)
+  /// Share of parcels that come back, percent.
+  returnRatePct    Decimal?          @db.Decimal(5, 2)
+  targetMarginPct  Decimal?          @db.Decimal(5, 2)
+  notes            String?
+  updatedByAdminId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  lines            CostProfileLine[]
+
+  @@unique([businessId, scope, scopeId])
+}
+
+model CostProfileLine {
+  id        String       @id @default(cuid())
+  profileId String
+  profile   CostProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// Only for a PRODUCT profile: one size; null = every size.
+  variantId String?
+  kind      CostLineKind
+  mode      CostLineMode
+  /// FIXED: money per sale (major units); PERCENT_OF_PRICE: percent. Null for AUTO.
+  amount    Decimal?     @db.Decimal(18, 4)
+  label     String?
+  sortOrder Int          @default(0)
+
+  @@unique([profileId, kind, variantId])
+  @@index([profileId])
+}
+
+model MaterialPurchaseUnit {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label     String
+  /// Stock units in one of these (1000 for a litre of ml); up to 4 decimals (a tola is 11.6638 g).
+  factor    Decimal  @db.Decimal(14, 4)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([productId, label])
+}
+
 model MaterialRoll {
   id                String          @id @default(cuid())
   businessId        String

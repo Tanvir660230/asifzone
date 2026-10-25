@@ -296,3 +296,35 @@ counts and every gain are booked at once, as before. While a loss waits, that it
 
 Inventory in the sidebar: **Stock**, **Stock levels** (movements, write-offs) and **Production**, whose pages — Overview,
 Production orders, Bills of materials, Materials — are tabs on it.
+
+## 8. How it's stocked (2026-10-25)
+
+Each product says how it is stocked — on its page (Pricing & Inventory › How it's stocked), `GET|PUT
+/api/v1/finance/stock/products/:id/stocking` (`inventory.read` / `inventory.adjust`), `stocking.service.ts`:
+
+| Mode | Means | Guard |
+|---|---|---|
+| Ready stock | sold from the shelf (`fillToOrder` off) | leaving fill-to-order needs no bottles owed; the selling rule resets to TRACKED |
+| Filled to order | `fillToOrder` on — stock = filled bottles, selling rule applies (§3) | needs stock tracking; without an approved recipe it warns and sells only filled bottles |
+| Material | `kind = MATERIAL`, inactive, unpublished, in the hidden materials category, with its stock unit | only a product never ordered and without a recipe; a material stays one |
+
+Only the setting changes — no stock, movement or valuation is written; the change is in the audit log with its reason.
+Materials' row actions open this page's sheets directly: `/admin/stock?bought=<variant>` and `?count=<variant>`.
+
+## 9. Production home and purchase units (2026-10-25)
+
+**Production home** (`/admin/manufacturing/home`, the first tab of Inventory › Production; `GET
+/api/v1/finance/stock/production-home`, `production-home.service.ts`):
+
+- Four actions: **Bought** (`/admin/stock?bought=new`), **Filled** (`?fill=1`), **Recipes**, **Price & profit**.
+- **Needs you:** bottles owed, a filled-to-order product with no approved recipe, materials the stock hub marks low.
+- **Can still make:** for every size with an approved recipe (the latest version, business-supplied lines), ⌊stock ÷
+  (qty per unit × (1 + wastage))⌋ for each material; the smallest wins and its material is shown as *runs out first*.
+  Each size is worked out on its own (sizes share oil and boxes), against stock now — a planning figure; the shop's
+  fill capacity (§3) also sets aside what owed orders claim.
+- **Recent fills:** the last completed Filled entries with their production order number.
+
+**Purchase units** (`MaterialPurchaseUnit`; Materials › Edit › *You buy it as*): one label = a factor of stock units
+(1 litre = 1000 ml, 1 dozen = 12 pcs, 1 tola = 11.6638 ml, ≤ 4 decimals). Received goods offers them beside the
+quantity and records `round(quantity × factor)` stock units; the price per stock unit follows from the total paid. The
+bill check counts a line in the unit it was bought in. Stock, counts and costs stay in the stock unit.

@@ -290,6 +290,17 @@ describe("waste", () => {
     expect(strange.status).toBe(400);
     expect(strange.body.details?.code).toBe("FILL_MATERIAL_NOT_IN_RECIPE");
   });
+
+  it("FL-12b: the recipe's real wastage counts the spilt oil against what the fills needed; bottles show none", async () => {
+    const bom = await prisma.billOfMaterials.findFirstOrThrow({ where: { productId: attar.id, status: "APPROVED" }, orderBy: { version: "desc" } });
+    const w = await as(request(app).get(`/api/v1/manufacturing/boms/${bom.id}/wastage`));
+    expect(w.status).toBe(200);
+    const oilLine = w.body.lines.find((l: { materialVariantId: string }) => l.materialVariantId === oil);
+    expect(oilLine.used - oilLine.need).toBe(3); // FL-11's 3 ml; every other fill used exactly the recipe
+    expect(oilLine.actualPct).toBeCloseTo((3 / oilLine.need) * 100, 1);
+    expect(oilLine.orders).toBeGreaterThan(1);
+    expect(w.body.lines.find((l: { materialVariantId: string }) => l.materialVariantId === btl6).actualPct).toBe(0);
+  });
 });
 
 describe("Unlimited sales: owed bottles, filled later", () => {

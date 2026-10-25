@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -60,13 +61,13 @@ export default function BomsPage() {
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader
-        title="Bills of materials"
-        description="The materials one finished unit takes, with expected wastage. Approve a version to plan production from it; to change it later, copy it to a new version."
-        action={can("manufacturing.manage") && <Button size="sm" onClick={() => setEditing("new")} data-testid="new-bom"><Plus className="h-4 w-4" /> New bill of materials</Button>}
+        title="Recipes"
+        description="What one finished unit takes — oil, bottle, box, sticker, fabric — with expected wastage. An approved version is what filling and production use; approving a new one retires the old."
+        action={can("manufacturing.manage") && <Button size="sm" onClick={() => setEditing("new")} data-testid="new-bom"><Plus className="h-4 w-4" /> New recipe</Button>}
       />
       {list.isLoading && <Skeleton className="h-40 w-full" />}
-      {list.isError && <Alert variant="danger" title="Bills of materials couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
-      {list.data?.boms.length === 0 && <EmptyState icon={ListTree} title="No bills of materials yet" description="Describe what a product is made of to plan its production." />}
+      {list.isError && <Alert variant="danger" title="Recipes couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
+      {list.data?.boms.length === 0 && <EmptyState icon={ListTree} title="No recipes yet" description="Describe what a product is made of so it can be filled or produced." />}
       <div className="space-y-4">
         {[...byProduct.values()].map((versions) => (
           <section key={versions[0]!.product.id} className="space-y-2">
@@ -85,6 +86,7 @@ export default function BomsPage() {
                     </li>
                   ))}
                 </ul>
+                {b.status === "APPROVED" && <RealWastage bom={b} canChange={can("manufacturing.manage")} onDone={refresh} />}
                 <div className="flex flex-wrap gap-2">
                   {b.status === "DRAFT" && can("manufacturing.manage") && <Button size="sm" variant="outline" onClick={() => setEditing(b)}>Edit</Button>}
                   {b.status === "DRAFT" && can("manufacturing.approve") && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ id: b.id, action: "approve" })} data-testid="approve-bom">Approve</Button>}
@@ -109,10 +111,14 @@ const PCT = /^\d{1,2}(\.\d{1,2})?$/;
 
 function BomModal({ bom, onClose, onDone }: { bom: Bom | null; onClose: () => void; onDone: () => void }) {
   const [product, setProduct] = useState<ProducibleProduct | null>(bom ? { id: bom.product.id, name: bom.product.name, variants: [] } : null);
+  const [anyItem, setAnyItem] = useState(() => Boolean(bom?.lines.some((l) => !l.material.isMaterial)));
+  // editing a draft: the product's sizes come from the producible-products lookup, so "Applies to" shows the real size
+  const sizesQ = useQuery({ queryKey: mfg.manufacturingKeys.products(bom?.product.name ?? ""), queryFn: () => mfg.searchProducts(bom!.product.name), enabled: Boolean(bom) });
+  const sizes = product?.variants.length ? product.variants : sizesQ.data?.products.find((p) => p.id === bom?.product.id)?.variants ?? [];
   const [name, setName] = useState(bom?.name ?? "");
   const [lines, setLines] = useState<DraftLine[]>(
     bom
-      ? bom.lines.map((l) => ({ key: ++k, material: { id: l.material.variantId, sku: l.material.sku, name: l.material.name, stock: 0 }, finishedVariantId: l.finishedVariant?.id ?? "", qtyPerUnit: l.qtyPerUnit.replace(/\.?0+$/, ""), wastagePct: l.wastagePct.replace(/\.?0+$/, ""), suppliedBy: l.suppliedBy }))
+      ? bom.lines.map((l) => ({ key: ++k, material: { id: l.material.variantId, sku: l.material.sku, name: l.material.name, stock: 0 }, finishedVariantId: l.finishedVariant?.id ?? "", qtyPerUnit: String(Number(l.qtyPerUnit)), wastagePct: String(Number(l.wastagePct)), suppliedBy: l.suppliedBy }))
       : [{ key: ++k, material: null, finishedVariantId: "", qtyPerUnit: "", wastagePct: "0", suppliedBy: "BUSINESS" }],
   );
   const set = (key: number, patch: Partial<DraftLine>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -123,17 +129,21 @@ function BomModal({ bom, onClose, onDone }: { bom: Bom | null; onClose: () => vo
       return bom ? mfg.updateBom(bom.id, body) : mfg.createBom({ ...body, productId: product!.id });
     },
     onSuccess: (b) => { toast.success(`Version ${b.version} saved as a draft`); onDone(); },
-    onError: (err) => toast.error(getErrorMessage(err, "The bill of materials couldn't be saved")),
+    onError: (err) => toast.error(getErrorMessage(err, "The recipe couldn't be saved")),
   });
   return (
-    <Modal open onClose={onClose} title={bom ? `Edit version ${bom.version}` : "New bill of materials"} description="Quantities are per finished unit, in each material's stock unit." widthClassName="max-w-3xl" footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate()} data-testid="save-bom">Save draft</Button></>}>
+    <Modal open onClose={onClose} title={bom ? `Edit version ${bom.version}` : "New recipe"} description="Quantities are per finished unit, in each material's stock unit." widthClassName="max-w-3xl" footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate()} data-testid="save-bom">Save draft</Button></>}>
       <div className="space-y-4">
         {bom ? <p className="text-sm font-medium text-ink-900">{bom.product.name}</p> : <Field htmlFor="bom-product" label="Finished product" required><ProductPicker value={product} onChange={setProduct} /></Field>}
-        <Field htmlFor="bom-name" label="Name"><Input id="bom-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. Classic cap — cotton" /></Field>
+        <Field htmlFor="bom-name" label="Name"><Input id="bom-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. 6 ml bottle with box" /></Field>
+        <label className="flex min-h-11 items-center gap-2 text-sm text-ink-700">
+          <Checkbox checked={anyItem} onChange={(e) => setAnyItem(e.target.checked)} data-testid="bom-any-item" />
+          Also pick finished products (a part made from another product)
+        </label>
         {lines.map((l, i) => (
           <Card key={l.key} className="space-y-3 p-4" data-testid="bom-line">
             <div className="flex items-center justify-between"><span className="text-sm font-medium">Material {i + 1}</span>{lines.length > 1 && <IconButton aria-label={`Remove material ${i + 1}`} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}><Trash2 className="h-4 w-4" /></IconButton>}</div>
-            <VariantPicker value={l.material} onChange={(material) => set(l.key, { material })} label={`Material ${i + 1}`} />
+            <VariantPicker value={l.material} onChange={(material) => set(l.key, { material })} label={`Material ${i + 1}`} kind={anyItem ? undefined : "MATERIAL"} />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Field htmlFor={`q-${l.key}`} label="Per unit"><Input id={`q-${l.key}`} inputMode="decimal" value={l.qtyPerUnit} onChange={(e) => set(l.key, { qtyPerUnit: e.target.value })} placeholder="37.5" /></Field>
               <Field htmlFor={`w-${l.key}`} label="Wastage %"><Input id={`w-${l.key}`} inputMode="decimal" value={l.wastagePct} onChange={(e) => set(l.key, { wastagePct: e.target.value })} /></Field>
@@ -144,9 +154,10 @@ function BomModal({ bom, onClose, onDone }: { bom: Bom | null; onClose: () => vo
                 </Select>
               </Field>
               <Field htmlFor={`f-${l.key}`} label="Applies to">
-                <Select id={`f-${l.key}`} value={l.finishedVariantId} onChange={(e) => set(l.key, { finishedVariantId: e.target.value })} disabled={!product?.variants.length}>
-                  <option value="">Every variant</option>
-                  {product?.variants.map((v) => <option key={v.id} value={v.id}>{v.size} / {v.color}</option>)}
+                <Select id={`f-${l.key}`} value={l.finishedVariantId} onChange={(e) => set(l.key, { finishedVariantId: e.target.value })} disabled={!sizes.length}>
+                  <option value="">Every size</option>
+                  {sizes.map((v) => <option key={v.id} value={v.id}>{[v.size, v.color].filter(Boolean).join(" / ")}</option>)}
+                  {l.finishedVariantId && !sizes.some((v) => v.id === l.finishedVariantId) && <option value={l.finishedVariantId}>{bom?.lines.find((x) => x.finishedVariant?.id === l.finishedVariantId)?.finishedVariant?.label ?? "This size"}</option>}
                 </Select>
               </Field>
             </div>
@@ -155,5 +166,39 @@ function BomModal({ bom, onClose, onDone }: { bom: Bom | null; onClose: () => vo
         <Button size="sm" variant="outline" onClick={() => setLines((ls) => [...ls, { key: ++k, material: null, finishedVariantId: "", qtyPerUnit: "", wastagePct: "0", suppliedBy: "BUSINESS" }])}><Plus className="h-4 w-4" /> Material</Button>
       </div>
     </Modal>
+  );
+}
+
+/** Real wastage (docs/MANUFACTURING.md §4): what the last 90 days' fills and production really used of each material
+ * against the recipe. When a material's real wastage differs, a new draft version with the real figures is one tap — the
+ * owner still approves it. */
+function RealWastage({ bom, canChange, onDone }: { bom: Bom; canChange: boolean; onDone: () => void }) {
+  const q = useQuery({ queryKey: [...mfg.manufacturingKeys.boms({}), "wastage", bom.id], queryFn: () => mfg.getBomWastage(bom.id) });
+  const used = (q.data?.lines ?? []).filter((l) => l.orders > 0 && l.actualPct !== null);
+  // the recipe's wastage per material (the largest when a material has a line per size)
+  const recipePct = (materialVariantId: string) => Math.max(0, ...bom.lines.filter((l) => l.material.variantId === materialVariantId).map((l) => Number(l.wastagePct)));
+  const differ = used.filter((l) => Math.abs(l.actualPct! - recipePct(l.materialVariantId)) >= 0.5);
+  const make = useMutation({
+    mutationFn: async () => {
+      const copy = await mfg.bomAction(bom.id, "copy");
+      const real = new Map(differ.map((l) => [l.materialVariantId, Math.max(0, Math.min(99, l.actualPct!))]));
+      return mfg.updateBom(copy.id, { lines: copy.lines.map((l) => ({ materialVariantId: l.material.variantId, finishedVariantId: l.finishedVariant?.id ?? null, qtyPerUnit: l.qtyPerUnit, wastagePct: real.has(l.material.variantId) ? real.get(l.material.variantId)!.toFixed(2) : l.wastagePct, suppliedBy: l.suppliedBy })) });
+    },
+    onSuccess: (b) => { toast.success(`Version ${b.version} saved as a draft with the real wastage — check and approve it`); onDone(); },
+    onError: (err) => toast.error(getErrorMessage(err, "The new version couldn't be made")),
+  });
+  if (q.isLoading || q.isError || !used.length) return null;
+  return (
+    <div className="rounded-xl bg-surface-muted px-3 py-2.5 text-sm" data-testid="bom-real-wastage">
+      <p className="font-medium text-ink-900">Real wastage, last {q.data!.days} days</p>
+      <ul className="mt-1 space-y-0.5">
+        {used.map((l) => {
+          const name = bom.lines.find((x) => x.material.variantId === l.materialVariantId)?.material.name ?? "Material";
+          const off = Math.abs(l.actualPct! - recipePct(l.materialVariantId)) >= 0.5;
+          return <li key={l.materialVariantId} className="flex flex-wrap justify-between gap-2"><span className="min-w-0 text-ink-700">{name}</span><span className={off ? "tabular-nums text-warning-700" : "tabular-nums text-ink-600"}>recipe {recipePct(l.materialVariantId)}% · real {l.actualPct}% ({l.orders} {l.orders === 1 ? "fill" : "fills"})</span></li>;
+        })}
+      </ul>
+      {differ.length > 0 && canChange && <Button size="sm" variant="outline" className="mt-2" loading={make.isPending} onClick={() => make.mutate()} data-testid="bom-use-real-wastage">New version with the real wastage</Button>}
+    </div>
   );
 }

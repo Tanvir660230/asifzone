@@ -34,9 +34,22 @@ export const materialUpdateSchema = z
   .object({
     name: z.string().trim().min(2).max(160).optional(),
     stockUnit: z.string().trim().min(1).max(16).optional(),
-    description: optionalText(2000),
+    // left out = unchanged (optionalText would turn a missing description into null and clear it on every edit)
+    description: z.string().trim().max(2000).nullable().optional(),
     referenceCost: financeAmountSchema.nullable().optional(),
     addVariants: z.array(materialVariantSchema).max(100).optional(),
+    /** How it is bought — replaces the list: one `label` (litre, dozen, tola) is `factor` stock units, ≤ 4 decimals. */
+    purchaseUnits: z
+      .array(z.object({ label: z.string().trim().min(1).max(24), factor: z.number().positive().max(1_000_000).refine((f) => Math.abs(Math.round(f * 10_000) - f * 10_000) < 1e-6, "At most 4 decimals") }))
+      .max(10)
+      .refine((us) => new Set(us.map((u) => u.label.toLowerCase())).size === us.length, "Each unit once")
+      .optional(),
+    /** Renames existing sizes — SKU, spec or colour; a field left out stays as it is. */
+    variants: z
+      .array(z.object({ id, sku: materialVariantSchema.shape.sku.optional(), spec: z.string().trim().min(1).max(60).optional(), color: z.string().trim().max(60).optional() }))
+      .max(100)
+      .refine((vs) => new Set(vs.map((v) => v.id)).size === vs.length, "Each size once")
+      .optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "Nothing to change");
 export const materialListQuerySchema = z.object({ q: z.string().trim().max(100).optional(), includeArchived: z.enum(["true", "false"]).optional() });

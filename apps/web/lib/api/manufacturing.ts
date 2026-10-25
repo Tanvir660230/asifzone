@@ -22,6 +22,8 @@ export interface Material {
   description: string;
   referenceCost: number | null;
   archived: boolean;
+  /** How it is bought — one `label` (litre, dozen, tola) is `factor` stock units. */
+  purchaseUnits: Array<{ label: string; factor: number }>;
   variants: Array<{ id: string; sku: string; spec: string; color: string; stock: number; averageCost: number | null; value: number | null }>;
 }
 export interface BomLine {
@@ -179,15 +181,20 @@ export const listCostCategories = (activeOnly = false) => apiFetch<{ categories:
 export const createCostCategory = (body: { code: string; name: string; group: CostGroup }) => apiFetch<CostCategory>(`${BASE}/cost-categories`, { method: "POST", body });
 export const updateCostCategory = (id: string, body: Partial<Pick<CostCategory, "name" | "group" | "isActive" | "sortOrder">>) => apiFetch<CostCategory>(`${BASE}/cost-categories/${id}`, { method: "PATCH", body });
 
-export const listMaterials = (q: { q?: string } = {}) => apiFetch<{ materials: Material[] }>(`${BASE}/materials${qs(q)}`);
+export const listMaterials = (q: { q?: string; includeArchived?: boolean } = {}) => apiFetch<{ materials: Material[] }>(`${BASE}/materials${qs({ q: q.q, includeArchived: q.includeArchived ? "true" : undefined })}`);
 export const createMaterial = (body: Record<string, unknown>) => apiFetch<Material>(`${BASE}/materials`, { method: "POST", body });
 export const updateMaterial = (id: string, body: Record<string, unknown>) => apiFetch<Material>(`${BASE}/materials/${id}`, { method: "PATCH", body });
+/** Archive (only with no stock and no approved recipe, packing rule or open roll using it) or bring back. */
+export const materialAction = (id: string, action: "archive" | "restore") => apiFetch<Material>(`${BASE}/materials/${id}/${action}`, { method: "POST", body: {} });
 
 export const listBoms = (q: { productId?: string; status?: BomStatus } = {}) => apiFetch<{ boms: Bom[] }>(`${BASE}/boms${qs(q)}`);
 export const createBom = (body: Record<string, unknown>) => apiFetch<Bom>(`${BASE}/boms`, { method: "POST", body });
 export const updateBom = (id: string, body: Record<string, unknown>) => apiFetch<Bom>(`${BASE}/boms/${id}`, { method: "PATCH", body });
 export const deleteBom = (id: string) => apiFetch<void>(`${BASE}/boms/${id}`, { method: "DELETE" });
 export const bomAction = (id: string, action: "approve" | "archive" | "copy") => apiFetch<Bom>(`${BASE}/boms/${id}/${action}`, { method: "POST", body: {} });
+/** What closed fills / production really used of each recipe material over the last `days`, against the need without wastage. */
+export interface BomWastage { bomId: string; days: number; lines: Array<{ materialVariantId: string; orders: number; need: number; used: number; actualPct: number | null }> }
+export const getBomWastage = (id: string) => apiFetch<BomWastage>(`${BASE}/boms/${id}/wastage`);
 
 export const listProductionOrders = (q: { status?: string; q?: string; page?: number; pageSize?: number } = {}) =>
   apiFetch<{ total: number; productionOrders: ProductionOrder[] }>(`${BASE}/production-orders${qs(q)}`);

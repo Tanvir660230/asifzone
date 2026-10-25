@@ -29,6 +29,8 @@ import { buildCategoryOptions } from "@/components/admin/product-form-state";
 import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
 import { FreeDeliveryField } from "@/components/admin/free-delivery-field";
 import { SoldOutField } from "@/components/admin/sold-out-field";
+import { StockingField } from "@/components/admin/stock/stocking-field";
+import { CostSheetField } from "@/components/admin/cost-sheet/cost-sheet-field";
 import * as aiApi from "@/lib/api/ai";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { storeCurrencyCode, stripHtml } from "@/lib/format";
@@ -351,6 +353,12 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
         )}
       </FormSection>
 
+      {initial && (
+        <FormSection title="Cost & profit" description="What one sale of each size costs — making, packing, delivery, fees, returns, ads — and what it earns.">
+          <CostSheetField productId={initial.id} />
+        </FormSection>
+      )}
+
       <FormSection title="Tax" description="Leave blank to use the store's tax settings.">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
           <Field htmlFor="taxRate" label="Tax rate" error={errors.taxRate?.message}>
@@ -395,6 +403,12 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
           </Field>
         </div>
       </FormSection>
+
+      {initial && (
+        <FormSection title="How it's stocked" description="Ready on the shelf, filled to order from a recipe (attar), or a material used to make other products.">
+          <StockingField productId={initial.id} />
+        </FormSection>
+      )}
 
       <FormSection title="Show as sold out" description="Take the product, or only some variants (e.g. the 6ml), off sale without changing the stock.">
         <SoldOutField form={form} />

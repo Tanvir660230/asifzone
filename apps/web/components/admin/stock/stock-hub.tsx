@@ -87,6 +87,22 @@ export function StockHub() {
   const wide = useMediaQuery("(min-width: 1024px)");
   const [phoneView, setPhoneView] = useState<"stock" | "activity">("stock");
   const [countFor, setCountFor] = useState<string[] | null>(null);
+  // ?bought=<variant> / ?count=<variant> (from Materials' row actions) open that sheet once the overview is in, then
+  // leave the URL so a reload doesn't open it again
+  // (?bought=new / ?fill=1 from Production home open an empty Received goods / Filled bottles)
+  const deepLink = params.get("bought") ?? params.get("count") ?? params.get("fill");
+  const deepLinkKind = params.get("bought") ? "bought" : params.get("count") ? "count" : "fill";
+  useEffect(() => {
+    if (!deepLink || !overview.data) return;
+    const next = new URLSearchParams(params.toString());
+    for (const k of ["bought", "count", "fill"]) next.delete(k);
+    const s = next.toString();
+    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
+    if (!overview.data.costingActive) { toast.info(GO_LIVE); return; }
+    if (deepLinkKind === "bought") { setBoughtStart(deepLink === "new" ? null : { supplierName: null, lines: [{ variantId: deepLink, qty: 1, lastUnitCost: null }] }); setSheet("bought"); }
+    else if (deepLinkKind === "fill") setSheet("filled");
+    else { setCountFor([deepLink]); setSheet("guided-count"); }
+  }, [deepLink, deepLinkKind, overview.data, params, pathname, router]);
   // ?open=filled|bought|counted opens that sheet once the stock has loaded — Finance's old Quick refill address lands
   // on Filled bottles this way (admin audit phase 3).
   const opened = useRef(false);

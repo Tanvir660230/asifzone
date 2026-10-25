@@ -75,7 +75,7 @@ purchasingRouter.patch("/tax-codes/:id", requirePermission("finance.configure"),
 purchasingRouter.patch("/settings", requirePermission("finance.configure"), validate(purchasingSettingsSchema), asyncHandler(async (req, res) => res.json(await updatePurchasingSettings(req.body, await actorOf(req)))));
 
 // ── Phase 4D: purchase orders, goods receipts, supplier returns (docs/FINANCE_PHASE_4D.md) ─────────────────────────────
-purchasingRouter.get("/variants", requirePermission("purchasing.read"), validate(z.object({ q: z.string().trim().max(100).optional(), take: z.coerce.number().int().min(1).max(50).default(20) }), "query"), asyncHandler(async (req, res) => res.json(await orders.searchPurchasableVariants(req.query as never))));
+purchasingRouter.get("/variants", requirePermission("purchasing.read"), validate(z.object({ q: z.string().trim().max(100).optional(), take: z.coerce.number().int().min(1).max(50).default(20), kind: z.enum(["MATERIAL", "FINISHED"]).optional() }), "query"), asyncHandler(async (req, res) => res.json(await orders.searchPurchasableVariants(req.query as never))));
 const reason = (req: Request) => (req.body as { reason: string }).reason;
 
 purchasingRouter.get("/purchase-orders", requirePermission("purchasing.read"), validate(purchaseOrderListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await orders.listPurchaseOrders(req.query as never))));
