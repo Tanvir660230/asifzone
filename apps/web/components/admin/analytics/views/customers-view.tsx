@@ -11,7 +11,7 @@ import { CohortRetentionGrid } from "@/components/admin/cohort-retention-grid";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as biApi from "@/lib/api/bi";
 import * as customersApi from "@/lib/api/admin-customers";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatPriceWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
@@ -55,7 +55,7 @@ export default function CustomerIntelligencePage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-fg">Customer Intelligence</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Customer insights</h2>
           <p className="mt-1 text-sm text-ink-500">Who buys, how often, what they prefer, and who needs attention.</p>
         </div>
         <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full border border-ink-100 bg-ink-50/60 p-1">
@@ -82,8 +82,8 @@ export default function CustomerIntelligencePage() {
             Array.from({ length: 2 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Lifetime Customer Value" value={formatPrice(overview.customerLifetimeValue)} icon={<Wallet size={18} />} tone="accent" />
-              <StatTile label="Average Order Value" value={formatPrice(overview.aovLifetime)} icon={<Receipt size={18} />} />
+              <StatTile label="Customer lifetime value" value={formatPriceWhole(overview.customerLifetimeValue)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Average order value" value={formatPriceWhole(overview.aovLifetime)} icon={<Receipt size={18} />} />
             </>
           )}
         </div>
@@ -107,7 +107,7 @@ export default function CustomerIntelligencePage() {
               <StatTile label="High-Risk (Suspicious)" value={stats.suspiciousCount.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone={stats.suspiciousCount > 0 ? "warning" : "default"} />
               <StatTile label="COD Risk" value={stats.codRiskCount.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone={stats.codRiskCount > 0 ? "warning" : "default"} />
               <StatTile label="Blocked" value={stats.blockedCount.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
-              <StatTile label="Lifetime realised net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Lifetime realised net sales" value={formatPriceWhole(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
             </>
           )}
         </div>

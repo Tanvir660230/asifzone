@@ -58,7 +58,7 @@ test.describe("admin on a phone", () => {
 
   test("a detail page has a back button and no duplicate", async ({ page }) => {
     await page.goto("/admin/orders/new", NAV);
-    await expect(page.getByRole("heading", { name: "Create Order", level: 1 })).toBeVisible(NAV);
+    await expect(page.getByRole("heading", { name: "New order", level: 1 })).toBeVisible(NAV);
     const back = page.getByRole("link", { name: "Back to Orders" });
     await expect(back).toHaveCount(1);
     await back.click();

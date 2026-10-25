@@ -101,7 +101,7 @@ export default function VisitorAnalyticsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-fg">Visitor Analytics</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">Visitor analytics</h2>
         <p className="mt-1 text-sm text-ink-500">Who&apos;s coming to the site, where from, and what they do once they&apos;re here.</p>
       </div>
 

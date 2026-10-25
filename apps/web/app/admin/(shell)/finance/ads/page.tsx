@@ -24,7 +24,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { AdCampaign } from "@/lib/api/finance-books";
-import { formatBookDate, formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 
@@ -93,9 +93,9 @@ export default function AdSpendPage() {
       {d && (
         <>
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Totals">
-            <StatTile label="Spent in the period" value={formatPrice(Math.round(d.totals.spend))} icon={<Megaphone />} tone="accent" />
+            <StatTile label="Spent in the period" value={formatPriceWhole(Math.round(d.totals.spend))} icon={<Megaphone />} tone="accent" />
             <StatTile label="Orders from the ads" value={String(d.totals.orders)} icon={<ShoppingBag />} />
-            <StatTile label="Sales from the ads" value={formatPrice(Math.round(d.totals.revenue))} icon={<TrendingUp />} />
+            <StatTile label="Sales from the ads" value={formatPriceWhole(Math.round(d.totals.revenue))} icon={<TrendingUp />} />
           </section>
           {d.campaigns.length === 0 ? (
             <EmptyState icon={Megaphone} title="No campaigns yet" description="Add a campaign with its budget — or connect Meta and they come in by themselves." />

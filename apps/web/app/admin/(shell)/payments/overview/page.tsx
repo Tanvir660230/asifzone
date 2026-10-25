@@ -158,7 +158,7 @@ export default function PaymentsOverviewPage() {
 
       {/* Risk */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Refund Risk</h2>
+        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Refund risk</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
           {isLoading || !overview ? (
             Array.from({ length: 2 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -184,7 +184,7 @@ export default function PaymentsOverviewPage() {
 
       {/* Recent failures */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Recent Failures</h2>
+        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Recent failures</h2>
         <Card className="divide-y divide-ink-100">
           {isLoading || !overview ? (
             <p className="p-5 text-sm text-ink-400">Loading…</p>

@@ -98,7 +98,7 @@ export function ProductBuilder({ categories, initial }: ProductBuilderProps) {
                   data-ready={previewDecided || undefined}
                 >
                   {showPreview ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
-                  <span className="hidden sm:inline">Preview</span>
+                  <span className="hidden sm:inline">{showPreview ? "Hide preview" : "Show preview"}</span>
                 </Button>
               </div>
             </div>

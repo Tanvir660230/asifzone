@@ -26,7 +26,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { CourierOrderRow } from "@/lib/api/finance-books";
 import type { OrderStatus } from "@clothing-brand/shared";
 import { OrderStatusBadge } from "@/components/admin/orders/order-badges";
-import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, formatBookDate, formatPrice } from "@/lib/format";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +66,7 @@ export default function CourierCheckPage() {
       {d && (
         <>
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Balances">
-            <StatTile label="Steadfast should pay you" value={formatPrice(Math.round(d.books.expectedFromCourier))} icon={<Truck />} tone="accent" />
+            <StatTile label="Steadfast should pay you" value={formatPriceWhole(Math.round(d.books.expectedFromCourier))} icon={<Truck />} tone="accent" />
             {d.courier.balance === null ? (
               <Card className="flex items-start gap-3 p-3.5 sm:col-span-2 sm:p-5" data-testid="courier-balance-unknown">
                 <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" aria-hidden />
@@ -77,7 +77,7 @@ export default function CourierCheckPage() {
               </Card>
             ) : (
               <>
-                <StatTile label="Steadfast's own balance" value={formatPrice(Math.round(d.courier.balance))} icon={<Wallet />} />
+                <StatTile label="Steadfast's own balance" value={formatPriceWhole(Math.round(d.courier.balance))} icon={<Wallet />} />
                 <StatTile label="Difference" value={d.courier.difference === null ? "—" : formatPrice(Math.round(d.courier.difference))} tone={d.courier.difference ? "warning" : "default"} icon={<Scale />} />
               </>
             )}
