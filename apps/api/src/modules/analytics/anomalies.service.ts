@@ -4,7 +4,7 @@
  * is compared "by this time". The brief reads the day's pulse, sales and best channel, the queues now and the anomalies.
  */
 import { addDays, businessDate, businessDayStartUtc, resolveBusinessRange } from "@clothing-brand/shared";
-import { cacheGet, cacheSet } from "../../config/redis";
+import { cacheSwr } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
@@ -49,10 +49,10 @@ export async function getAnomalies(dateInput?: string, now: Date = new Date()): 
   const date = parseDate(dateInput, today);
   const partialDay = date === today;
   const cutoffMs = partialDay ? now.getTime() - businessDayStartUtc(date, timezone).getTime() : undefined;
-  const key = `analytics:v1:anomalies:${timezone}:${date}:${partialDay ? Math.floor(now.getTime() / 60_000) : "day"}`;
-  const hit = await cacheGet<AnomalyReport>(key);
-  if (hit) return hit;
-
+  // One entry per business day (it used to be one per minute for today, so the cache was nearly always cold): fresh for a
+  // minute, then served at once while a background refresh brings it up to the minute (admin audit phase 5).
+  const key = `analytics:v2:anomalies:${timezone}:${date}`;
+  return cacheSwr(key, { freshSeconds: CACHE_TTL_SECONDS, staleSeconds: partialDay ? 10 * 60 : 24 * 3600 }, async () => {
   const window = resolveBusinessRange({ from: addDays(date, -28), to: date }, timezone, now);
   const baselineDates = comparisonDates(date).sameWeekday;
   const [events, visits] = await Promise.all([loadOpsEvents(window, currency), sessionStarts(window)]);
@@ -88,8 +88,8 @@ export async function getAnomalies(dateInput?: string, now: Date = new Date()): 
   }
 
   const report: AnomalyReport = { date, partialDay, asOf: partialDay ? now.toISOString() : null, anomalies: anomalies.sort((a, b) => b.score - a.score) };
-  await cacheSet(key, report, CACHE_TTL_SECONDS);
   return report;
+  });
 }
 
 export interface DailyBriefReport extends DailyBrief {
@@ -103,6 +103,8 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
   const today = businessDate(now, timezone);
   const date = parseDate(dateInput ?? addDays(today, -1), today);
   const dayStart = businessDayStartUtc(date, timezone);
+  // A finished day barely changes (a late delivery at most): cached per day, refreshed in the background (phase 5).
+  return cacheSwr(`analytics:v1:daily-brief:${timezone}:${date}`, { freshSeconds: date === today ? 60 : 300, staleSeconds: date === today ? 10 * 60 : 24 * 3600 }, async () => {
   const [pulse, metrics, channels, anomalies] = await Promise.all([
     getOpsPulse(date, now),
     computeMetrics({ metrics: ["realised_net_sales", "payments_received"], range: { from: date, to: date } }, now),
@@ -122,6 +124,7 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
     anomalies: anomalies.anomalies,
   });
   return { date, partialDay: date === today, ...brief };
+  });
 }
 
 /** The morning notification: yesterday's brief in the admin bell, linking to the daily pulse. */

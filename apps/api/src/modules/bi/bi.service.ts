@@ -1,7 +1,7 @@
 import { customerStats, positionTotals, realisedAt, returnEvents } from "@clothing-brand/shared";
 import { loadPositionFacts } from "../../domain/metrics/facts.repository";
 import { prisma } from "../../config/prisma";
-import { cacheGet, cacheSet } from "../../config/redis";
+import { cacheSwr } from "../../config/redis";
 import { getCustomerInsights, getLowStockVariants, getDeadStockReport, getBestSellingPrediction } from "../analytics/analytics.service";
 import { loadCustomersWithComputedFields } from "../customers/customer.service";
 import { computeMetrics, loadFactsForRange } from "../../domain/metrics/metrics.service";
@@ -68,10 +68,15 @@ export interface ExecutiveOverview {
   refundDue: number;
 }
 
-export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
-  const cached = await cacheGet<ExecutiveOverview>(CACHE_KEY);
-  if (cached) return cached;
+/** Fresh for a minute; for 15 more it is served at once while one background refresh replaces it (admin audit phase 5:
+ * every cold read took 2–3 s on the live server, on each of several pages). */
+const STALE_SECONDS = 15 * 60;
 
+export function getExecutiveOverview(): Promise<ExecutiveOverview> {
+  return cacheSwr(CACHE_KEY, { freshSeconds: CACHE_TTL_SECONDS, staleSeconds: STALE_SECONDS }, computeExecutiveOverview);
+}
+
+async function computeExecutiveOverview(): Promise<ExecutiveOverview> {
   const now = new Date();
   const [today, yesterday, week, month, lastMonth, lifetime] = await Promise.all([
     resolveStoreRange({ preset: "today" }, now),
@@ -183,7 +188,6 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
     refundDue: positions.metrics.refund_due!.value,
   };
 
-  await cacheSet(CACHE_KEY, result, CACHE_TTL_SECONDS);
   return result;
 }
 
@@ -203,9 +207,11 @@ export interface AutomatedInsight {
 
 const INSIGHTS_CACHE_KEY = "bi:automated-insights:v5";
 
-export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
-  const cached = await cacheGet<AutomatedInsight[]>(INSIGHTS_CACHE_KEY);
-  if (cached) return cached;
+export function getAutomatedInsights(): Promise<AutomatedInsight[]> {
+  return cacheSwr(INSIGHTS_CACHE_KEY, { freshSeconds: 60, staleSeconds: STALE_SECONDS }, computeAutomatedInsights);
+}
+
+async function computeAutomatedInsights(): Promise<AutomatedInsight[]> {
 
   const [overview, lowStock, deadStock, bestSelling, customers, { currency }] = await Promise.all([
     getExecutiveOverview(),
@@ -294,6 +300,5 @@ export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
     insights.push({ id: "all-clear", severity: "info", title: "No automated alerts right now", detail: "Nothing has crossed a threshold yet." });
   }
 
-  await cacheSet(INSIGHTS_CACHE_KEY, insights, 60);
   return insights;
 }
