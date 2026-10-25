@@ -66,12 +66,22 @@ export default function AiAssistantPage() {
 
   const isProductType = PRODUCT_TYPES.has(type);
   const configured = aiStatus?.configured ?? false;
+  // Not switched on for this store: the insight cards below work without AI, so they lead and the AI parts stay out of
+  // the way (one quiet line instead of two "not configured" boxes).
+  const aiOff = Boolean(aiStatus) && !configured;
 
   return (
     <div className="space-y-6">
       <PageHeader title="AI assistant" description="Ask about your store, get alerts, and write store content." />
 
-      {canUseAi && <AssistantChat configured={configured} />}
+      {aiOff ? (
+        <p className="flex items-center gap-2 text-sm text-fg-muted" data-testid="ai-off">
+          <Bot size={16} className="shrink-0" aria-hidden />
+          The AI assistant isn&rsquo;t switched on for this store yet. The insights below work without it.
+        </p>
+      ) : (
+        canUseAi && <AssistantChat configured={configured} />
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>
@@ -138,6 +148,7 @@ export default function AiAssistantPage() {
         </Card>
       </div>
 
+      {!aiOff && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -252,6 +263,7 @@ export default function AiAssistantPage() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

@@ -7,6 +7,8 @@ import {
   updateAdminActiveSchema,
   updateAdminSchema,
   setAdminPasswordSchema,
+  twoStepCodeSchema,
+  twoStepLoginSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission, requireSelf } from "../../middlewares/require-admin";
@@ -29,12 +31,23 @@ import {
   createAdminInvite,
   revokeAdminInvite,
   acceptAdminInvite,
+  loginTwoStep,
+  twoStepSetup,
+  twoStepEnable,
+  twoStepDisable,
+  resetAdminTwoStep,
+  revokeAdminSessions,
 } from "./auth.controller";
 
 export const authRouter = Router();
 
 authRouter.post("/login", loginRateLimit, validate(adminLoginSchema), login);
 authRouter.post("/google", loginRateLimit, validate(googleLoginSchema), googleLogin);
+// 2-step sign-in (admin audit phase 2): the code after the password or Google, and each admin's own setup.
+authRouter.post("/login/2fa", loginRateLimit, validate(twoStepLoginSchema), loginTwoStep);
+authRouter.post("/2fa/setup", requireAdmin, requireSelf, twoStepSetup);
+authRouter.post("/2fa/enable", requireAdmin, requireSelf, validate(twoStepCodeSchema), twoStepEnable);
+authRouter.post("/2fa/disable", requireAdmin, requireSelf, validate(twoStepCodeSchema), twoStepDisable);
 authRouter.post("/logout", logout);
 authRouter.post("/logout-all", requireAdmin, requireSelf, logoutAllDevices);
 authRouter.get("/sessions", requireAdmin, requireSelf, sessions);
@@ -61,6 +74,8 @@ authRouter.patch(
   validate(setAdminPasswordSchema),
   setAdminPassword,
 );
+authRouter.delete("/admins/:id/2fa", requireAdmin, requirePermission("users.manage"), resetAdminTwoStep);
+authRouter.post("/admins/:id/sessions/revoke", requireAdmin, requirePermission("users.manage"), revokeAdminSessions);
 authRouter.get("/admin-invites", requireAdmin, requirePermission("users.manage"), listAdminInvites);
 authRouter.post(
   "/admin-invites",

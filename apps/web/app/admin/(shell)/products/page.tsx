@@ -415,7 +415,7 @@ export default function ProductsPage() {
                   <TableHeaderCell className="hidden md:table-cell">Category</TableHeaderCell>
                   <TableHeaderCell align="right">Price</TableHeaderCell>
                   <TableHeaderCell>Stock</TableHeaderCell>
-                  <TableHeaderCell className="hidden lg:table-cell">Complete</TableHeaderCell>
+                  <TableHeaderCell className="hidden 2xl:table-cell">Complete</TableHeaderCell>
                   <TableHeaderCell>Status</TableHeaderCell>
                   <TableHeaderCell className="hidden xl:table-cell">Edited</TableHeaderCell>
                   <TableHeaderCell className="w-12">
@@ -457,7 +457,7 @@ export default function ProductsPage() {
                       <TableCell>
                         <StockBadge p={p} />
                       </TableCell>
-                      <TableCell className="hidden lg:table-cell">
+                      <TableCell className="hidden 2xl:table-cell">
                         <Completeness value={p.completeness} />
                       </TableCell>
                       <TableCell>

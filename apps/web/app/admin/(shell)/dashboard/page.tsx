@@ -21,7 +21,7 @@ import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useAttentionCounts } from "@/hooks/use-attention-counts";
 import { useCapabilities } from "@/hooks/use-capability";
 import * as analyticsApi from "@/lib/api/admin-analytics";
-import { computeTrendPct, formatPrice, formatStoreDate } from "@/lib/format";
+import { computeTrendPct, formatPrice, formatPriceWhole, formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function firstName(fullName: string): string {
@@ -171,6 +171,7 @@ export default function DashboardPage() {
         unreadFeedback={attention.unreadFeedback}
         lowStockCount={summary?.lowStockCount}
         financeAlerts={attention.financeAlertCounts}
+        financeAlertList={attention.financeAlertList}
         openErrors={attention.openErrors}
         loading={attention.loading}
       />
@@ -182,7 +183,7 @@ export default function DashboardPage() {
           {orderStats && (revenue || !canAnalytics) ? (
             <MetricCard
               label="Net sales today"
-              value={formatPrice(orderStats.todayRevenue)}
+              value={formatPriceWhole(orderStats.todayRevenue)}
               detail={`${orderStats.todayOrders} order${orderStats.todayOrders === 1 ? "" : "s"} today`}
               trendPct={summary ? computeTrendPct(summary.revenue30d, summary.revenuePrev30d) : undefined}
               trendLabel="30-day trend"

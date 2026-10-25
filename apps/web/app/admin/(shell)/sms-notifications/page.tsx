@@ -113,7 +113,7 @@ export default function SmsNotificationsPage() {
   if (currentAdmin && !canManageSettings) {
     return (
       <div>
-        <PageHeader title="SMS Notifications" />
+        <PageHeader title="SMS notifications" />
         <ModuleTabs />
         <p className="text-sm text-ink-500">Only store owners can view or change SMS notification settings.</p>
       </div>
@@ -123,7 +123,7 @@ export default function SmsNotificationsPage() {
   return (
     <div>
       <PageHeader
-        title="SMS Notifications"
+        title="SMS notifications"
         description="Text messages sent automatically over the order lifecycle, via BulkSMSBD."
       />
       <ModuleTabs />

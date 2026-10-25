@@ -269,6 +269,27 @@ async function chargeWeights(parcels: ParsedPayoutLine[], cards: Awaited<ReturnT
 
 const TERMINAL = ["delivered", "partial_delivered", "cancelled"];
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+const UNPAID_ORDER_SELECT = { id: true, orderNumber: true, status: true, total: true, courierStatus: true, courierConsignmentId: true, courierBookedAt: true, updatedAt: true, customerName: true } as const;
+
+/** Delivered COD parcels whose payment was recorded more than `days` ago (since the books started) and that no posted
+ * courier payout covers yet — the money the courier still holds for them. Earlier deliveries are in the opening balance
+ * of COD clearing. Shared by the Steadfast check and the finance alert, so both name the same parcels. `limit`: the check
+ * lists the oldest 500; the alert counts them all. */
+export async function unpaidDeliveredCod(business: { id: string; openingDate: string | null }, days: number, limit = 500) {
+  const openingDate = business.openingDate ? new Date(`${business.openingDate}T00:00:00Z`) : null;
+  const [delivered, settledLines] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        deletedAt: null, paymentMethod: "COD", status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] }, courierConsignmentId: { not: null },
+        payments: { some: { provider: "COD", status: "SUCCEEDED", settledAt: { lt: daysAgo(days), ...(openingDate ? { gte: openingDate } : {}) } } },
+      },
+      select: UNPAID_ORDER_SELECT, orderBy: { updatedAt: "asc" }, take: limit,
+    }),
+    prisma.clearingSettlementLine.findMany({ where: { orderId: { not: null }, settlement: { status: "POSTED", clearingAccount: { kind: "COURIER" } } }, select: { orderId: true } }),
+  ]);
+  const settled = new Set(settledLines.map((l) => l.orderId));
+  return { orders: delivered.filter((o) => !settled.has(o.id)), settled };
+}
 
 /** The courier's side of the books on one page (§3.6). */
 export async function courierReconciliation(q: { staleDays?: number; unsettledDays?: number } = {}) {
@@ -288,9 +309,8 @@ export async function courierReconciliation(q: { staleDays?: number; unsettledDa
   } catch (err) {
     courierBalanceError = err instanceof Error ? err.message : String(err);
   }
-  const openingDate = business.openingDate ? new Date(`${business.openingDate}T00:00:00Z`) : null;
-  const orderSelect = { id: true, orderNumber: true, status: true, total: true, courierStatus: true, courierConsignmentId: true, courierBookedAt: true, updatedAt: true, customerName: true } as const;
-  const [stale, statusMismatch, partial, deliveredCod, settledOrderIds, drafts] = await Promise.all([
+  const orderSelect = UNPAID_ORDER_SELECT;
+  const [stale, statusMismatch, partial, unpaid, drafts] = await Promise.all([
     prisma.order.findMany({
       where: { deletedAt: null, courierConsignmentId: { not: null }, courierBookedAt: { lt: daysAgo(staleDays) }, OR: [{ courierStatus: null }, { courierStatus: { notIn: TERMINAL } }], status: { notIn: ["DELIVERED", "CANCELLED", "RETURNED", "PARTIALLY_DELIVERED"] } },
       select: orderSelect, orderBy: { courierBookedAt: "asc" }, take: 200,
@@ -303,19 +323,10 @@ export async function courierReconciliation(q: { staleDays?: number; unsettledDa
       select: orderSelect, orderBy: { updatedAt: "desc" }, take: 200,
     }),
     prisma.order.findMany({ where: { deletedAt: null, status: "PARTIALLY_DELIVERED" }, select: { ...orderSelect, paymentStatus: true, partialDeliveryReconciledAt: true }, orderBy: { updatedAt: "desc" }, take: 200 }),
-    prisma.order.findMany({
-      // Delivered (its COD payment recorded) since the books started and more than N days ago; earlier ones are in the
-      // opening balance of COD clearing.
-      where: {
-        deletedAt: null, paymentMethod: "COD", status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] }, courierConsignmentId: { not: null },
-        payments: { some: { provider: "COD", status: "SUCCEEDED", settledAt: { lt: daysAgo(unsettledDays), ...(openingDate ? { gte: openingDate } : {}) } } },
-      },
-      select: orderSelect, orderBy: { updatedAt: "asc" }, take: 500,
-    }),
-    prisma.clearingSettlementLine.findMany({ where: { orderId: { not: null }, settlement: { status: "POSTED", clearingAccount: { kind: "COURIER" } } }, select: { orderId: true } }),
+    unpaidDeliveredCod(business, unsettledDays),
     prisma.clearingSettlement.findMany({ where: { businessId: business.id, status: "DRAFT", clearingAccount: { kind: "COURIER" } }, select: { id: true, reference: true, settlementDate: true, netAmount: true }, orderBy: { settlementDate: "asc" } }),
   ]);
-  const settled = new Set(settledOrderIds.map((l) => l.orderId));
+  const { settled } = unpaid;
   const row = (o: { id: string; orderNumber: string; status: string; total: unknown; courierStatus: string | null; courierConsignmentId: string | null; courierBookedAt: Date | null; updatedAt: Date; customerName: string }) => ({
     id: o.id, orderNumber: o.orderNumber, status: o.status, total: major(toMinor(o.total as never, cur)), courierStatus: o.courierStatus, consignmentId: o.courierConsignmentId,
     bookedOn: o.courierBookedAt ? businessDate(o.courierBookedAt, business.timezone) : null, updatedOn: businessDate(o.updatedAt, business.timezone), customerName: o.customerName,
@@ -326,7 +337,7 @@ export async function courierReconciliation(q: { staleDays?: number; unsettledDa
     books: { codClearing: major(clearingBalance), chargesAccrued: major(accrued), expectedFromCourier: major(expected) },
     courier: { balance: courierBalance, error: courierBalanceError, difference: courierBalance === null ? null : major(toMinor(Math.abs(courierBalance), cur) * Math.sign(courierBalance) - expected) },
     draftPayouts: drafts.map((d) => ({ id: d.id, reference: d.reference, date: businessDateOf(d.settlementDate), net: major(toMinor(d.netAmount, cur)) })),
-    unsettled: deliveredCod.filter((o) => !settled.has(o.id)).map(row),
+    unsettled: unpaid.orders.map(row),
     stale: stale.map(row),
     statusMismatch: statusMismatch.map(row),
     partialDeliveries: partial.map((o) => ({ ...row(o), paymentStatus: o.paymentStatus, reconciled: Boolean(o.partialDeliveryReconciledAt), settled: settled.has(o.id) })),

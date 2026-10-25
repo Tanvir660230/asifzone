@@ -217,7 +217,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
 
       <Card>
         <CardHeader>
-          <CardTitle>Purchase Analytics</CardTitle>
+          <CardTitle>Purchases</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-x-3 gap-y-3 sm:gap-4">
@@ -244,7 +244,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Package size={16} className="text-info-500" /> Favorite Products
+              <Package size={16} className="text-info-500" /> Favourite products
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
@@ -323,7 +323,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
                           : undefined
                     }
                   >
-                    {entry.status}
+                    {entry.status.charAt(0) + entry.status.slice(1).toLowerCase()}
                   </Badge>
                 </div>
                 <p className="mt-1 text-ink-600">{entry.body}</p>
@@ -339,7 +339,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
 
       <Card>
         <CardHeader>
-          <CardTitle>Internal Notes</CardTitle>
+          <CardTitle>Internal notes</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <Textarea

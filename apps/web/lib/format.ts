@@ -18,6 +18,13 @@ export function formatPrice(value: string | number, currency?: string): string {
   return formatMoney(amount, currency ?? getStoreConfig().currency);
 }
 
+/** An amount rounded to the whole unit — for summary tiles and headline figures, where paisa is noise ("৳664,194", not
+ * "৳664,193.91"). Tables and documents keep formatPrice's exact amount. */
+export function formatPriceWhole(value: string | number, currency?: string): string {
+  const amount = typeof value === "string" ? Number(value) : value;
+  return formatPrice(Math.round(amount), currency);
+}
+
 /** The store currency's symbol alone ("৳", "$") — for labels such as "Amount (৳)" and chart axes. */
 export function storeCurrencySymbol(): string {
   return currencySymbol(getStoreConfig().currency);

@@ -99,7 +99,7 @@ export default function SocialLinksPage() {
   return (
     <div>
       <PageHeader
-        title="Social Links"
+        title="Social links"
         action={
           <Button variant="brass" onClick={() => setShowCreate(true)}>
             <Plus size={16} /> Add link

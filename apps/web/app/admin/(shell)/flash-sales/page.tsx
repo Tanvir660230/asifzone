@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Zap } from "lucide-react";
 import { addFlashSaleItemSchema, flashSalePhase, type AddFlashSaleItemInput, type CreateFlashSaleInput, type FlashSale } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
+import { EmptyState } from "@/components/admin/empty-state";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { ProductPicker } from "@/components/admin/product-picker";
@@ -101,7 +102,7 @@ export default function FlashSalesPage() {
   return (
     <div>
       <PageHeader
-        title="Flash Sales"
+        title="Flash sales"
         action={
           <Button variant="brass" onClick={() => setShowCreate(true)}>
             <Plus size={16} /> New flash sale
@@ -128,8 +129,13 @@ export default function FlashSalesPage() {
             {isLoading && <TableSkeleton rows={4} cols={6} />}
             {!isLoading && data?.flashSales.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-ink-400">
-                  No flash sales yet.
+                <td colSpan={6} className="p-0">
+                  <EmptyState
+                    icon={Zap}
+                    title="No flash sales yet"
+                    description="A flash sale lowers chosen products' prices for a set time, with a countdown on the storefront."
+                    action={<Button size="sm" onClick={() => setShowCreate(true)}><Plus size={16} /> New flash sale</Button>}
+                  />
                 </td>
               </tr>
             )}

@@ -128,9 +128,15 @@ export default function SystemHealthPage() {
           key: "outbox",
           title: "Background jobs",
           what: "SMS, email, courier and tracking jobs are being delivered.",
-          count: s.outbox.failed + (s.outbox.dispatcherHealthy ? 0 : 1),
+          // Only last week's failures need a look; older ones stay listed below as history (an SMS credit that ran out
+          // in the past shouldn't keep the page amber forever).
+          count: (s.outbox.failedLast7Days ?? s.outbox.failed) + (s.outbox.dispatcherHealthy ? 0 : 1),
           summary: [
-            s.outbox.failed ? `${formatCount(s.outbox.failed)} failed` : null,
+            s.outbox.failed
+              ? s.outbox.failedLast7Days === undefined || s.outbox.failedLast7Days === s.outbox.failed
+                ? `${formatCount(s.outbox.failed)} failed`
+                : `${formatCount(s.outbox.failedLast7Days)} failed this week · ${formatCount(s.outbox.failed - s.outbox.failedLast7Days)} older`
+              : null,
             s.outbox.dispatcherHealthy ? null : "the job runner hasn't checked in for over a minute",
             s.outbox.undelivered ? `${formatCount(s.outbox.undelivered)} waiting` : null,
           ]

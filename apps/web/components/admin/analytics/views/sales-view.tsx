@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
-import { formatPrice, orderStatusLabel } from "@/lib/format";
+import { formatPrice, formatPriceWhole, orderStatusLabel } from "@/lib/format";
 import { useBiDateRange } from "@/components/admin/bi-date-range-context";
 import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
@@ -41,7 +41,7 @@ export default function SalesIntelligencePage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-fg">Sales Intelligence</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">Sales insights</h2>
         <p className="mt-1 text-sm text-ink-500">Order mix, discounts, returns, and how well the courier is actually performing.</p>
       </div>
 
@@ -81,8 +81,8 @@ export default function SalesIntelligencePage() {
             <>
               <StatTile label="Orders with a discount" value={`${discounts.ordersWithDiscount} / ${discounts.totalOrders}`} icon={<Percent size={18} />} />
               <StatTile label="Discounted order rate" value={`${discounts.discountedOrderRatePct.toFixed(1)}%`} icon={<Percent size={18} />} />
-              <StatTile label="Coupon discount given" value={formatPrice(discounts.couponDiscountTotal)} icon={<Percent size={18} />} />
-              <StatTile label="Bundle discount given" value={formatPrice(discounts.bundleDiscountTotal)} icon={<Percent size={18} />} />
+              <StatTile label="Coupon discount given" value={formatPriceWhole(discounts.couponDiscountTotal)} icon={<Percent size={18} />} />
+              <StatTile label="Bundle discount given" value={formatPriceWhole(discounts.bundleDiscountTotal)} icon={<Percent size={18} />} />
             </>
           )}
         </div>

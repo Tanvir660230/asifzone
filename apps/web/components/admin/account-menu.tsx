@@ -2,13 +2,15 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Keyboard, LogOut, MonitorSmartphone, ShieldOff } from "lucide-react";
+import { Keyboard, LogOut, MonitorSmartphone, ShieldCheck, ShieldOff } from "lucide-react";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Popover } from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import { ActiveSessionsDialog } from "@/components/admin/active-sessions-dialog";
+import { ROLE_NAMES } from "@/components/admin/role-summary";
+import { TwoStepDialog } from "@/components/admin/two-step-dialog";
 
 /** "Store Owner" -> "SO" — fallback avatar monogram, same convention as the storefront header's logo fallback. */
 function getInitials(name: string): string {
@@ -19,9 +21,6 @@ function getInitials(name: string): string {
     .join("");
 }
 
-/** Display names for the roles (naming only — what an admin may do comes from useCapability). */
-const ROLE_NAMES: Record<string, string> = { OWNER: "Owner", STAFF: "Staff" };
-
 /** The toolbar's avatar and its menu: who is signed in, keyboard shortcuts, and signing out (here or everywhere). */
 export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const { data, isLoading } = useCurrentAdmin();
@@ -30,6 +29,7 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
   const [open, setOpen] = useState(false);
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [twoStepOpen, setTwoStepOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const admin = data?.admin;
 
@@ -99,6 +99,18 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
           <MonitorSmartphone size={15} aria-hidden />
           Active sessions
         </button>
+        <button
+          type="button"
+          className="ui-menu-item"
+          onClick={() => {
+            setOpen(false);
+            setTwoStepOpen(true);
+          }}
+        >
+          <ShieldCheck size={15} aria-hidden />
+          <span className="flex-1">2-step sign-in</span>
+          <span className={admin?.twoStepEnabled ? "text-xs text-success-700" : "text-xs text-fg-muted"}>{admin?.twoStepEnabled ? "On" : "Off"}</span>
+        </button>
         <div className="my-1 border-t border-line-subtle" />
         <button type="button" className="ui-menu-item" onClick={handleLogout}>
           <LogOut size={15} aria-hidden />
@@ -111,6 +123,7 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
       </Popover>
       {confirmDialog}
       <ActiveSessionsDialog open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
+      <TwoStepDialog open={twoStepOpen} onClose={() => setTwoStepOpen(false)} enabled={Boolean(admin?.twoStepEnabled)} />
     </>
   );
 }

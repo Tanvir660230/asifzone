@@ -38,7 +38,7 @@ test("the Finance module opens on the owner's home; every other page is in the f
   await owner.keyboard.press("Escape");
   await owner.getByTestId("finance-map-fold").locator("summary").click();
   const map = owner.getByTestId("finance-map");
-  for (const group of ["Money", "Sales & payments", "Purchasing", "Reports & books", "Payroll & partners", "Setup & checks"]) {
+  for (const group of ["Money", "Sales & payments", "Purchasing", "Books & setup", "Payroll & partners"]) {
     await expect(map.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
   await map.getByRole("link", { name: /Start the books/ }).click();

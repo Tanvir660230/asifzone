@@ -43,7 +43,7 @@ import * as biApi from "@/lib/api/bi";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as notificationsApi from "@/lib/api/notifications";
 import * as metricsApi from "@/lib/api/metrics";
-import { formatPrice, timeAgo } from "@/lib/format";
+import { formatPrice, formatPriceWhole, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function toBarItems<T>(
@@ -138,7 +138,7 @@ export default function ExecutiveOverviewPage() {
     <div className="space-y-8">
       {/* On a phone the page's own large title already says this. */}
       <div className="max-sm:hidden">
-        <h2 className="text-lg font-semibold tracking-tight text-fg">Executive Overview</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">At a glance</h2>
         <p className="mt-1 text-sm text-ink-500">
           The business at a glance across every BI domain — updated roughly every minute. Sections below respond to the date range above;
           lifetime figures are labeled separately.
@@ -180,23 +180,23 @@ export default function ExecutiveOverviewPage() {
             <>
               <StatTile
                 label="Gross profit (lifetime, recorded cost)"
-                value={formatPrice(overview.grossProfitLifetime)}
+                value={formatPriceWhole(overview.grossProfitLifetime)}
                 icon={<TrendingUp size={20} />}
                 trendPct={overview.profitGrowthPct}
                 tone="accent"
               />
               <StatTile
-                label="Customers"
+                label="Customers who ordered"
                 value={customerInsights ? customerInsights.totalCustomers.toLocaleString(DISPLAY_LOCALE) : "…"}
                 icon={<Users size={20} />}
               />
               <StatTile label="Conversion rate (lifetime)" value={`${overview.conversionRatePct.toFixed(1)}%`} icon={<Target size={20} />} />
-              <StatTile label="Avg order value" value={formatPrice(Math.round(overview.aovLifetime))} icon={<Receipt size={20} />} />
+              <StatTile label="Avg order value" value={formatPriceWhole(Math.round(overview.aovLifetime))} icon={<Receipt size={20} />} />
               <StatTile
-                label="Refund rate"
-                value={`${overview.refundRatePct.toFixed(1)}%`}
+                label="Return rate"
+                value={`${overview.returnRatePct.toFixed(1)}%`}
                 icon={<Undo2 size={20} />}
-                tone={overview.refundRatePct > 5 ? "warning" : "default"}
+                tone={overview.returnRatePct > 10 ? "warning" : "default"}
               />
               <StatTile
                 label="Realised net sales growth (30d)"

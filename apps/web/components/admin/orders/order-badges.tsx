@@ -67,7 +67,7 @@ type CourierFacts = Pick<Order, "courierConsignmentId" | "courierStatus" | "cour
 
 /** Courier booking state for a row/card: provider-neutral wording, labels from lib/format. */
 export function CourierCell({ order, compact = false }: { order: CourierFacts; compact?: boolean }) {
-  if (!order.courierConsignmentId) return <span className="text-xs text-fg-subtle">Not booked</span>;
+  if (!order.courierConsignmentId) return <span className="whitespace-nowrap text-xs text-fg-subtle">Not booked</span>;
   return (
     <span className="flex flex-col gap-0.5">
       <span className="flex items-center gap-1.5">

@@ -27,7 +27,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { AwaitingExpense, EntryVerification, VerificationItem } from "@/lib/api/finance-books";
-import { formatBookDate, formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type View = "summary" | "check" | "allocate" | "renewals" | "sms" | "settings";
@@ -92,9 +92,9 @@ function Summary({ onView }: { onView: (v: View) => void }) {
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Owner">
-        <StatTile label="You have put in (net)" value={formatPrice(Math.round(d.owner.netInvested))} icon={<Wallet />} tone="accent" href="/admin/finance/equity" />
-        <StatTile label="Paid from your pocket, not repaid" value={formatPrice(Math.round(d.owner.ownerPaidNotRepaid))} icon={<Wallet />} href="/admin/finance/expenses" />
-        <StatTile label="Taken out" value={formatPrice(Math.round(d.owner.drawings))} icon={<Wallet />} href="/admin/finance/equity" />
+        <StatTile label="You have put in (net)" value={formatPriceWhole(Math.round(d.owner.netInvested))} icon={<Wallet />} tone="accent" href="/admin/finance/equity" />
+        <StatTile label="Paid from your pocket, not repaid" value={formatPriceWhole(Math.round(d.owner.ownerPaidNotRepaid))} icon={<Wallet />} href="/admin/finance/expenses" />
+        <StatTile label="Taken out" value={formatPriceWhole(Math.round(d.owner.drawings))} icon={<Wallet />} href="/admin/finance/equity" />
         <StatTile label="Figures not yet confirmed" value={String(unsure)} icon={<ClipboardCheck />} tone={unsure ? "warning" : "default"} onClick={() => onView("check")} />
       </section>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -349,7 +349,7 @@ function Sms({ canRecord }: { canRecord: boolean }) {
         <StatTile label="Balance" value={d.balance === null ? "Not read yet" : formatPrice(d.balance)} icon={<MessageSquareText />} tone={d.isLow ? "warning" : "accent"} />
         <StatTile label="Used a day (30 days)" value={d.usedPerDay === null ? "—" : formatPrice(d.usedPerDay)} icon={<MessageSquareText />} />
         <StatTile label="Runs out about" value={d.runsOutOn ? formatBookDate(d.runsOutOn) : "—"} icon={<CalendarClock />} tone={d.daysLeft !== null && d.daysLeft < 14 ? "warning" : "default"} />
-        <StatTile label="Recharged (all time)" value={formatPrice(d.recharges.reduce((s, r) => s + r.amount, 0))} icon={<Wallet />} href="/admin/finance/expenses" />
+        <StatTile label="Recharged (all time)" value={formatPriceWhole(d.recharges.reduce((s, r) => s + r.amount, 0))} icon={<Wallet />} href="/admin/finance/expenses" />
       </section>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-fg-muted">

@@ -41,7 +41,7 @@ export function SizeGuideEditor({ typeName, sizeGuide, watch, setValue }: SizeGu
 
   return (
     <FormSection
-      title="Size Guide"
+      title="Size guide"
       description={
         isOverride
           ? "This product has its own size guide."
