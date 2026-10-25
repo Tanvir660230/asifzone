@@ -36,7 +36,7 @@ export default function MarketingIntelligencePage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-fg">Marketing Intelligence</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Marketing insights</h2>
           <p className="mt-1 text-sm text-ink-500">Where traffic comes from, and what coupons, bundles, sales, and campaigns actually earn.</p>
         </div>
         <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full border border-ink-100 bg-ink-50/60 p-1">

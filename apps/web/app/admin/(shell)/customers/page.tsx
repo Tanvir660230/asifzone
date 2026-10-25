@@ -42,7 +42,7 @@ import { SmsComposer } from "@/components/admin/sms-composer";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import type { AdminCustomerListParams } from "@/lib/api/admin-customers";
-import { formatPrice, formatStoreDate } from "@/lib/format";
+import { formatPrice, formatPriceWhole, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { TAG_META, primaryTag } from "@/lib/customer-tags";
@@ -156,6 +156,7 @@ function SortableHeader({
 export default function CustomersPage() {
   const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: SMS actions only when SMS is configured
   const [search, setSearch] = useState("");
+  const [allStats, setAllStats] = useState(false);
   const [tag, setTag] = useState<CustomerTag | "">("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
   const [page, setPage] = useState(1);
@@ -367,13 +368,15 @@ export default function CustomersPage() {
         }
       />
 
-      <div className={cn("mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6")}>
+      <div className={cn("grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6", allStats ? "mb-6" : "mb-2 sm:mb-6")}>
         {stats ? (
           <>
             <StatTile label="Total customers" value={stats.totalCustomers.toLocaleString()} icon={<Users size={18} />} />
             <StatTile label="New this month" value={stats.newThisMonth.toLocaleString()} icon={<UserPlus size={18} />} />
+            {/* Phones show the first two and the list right away; the rest are one tap away. */}
+            <div className={allStats ? "contents" : "contents max-sm:hidden"}>
             <StatTile label="Repeat customers" value={stats.repeatCustomers.toLocaleString()} icon={<Flame size={18} />} />
-            <StatTile label="Lifetime realised net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
+            <StatTile label="Lifetime realised net sales" value={formatPriceWhole(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
             <StatTile label="VIP customers" value={stats.vipCustomers.toLocaleString()} icon={<Star size={18} />} tone="accent" />
             <StatTile
               label="Inactive customers"
@@ -381,6 +384,7 @@ export default function CustomersPage() {
               icon={<Moon size={18} />}
               tone={stats.inactive30 > 0 ? "warning" : "default"}
             />
+            </div>
           </>
         ) : (
           <>
@@ -393,6 +397,11 @@ export default function CustomersPage() {
           </>
         )}
       </div>
+      {stats && (
+        <button type="button" onClick={() => setAllStats((v) => !v)} className="mb-4 text-sm text-accent sm:hidden" aria-expanded={allStats}>
+          {allStats ? "Show fewer numbers" : "Show 4 more numbers"}
+        </button>
+      )}
 
       {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx and the Orders page's
           equivalent bar: this floats over the scrolling customer rows, and translucency there let

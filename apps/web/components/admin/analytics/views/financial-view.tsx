@@ -8,7 +8,7 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { MetricDrillDown, type DrillTarget } from "@/components/admin/analytics/metric-drill-down";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as biApi from "@/lib/api/bi";
-import { formatBusinessDate, formatPrice } from "@/lib/format";
+import { formatBusinessDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Every number here is a registry metric computed by the server (docs/METRICS_REGISTRY.md); this page only formats them.
@@ -26,7 +26,7 @@ export default function FinancialAnalyticsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-fg">Financial Analytics</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">Financial analytics</h2>
         <p className="mt-1 text-sm text-ink-500">
           Realised sales (COD at delivery, online at payment), returns, refunds and cash — one definition per number.
         </p>
@@ -40,17 +40,17 @@ export default function FinancialAnalyticsPage() {
             Array.from({ length: 11 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile onClick={() => drill("gross_merchandise_sales")} label="Gross merchandise (as charged)" value={formatPrice(overview.grossMerchandiseThisMonth)} icon={<Wallet size={18} />} />
-              <StatTile onClick={() => drill("discounts")} label="Discounts" value={formatPrice(overview.discountsThisMonth)} icon={<Receipt size={18} />} />
-              <StatTile onClick={() => drill("merchandise_vat")} label="Merchandise VAT" value={formatPrice(overview.merchandiseVatThisMonth)} icon={<Receipt size={18} />} />
-              <StatTile onClick={() => drill("merchandise_refunds")} label="Merchandise refunds" value={formatPrice(overview.merchandiseRefundsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile onClick={() => drill("realised_net_sales")} label="Realised net sales" value={formatPrice(overview.revenueThisMonth)} icon={<TrendingUp size={18} />} tone="accent" trendPct={overview.revenueGrowthPct} />
-              <StatTile onClick={() => drill("shipping_charged")} label="Shipping charged" value={formatPrice(overview.shippingThisMonth)} icon={<Truck size={18} />} />
-              <StatTile onClick={() => drill("tax_collected")} label="VAT collected" value={formatPrice(overview.taxThisMonth)} icon={<Receipt size={18} />} />
-              <StatTile onClick={() => drill("refunds")} label="All refunds" value={formatPrice(overview.refundsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile onClick={() => drill("collected_cash")} label="Collected cash" value={formatPrice(overview.collectedCashThisMonth)} icon={<Banknote size={18} />} />
-              <StatTile onClick={() => drill("returns")} label="Returns (goods back)" value={formatPrice(overview.returnsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile onClick={() => drill("net_sales")} label="Net sales incl. shipping, less returns" value={formatPrice(overview.netSalesInclShippingThisMonth)} icon={<Wallet size={18} />} />
+              <StatTile onClick={() => drill("gross_merchandise_sales")} label="Gross merchandise (as charged)" value={formatPriceWhole(overview.grossMerchandiseThisMonth)} icon={<Wallet size={18} />} />
+              <StatTile onClick={() => drill("discounts")} label="Discounts" value={formatPriceWhole(overview.discountsThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile onClick={() => drill("merchandise_vat")} label="Merchandise VAT" value={formatPriceWhole(overview.merchandiseVatThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile onClick={() => drill("merchandise_refunds")} label="Merchandise refunds" value={formatPriceWhole(overview.merchandiseRefundsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile onClick={() => drill("realised_net_sales")} label="Realised net sales" value={formatPriceWhole(overview.revenueThisMonth)} icon={<TrendingUp size={18} />} tone="accent" trendPct={overview.revenueGrowthPct} />
+              <StatTile onClick={() => drill("shipping_charged")} label="Shipping charged" value={formatPriceWhole(overview.shippingThisMonth)} icon={<Truck size={18} />} />
+              <StatTile onClick={() => drill("tax_collected")} label="VAT collected" value={formatPriceWhole(overview.taxThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile onClick={() => drill("refunds")} label="All refunds" value={formatPriceWhole(overview.refundsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile onClick={() => drill("collected_cash")} label="Collected cash" value={formatPriceWhole(overview.collectedCashThisMonth)} icon={<Banknote size={18} />} />
+              <StatTile onClick={() => drill("returns")} label="Returns (goods back)" value={formatPriceWhole(overview.returnsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile onClick={() => drill("net_sales")} label="Net sales incl. shipping, less returns" value={formatPriceWhole(overview.netSalesInclShippingThisMonth)} icon={<Wallet size={18} />} />
             </>
           )}
         </div>
@@ -71,9 +71,9 @@ export default function FinancialAnalyticsPage() {
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Outstanding COD" value={formatPrice(overview.outstandingCod)} icon={<Truck size={18} />} />
-              <StatTile label="Refunds owed" value={formatPrice(overview.refundDue)} icon={<Undo2 size={18} />} tone={overview.refundDue > 0 ? "warning" : "default"} />
-              <StatTile label="Balance due" value={formatPrice(overview.pendingPaymentsAmount)} icon={<Clock size={18} />} tone={overview.pendingPaymentsCount > 0 ? "warning" : "default"} />
+              <StatTile label="Outstanding COD" value={formatPriceWhole(overview.outstandingCod)} icon={<Truck size={18} />} />
+              <StatTile label="Refunds owed" value={formatPriceWhole(overview.refundDue)} icon={<Undo2 size={18} />} tone={overview.refundDue > 0 ? "warning" : "default"} />
+              <StatTile label="Balance due" value={formatPriceWhole(overview.pendingPaymentsAmount)} icon={<Clock size={18} />} tone={overview.pendingPaymentsCount > 0 ? "warning" : "default"} />
             </>
           )}
         </div>
@@ -86,8 +86,8 @@ export default function FinancialAnalyticsPage() {
             Array.from({ length: 6 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Gross margin (lifetime, recorded cost)" value={formatPrice(overview.grossProfitLifetime)} icon={<Wallet size={18} />} tone="accent" trendPct={overview.profitGrowthPct} />
-              <StatTile label="Inventory value (current cost)" value={formatPrice(overview.inventoryValue)} icon={<Package size={18} />} />
+              <StatTile label="Gross margin (lifetime, recorded cost)" value={formatPriceWhole(overview.grossProfitLifetime)} icon={<Wallet size={18} />} tone="accent" trendPct={overview.profitGrowthPct} />
+              <StatTile label="Inventory value (current cost)" value={formatPriceWhole(overview.inventoryValue)} icon={<Package size={18} />} />
               <StatTile label="Refund rate" value={`${overview.refundRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
               <StatTile label="Return rate" value={`${overview.returnRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
               <StatTile label="Cancelled rate" value={`${overview.cancelledRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
@@ -103,9 +103,9 @@ export default function FinancialAnalyticsPage() {
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Refunds paid out" value={formatPrice(costs.refundCost)} icon={<Receipt size={18} />} />
-              <StatTile label="Discounts given" value={formatPrice(costs.discountCost)} icon={<Receipt size={18} />} />
-              <StatTile label="Courier round-trip loss" value={formatPrice(costs.courierLossCost)} icon={<Receipt size={18} />} tone={costs.courierLossCount > 0 ? "warning" : "default"} />
+              <StatTile label="Refunds paid out" value={formatPriceWhole(costs.refundCost)} icon={<Receipt size={18} />} />
+              <StatTile label="Discounts given" value={formatPriceWhole(costs.discountCost)} icon={<Receipt size={18} />} />
+              <StatTile label="Courier round-trip loss" value={formatPriceWhole(costs.courierLossCost)} icon={<Receipt size={18} />} tone={costs.courierLossCount > 0 ? "warning" : "default"} />
             </>
           )}
         </div>
@@ -162,8 +162,8 @@ export default function FinancialAnalyticsPage() {
               <StatTileSkeleton />
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
-                <StatTile label="VAT on orders" value={formatPrice(tax.estimatedTax)} icon={<Receipt size={18} />} tone="accent" />
-                <StatTile label="Realised net sales" value={formatPrice(tax.revenue)} icon={<Wallet size={18} />} />
+                <StatTile label="VAT on orders" value={formatPriceWhole(tax.estimatedTax)} icon={<Receipt size={18} />} tone="accent" />
+                <StatTile label="Realised net sales" value={formatPriceWhole(tax.revenue)} icon={<Wallet size={18} />} />
                 <StatTile label="Orders without a VAT record" value={String(tax.taxUnrecordedOrders ?? 0)} icon={<Receipt size={18} />} />
               </div>
             )}

@@ -121,7 +121,7 @@ export default function PaymentMethodsPage() {
   return (
     <div>
       <PageHeader
-        title="Payment Methods"
+        title="Payment methods"
         action={
           <Button variant="brass" onClick={() => setShowCreate(true)}>
             <Plus size={16} /> Add method

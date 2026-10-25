@@ -6,6 +6,7 @@ import { Plus, Trash2, RotateCcw, ArchiveX, Pencil, Copy, CopyPlus } from "lucid
 import type { Coupon, CreateCouponInput } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
@@ -179,19 +180,16 @@ export default function CouponsPage() {
 
       <ModuleTabs />
 
-      <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
-        {(["active", "trash"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
-              tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
-            )}
-          >
-            {t === "trash" ? "Trash" : "Active"}
-          </button>
-        ))}
+      <div className="mb-4">
+        <SegmentedControl
+          aria-label="Coupons or Trash"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "active", label: "Coupons" },
+            { value: "trash", label: "Trash" },
+          ]}
+        />
       </div>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">

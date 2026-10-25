@@ -274,7 +274,7 @@ export default function NewOrderPage() {
   return (
     <div>
       <PageHeader
-        title="Create Order"
+        title="New order"
         description="For phone, Facebook or walk-in orders — stock and pricing sync the same way a storefront checkout does."
         action={<BackLink href="/admin/orders" label="Back to Orders" />}
       />
@@ -513,14 +513,14 @@ export default function NewOrderPage() {
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
           <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting || (perms.ready && !perms.manage)}>
-            {isSubmitting ? "Creating order…" : `Create Order — ${money(quote?.total)}`}
+            {isSubmitting ? "Creating order…" : `Create order — ${money(quote?.total)}`}
           </Button>
         </form>
 
         {/* Summary */}
         <aside className="h-fit lg:sticky lg:top-24 lg:order-2">
           <div className="space-y-4 rounded-lg border border-ink-100 bg-cream-50 p-5">
-            <h2 className="font-display text-lg text-ink-900">Order Summary</h2>
+            <h2 className="font-display text-lg text-ink-900">Order summary</h2>
 
             <div className="space-y-2 text-sm">
               {items.length === 0 && <p className="text-ink-400">No items yet</p>}

@@ -25,7 +25,7 @@ import type { StockProblem, StockPurchase } from "@/lib/api/stock";
 import { getStockActivity, getStockToday, retryAutoFill, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
 import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/components/ui/tabs";
-import { formatBookDate, formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
 import { BatchFillSheet } from "./batch-fill-sheet";
 import { BoughtSheet, type BoughtStart } from "./bought-sheet";
@@ -129,7 +129,7 @@ export function StockHub() {
   });
 
   const summary = data ? [
-    data.totalValue !== null ? `${formatPrice(data.totalValue)} at cost` : null,
+    data.totalValue !== null ? `${formatPriceWhole(data.totalValue)} at cost` : null,
     data.lastCount ? `Last counted ${formatBookDate(data.lastCount)}` : "Not counted here yet",
   ].filter(Boolean).join(" · ") : " ";
 

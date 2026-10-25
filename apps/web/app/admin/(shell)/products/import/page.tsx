@@ -8,7 +8,6 @@ import { PRODUCT_IMPORT_LIMITS, type ProductImportReport, type ProductImportResu
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
-import { BackLink } from "@/components/ui/back-link";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
@@ -103,7 +102,7 @@ export default function ProductImportPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Import & export products" action={<BackLink href="/admin/products" label="Back to Products" />} />
+      <PageHeader title="Import & export products" />
       <ModuleTabs />
 
       <FormSection title="Get a file" description="One row per variant. Export what you have to edit it in a spreadsheet, or start from an empty template for one product type.">
