@@ -297,3 +297,15 @@ export interface ProductionHome {
   recentFills: Array<{ id: string; date: string; number: string | null; name: string; quantity: number | null }>;
 }
 export const getProductionHome = () => apiFetch<ProductionHome>(`${BASE}/production-home`);
+
+// ── a product's kit (docs/STOCK_HUB.md §11) ────────────────────────────────────────────────────────────────────────────
+export interface KitComponent {
+  variantId: string; name: string; unit: string; perSale: number | null; source: "RECIPE" | "ITEM" | "PACKING" | "ROLL";
+  stock: number; enoughFor: number | null; daysLeft: number | null; avgCost: number | null; costPerSale: number | null;
+  lastPurchase: { date: string; unitCost: number | null; qty: number } | null; low: boolean;
+}
+export interface ProductKit {
+  productId: string; name: string; fillToOrder: boolean; costingActive: boolean;
+  sizes: Array<{ variantId: string; sku: string; label: string; stock: number; soldPerDay: number | null; recipe: { bomId: string; version: number } | null; components: KitComponent[]; canSell: number | null; runsOutFirst: { variantId: string; name: string } | null; kitCost: number | null }>;
+}
+export const getProductKit = (productId: string) => apiFetch<ProductKit>(`${BASE}/products/${productId}/kit`);

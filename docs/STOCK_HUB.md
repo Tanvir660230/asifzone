@@ -349,3 +349,13 @@ levels › Movements › **Undo** (owner only, `inventory.approve`; `POST /api/i
 - The pair is left out of the stock alerts and the "without a value" exceptions; the original's open exception is
   acknowledged with the correction named. A stock entry's journal can no longer be reversed on its own from the journal
   screen (`JOURNAL_OWNED_BY_STOCK`) — that would split the stock's value from the books.
+
+## 11. A product's kit (2026-10-25)
+
+Product › Pricing & Inventory › **What goes out with one sale** (`GET /api/v1/finance/stock/products/:id/kit`,
+`kit.service.ts`): per size, everything one sale takes, read from the owner's own records — the latest approved recipe's
+materials (or the item itself when it is bought ready), the packing rules for a one-item parcel, and rolls in use. Each
+part shows what is in stock, how many sales that covers, days left at the last 30 days' use, its cost in one sale (only
+when costing knows an average — never guessed) and the last purchase (date, unit cost). The part that runs out first
+decides how many more sales the stock covers. **Bought** and **Count** open the Stock page's sheets for that part; the
+recipe and the packing rules are changed on their own pages.
