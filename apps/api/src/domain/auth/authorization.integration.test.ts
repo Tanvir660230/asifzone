@@ -505,7 +505,7 @@ describe("the role matrix — every admin route, every identity", () => {
   // Side effects too broad to fire blind as OWNER (they are exercised by their own suites).
   const OWNER_SKIP = new Set(["POST /api/v1/storefront/read-model/rebuild", "POST /api/payment-admin/ledger/repair", "POST /api/auth/logout-all"]);
   // The sweep reads every cached admin endpoint; drop what it warmed so later files never see a pre-filled cache.
-  const CACHE_FAMILIES = ["analytics:", "metrics:", "bi:", "products:", "categories:", "outbox:", "payments:", "banners:", "homepage-sections:", "payment-methods:", "social-links:", "sms-settings:", "settings:"];
+  const CACHE_FAMILIES = ["swr:", "analytics:", "metrics:", "bi:", "products:", "categories:", "outbox:", "payments:", "banners:", "homepage-sections:", "payment-methods:", "social-links:", "sms-settings:", "settings:"];
   afterAll(async () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
