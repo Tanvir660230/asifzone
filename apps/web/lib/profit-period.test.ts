@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bucketDays, defaultGrain, presetRange, priorLabel, weekStart } from "./profit-period";
 
-const day = (date: string, sales: number, profit: number) => ({ date, orders: 1, sales, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, profit });
+const day = (date: string, sales: number, profit: number) => ({ date, orders: 1, sales, goods: 0, stockCorrections: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, salesProfit: profit, profit });
 
 describe("profit periods", () => {
   it("presets end on the store's today", () => {

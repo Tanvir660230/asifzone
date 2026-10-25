@@ -82,7 +82,7 @@ describe("profit by day", () => {
     // every day of the range is there, oldest first, quiet days as zero
     expect(r.body.days.map((d: { date: string }) => d.date)).toEqual([0, 1, 2, 3, 4, 5, 6].map((i) => addDays(from, i)));
     const d1 = r.body.days.find((d: { date: string }) => d.date === addDays(today, -2));
-    expect(d1).toEqual({ date: addDays(today, -2), orders: 2, sales: 1500, goods: 600, packaging: 20, delivery: 110, paymentFees: 15, ads: 200, running: 0, profit: 555 });
+    expect(d1).toEqual({ date: addDays(today, -2), orders: 2, sales: 1500, goods: 600, stockCorrections: 0, packaging: 20, delivery: 110, paymentFees: 15, ads: 200, running: 0, salesProfit: 555, profit: 555 });
     const d2 = r.body.days.find((d: { date: string }) => d.date === addDays(today, -1));
     expect(d2).toMatchObject({ orders: 0, sales: 0, ads: 150, running: 300, profit: -450 });
     expect(r.body.days.find((d: { date: string }) => d.date === today)).toMatchObject({ sales: 0, profit: 0 });

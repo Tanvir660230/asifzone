@@ -666,9 +666,18 @@ export interface MovementToValue {
   ledger: LedgerOwner;
   /** The decrease has a known cause (a parcel the courier lost): never goods already sent outside (outside-stock.ts). */
   knownCause?: boolean;
+  /** When the books take this movement, if not at its own time: a correction is booked on the day of the entry it undoes
+   * (docs/STOCK_HUB.md §10), so the mistake and its correction cancel on one day instead of showing as a gain and a loss. */
+  bookOn?: Date;
 }
 
 const COUNTER_FOR_REASON: Record<string, AccountMappingKey> = { DAMAGED: "cogs.inventory_shrinkage", LOST: "cogs.inventory_shrinkage", PACKAGING_USE: "cogs.packaging" };
+
+/** The business day the books take a movement on: its own time (or the correction's `bookOn`), never before costing went live. */
+function bookingDate(m: MovementToValue, scope: CostingScope): string {
+  const at = m.bookOn ?? m.movement.createdAt;
+  return businessDate(at < scope.activatedAt ? scope.activatedAt : at, scope.business.timezone);
+}
 
 function opFor(m: MovementToValue, position: CostPosition, currency: string, fillToOrder?: { recipeMinor: number | null }): { op: CostOperation; unitCostMinor: number | null; lineSource?: LineCostSource } {
   const qty = Math.abs(m.movement.change);
@@ -762,7 +771,7 @@ export async function valueStockMovementsInTx(
     if (batch.some((b) => b.m.movement.variantId === m.movement.variantId)) await flush();
     const position = positions.get(m.movement.variantId)!;
     const { op, unitCostMinor, lineSource } = opFor(m, position, cur, fillToOrder.has(m.movement.variantId) ? { recipeMinor: recipe.get(m.movement.variantId) ?? null } : undefined);
-    const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
+    const financialDate = bookingDate(m, scope);
     batch.push({
       m,
       input: {
@@ -792,7 +801,7 @@ async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: M
   const adjustmentMinor = Number(result.figures.costAdjustment);
   const unbookedMinor = Number(result.figures.unbookedDeficitChange);
   if (bookMinor === 0 && adjustmentMinor === 0 && unbookedMinor === 0) return;
-  const financialDate = businessDate(m.movement.createdAt < scope.activatedAt ? scope.activatedAt : m.movement.createdAt, scope.business.timezone);
+  const financialDate = bookingDate(m, scope);
   const counterKey = m.ledger === "MOVEMENT" ? (COUNTER_FOR_REASON[m.movement.reason] ?? "cogs.count_adjustments") : null;
   // A count correction or loss is first the goods already costed as sold outside the website (outside-stock.ts).
   const outsideReleaseMinor = counterKey && bookMinor < 0 && !m.knownCause && OUTSIDE_RELEASE_REASONS.has(m.movement.reason) ? await outsideReleaseInTx(tx, scope.business.id, scope.business.baseCurrency, -bookMinor) : 0;

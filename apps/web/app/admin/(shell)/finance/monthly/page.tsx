@@ -60,13 +60,14 @@ export default function MonthlyProfitPage() {
                 <TableHeaderCell align="right">Fees</TableHeaderCell>
                 <TableHeaderCell align="right">Ads</TableHeaderCell>
                 <TableHeaderCell align="right">Running</TableHeaderCell>
+                <TableHeaderCell align="right">Stock fixes</TableHeaderCell>
                 <TableHeaderCell align="right">Profit</TableHeaderCell>
                 <TableHeaderCell>Still to settle</TableHeaderCell>
               </tr>
             </TableHead>
             <tbody>
-              {q.isLoading && <TableSkeleton rows={4} cols={10} />}
-              {q.isSuccess && months.length === 0 && <TableMessageRow colSpan={10}>The books haven&apos;t started yet.</TableMessageRow>}
+              {q.isLoading && <TableSkeleton rows={4} cols={11} />}
+              {q.isSuccess && months.length === 0 && <TableMessageRow colSpan={11}>The books haven&apos;t started yet.</TableMessageRow>}
               {months.map((m) => (
                 <Fragment key={m.month}>
                   <TableRow className="cursor-pointer" onClick={() => setOpen(open === m.month ? null : m.month)} data-testid="month-row">
@@ -77,12 +78,12 @@ export default function MonthlyProfitPage() {
                       </button>
                       <span className="block pl-6 text-xs text-fg-muted">{m.orders} orders{m.marginPct !== null ? ` · ${m.marginPct}%` : ""}</span>
                     </TableCell>
-                    {[m.sales, m.goods, m.packaging, m.delivery, m.paymentFees, m.ads, m.running].map((v, i) => <TableCell key={i} align="right" className="tabular-nums">{formatPrice(v)}</TableCell>)}
+                    {[m.sales, m.goods, m.packaging, m.delivery, m.paymentFees, m.ads, m.running, m.stockCorrections].map((v, i) => <TableCell key={i} align="right" className="tabular-nums">{formatPrice(v)}</TableCell>)}
                     <TableCell align="right" className={cn("font-semibold tabular-nums", m.profit < 0 ? "text-danger-700" : "text-fg")}>{formatPrice(m.profit)}</TableCell>
                     <TableCell><Settle m={m} /></TableCell>
                   </TableRow>
                   {open === m.month && (
-                    <tr><td colSpan={10} className="bg-surface-muted px-4 py-3"><MonthOrders month={m.month} /></td></tr>
+                    <tr><td colSpan={11} className="bg-surface-muted px-4 py-3"><MonthOrders month={m.month} /></td></tr>
                   )}
                 </Fragment>
               ))}
@@ -90,7 +91,7 @@ export default function MonthlyProfitPage() {
           </Table>
         </HScrollShadow>
       </Card>
-      <p className="text-xs text-fg-muted">The months add up to the income statement. Goods marked as estimated get their real cost once purchase bills are in; a month is closed from <Link href="/admin/finance/attention?view=month-end" className="font-medium text-accent hover:underline">Month-end</Link>.</p>
+      <p className="text-xs text-fg-muted">Stock fixes are count differences and cost corrections — stock put right, not goods sold. The months add up to the income statement. Goods marked as estimated get their real cost once purchase bills are in; a month is closed from <Link href="/admin/finance/attention?view=month-end" className="font-medium text-accent hover:underline">Month-end</Link>.</p>
     </div>
   );
 }

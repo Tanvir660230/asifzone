@@ -43,7 +43,7 @@ export const defaultGrain = (days: number): Grain => (days <= 45 ? "day" : days 
 
 export interface ProfitBucket extends Omit<ProfitDay, "date"> { key: string; from: string; to: string }
 
-const FIELDS = ["orders", "sales", "goods", "packaging", "delivery", "paymentFees", "ads", "running", "profit"] as const;
+const FIELDS = ["orders", "sales", "goods", "stockCorrections", "packaging", "delivery", "paymentFees", "ads", "running", "salesProfit", "profit"] as const;
 
 /** The week a date falls in — weeks start on Saturday, the start of the working week in Bangladesh. */
 export function weekStart(date: string): string {
@@ -56,7 +56,7 @@ export function bucketDays(days: ProfitDay[], grain: Grain): ProfitBucket[] {
   const out = new Map<string, ProfitBucket>();
   for (const d of days) {
     const key = grain === "day" ? d.date : grain === "week" ? weekStart(d.date) : d.date.slice(0, 7);
-    const b = out.get(key) ?? { key, from: d.date, to: d.date, orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, profit: 0 };
+    const b = out.get(key) ?? { key, from: d.date, to: d.date, orders: 0, sales: 0, goods: 0, stockCorrections: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, salesProfit: 0, profit: 0 };
     for (const f of FIELDS) b[f] = Math.round((b[f] + d[f]) * 100) / 100;
     if (d.date < b.from) b.from = d.date;
     if (d.date > b.to) b.to = d.date;

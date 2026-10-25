@@ -171,14 +171,18 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
 /** The longest range profit by day answers — a year and a day. */
 const MAX_DAYS = 366;
 
-type DayFigures = { orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number };
-const emptyDay = (): DayFigures => ({ orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0 });
+type DayFigures = { orders: number; sales: number; goods: number; stockCorrections: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number };
+const emptyDay = (): DayFigures => ({ orders: 0, sales: 0, goods: 0, stockCorrections: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0 });
+/** Count differences (5210) and cost corrections (5150): stock put right, not goods sold — kept apart so a correction day
+ * isn't read as a selling loss (or gain). Shrinkage (damaged, lost) stays in goods: those are real costs. */
+const CORRECTION_KEYS = new Set(["cogs.count_adjustments", "cogs.cost_adjustments", "cogs.purchase_price_differences"]);
 
 /**
  * Profit by day (docs/FINANCE_PROFIT_DASHBOARD.md): each business day's posted income-statement lines folded into the
  * owner's words — sales, then what the goods, packaging, delivery, payment fees, ads and running costs (rent, salaries,
  * hosting, other income and expenses) took. Every P&L account lands in exactly one bucket, so the days add up to the
- * income statement's net profit for the range. The prior period (same length, just before) comes alongside as totals.
+ * income statement's net profit for the range. Stock corrections are their own bucket: `profit` includes them (it is the
+ * books' figure), `salesProfit` is the profit from selling, before them. The prior period (same length, just before) comes alongside as totals.
  */
 export async function profitByDay(q: { from?: string; to?: string }) {
   const { business } = await getFinanceContext();
@@ -218,6 +222,7 @@ export async function profitByDay(q: { from?: string; to?: string }) {
     const key = keyOf.get(r.accountId);
     if (r.type === "REVENUE") d.sales -= cost;
     else if (r.type === "COGS" && key === "cogs.packaging") d.packaging += cost;
+    else if (r.type === "COGS" && key && CORRECTION_KEYS.has(key)) d.stockCorrections += cost;
     else if (r.type === "COGS") d.goods += cost;
     else if (key === "expense.courier_fees" || key === "expense.freight_in") d.delivery += cost;
     else if (key === "expense.gateway_fees") d.paymentFees += cost;
@@ -226,14 +231,18 @@ export async function profitByDay(q: { from?: string; to?: string }) {
   }
   for (const r of sold) dayOf(r.day).orders = Number(r.orders);
 
-  const profitOf = (f: DayFigures) => f.sales - f.goods - f.packaging - f.delivery - f.paymentFees - f.ads - f.running;
+  const salesProfitOf = (f: DayFigures) => f.sales - f.goods - f.packaging - f.delivery - f.paymentFees - f.ads - f.running;
+  const profitOf = (f: DayFigures) => salesProfitOf(f) - f.stockCorrections;
   const m = (v: number) => toMajorNumber(v, cur);
-  const major = (f: DayFigures) => ({ orders: f.orders, sales: m(f.sales), goods: m(f.goods), packaging: m(f.packaging), delivery: m(f.delivery), paymentFees: m(f.paymentFees), ads: m(f.ads), running: m(f.running), profit: m(profitOf(f)) });
+  const major = (f: DayFigures) => ({
+    orders: f.orders, sales: m(f.sales), goods: m(f.goods), packaging: m(f.packaging), delivery: m(f.delivery), paymentFees: m(f.paymentFees), ads: m(f.ads), running: m(f.running),
+    stockCorrections: m(f.stockCorrections), salesProfit: m(salesProfitOf(f)), profit: m(profitOf(f)),
+  });
   const total = (start: string, end: string) => {
     const t = emptyDay();
     for (const [d, f] of days) if (d >= start && d <= end) for (const k of Object.keys(t) as Array<keyof DayFigures>) t[k] += f[k];
     const profit = profitOf(t);
-    return { ...major(t), marginPct: t.sales > 0 ? Math.round((profit / t.sales) * 1000) / 10 : null, salesPerAdTaka: t.ads > 0 ? Math.round((t.sales / t.ads) * 100) / 100 : null };
+    return { ...major(t), marginPct: t.sales > 0 ? Math.round((profit / t.sales) * 1000) / 10 : null, salesMarginPct: t.sales > 0 ? Math.round((salesProfitOf(t) / t.sales) * 1000) / 10 : null, salesPerAdTaka: t.ads > 0 ? Math.round((t.sales / t.ads) * 100) / 100 : null };
   };
   const series = [];
   for (let d = from; d <= to; d = addDays(d, 1)) series.push({ date: d, ...major(days.get(d) ?? emptyDay()) });
@@ -350,7 +359,7 @@ export async function profitByMonth() {
     const r = await profitByDay({ from, to });
     for (const d of r.days) {
       const k = d.date.slice(0, 7);
-      const t = sums.get(k) ?? sums.set(k, { orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, profit: 0 }).get(k)!;
+      const t = sums.get(k) ?? sums.set(k, { orders: 0, sales: 0, goods: 0, stockCorrections: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, salesProfit: 0, profit: 0 }).get(k)!;
       for (const f of Object.keys(t)) t[f] = Math.round((t[f]! + Number((d as unknown as Record<string, number>)[f] ?? 0)) * 100) / 100;
     }
     from = addDays(to, 1);
@@ -381,7 +390,7 @@ export async function profitByMonth() {
     currency: cur,
     booksStartedOn: business.openingDate,
     months: months.map((k) => {
-      const t = sums.get(k) ?? { orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, profit: 0 };
+      const t = sums.get(k) ?? { orders: 0, sales: 0, goods: 0, stockCorrections: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, salesProfit: 0, profit: 0 };
       const cogs = estimated.filter((r) => r.m === k);
       const all = cogs.reduce((s, r) => s + toMinor(r.net, cur), 0);
       const unsure = cogs.filter((r) => r.status === "ESTIMATED" || r.status === "MISSING").reduce((s, r) => s + toMinor(r.net, cur), 0);

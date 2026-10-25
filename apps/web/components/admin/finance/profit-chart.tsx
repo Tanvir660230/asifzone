@@ -29,7 +29,9 @@ function compact(v: number, metric: ProfitMetric): string {
   if (a >= 1000) return `${sign}${s}${(a / 1000).toFixed(1).replace(/\.0$/, "")}k`;
   return `${sign}${s}${Math.round(a)}`;
 }
-const valueOf = (b: ProfitBucket, metric: ProfitMetric) => b[metric];
+// The profit bar is the profit from selling: a stock correction (a count fix, a cost correction) is shown beside it, never
+// as a day's selling loss or gain.
+const valueOf = (b: ProfitBucket, metric: ProfitMetric) => (metric === "profit" ? b.salesProfit : b[metric]);
 const format = (v: number, metric: ProfitMetric) => (metric === "orders" ? String(v) : money(v));
 
 /** "Oct 4", "Oct 4 – 10", "October" — a bucket's name. */
@@ -94,7 +96,7 @@ export function ProfitChart({ buckets, grain, metric, highlight }: { buckets: Pr
     const t: ChartTableData = {
       caption: `Profit by ${unit}`,
       columns: [{ label: unit[0]!.toUpperCase() + unit.slice(1) }, { label: "Orders", align: "right" }, { label: "Sales", align: "right" }, { label: "Ads", align: "right" }, { label: "Other costs", align: "right" }, { label: "Profit", align: "right" }],
-      rows: [...buckets].reverse().map((b) => ({ key: b.key, cells: [bucketLabel(b, grain, true), b.orders, money(b.sales), money(b.ads), money(b.goods + b.packaging + b.delivery + b.paymentFees + b.running), money(b.profit)] })),
+      rows: [...buckets].reverse().map((b) => ({ key: b.key, cells: [bucketLabel(b, grain, true), b.orders, money(b.sales), money(b.ads), money(b.goods + b.packaging + b.delivery + b.paymentFees + b.running), money(b.salesProfit)] })),
     };
     return { summary: text, table: t };
   }, [buckets, grain, metric, geo.values]);
@@ -151,8 +153,8 @@ export function ProfitChart({ buckets, grain, metric, highlight }: { buckets: Pr
             style={{ left: `${Math.min(84, Math.max(16, ((PAD.left + (hover! + 0.5) * geo.slot) / width) * 100))}%` }}
           >
             <p className="text-xs font-medium text-fg-muted">{bucketLabel(hovered, grain, true)}</p>
-            <p className={cn("mt-0.5 text-lg font-semibold tabular-nums tracking-tight", hovered.profit < 0 ? "text-danger-600" : "text-fg")}>
-              {hovered.profit < 0 ? `${money(-hovered.profit)} loss` : `${money(hovered.profit)} profit`}
+            <p className={cn("mt-0.5 text-lg font-semibold tabular-nums tracking-tight", hovered.salesProfit < 0 ? "text-danger-600" : "text-fg")}>
+              {hovered.salesProfit < 0 ? `${money(-hovered.salesProfit)} loss` : `${money(hovered.salesProfit)} profit`}
             </p>
             <dl className="mt-2 space-y-1 text-xs">
               <Row label={`Sales · ${hovered.orders} order${hovered.orders === 1 ? "" : "s"}`} value={money(hovered.sales)} strong />
@@ -161,6 +163,11 @@ export function ProfitChart({ buckets, grain, metric, highlight }: { buckets: Pr
               <Row label="Ads" value={money(-hovered.ads)} />
               {hovered.running !== 0 && <Row label="Running costs" value={money(-hovered.running)} />}
             </dl>
+            {hovered.stockCorrections !== 0 && (
+              <p className="mt-2 border-t border-line-subtle pt-2 text-xs text-fg-muted">
+                Stock correction {money(-hovered.stockCorrections)} — a count fix or cost correction, not in the bar
+              </p>
+            )}
           </div>
         )}
       </div>

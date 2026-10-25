@@ -170,9 +170,11 @@ export interface ProfitReport {
 export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitReport>(`${BASE}/profit${qs(q)}`);
 export interface LaunchReport { /** null: the books open before the first order, so there were no weeks before them. */ period: { from: string; to: string } | null; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
-/** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts. */
-export interface ProfitDay { date: string; orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; profit: number }
-export type ProfitTotals = Omit<ProfitDay, "date"> & { marginPct: number | null; salesPerAdTaka: number | null };
+/** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts.
+ * `stockCorrections`: count differences and cost corrections (positive = a cost, negative = a gain) — stock put right, not
+ * goods sold. `salesProfit`: the profit from selling, before them; `profit` (the books) = salesProfit − stockCorrections. */
+export interface ProfitDay { date: string; orders: number; sales: number; goods: number; stockCorrections: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; salesProfit: number; profit: number }
+export type ProfitTotals = Omit<ProfitDay, "date"> & { marginPct: number | null; salesMarginPct: number | null; salesPerAdTaka: number | null };
 export interface ProfitByDay { currency: string; today: string; booksStartedOn: string | null; period: { from: string; to: string }; prior: { from: string; to: string }; days: ProfitDay[]; totals: ProfitTotals; priorTotals: ProfitTotals }
 export const getProfitByDay = (q: { from?: string; to?: string }) => apiFetch<ProfitByDay>(`${BASE}/profit/daily${qs(q)}`);
 
@@ -317,7 +319,7 @@ export const getOwnerHome = (month?: string) => apiFetch<OwnerHome>(`${BASE}/own
 
 /** Profit month by month since the books started, with how sure each month is (docs/FINANCE_PROFIT_DASHBOARD.md §5). */
 export interface ProfitMonth {
-  month: string; orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; profit: number;
+  month: string; orders: number; sales: number; goods: number; stockCorrections: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; salesProfit: number; profit: number;
   marginPct: number | null; estimatedCostPct: number | null; openExceptions: number; unpaidByCourier: { parcels: number; amount: number };
   status: "OPEN" | "SOFT_CLOSED" | "CLOSED"; readyToClose: boolean;
 }
