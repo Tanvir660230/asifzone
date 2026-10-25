@@ -89,6 +89,12 @@ export const EMPTY_POSITION: CostPosition = Object.freeze({ valuedQty: 0, value:
 
 export type CostBasis = "SNAPSHOT" | "AVERAGE" | "DOCUMENT" | "MANUAL" | "CUTOVER" | "NONE";
 
+/** Units out that undo an earlier inflow exactly (stock correction, docs/STOCK_HUB.md §10): the ledger moves back exactly
+ * `bookMinor` (what the inflow booked). Units leave unvalued-first when the inflow brought them in unvalued, else valued-first
+ * at the inflow's own unit cost; any units no longer held become a deficit at that cost. A difference between what leaves
+ * the valuation and `bookMinor` (units sold since, a moved average) is the cost adjustment (5150). */
+export interface ExactOutflow { kind: "EXACT"; bookMinor: number; unvaluedFirst: boolean; status: FinanceValuationStatus }
+
 export type CostOperation =
   /** Units in at a known total value (receipt, return at snapshot, count gain at a cost); valueMinor null = no cost known. */
   | {
@@ -103,7 +109,7 @@ export type CostOperation =
     }
   /** Units out. SNAPSHOT: an order line's own unit cost (null = the line has none); AVERAGE: at the running average.
    * `unbooked`: the units issued beyond stock are an unbooked layer (a fill-to-order recipe cost — see the header). */
-  | { type: "OUTFLOW"; qty: number; basis: { kind: "SNAPSHOT"; unitCostMinor: number | null; unbooked?: boolean } | { kind: "AVERAGE" } }
+  | { type: "OUTFLOW"; qty: number; basis: { kind: "SNAPSHOT"; unitCostMinor: number | null; unbooked?: boolean } | { kind: "AVERAGE" } | ExactOutflow }
   /** A value change (late invoice difference, landed cost) for `qty` units received earlier: the share still held revalues
    * the stock, the rest (sold) becomes a cost adjustment. */
   | { type: "REVALUE"; deltaMinor: number; qty: number }
@@ -261,6 +267,48 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
         ...base, kind: "INFLOW", qtyChange: op.qty, valueChange, bookValue: V, costAdjustment: valueChange - V,
         unitCostScaled: divRound(V * scale, q), costBasis: op.basis, valuationStatus: op.status ?? "KNOWN",
         deficitQtyChange: -covered, coveredQty: covered, coveredProvisional, coveredWithoutCost, unbookedDeficitChange: -coveredUnbooked,
+      },
+    };
+  }
+
+  if (op.type === "OUTFLOW" && op.basis.kind === "EXACT") {
+    assertQty(op.qty, "outflow qty");
+    const B = op.basis.bookMinor;
+    assertMinor(B, "reversed book value");
+    if (B < 0) throw new Error("a reversed inflow's book value can't be negative");
+    const q = op.qty;
+    let v: number;
+    let u: number;
+    if (op.basis.unvaluedFirst) {
+      u = Math.min(q, pos.unvaluedQty);
+      v = Math.min(q - u, pos.valuedQty);
+    } else {
+      v = Math.min(q, pos.valuedQty);
+      u = Math.min(q - v, pos.unvaluedQty);
+    }
+    const d = q - v - u;
+    // valued units leave at the inflow's own cost — never more than is held, and all of it when the last valued unit goes
+    let outV = 0n;
+    if (v > 0) {
+      if (v === pos.valuedQty) outV = pos.value;
+      else {
+        const want = B > 0 ? divRound(BigInt(B) * BigInt(v), BigInt(q)) : divRound(pos.value * BigInt(v), BigInt(pos.valuedQty));
+        outV = want < pos.value ? want : pos.value;
+      }
+    }
+    const avgMinor = pos.avgScaled === null ? null : Number(divRound(pos.avgScaled, scale));
+    const provisional = B > 0 ? Number(divRound(BigInt(B), BigInt(q))) : avgMinor;
+    const layers = d > 0 ? [...pos.deficitLayers, { qty: d, unitCostMinor: provisional }] : pos.deficitLayers;
+    const next = withAverage({ ...pos, valuedQty: pos.valuedQty - v, value: pos.value - outV, unvaluedQty: pos.unvaluedQty - u, deficitQty: pos.deficitQty + d, deficitLayers: layers }, scale);
+    const valueChange = -outV;
+    const bookValue = -BigInt(B);
+    return {
+      next,
+      entry: {
+        ...base, kind: "OUTFLOW", qtyChange: -q, valueChange, bookValue, costAdjustment: valueChange - bookValue,
+        unitCostScaled: B > 0 ? divRound(BigInt(B) * scale, BigInt(q)) : pos.avgScaled, costBasis: "MANUAL",
+        valuationStatus: d > 0 && provisional === null ? "MISSING" : op.basis.status,
+        deficitQtyChange: d, unvaluedQtyChange: -u,
       },
     };
   }
@@ -612,7 +660,9 @@ export interface MovementToValue {
     | { kind: "SNAPSHOT_LINES"; lines: Array<{ quantity: number; unitCostMinor: number | null }> }
     /** Units in at a document's value (a goods receipt, a production receipt): KNOWN unless stated. */
     | { kind: "DOCUMENT"; valueMinor: number; status?: "KNOWN" | "ESTIMATED" }
-    | { kind: "AVERAGE" };
+    | { kind: "AVERAGE" }
+    /** Stock correction: undoes `of` (the reversed movement's valuation entry) exactly — the ledger moves back what it moved. */
+    | { kind: "REVERSAL"; of: { bookMinor: number; unvaluedQtyChange: number; status: FinanceValuationStatus } };
   ledger: LedgerOwner;
   /** The decrease has a known cause (a parcel the courier lost): never goods already sent outside (outside-stock.ts). */
   knownCause?: boolean;
@@ -626,6 +676,18 @@ function opFor(m: MovementToValue, position: CostPosition, currency: string, fil
     if (!m.basis.orderItemIds.length) throw new Error(`COSTING_EXIT_UNLINKED: stock of costed variant ${m.movement.variantId} left for an order without the order lines to cost`);
     const c = exitCost(position, qty, currency, fillToOrder);
     return { op: { type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor: c.unitCostMinor, ...(c.unbooked ? { unbooked: true } : {}) } }, unitCostMinor: c.unitCostMinor, lineSource: c.source };
+  }
+  if (m.basis.kind === "REVERSAL") {
+    const of = m.basis.of;
+    if (m.movement.change < 0) {
+      // undoing an inflow: out exactly what it booked
+      return { op: { type: "OUTFLOW", qty, basis: { kind: "EXACT", bookMinor: of.bookMinor, unvaluedFirst: of.unvaluedQtyChange > 0, status: of.status } }, unitCostMinor: null };
+    }
+    // undoing an outflow: back in at exactly what it booked (−bookMinor), its unvalued units unvalued again
+    const unvalued = Math.min(qty, Math.max(0, -of.unvaluedQtyChange));
+    const valueMinor = -of.bookMinor;
+    if (unvalued === qty || valueMinor <= 0) return { op: { type: "INFLOW", qty, valueMinor: null, basis: "MANUAL" }, unitCostMinor: null };
+    return { op: { type: "INFLOW", qty, valueMinor, basis: "MANUAL", status: of.status === "KNOWN" ? "KNOWN" : "ESTIMATED", ...(unvalued ? { unvaluedQty: unvalued } : {}) }, unitCostMinor: null };
   }
   if (m.basis.kind === "DOCUMENT") {
     if (m.movement.change < 0) throw new Error("a document value is an inflow; outflows leave at the average or a snapshot");

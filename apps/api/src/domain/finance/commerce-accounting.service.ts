@@ -490,7 +490,7 @@ async function scanStock(tx: AppTransactionClient, ctx: FinanceContext, since: D
         orderId: null, reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT", "DAMAGED", "LOST", "PACKAGING_USE"] }, createdAt: { gte: from },
         ...(after ? { OR: [{ createdAt: { gt: after.createdAt } }, { createdAt: after.createdAt, id: { gt: after.id } }] } : {}),
       },
-      select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, valuationEntry: { select: { valuationStatus: true } }, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
+      select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, reversesMovementId: true, reversedBy: { select: { id: true } }, valuationEntry: { select: { valuationStatus: true } }, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: STOCK_PAGE,
     });
@@ -503,6 +503,8 @@ async function scanStock(tx: AppTransactionClient, ctx: FinanceContext, since: D
   for (const m of moves) {
     if (m.change === 0 || businessDate(m.createdAt, ctx.business.timezone) < ctx.business.openingDate!) continue;
     if (m.reason === "DAMAGED" && (m.note ?? "").startsWith("Returned damaged — order")) continue;
+    // a stock correction and the entry it reversed net to nothing (docs/STOCK_HUB.md §10) — neither is left to decide
+    if (m.reversesMovementId || m.reversedBy) continue;
     // Phase 4B: a movement the costing engine valued is booked by its `inventory.valued` posting — only an unvalued one
     // (no cost ever known) is still an exception here.
     if (m.valuationEntry && m.valuationEntry.valuationStatus !== "MISSING") continue;

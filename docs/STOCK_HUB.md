@@ -328,3 +328,24 @@ Materials' row actions open this page's sheets directly: `/admin/stock?bought=<v
 (1 litre = 1000 ml, 1 dozen = 12 pcs, 1 tola = 11.6638 ml, ≤ 4 decimals). Received goods offers them beside the
 quantity and records `round(quantity × factor)` stock units; the price per stock unit follows from the total paid. The
 bill check counts a line in the unit it was bought in. Stock, counts and costs stay in the stock unit.
+
+## 10. Undoing a mistaken stock entry (2026-10-25)
+
+A hand-made entry (restock, adjustment, import, damaged, lost) that was wrong is undone **exactly**: Inventory › Stock
+levels › Movements › **Undo** (owner only, `inventory.approve`; `POST /api/inventory/movements/:id/reverse`,
+`reverseStockMovement` in `inventory.service.ts`).
+
+- The correction is a new movement: the opposite units, the same reason (so the same account), linked to the original
+  (`StockMovement.reversesMovementId`, unique — at most one correction per entry; a correction is never itself undone).
+  The original stays in the history, marked *Undone*.
+- In the books it moves back **exactly what the entry booked** (costing's `REVERSAL` basis / `EXACT` outflow), not today's
+  average — a mistaken +200 that booked a ৳1,17,400 gain to 5210 is cancelled to the paisa. If units were sold or the
+  average moved since, the difference between what leaves the valuation and what the entry booked is a cost adjustment
+  (5150).
+- Refused: when the units are no longer there (sold or used since — count the item instead); for an order, return,
+  purchase, fill or production movement (undo it through its own document); for an entry from before stock costing went
+  live (its value never reached the books — the go-live count replaced it). When the item was counted again since, the
+  owner must confirm the count didn't already correct it.
+- The pair is left out of the stock alerts and the "without a value" exceptions; the original's open exception is
+  acknowledged with the correction named. A stock entry's journal can no longer be reversed on its own from the journal
+  screen (`JOURNAL_OWNED_BY_STOCK`) — that would split the stock's value from the books.

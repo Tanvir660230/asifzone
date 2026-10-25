@@ -72,5 +72,13 @@ export interface StockLevelsResult {
 export type StockLevelsQuery = z.infer<typeof stockLevelsQuerySchema>;
 export type StockMovementListQuery = z.infer<typeof stockMovementListQuerySchema>;
 export type AdjustStockInput = z.infer<typeof adjustStockSchema>;
+
+/** Stock correction (docs/STOCK_HUB.md §10): undo one hand-made entry exactly, with the reason it was wrong. */
+export const reverseStockMovementSchema = z.object({
+  reason: z.string().trim().min(3).max(300),
+  /** The item was counted again since — confirm the count did not already correct it. */
+  acknowledgeLaterCount: z.boolean().optional(),
+});
+export type ReverseStockMovementInput = z.infer<typeof reverseStockMovementSchema>;
 export type StockMovementReason = z.infer<typeof stockMovementReasonEnum>;
 export type ManualStockReason = z.infer<typeof manualStockReasonEnum>;

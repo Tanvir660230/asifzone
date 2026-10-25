@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 import { hasFillToOrderProducts, refreshProductsUsingMaterials } from "../../domain/storefront/read-model.service";
 import { fillCapacity, fillCapacityChanged, fillMoved, fillToOrderFloorsFor } from "../../domain/stock/fill-capacity.service";
 import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
+import { settleReversedStockExceptionsInTx } from "../../domain/finance/finance-exceptions.service";
+import { toMinor } from "../../domain/finance/finance-values";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
  * (docs/INVENTORY_INVARIANTS.md; enforced by inventory-writer.guard.test.ts). Every change is a relative,
@@ -603,6 +605,86 @@ export async function adjustVariantStockInTx(tx: Tx, variantId: string, delta: n
   return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0, moved: true };
 }
 
+/** Movements a person made by hand — the ones a correction may reverse. Orders, returns, purchases, fills and production
+ * are undone through their own documents (cancel the order, reverse the receipt…). */
+const REVERSIBLE_REASONS = new Set(["RESTOCK", "ADJUSTMENT", "IMPORT", "DAMAGED", "LOST"]);
+
+export interface ReverseInput {
+  reason: string;
+  /** The item was counted again after the mistaken entry — that count may already have corrected it. */
+  acknowledgeLaterCount?: boolean;
+}
+
+/**
+ * Stock correction (docs/STOCK_HUB.md §10): undoes one hand-made movement exactly — the opposite number of units, with
+ * the same reason (so the same account), and in the books exactly what the movement booked (costing's REVERSAL basis), so
+ * a mistaken +200 that booked a gain is cancelled to the paisa, not counted away at today's average. The correction is
+ * linked to the movement (at most once — the database refuses a second), is never itself reversed, keeps the original in
+ * the history, and settles the original's open "without a value" exception. Refused when the units are no longer there
+ * (sold or used since — count the item instead), for a movement from before stock costing went live (its value never
+ * reached the books — the go-live count replaced it), and, unless acknowledged, when the item was counted again since.
+ */
+export async function reverseStockMovement(movementId: string, input: ReverseInput, actor: { type: "ADMIN"; adminId: string; label: string; permissions: readonly string[] }) {
+  const reason = input.reason.trim();
+  if (reason.length < 3) throw AppError.badRequest("Say why this entry was wrong");
+  const result = await prisma.$transaction(async (tx) => {
+    const orig = await tx.stockMovement.findUnique({
+      where: { id: movementId },
+      select: {
+        id: true, variantId: true, change: true, reason: true, createdAt: true, reversesMovementId: true,
+        reversedBy: { select: { id: true } },
+        valuationEntry: { select: { bookValue: true, unvaluedQtyChange: true, valuationStatus: true } },
+        variant: { select: { sku: true, product: { select: { fillToOrder: true } } } },
+      },
+    });
+    if (!orig) throw AppError.notFound("Stock entry not found");
+    if (orig.reversesMovementId) throw new AppError(409, "This entry is itself a correction — it can't be reversed", { code: "REVERSAL_OF_REVERSAL" });
+    if (orig.reversedBy) throw new AppError(409, "This entry was already reversed", { code: "ALREADY_REVERSED" });
+    if (!REVERSIBLE_REASONS.has(orig.reason)) throw new AppError(409, "Only a hand-made entry (restock, adjustment, import, damaged, lost) is reversed here — undo an order, return, purchase or fill through its own page", { code: "NOT_REVERSIBLE" });
+    if ((await lockStock(tx, orig.variantId)) === null) throw AppError.notFound("Variant not found");
+    const scope = await activeCostingInTx(tx);
+    if (scope && !orig.valuationEntry) {
+      throw new AppError(409, "This entry is from before stock costing went live — its value never reached the books and the go-live count replaced it. Correct the item with a count.", { code: "BEFORE_COSTING" });
+    }
+    if (!input.acknowledgeLaterCount) {
+      // any count of the item since (a count that found it right moved nothing, but it still checked the shelf)
+      const later = await tx.stockCount.findFirst({ where: { variantId: orig.variantId, createdAt: { gt: orig.createdAt } }, orderBy: { createdAt: "asc" }, select: { createdAt: true } });
+      if (later) throw new AppError(409, `${orig.variant.sku} was counted again on ${later.createdAt.toISOString().slice(0, 10)}, after this entry — that count may already have corrected it. Reversing it too would correct it twice.`, { code: "COUNTED_SINCE", countedAt: later.createdAt });
+    }
+    // A fill-to-order size may go below zero as far as its orders waiting to be packed (bottles owed); anything else not below zero.
+    const floor = orig.variant.product.fillToOrder ? await waitingUnits(tx, orig.variantId) : 0;
+    const delta = -orig.change;
+    const after = await applyDelta(tx, orig.variantId, delta, true, floor);
+    if (after === null) throw new AppError(409, `Not enough ${orig.variant.sku} left to take ${Math.abs(delta)} back — some of it was sold or used since. Count the item instead.`, { code: "NOT_ENOUGH_LEFT" });
+    const mv = await tx.stockMovement.create({
+      data: {
+        ...movement(orig.variantId, delta, orig.reason as MovementReason, { adminId: actor.adminId, note: `Correction of the ${orig.createdAt.toISOString().slice(0, 10)} entry (${orig.change > 0 ? "+" : ""}${orig.change}): ${reason}` }),
+        sourceType: "StockMovementReversal", sourceId: orig.id, reversesMovementId: orig.id,
+      },
+    });
+    if (scope && orig.valuationEntry) {
+      const cur = scope.business.baseCurrency;
+      await value(tx, [{
+        movement: mv, ledger: "MOVEMENT", knownCause: true,
+        basis: { kind: "REVERSAL", of: { bookMinor: toMinor(orig.valuationEntry.bookValue, cur), unvaluedQtyChange: orig.valuationEntry.unvaluedQtyChange, status: orig.valuationEntry.valuationStatus } },
+      }], scope);
+    }
+    await settleReversedStockExceptionsInTx(tx, orig.id, mv.id, reason, actor);
+    return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: orig.variantId } }), replenished: after - delta <= 0 && after > 0, moved: true, movement: mv };
+  });
+  afterAdjustment(result);
+  return { movement: result.movement, stock: result.variant.stock };
+}
+
+/** Units of a variant on orders not yet handed to the courier (still PENDING…PACKED) — how far a fill-to-order size may owe. */
+async function waitingUnits(tx: Tx, variantId: string): Promise<number> {
+  const rows = await tx.orderItem.aggregate({
+    where: { variantId, order: { deletedAt: null, courierConsignmentId: null, status: { in: ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"] } } },
+    _sum: { quantity: true, restockedQuantity: true },
+  });
+  return Math.max(0, (rows._sum.quantity ?? 0) - (rows._sum.restockedQuantity ?? 0));
+}
+
 /** After commit: back-in-stock emails and the storefront refresh for an adjustment made with `adjustVariantStockInTx`. */
 export function afterAdjustment(result: Pick<AdjustResult, "variant" | "replenished" | "moved">): void {
   if (result.replenished) notifyReplenished([result.variant.id]);
@@ -632,7 +714,7 @@ export async function listStockMovements(query: StockMovementListQuery) {
 
   return paginate(
     query,
-    (p) => prisma.stockMovement.findMany({ where, include, orderBy: { createdAt: "desc" }, ...p }),
+    (p) => prisma.stockMovement.findMany({ where, include: { ...include, reverses: { select: { id: true, createdAt: true, change: true } }, reversedBy: { select: { id: true, createdAt: true } } }, orderBy: { createdAt: "desc" }, ...p }),
     () => prisma.stockMovement.count({ where }),
   );
 }

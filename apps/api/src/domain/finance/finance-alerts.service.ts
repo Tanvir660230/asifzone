@@ -57,6 +57,10 @@ const BOTTLE_SOURCES = new Set(["PRODUCTION_RECEIPT", "RETURN", "CANCELLATION"])
 type AddAlert = (a: Omit<FinanceAlert, "amount"> & { amount?: number | null }) => void;
 
 /** Inventory recovery F-e: each alert names the item, the quantity, when it happened and what to do. */
+/** A stock correction and the entry it reversed cancel out (docs/STOCK_HUB.md §10): neither is a gain, a fill-less bottle or
+ * an unvalued receipt any more. */
+const NOT_CORRECTED = { reversesMovementId: null, reversedBy: { is: null } } as const;
+
 async function inventoryAlerts(
   business: { id: string; baseCurrency: string; timezone: string },
   checkRuns: Array<{ checkKey: string; status: string }>,
@@ -71,18 +75,18 @@ async function inventoryAlerts(
   const [settings, gains, bottles, unvalued] = await Promise.all([
     prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { inventoryGainAlertThreshold: true } }),
     prisma.stockMovement.findMany({
-      where: { createdAt: { gte: since }, change: { gt: 0 }, reason: { in: [...UNDOCUMENTED_GAINS] }, valuationEntry: { isNot: null } },
+      where: { createdAt: { gte: since }, change: { gt: 0 }, ...NOT_CORRECTED, reason: { in: [...UNDOCUMENTED_GAINS] }, valuationEntry: { isNot: null } },
       select: { change: true, createdAt: true, reason: true, variant: { select: { sku: true } }, valuationEntry: { select: { valueChange: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.stockMovement.findMany({
-      where: { createdAt: { gte: since }, change: { gt: 0 }, variant: { product: { fillToOrder: true } } },
+      where: { createdAt: { gte: since }, change: { gt: 0 }, ...NOT_CORRECTED, variant: { product: { fillToOrder: true } } },
       select: { change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
       orderBy: { createdAt: "desc" },
     }),
     // read from the movements, not the exceptions the commerce sync raises later, so a receipt without a cost shows at once
     prisma.stockMovement.findMany({
-      where: { createdAt: { gte: since }, change: { gt: 0 }, valuationEntry: { valuationStatus: "MISSING" } },
+      where: { createdAt: { gte: since }, change: { gt: 0 }, ...NOT_CORRECTED, valuationEntry: { valuationStatus: "MISSING" } },
       select: { id: true, change: true, createdAt: true, reason: true, variant: { select: { sku: true } } },
       orderBy: { createdAt: "desc" },
     }),

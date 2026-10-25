@@ -1809,21 +1809,26 @@ model OrderItem {
 }
 
 model StockMovement {
-  id             String                   @id @default(cuid())
-  variantId      String
-  variant        ProductVariant           @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  change         Int
-  reason         StockMovementReason
-  orderId        String?
-  adminId        String?
-  admin          AdminUser?               @relation(fields: [adminId], references: [id], onDelete: SetNull)
-  note           String?
+  id                 String                   @id @default(cuid())
+  variantId          String
+  variant            ProductVariant           @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  change             Int
+  reason             StockMovementReason
+  orderId            String?
+  adminId            String?
+  admin              AdminUser?               @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  note               String?
   /// Phase 4: the document line that caused the movement (e.g. GoodsReceiptLine) — null for order and manual movements.
-  sourceType     String?
-  sourceId       String?
-  createdAt      DateTime                 @default(now())
-  valuationEntry InventoryValuationEntry?
-  costedLines    OrderItem[]              @relation("OrderItemCostMovement")
+  sourceType         String?
+  sourceId           String?
+  createdAt          DateTime                 @default(now())
+  valuationEntry     InventoryValuationEntry?
+  costedLines        OrderItem[]              @relation("OrderItemCostMovement")
+  /// Stock correction (docs/STOCK_HUB.md §10): this movement reverses that one exactly — same units, same book value.
+  /// At most one reversal per movement (unique).
+  reversesMovementId String?                  @unique
+  reverses           StockMovement?           @relation("StockMovementReversal", fields: [reversesMovementId], references: [id], onDelete: Restrict)
+  reversedBy         StockMovement?           @relation("StockMovementReversal")
 
   @@index([variantId])
   @@index([reason])

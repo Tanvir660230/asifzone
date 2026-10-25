@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import * as inventoryService from "./inventory.service";
+import { actorOf } from "../finance/finance.routes";
 import { listStockLevels } from "./inventory-levels.service";
 
 export const listMovements = asyncHandler(async (req: Request, res: Response) => {
@@ -11,6 +12,12 @@ export const adjust = asyncHandler(async (req: Request, res: Response) => {
   const { delta, reason, note } = req.body;
   const variant = await inventoryService.adjustVariantStock(req.params.variantId!, delta, reason, req.admin!.adminId, note);
   res.json({ variant });
+});
+
+export const reverse = asyncHandler(async (req: Request, res: Response) => {
+  const actor = await actorOf(req);
+  if (actor.type !== "ADMIN") throw new Error("a correction is made by a person");
+  res.json(await inventoryService.reverseStockMovement(req.params.movementId!, req.body, actor));
 });
 
 export const reconciliation = asyncHandler(async (_req: Request, res: Response) => {

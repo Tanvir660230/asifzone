@@ -22,10 +22,12 @@ import { useCapability } from "@/hooks/use-capability";
 import * as inventoryApi from "@/lib/api/inventory";
 import { cn } from "@/lib/utils";
 import { formatStoreDateTime } from "@/lib/format";
+import { ReverseMovement } from "@/components/admin/inventory/reverse-movement";
+import type { StockMovement } from "@clothing-brand/shared";
 
 const REASONS = ["ORDER", "CANCELLATION", "RETURN", "RESTOCK", "ADJUSTMENT", "IMPORT", "DAMAGED", "LOST"] as const;
 
-const REASON_BADGE: Record<(typeof REASONS)[number], string> = {
+const REASON_BADGE: Partial<Record<StockMovement["reason"], string>> = {
   ORDER: "bg-ink-100 text-ink-700",
   RESTOCK: "bg-success-100 text-success-700",
   ADJUSTMENT: "bg-warning-100 text-warning-700",
@@ -172,13 +174,14 @@ export default function InventoryPage() {
                 <th className="px-4 py-3">Order</th>
                 <th className="px-4 py-3">Admin</th>
                 <th className="px-4 py-3">Note</th>
+                <th className="px-4 py-3"><span className="sr-only">Correction</span></th>
               </tr>
             </thead>
             <tbody>
-              {isLoading && <TableSkeleton rows={8} cols={7} />}
+              {isLoading && <TableSkeleton rows={8} cols={8} />}
               {!isLoading && data?.items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-ink-400">
+                  <td colSpan={8} className="px-4 py-10 text-center text-ink-400">
                     No stock movements yet.
                   </td>
                 </tr>
@@ -199,7 +202,7 @@ export default function InventoryPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge className={REASON_BADGE[m.reason]}>{m.reason}</Badge>
+                    <Badge className={REASON_BADGE[m.reason] ?? "bg-ink-100 text-ink-700"}>{m.reason}</Badge>
                   </td>
                   <td className={`px-4 py-3 text-right font-medium ${m.change > 0 ? "text-success-600" : "text-danger-600"}`}>
                     {m.change > 0 ? `+${m.change}` : m.change}
@@ -215,6 +218,7 @@ export default function InventoryPage() {
                   </td>
                   <td className="px-4 py-3 text-ink-500">{m.admin?.name ?? "System"}</td>
                   <td className="px-4 py-3 text-ink-500">{m.note ?? "—"}</td>
+                  <td className="px-4 py-3 text-right"><ReverseMovement movement={m} /></td>
                 </tr>
               ))}
             </tbody>
@@ -254,14 +258,17 @@ export default function InventoryPage() {
             </div>
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className={REASON_BADGE[m.reason]}>{m.reason}</Badge>
+                <Badge className={REASON_BADGE[m.reason] ?? "bg-ink-100 text-ink-700"}>{m.reason}</Badge>
                 <span>{formatStoreDateTime(m.createdAt)}</span>
               </div>
-              {m.orderId && (
-                <Link href={`/admin/orders/${m.orderId}`} className="text-brass-600 hover:underline">
-                  View order
-                </Link>
-              )}
+              <span className="flex items-center gap-2">
+                {m.orderId && (
+                  <Link href={`/admin/orders/${m.orderId}`} className="text-brass-600 hover:underline">
+                    View order
+                  </Link>
+                )}
+                <ReverseMovement movement={m} />
+              </span>
             </div>
             {(m.admin?.name || m.note) && (
               <div className="mt-2 text-xs text-ink-500">

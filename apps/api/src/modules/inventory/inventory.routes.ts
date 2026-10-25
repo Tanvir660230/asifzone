@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { adjustStockSchema, stockLevelsQuerySchema, stockMovementListQuerySchema } from "@clothing-brand/shared";
+import { adjustStockSchema, reverseStockMovementSchema, stockLevelsQuerySchema, stockMovementListQuerySchema } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import * as inventoryController from "./inventory.controller";
@@ -19,6 +19,14 @@ inventoryRouter.post(
   requirePermission("inventory.adjust"),
   validate(adjustStockSchema),
   inventoryController.adjust,
+);
+// Stock correction (docs/STOCK_HUB.md §10): owner-only — it moves stock and the books back, exactly.
+inventoryRouter.post(
+  "/movements/:movementId/reverse",
+  requireAdmin,
+  requirePermission("inventory.approve"),
+  validate(reverseStockMovementSchema),
+  inventoryController.reverse,
 );
 inventoryRouter.get(
   "/levels",
