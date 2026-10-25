@@ -537,6 +537,7 @@ model Product {
   relatedTo          ProductRelation[]        @relation("RelatedToProducts")
   deletedAt          DateTime?
   billsOfMaterials   BillOfMaterials[]
+  purchaseUnits      MaterialPurchaseUnit[]
   productionOrders   ProductionOrder[]
   variants           ProductVariant[]
   images             ProductImage[]
@@ -6148,6 +6149,21 @@ model StockCount {
 
 /// A roll of a material used up over many parcels (bubble poly). Opened and finished on dates; the parcels booked with
 /// the courier in between are its yield, so a cost per parcel exists only once a real roll has been finished.
+/// How a material is bought (docs/MANUFACTURING.md §3): a litre of oil is 1,000 ml, a dozen bottles 12 pcs. Received goods
+/// converts what was bought into the stock unit; stock and costs stay in the stock unit.
+model MaterialPurchaseUnit {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label     String
+  /// Stock units in one of these (1000 for a litre of ml); up to 4 decimals (a tola is 11.6638 g).
+  factor    Decimal  @db.Decimal(14, 4)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([productId, label])
+}
+
 model MaterialRoll {
   id                String          @id @default(cuid())
   businessId        String

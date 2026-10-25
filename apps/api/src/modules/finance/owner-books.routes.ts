@@ -76,6 +76,7 @@ import * as stockCounts from "../../domain/stock/count.service";
 import { setStockPolicy, stockHub } from "../../domain/stock/stock-hub.service";
 import { recordFill } from "../../domain/stock/fill.service";
 import { getStocking, setStocking } from "../../domain/stock/stocking.service";
+import { productionHome } from "../../domain/stock/production-home.service";
 import { stockTrace } from "../../domain/stock/trace.service";
 
 /**
@@ -240,6 +241,8 @@ ownerBooksRouter.get("/stock", requirePermission("inventory.read"), asyncHandler
 // How a fill-to-order product sells past its filled bottles (inventory recovery phase 2): who may correct stock decides it.
 ownerBooksRouter.put("/stock/products/:id/policy", requirePermission("inventory.adjust"), validate(stockPolicySchema), asyncHandler(async (req, res) => res.json(await setStockPolicy(id(req), req.body, await actorOf(req)))));
 // How it's stocked — ready, filled to order or a material (stocking.service): the same people who set the selling rule.
+// Production home (production-home.service): what needs the owner, what the materials can still make, the latest fills.
+ownerBooksRouter.get("/stock/production-home", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await productionHome({ canSeeCost: req.admin!.permissions.includes("costing.read") }))));
 ownerBooksRouter.get("/stock/products/:id/stocking", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await getStocking(id(req)))));
 ownerBooksRouter.put("/stock/products/:id/stocking", requirePermission("inventory.adjust"), validate(stockingSchema), asyncHandler(async (req, res) => res.json(await setStocking(id(req), req.body, await actorOf(req)))));
 // Filled (inventory recovery phase 3): bottles filled from the recipe, as a resumable hub entry; the item's story.

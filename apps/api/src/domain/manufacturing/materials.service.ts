@@ -33,6 +33,7 @@ export interface MaterialCreateInput {
 const MATERIAL_SELECT = {
   id: true, name: true, slug: true, stockUnit: true, description: true, costPrice: true, deletedAt: true, createdAt: true,
   variants: { select: { id: true, sku: true, size: true, color: true, stock: true, isActive: true }, orderBy: { sku: "asc" } },
+  purchaseUnits: { select: { label: true, factor: true }, orderBy: { sortOrder: "asc" } },
 } satisfies Prisma.ProductSelect;
 type MaterialRow = Prisma.ProductGetPayload<{ select: typeof MATERIAL_SELECT }>;
 
@@ -44,6 +45,8 @@ function materialDto(m: MaterialRow, cur: string, costs: Map<string, { avg: numb
     description: m.description,
     referenceCost: m.costPrice === null ? null : toMajorNumber(toMinor(m.costPrice, cur), cur),
     archived: m.deletedAt !== null,
+    /** How it is bought: one `label` is `factor` stock units (a litre is 1,000 ml). */
+    purchaseUnits: m.purchaseUnits.map((u) => ({ label: u.label, factor: Number(u.factor) })),
     variants: m.variants.map((v) => ({ id: v.id, sku: v.sku, spec: v.size, color: v.color, stock: v.stock, averageCost: costs.get(v.id)?.avg ?? null, value: costs.get(v.id)?.value ?? null })),
   };
 }
@@ -84,7 +87,7 @@ export interface MaterialVariantRename {
   color?: string;
 }
 
-export async function updateMaterial(id: string, input: { name?: string; stockUnit?: string; description?: string | null; referenceCost?: number | null; addVariants?: MaterialVariantInput[]; variants?: MaterialVariantRename[] }, actor: FinanceActor, opts: { canSeeCost: boolean }) {
+export async function updateMaterial(id: string, input: { name?: string; stockUnit?: string; description?: string | null; referenceCost?: number | null; addVariants?: MaterialVariantInput[]; variants?: MaterialVariantRename[]; purchaseUnits?: Array<{ label: string; factor: number }> }, actor: FinanceActor, opts: { canSeeCost: boolean }) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   if (input.stockUnit !== undefined) checkUnit(input.stockUnit);
@@ -112,6 +115,13 @@ export async function updateMaterial(id: string, input: { name?: string; stockUn
       if (taken.length) throw financeError(409, "SKU_TAKEN", `SKU already used: ${taken.map((t) => t.sku).join(", ")}`);
       await tx.productVariant.createMany({ data: input.addVariants.map((v, i) => ({ productId: id, sku: v.sku, size: v.spec || "Standard", color: v.color ?? "", stock: 0, sortOrder: before.variants.length + i })) });
     }
+    // How it is bought (litre, dozen, tola…) — the list is replaced as a whole; it only converts what Received goods records.
+    if (input.purchaseUnits) {
+      const unit = (input.stockUnit ?? before.stockUnit ?? "").trim().toLowerCase();
+      if (input.purchaseUnits.some((u) => u.label.trim().toLowerCase() === unit)) throw financeError(400, "PURCHASE_UNIT_IS_STOCK_UNIT", `${unit} is already the stock unit`);
+      await tx.materialPurchaseUnit.deleteMany({ where: { productId: id } });
+      if (input.purchaseUnits.length) await tx.materialPurchaseUnit.createMany({ data: input.purchaseUnits.map((u, i) => ({ productId: id, label: u.label.trim(), factor: u.factor, sortOrder: i })) });
+    }
     const after = await tx.product.update({
       where: { id },
       data: {
@@ -120,7 +130,7 @@ export async function updateMaterial(id: string, input: { name?: string; stockUn
       },
       select: MATERIAL_SELECT,
     });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.update", entityType: "Product", entityId: id, before: { name: before.name, stockUnit: before.stockUnit }, after: { name: after.name, stockUnit: after.stockUnit, added: input.addVariants?.map((v) => v.sku) ?? [], renamed } });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.update", entityType: "Product", entityId: id, before: { name: before.name, stockUnit: before.stockUnit }, after: { name: after.name, stockUnit: after.stockUnit, added: input.addVariants?.map((v) => v.sku) ?? [], renamed, purchaseUnits: input.purchaseUnits?.map((u) => `${u.label}=${u.factor}`) } });
     return redact(materialDto(after, cur, new Map()), opts.canSeeCost);
   });
 }

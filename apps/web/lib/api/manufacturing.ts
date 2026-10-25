@@ -22,6 +22,8 @@ export interface Material {
   description: string;
   referenceCost: number | null;
   archived: boolean;
+  /** How it is bought — one `label` (litre, dozen, tola) is `factor` stock units. */
+  purchaseUnits: Array<{ label: string; factor: number }>;
   variants: Array<{ id: string; sku: string; spec: string; color: string; stock: number; averageCost: number | null; value: number | null }>;
 }
 export interface BomLine {

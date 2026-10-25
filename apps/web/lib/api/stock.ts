@@ -31,6 +31,8 @@ export interface StockItem {
   policy: { policy: StockPolicy; overridden: boolean; backorderLimit: number | null; owed: number } | null;
   /** Materials only: RAW (oil — by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
   materialKind: "RAW" | "PACKAGING" | null;
+  /** Materials only: how it is bought — one `label` (litre, dozen) is `factor` stock units. */
+  purchaseUnits: Array<{ label: string; factor: number }>;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -282,3 +284,14 @@ export const PENDING_STEP_LABEL: Record<PurchaseStep, string> = {
   payment: "the payment",
   extras: "the extra costs",
 };
+
+// ── production home (docs/STOCK_HUB.md §9) ─────────────────────────────────────────────────────────────────────────────
+export interface ProductionHome {
+  costingActive: boolean;
+  owed: Array<{ variantId: string; productId: string; name: string; owed: number }>;
+  noRecipe: Array<{ productId: string; name: string }>;
+  lowMaterials: Array<{ variantId: string; name: string; stock: number; unit: string; daysLeft: number | null }>;
+  canMake: Array<{ productId: string; productName: string; variantId: string; sku: string; label: string; canMake: number; limiting: { variantId: string; name: string; stock: number; unit: string } | null }>;
+  recentFills: Array<{ id: string; date: string; number: string | null; name: string; quantity: number | null }>;
+}
+export const getProductionHome = () => apiFetch<ProductionHome>(`${BASE}/production-home`);

@@ -186,9 +186,13 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
   const [description, setDescription] = useState(material.description ?? "");
   const [refCost, setRefCost] = useState(material.referenceCost === null ? "" : String(material.referenceCost));
   const [rows, setRows] = useState<SizeRow[]>(material.variants.map((v, i) => ({ key: i + 1, id: v.id, sku: v.sku, spec: v.spec, color: v.color, stock: v.stock })));
+  const [units, setUnits] = useState(material.purchaseUnits.map((u, i) => ({ key: i + 1, label: u.label, factor: String(u.factor) })));
+  const unitsOk = units.every((u) => u.label.trim() && Number(u.factor) > 0 && /^\d{1,7}(\.\d{1,4})?$/.test(u.factor.trim()) && u.label.trim().toLowerCase() !== unit.trim().toLowerCase())
+    && new Set(units.map((u) => u.label.trim().toLowerCase())).size === units.length;
+  const unitsChanged = units.length !== material.purchaseUnits.length || units.some((u, i) => u.label.trim() !== material.purchaseUnits[i]?.label || Number(u.factor) !== material.purchaseUnits[i]?.factor);
   const hasStock = material.variants.some((v) => v.stock !== 0);
   const refNumber = refCost.trim() === "" ? null : Number(refCost);
-  const valid = name.trim().length >= 2 && unit.trim().length > 0 && rows.every((r) => SKU_RE.test(r.sku.trim()) && r.spec.trim()) && (refNumber === null || (Number.isFinite(refNumber) && refNumber >= 0));
+  const valid = name.trim().length >= 2 && unit.trim().length > 0 && rows.every((r) => SKU_RE.test(r.sku.trim()) && r.spec.trim()) && (refNumber === null || (Number.isFinite(refNumber) && refNumber >= 0)) && unitsOk;
   const done = (msg: string) => { void queryClient.invalidateQueries({ queryKey: mfg.manufacturingKeys.all }); toast.success(msg); onClose(); };
 
   const save = useMutation({
@@ -206,6 +210,7 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
         ...(showCost && refNumber !== material.referenceCost ? { referenceCost: refNumber } : {}),
         ...(renames.length ? { variants: renames } : {}),
         ...(added.length ? { addVariants: added } : {}),
+        ...(unitsChanged ? { purchaseUnits: units.map((u) => ({ label: u.label.trim(), factor: Number(u.factor) })) } : {}),
       });
     },
     onSuccess: (m) => done(`${m.name} saved`),
@@ -223,7 +228,7 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
   }
   // nothing changed → nothing to send (the API refuses an empty change)
   const dirty = name.trim() !== material.name || unit.trim() !== (material.stockUnit ?? "") || description.trim() !== (material.description ?? "") || (showCost && refNumber !== material.referenceCost)
-    || rows.some((r) => !r.id) || rows.some((r) => { const was = material.variants.find((v) => v.id === r.id); return was && (r.sku.trim() !== was.sku || r.spec.trim() !== was.spec || r.color.trim() !== was.color); });
+    || unitsChanged || rows.some((r) => !r.id) || rows.some((r) => { const was = material.variants.find((v) => v.id === r.id); return was && (r.sku.trim() !== was.sku || r.spec.trim() !== was.spec || r.color.trim() !== was.color); });
 
   return (
     <Modal
@@ -258,6 +263,20 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
           <p className="text-sm font-medium text-ink-900">Sizes</p>
           <SizeRows rows={rows} onChange={setRows} />
           <Button size="sm" variant="outline" onClick={() => setRows((vs) => [...vs, { key: Math.max(...vs.map((x) => x.key)) + 1, sku: "", spec: "Standard", color: "" }])}><Plus className="h-4 w-4" /> Size</Button>
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-ink-900">You buy it as</p>
+          <p className="text-xs text-ink-600">Received goods lets you enter it in these and turns it into {unit || "the stock unit"} — e.g. 1 litre = 1000 ml, 1 dozen = 12 pcs.</p>
+          {units.map((u, i) => (
+            <div key={u.key} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-end gap-2" data-testid="purchase-unit-row">
+              <Field htmlFor={`pu-label-${u.key}`} label={i === 0 ? "Unit" : undefined}><Input id={`pu-label-${u.key}`} aria-label={`Purchase unit ${i + 1}`} value={u.label} maxLength={24} placeholder="litre" onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, label: e.target.value } : x)))} /></Field>
+              <span className="pb-2.5 text-sm text-ink-600">=</span>
+              <Field htmlFor={`pu-factor-${u.key}`} label={i === 0 ? `In ${unit || "stock units"}` : undefined}><Input id={`pu-factor-${u.key}`} aria-label={`${u.label || "Unit"} in ${unit || "stock units"}`} inputMode="decimal" value={u.factor} placeholder="1000" onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, factor: e.target.value } : x)))} /></Field>
+              <IconButton aria-label={`Remove purchase unit ${i + 1}`} onClick={() => setUnits((us) => us.filter((x) => x.key !== u.key))}><Trash2 className="h-4 w-4" /></IconButton>
+            </div>
+          ))}
+          {!unitsOk && units.length > 0 && <p className="text-sm text-danger-700">Each unit needs a name (not the stock unit itself) and how many {unit || "stock units"} it holds, up to 4 decimals.</p>}
+          <Button size="sm" variant="outline" disabled={units.length >= 10} onClick={() => setUnits((us) => [...us, { key: Math.max(0, ...us.map((x) => x.key)) + 1, label: "", factor: "" }])}><Plus className="h-4 w-4" /> Unit</Button>
         </div>
         {material.archived && <Alert variant="info">Archived — restore it to buy, count or use it again.</Alert>}
       </div>

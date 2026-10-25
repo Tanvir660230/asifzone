@@ -30,7 +30,8 @@ const DEFAULT_SUPPLIER = "Local market";
 
 /** Something that can be bought: one variant, or a product whose colours × sizes are entered as a grid. */
 interface Choice { id: string; label: string; detail: string; variants: StockItem[]; grid: boolean }
-interface Line { key: string; choice: Choice; qty: Record<string, string>; amount: string }
+/** `buy`: a material entered in how it was bought (2 litres) — `qty` then holds it converted to the stock unit (2000 ml). */
+interface Line { key: string; choice: Choice; qty: Record<string, string>; amount: string; buy?: { label: string; factor: number; qty: string } }
 interface Extra { key: string; description: string; amount: string }
 
 const toMinor = (v: string) => Math.round(Number(v) * 100);
@@ -142,11 +143,12 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
   const supplierError = supplier.trim().length === 1 ? "At least 2 letters" : null;
   const account = accounts.find((a) => a.id === paidFrom);
   const shortOf = account && NO_OVERDRAFT.has(account.kind) && account.currentBalance * 100 < totalMinor ? account : null;
-  const unitsEntered = totals.reduce((s, t) => s + t.qty, 0);
-  const documentUnits = qtyOf(documentTotal);
+  // the bill counts what was bought — litres, dozens — so a line entered that way counts in its own unit here
+  const unitsEntered = lines.reduce((s, l, i) => s + (l.buy ? Number(l.buy.qty) || 0 : totals[i]!.qty), 0);
+  const documentUnits = /^\d+(\.\d{1,4})?$/.test(documentTotal.trim()) ? Number(documentTotal) : 0;
   const documentError = !documentUnits
     ? "Enter the total units printed on the bill or receipt"
-    : lines.length && documentUnits !== unitsEntered ? `The items add up to ${num(unitsEntered)}, the bill says ${num(documentUnits)} — check each line` : null;
+    : lines.length && Math.abs(documentUnits - unitsEntered) > 1e-6 ? `The items add up to ${num(unitsEntered)}, the bill says ${num(documentUnits)} — check each line` : null;
   const valid = lines.length > 0 && lineErrors.every((e) => !e) && extraErrors.every((e) => !e) && !supplierError && !documentError && Boolean(paidFrom) && date <= todayLocal();
   // what will be received, one row per colour / size — shown before saving
   const arriving = lines.flatMap((l) => l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0).map((v) => ({
@@ -367,6 +369,37 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
   );
 }
 
+/** How many, in the stock unit or one of the material's purchase units (litre, dozen): the stock quantity is the bought
+ * quantity × the unit's size, rounded to a whole stock unit, and shown under the field. */
+function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id: string; onChange: (p: Partial<Line>) => void }) {
+  const v0 = line.choice.variants[0]!;
+  const units = v0.purchaseUnits;
+  const chosen = line.buy?.label ?? unit;
+  const toStock = (label: string, raw: string): Partial<Line> => {
+    const u = units.find((x) => x.label === label);
+    if (!u) return { buy: undefined, qty: { [v0.variantId]: raw } };
+    const n = Number(raw);
+    const stock = /^\d+(\.\d{1,4})?$/.test(raw.trim()) && n > 0 ? String(Math.round(n * u.factor)) : "";
+    return { buy: { label: u.label, factor: u.factor, qty: raw }, qty: { [v0.variantId]: stock } };
+  };
+  const shown = line.buy ? line.buy.qty : line.qty[v0.variantId] ?? "";
+  const stockQty = qtyOf(line.qty[v0.variantId]);
+  return (
+    <div className="min-w-0">
+      <div className="flex items-end gap-2">
+        <Field htmlFor={`${id}-q`} label="How many" className="min-w-0 flex-1">
+          <Input id={`${id}-q`} inputMode="decimal" className="tabular-nums" value={shown} onChange={(e) => onChange(toStock(chosen, e.target.value))} data-testid="bought-qty" />
+        </Field>
+        <Select aria-label="Bought as" value={chosen} onChange={(e) => onChange(toStock(e.target.value, shown))} className="w-auto" data-testid="bought-unit">
+          <option value={unit}>{unit}</option>
+          {units.map((u) => <option key={u.label} value={u.label}>{u.label}</option>)}
+        </Select>
+      </div>
+      {line.buy && <p className="mt-1 text-xs text-fg-muted tabular-nums" data-testid="bought-into-stock">{stockQty ? `= ${num(stockQty)} ${unit} into stock` : `1 ${line.buy.label} = ${num(line.buy.factor)} ${unit}`}</p>}
+    </div>
+  );
+}
+
 /** A unit price this much above the last one is worth a second look (a typo, or a real rise) — never a block. */
 const PRICE_JUMP = 0.2;
 
@@ -392,6 +425,8 @@ function BoughtLine({ line, qty, minor, extrasShare, lastEach, error, onChange, 
             <p className="ui-label">How many</p>
             <p className="flex h-10 items-center tabular-nums text-fg">{num(qty)} pcs</p>
           </div>
+        ) : v0.purchaseUnits.length ? (
+          <BuyUnitQty line={line} unit={unit} onChange={onChange} id={id} />
         ) : (
           <Field htmlFor={`${id}-q`} label={`How many (${unit})`}>
             <Input id={`${id}-q`} inputMode="numeric" className="tabular-nums" value={line.qty[v0.variantId] ?? ""} onChange={(e) => onChange({ qty: { [v0.variantId]: e.target.value } })} data-testid="bought-qty" />
