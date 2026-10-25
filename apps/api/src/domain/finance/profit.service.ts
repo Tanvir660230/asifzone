@@ -17,6 +17,7 @@ import { incomeStatement } from "./statements.service";
 import { courierChargeEstimate, courierOutcome } from "./charge-estimates";
 import { loadRateCards } from "./charge-projection";
 import { plannedSpend } from "./ads.service";
+import { unpaidDeliveredCod } from "./courier-payouts.service";
 
 const signed = (v: Prisma.Decimal | null, cur: string) => (v === null ? 0 : v.isNegative() ? -toMinor(v.abs(), cur) : toMinor(v, cur));
 
@@ -325,5 +326,79 @@ export async function launchReport(q: { from?: string; to?: string }) {
     contribution: m(sales - cogs - courier - ads),
     courierRateCard: cards.length > 0,
     missingCost: [...missingCost].map(([name, units]) => ({ name, units })),
+  };
+}
+
+/**
+ * Profit month by month since the books started (docs/FINANCE_PROFIT_DASHBOARD.md §5): the same buckets as profit by day,
+ * folded per month — so the months add up to the income statement — plus, for each month, how sure the figure is: the
+ * share of the goods cost that is still an estimate (or has no cost), the open finance exceptions of its orders, the COD
+ * parcels delivered then that no courier payout covers yet, and whether the month is closed. A month with nothing left
+ * to settle is ready to close.
+ */
+export async function profitByMonth() {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const today = businessToday(business);
+  const start = business.openingDate ?? `${today.slice(0, 7)}-01`;
+  const months: string[] = [];
+  for (let m = start.slice(0, 7); m <= today.slice(0, 7); m = addDays(`${m}-28`, 7).slice(0, 7)) months.push(m);
+  // profit by day in windows of at most a year, folded per month
+  const sums = new Map<string, Record<string, number>>();
+  for (let from = start; from <= today; ) {
+    const to = addDays(from, MAX_DAYS - 1) < today ? addDays(from, MAX_DAYS - 1) : today;
+    const r = await profitByDay({ from, to });
+    for (const d of r.days) {
+      const k = d.date.slice(0, 7);
+      const t = sums.get(k) ?? sums.set(k, { orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, profit: 0 }).get(k)!;
+      for (const f of Object.keys(t)) t[f] = Math.round((t[f]! + Number((d as unknown as Record<string, number>)[f] ?? 0)) * 100) / 100;
+    }
+    from = addDays(to, 1);
+  }
+  const [estimated, exceptions, periods, unpaid] = await Promise.all([
+    prisma.$queryRaw<Array<{ m: string; status: string | null; net: Prisma.Decimal }>>`
+      SELECT to_char(e."entryDate", 'YYYY-MM') AS m, l."valuationStatus"::text AS status, SUM(l.debit - l.credit) AS net
+      FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId" JOIN "LedgerAccount" a ON a.id = l."accountId"
+      WHERE e."businessId" = ${business.id} AND e.status = 'POSTED' AND a.type = 'COGS'
+      GROUP BY 1, 2`,
+    prisma.$queryRaw<Array<{ m: string; n: bigint }>>`
+      SELECT to_char(COALESCE(o."createdAt", x."createdAt") AT TIME ZONE ${business.timezone}, 'YYYY-MM') AS m, COUNT(*) AS n
+      FROM "FinanceException" x LEFT JOIN "Order" o ON o.id = x."orderId"
+      WHERE x."businessId" = ${business.id} AND x.status = 'OPEN' GROUP BY 1`,
+    prisma.financialPeriod.findMany({ where: { businessId: business.id }, select: { startDate: true, status: true } }),
+    unpaidDeliveredCod({ id: business.id, openingDate: business.openingDate }, 7, 5000),
+  ]);
+  const unpaidByMonth = new Map<string, { n: number; amount: number }>();
+  for (const o of unpaid.orders) {
+    const k = businessDate(o.updatedAt, business.timezone).slice(0, 7);
+    const u = unpaidByMonth.get(k) ?? { n: 0, amount: 0 };
+    u.n += 1;
+    u.amount += toMinor(o.total, cur);
+    unpaidByMonth.set(k, u);
+  }
+  const m = (v: number) => toMajorNumber(v, cur);
+  return {
+    currency: cur,
+    booksStartedOn: business.openingDate,
+    months: months.map((k) => {
+      const t = sums.get(k) ?? { orders: 0, sales: 0, goods: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0, profit: 0 };
+      const cogs = estimated.filter((r) => r.m === k);
+      const all = cogs.reduce((s, r) => s + toMinor(r.net, cur), 0);
+      const unsure = cogs.filter((r) => r.status === "ESTIMATED" || r.status === "MISSING").reduce((s, r) => s + toMinor(r.net, cur), 0);
+      const open = Number(exceptions.find((x) => x.m === k)?.n ?? 0);
+      const u = unpaidByMonth.get(k) ?? { n: 0, amount: 0 };
+      const period = periods.find((p) => p.startDate.toISOString().slice(0, 7) === k);
+      return {
+        month: k,
+        ...t,
+        marginPct: (t.sales ?? 0) > 0 ? Math.round(((t.profit ?? 0) / t.sales!) * 1000) / 10 : null,
+        /** Share of the goods cost booked as an estimate (or with no cost). */
+        estimatedCostPct: all > 0 ? Math.round((unsure / all) * 1000) / 10 : null,
+        openExceptions: open,
+        unpaidByCourier: { parcels: u.n, amount: m(u.amount) },
+        status: period?.status ?? "OPEN",
+        readyToClose: (period?.status ?? "OPEN") !== "CLOSED" && k < today.slice(0, 7) && open === 0 && u.n === 0 && (all === 0 || unsure === 0),
+      };
+    }),
   };
 }

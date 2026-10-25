@@ -809,6 +809,19 @@ export const NAV_NODES: readonly NavNode[] = [
     description: "Daily profit, sales and ad spend for any period, with a chart — and what each order and product earned.",
     keywords: ["profit", "daily profit", "today", "margin", "ad spend", "roas", "chart", "contribution", "per order", "per product", "launch", "loss", "lav", "labh"],
   },
+  // Profit month by month since the books started, with what is left to settle per month (docs/FINANCE_PROFIT_DASHBOARD.md §5).
+  {
+    id: "finance.monthly",
+    label: "Month by month",
+    kind: "page",
+    parent: "finance.books",
+    domain: "manage",
+    route: "/admin/finance/monthly",
+    capability: "finance.view",
+    order: -0.95,
+    description: "Every month since the books started: sales, costs and profit, and what is still to settle before closing it.",
+    keywords: ["monthly", "month", "profit by month", "p&l", "since the start", "close month", "mash", "labh"],
+  },
   // Cost & profit planning (docs/COST_SHEET.md): what one sale of each size costs and earns, and the shop / category defaults.
   {
     id: "finance.product-costs",

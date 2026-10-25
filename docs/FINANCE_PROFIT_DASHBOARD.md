@@ -41,3 +41,17 @@ statement), returned as `priorTotals`. `totals.salesPerAdTaka` = sales ÷ ads.
 - Changes against the period before are shown only when that whole period is inside the books (a part-empty period would
   read as "up from nothing"). Costs going up are red, sales and profit going up green.
 - Ad campaigns for the period come from `GET /ads/campaigns` (its orders are attributed by visit, not by the books).
+
+## 5. Month by month (`/admin/finance/monthly`)
+
+`GET /api/v1/finance/profit/monthly` (finance.read, owner-only) folds the daily profit (§above) into one row per month from
+the books' opening date to today: sales, goods, packing, delivery, payment fees, ads, running costs and profit. The months
+add up to the income statement for the same span (asserted in `finance-charges.integration.test.ts`).
+
+Each month also says what is still to settle before it can be closed:
+- `estimatedCostPct` — the share of the month's goods cost (COGS journal lines) still valued from an estimate, not a bill;
+- `openExceptions` — finance exceptions raised in the month and not resolved;
+- `unpaidByCourier` — delivered COD parcels of that month the courier hasn't paid for yet.
+
+`readyToClose` is true only when the month is over, still open, and all three are zero. Nothing here closes a month — that
+stays in Month-end, by the owner. A month opens to its delivered orders, least-earning first (from `/finance/profit`).
