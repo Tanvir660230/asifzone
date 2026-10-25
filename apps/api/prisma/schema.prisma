@@ -80,6 +80,9 @@ enum BrandTier {
 enum AdminRole {
   OWNER
   STAFF
+  /// Admin audit phase 2: runs the store and the books day to day, but not staff, settings, partner / payroll money
+  /// or permanent deletes (packages/shared permissions.ts MANAGER_EXCLUDED).
+  MANAGER
   /// Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §11): finance-only roles — no commerce access.
   FINANCE_ADMIN
   ACCOUNTANT
@@ -295,6 +298,17 @@ model AdminUser {
   /// owner, an invite an OWNER issued with role OWNER, or an OWNER promoting someone.
   role                   AdminRole             @default(STAFF)
   isActive               Boolean               @default(true)
+  /// 2-step sign-in (modules/auth/two-step.service.ts): the authenticator secret, sealed (lib/secret-box.ts) and bound to
+  /// this admin. Set during setup; it only takes effect once `totpEnabledAt` is set by a confirmed code.
+  totpSecret             String?
+  totpEnabledAt          DateTime?
+  /// The last code step used — a code (and any older one) is refused the second time.
+  totpLastStep           Int?
+  /// sha256 of each unused recovery code; one is removed when it is used.
+  totpRecoveryHashes     String[]              @default([])
+  /// Wrong codes in a row; 5 locks the 2nd step for 15 minutes (on top of the per-IP login limit).
+  totpFailures           Int                   @default(0)
+  totpLockedUntil        DateTime?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   refreshTokens          RefreshToken[]

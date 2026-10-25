@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Droplets, PackagePlus, Boxes } from "lucide-react";
@@ -25,7 +25,7 @@ import type { StockProblem, StockPurchase } from "@/lib/api/stock";
 import { getStockActivity, getStockToday, retryAutoFill, smartKeys, type StockListItem } from "@/lib/api/stock-smart";
 import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/components/ui/tabs";
-import { formatBookDate, formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
 import { BatchFillSheet } from "./batch-fill-sheet";
 import { BoughtSheet, type BoughtStart } from "./bought-sheet";
@@ -103,6 +103,15 @@ export function StockHub() {
     else if (deepLinkKind === "fill") setSheet("filled");
     else { setCountFor([deepLink]); setSheet("guided-count"); }
   }, [deepLink, deepLinkKind, overview.data, params, pathname, router]);
+  // ?open=filled|bought|counted opens that sheet once the stock has loaded — Finance's old Quick refill address lands
+  // on Filled bottles this way (admin audit phase 3).
+  const opened = useRef(false);
+  useEffect(() => {
+    const want = params.get("open");
+    if (opened.current || !overview.data?.costingActive || (want !== "filled" && want !== "bought" && want !== "counted")) return;
+    opened.current = true;
+    setSheet(want === "filled" && today.data?.fill ? "batch-fill" : want);
+  }, [params, overview.data, today.data]);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
 
@@ -136,7 +145,7 @@ export function StockHub() {
   });
 
   const summary = data ? [
-    data.totalValue !== null ? `${formatPrice(data.totalValue)} at cost` : null,
+    data.totalValue !== null ? `${formatPriceWhole(data.totalValue)} at cost` : null,
     data.lastCount ? `Last counted ${formatBookDate(data.lastCount)}` : "Not counted here yet",
   ].filter(Boolean).join(" · ") : " ";
 

@@ -145,19 +145,23 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/nowhere")).toBeUndefined();
   });
 
-  it("organises Finance as Overview, Needs attention, My cash and six groups — payments inside Sales & payments", () => {
+  it("organises Finance as Overview, Needs attention and five groups — payments inside Sales & payments, My cash inside Money", () => {
     expect(resolveNavNode("/admin/finance")?.id).toBe("finance.home");
     expect(navNode("finance")?.index).toBe("/admin/finance");
     const owner = access("OWNER");
-    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Needs attention", "My cash", "Money", "Sales & payments", "Purchasing", "Reports & books", "Payroll & partners", "Setup & checks"]);
+    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Needs attention", "Money", "Sales & payments", "Purchasing", "Books & setup", "Payroll & partners"]);
+    // admin audit phase 3: My cash is a money account the admin holds; setup and checks sit with the books
+    expect(resolveNavNode("/admin/finance/my-cash")?.parent).toBe("finance.money");
+    // Quick refill was Stock › Filled bottles a second time — its old address opens that sheet
+    expect(deprecatedRedirect("/admin/finance/refills")).toBe("/admin/stock?open=filled");
     for (const route of ["/admin/payments/transactions", "/admin/payments/refunds", "/admin/payments/attempts", "/admin/payments/overview", "/admin/finance/settlements", "/admin/finance/sales"]) {
       expect(resolveNavNode(route)?.parent, route).toBe("finance.selling");
     }
-    expect(navChildren("finance.setup", owner).map((c) => c.href)).toEqual([
+    expect(navChildren("finance.books", owner).map((c) => c.href).slice(-8)).toEqual([
       "/admin/finance/opening", "/admin/finance/rates", "/admin/finance/checks", "/admin/finance/exceptions", "/admin/finance/inventory-cutover", "/admin/finance/tax-codes", "/admin/finance/mappings", "/admin/finance/activity",
     ]);
     // every listed finance page explains itself in one sentence (the Overview's map shows it)
-    const listed = ["finance.money", "finance.selling", "finance.purchasing", "finance.books", "finance.people", "finance.setup"].flatMap((g) => navChildren(g, owner));
+    const listed = ["finance.money", "finance.selling", "finance.purchasing", "finance.books", "finance.people"].flatMap((g) => navChildren(g, owner));
     for (const item of listed) expect(item.node.description, item.node.id).toBeTruthy();
   });
 
@@ -190,9 +194,10 @@ describe("navigation manifest — derivation", () => {
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(11);
     expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
-    // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels and Production, whose
-    // own pages are its tabs; a lone module still shows none (Customers).
-    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/manufacturing/home"]);
+    // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels, Stock check (admin
+    // audit phase 3: where every piece went, moved from Finance) and Production, whose own pages are its tabs; a lone module
+    // still shows none (Customers).
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/finance/stock-check", "/admin/manufacturing/home"]);
     expect(sectionTabsFor("/admin/manufacturing/boms", access("OWNER")).map((t) => t.href)).toEqual(["/admin/manufacturing/home", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
     expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
@@ -210,7 +215,7 @@ describe("navigation manifest — derivation", () => {
     expect(sectionBarFor("/admin/orders/abc123", access("OWNER"))).toBeNull();
     expect(sectionBarFor("/admin/products/abc123/edit", access("OWNER"))).toBeNull();
     // Inventory holds Stock and Manufacturing (docs/MANUFACTURING.md), so it has a section bar of its own
-    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/manufacturing/home"]);
+    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/finance/stock-check", "/admin/manufacturing/home"]);
     // a Production page keeps the module bar on "Production"
     expect(sectionBarFor("/admin/manufacturing/materials", access("OWNER"))?.activeHref).toBe("/admin/manufacturing/home");
     expect(sectionBarFor("/admin/manufacturing/production-orders/po1", access("OWNER"))).toBeNull(); // a detail view

@@ -57,6 +57,8 @@ const OWNER_ONLY_ROUTES = [
   "PATCH /api/auth/admins/:id/active",
   "PATCH /api/auth/admins/:id",
   "PATCH /api/auth/admins/:id/password",
+  "DELETE /api/auth/admins/:id/2fa",
+  "POST /api/auth/admins/:id/sessions/revoke",
   "GET /api/auth/admin-invites",
   "POST /api/auth/admin-invites",
   "DELETE /api/auth/admin-invites/:id",
@@ -510,7 +512,7 @@ describe("the role matrix — every admin route, every identity", () => {
   // Side effects too broad to fire blind as OWNER (they are exercised by their own suites).
   const OWNER_SKIP = new Set(["POST /api/v1/storefront/read-model/rebuild", "POST /api/payment-admin/ledger/repair", "POST /api/auth/logout-all"]);
   // The sweep reads every cached admin endpoint; drop what it warmed so later files never see a pre-filled cache.
-  const CACHE_FAMILIES = ["analytics:", "metrics:", "bi:", "products:", "categories:", "outbox:", "payments:", "banners:", "homepage-sections:", "payment-methods:", "social-links:", "sms-settings:", "settings:"];
+  const CACHE_FAMILIES = ["swr:", "analytics:", "metrics:", "bi:", "products:", "categories:", "outbox:", "payments:", "banners:", "homepage-sections:", "payment-methods:", "social-links:", "sms-settings:", "settings:"];
   afterAll(async () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
@@ -541,7 +543,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +2: inventory recovery — receive a parcel cancelled after shipping; a fill-to-order product's stock policy
     // +3: Filled as a hub entry, an item's stock trace, an order's attar fill status (phase 3)
     // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill; +1: the activity
-    expect(routes).toHaveLength(741);
+    // +5: 2-step sign-in (admin audit phase 2) — own setup / enable / disable, an owner's reset, an owner's sign-out-everywhere
+    expect(routes).toHaveLength(746);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

@@ -6,7 +6,6 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, ExternalLink, Eye } from "lucide-react";
 import { PageHeader } from "@/components/admin/page-header";
-import { BackLink } from "@/components/ui/back-link";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/empty-state";
@@ -56,7 +55,6 @@ export default function EditProductPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => setDuplicating(true)}>
               <Copy size={14} aria-hidden="true" /> Duplicate
             </Button>
-            <BackLink href="/admin/products" label="Back to Products" />
           </>
         }
       />

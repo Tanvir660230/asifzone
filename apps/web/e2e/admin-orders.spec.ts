@@ -87,8 +87,8 @@ test.describe("orders workspace", () => {
     await expect(results.first()).toBeVisible();
     for (let i = 0; i < (await results.count()) && !(await sellable.first().isVisible().catch(() => false)); i++) await results.nth(i).click();
     await sellable.first().click();
-    await expect(page.getByRole("button", { name: /Create Order — .*\d/ })).toBeEnabled();
-    await page.getByRole("button", { name: /Create Order — / }).click();
+    await expect(page.getByRole("button", { name: /Create order — .*\d/ })).toBeEnabled();
+    await page.getByRole("button", { name: /Create order — / }).click();
     await expect(page).toHaveURL(/\/admin\/orders\/(?!new$)[a-z0-9]+$/, { timeout: 30_000 });
     await expect(page.getByTestId("order-detail")).toBeVisible({ timeout: 30_000 });
     const orderId = page.url().split("/").pop()!;

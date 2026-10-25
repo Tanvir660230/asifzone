@@ -51,6 +51,7 @@ export async function reliabilityReport(now: Date = new Date()) {
     outbox: {
       undelivered: outbox.undelivered,
       failed: outbox.counts.FAILED ?? 0,
+      failedLast7Days: outbox.failedRecent,
       oldestUndelivered: outbox.oldestUndelivered,
       dispatcherHealthy: outbox.dispatcher.healthy,
       recentFailures: outbox.recentFailures.slice(0, TOP),

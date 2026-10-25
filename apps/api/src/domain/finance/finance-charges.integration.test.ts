@@ -13,6 +13,7 @@ import { setCostPolicy } from "./chart.service";
 import { adjustVariantStock } from "../../modules/inventory/inventory.service";
 import { PERMISSIONS } from "@clothing-brand/shared";
 import type { FinanceActor } from "./finance-audit";
+import { financeAlerts } from "./finance-alerts.service";
 
 // Owner's books §3–§4 (docs/FINANCE_OWNER_BOOKS.md): a delivered parcel's courier charge and an online payment's gateway
 // fee are booked as ESTIMATES the day they happen (from the rate card), and replaced by the ACTUAL charge when the payout
@@ -240,6 +241,16 @@ describe("gateway fees", () => {
 });
 
 describe("the courier's side of the books", () => {
+  it("delivered COD parcels Steadfast hasn't paid for after 7 days raise an alert that matches the Steadfast check", async () => {
+    const o = await deliveredParcel(`CN-${RUN}-unpaid`);
+    await prisma.payment.updateMany({ where: { orderId: o.id, provider: "COD", status: "SUCCEEDED" }, data: { settledAt: new Date(Date.now() - 8 * 86_400_000) } });
+    const rec = (await owner().get("/courier/reconciliation")).body;
+    expect(rec.unsettled.map((u: { id: string }) => u.id)).toContain(o.id);
+    const alert = (await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid");
+    expect(alert).toMatchObject({ severity: "warning", count: rec.unsettled.length, href: "/admin/finance/courier" });
+    expect(alert!.amount).toBe(rec.unsettled.reduce((s: number, u: { total: number }) => s + u.total, 0));
+  });
+
   it("shows what the books expect from Steadfast next to its own balance, and the parcels that need a look", async () => {
     payouts.balance = 1234;
     const r = await owner().get("/courier/reconciliation");

@@ -190,7 +190,7 @@ export default function CampaignsPage() {
                   <td className="px-4 py-3 text-ink-500">{c.segment?.name.split(" — ")[1] ?? "—"}</td>
                   <td className="px-4 py-3 text-ink-500">{c.recipientCount}</td>
                   <td className="px-4 py-3">
-                    <Badge className={STATUS_COLOR[c.status]}>{c.status}</Badge>
+                    <Badge className={STATUS_COLOR[c.status]}>{c.status.charAt(0) + c.status.slice(1).toLowerCase()}</Badge>
                   </td>
                   <td className="px-4 py-3 text-ink-500">
                     {c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : "—"}

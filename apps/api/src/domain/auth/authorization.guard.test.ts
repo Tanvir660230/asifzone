@@ -38,6 +38,7 @@ const PUBLIC_ROUTES = [
   "GET /api/v1/ops/attention", // Phase 11: counts only; gated by requireOpsReadOrMonitorToken (ops.read or the monitor token)
   "POST /api/auth/login",
   "POST /api/auth/google",
+  "POST /api/auth/login/2fa", // the 2-step code after the password: needs the short-lived challenge from it (admin audit phase 2)
   "POST /api/auth/logout",
   "POST /api/auth/refresh",
   "POST /api/auth/admin-invites/accept",
@@ -117,7 +118,7 @@ const PUBLIC_ROUTES = [
 ];
 
 /** Self-service admin routes: own session and own notifications — no permission, by design. */
-const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "DELETE /api/auth/sessions/:id", "POST /api/auth/sessions/revoke-others", "POST /api/auth/logout-all", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention", "GET /api/v1/admin/views", "POST /api/v1/admin/views", "DELETE /api/v1/admin/views/:id"]; // attention: each section re-checks the caller's permissions; views: the caller's own (DR-18)
+const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "DELETE /api/auth/sessions/:id", "POST /api/auth/sessions/revoke-others", "POST /api/auth/logout-all", "POST /api/auth/2fa/setup", "POST /api/auth/2fa/enable", "POST /api/auth/2fa/disable", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention", "GET /api/v1/admin/views", "POST /api/v1/admin/views", "DELETE /api/v1/admin/views/:id"]; // attention: each section re-checks the caller's permissions; views: the caller's own (DR-18)
 
 describe("requirePermission on its own (defence in depth, independent of route order)", () => {
   const run = (admin: unknown) => {
@@ -227,7 +228,10 @@ describe("authorization — architecture guards", () => {
     const writers = apiSource
       .filter((f) => /adminUser\.(update|updateMany|delete|deleteMany|create|upsert)\(/.test(code(f)))
       .map((f) => relative(API, f).replace(/\\/g, "/"));
-    expect(writers.sort()).toEqual(["modules/auth/auth.service.ts"]);
+    // two-step.service.ts writes only an admin's own 2-step sign-in columns (admin audit phase 2) — never role or active.
+    expect(writers.sort()).toEqual(["modules/auth/auth.service.ts", "modules/auth/two-step.service.ts"]);
     expect(code(join(API, "modules", "auth", "auth.service.ts"))).toMatch(/assertKeepsAnActiveOwner\(tx, adminId/);
+    const twoStep = code(join(API, "modules", "auth", "two-step.service.ts"));
+    expect(twoStep).not.toMatch(/\b(role|isActive|passwordHash|email)\s*:/);
   });
 });

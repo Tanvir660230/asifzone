@@ -22,6 +22,8 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { OrderStats } from "@/lib/api/admin-orders";
 import type { PaymentsOverview } from "@/lib/api/payments-admin";
+import type { FinanceAlert } from "@/lib/api/finance";
+import { formatPrice } from "@/lib/format";
 
 type Severity = "critical" | "warning" | "info";
 
@@ -52,6 +54,8 @@ interface ActionCenterProps {
   lowStockCount?: number;
   /** Finance alerts (docs/FINANCE_ALERTS.md) by severity — only for roles that read the books. */
   financeAlerts?: { critical: number; warning: number };
+  /** The alerts themselves: critical ones and the courier's unpaid parcels get a row of their own, by name. */
+  financeAlertList?: FinanceAlert[];
   /** Open errors from the last 24 h (Site health) — only for roles with ops.read. */
   openErrors?: number;
   loading: boolean;
@@ -59,11 +63,23 @@ interface ActionCenterProps {
 
 /** Everything waiting on an admin, as a to-do list: only non-zero items show, most urgent first, each one a link straight
  * to the filtered list where it gets done. An empty list is the goal — it renders as an explicit "all clear". */
-export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, openErrors, loading }: ActionCenterProps) {
+export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, financeAlertList, openErrors, loading }: ActionCenterProps) {
   const q = orderStats?.queueCounts;
   // The overview's failure list reaches back weeks; only the last day's are still worth chasing.
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
   const freshFailures = payments?.recentFailures.filter((f) => new Date(f.failedAt).getTime() >= dayAgo).length ?? 0;
+  // Named finance rows: every critical alert, and money the courier still holds. The rest stay one "Finance to-dos" row.
+  const named = (financeAlertList ?? []).filter((a) => a.severity === "critical" || a.key === "courier.unpaid");
+  const namedWarnings = named.filter((a) => a.severity === "warning").length;
+  const financeRows: ActionItem[] = named.map((a) => ({
+    key: `finance-${a.key}`,
+    label: a.amount ? `${a.title} · ${formatPrice(Math.round(a.amount))}` : a.title,
+    hint: a.action,
+    count: a.count,
+    href: a.href,
+    severity: a.severity === "critical" ? "critical" : "warning",
+    icon: a.key === "courier.unpaid" ? Truck : BookOpen,
+  }));
   const candidates: ActionItem[] = [
     {
       key: "cancelled-paid",
@@ -139,8 +155,8 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
     },
     {
       key: "pending",
-      label: "Orders to confirm",
-      hint: "Pending or confirmed, not yet moving",
+      label: "Orders waiting",
+      hint: "Pending or confirmed, not packed yet",
       count: orderStats?.pending ?? 0,
       href: "/admin/orders?status=PENDING,CONFIRMED",
       severity: "info",
@@ -164,20 +180,15 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       severity: "info",
       icon: Star,
     },
-    {
-      key: "finance-critical",
-      label: "Finance problems",
-      hint: "Postings that failed, checks that differ or cash forecast below zero",
-      count: financeAlerts?.critical ?? 0,
-      href: "/admin/finance/attention",
-      severity: "critical",
-      icon: BookOpen,
-    },
+    // Without the list (still loading, or an older API), fall back to the counts.
+    ...(financeAlertList
+      ? financeRows
+      : [{ key: "finance-critical", label: "Finance problems", hint: "Postings that failed, checks that differ or cash forecast below zero", count: financeAlerts?.critical ?? 0, href: "/admin/finance/attention", severity: "critical" as const, icon: BookOpen }]),
     {
       key: "finance-todo",
       label: "Finance to-dos",
       hint: "Approvals, bills and costs due, months to close",
-      count: financeAlerts?.warning ?? 0,
+      count: Math.max(0, (financeAlerts?.warning ?? 0) - namedWarnings),
       href: "/admin/finance/attention",
       severity: "warning",
       icon: BookOpen,

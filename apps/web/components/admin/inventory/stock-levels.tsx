@@ -15,7 +15,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as inventoryApi from "@/lib/api/inventory";
 import * as purchasingApi from "@/lib/api/purchasing";
-import { formatCount, formatPrice } from "@/lib/format";
+import { formatCount, formatPrice, formatPriceWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
 import { Thumbnail } from "@/components/admin/thumbnail";
@@ -113,7 +113,7 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
           >
             Stock value
             <span className="font-semibold tabular-nums text-fg">
-              {valuation.isError ? "unavailable" : valuation.data ? formatPrice(valuation.data.totals.value) : "…"}
+              {valuation.isError ? "unavailable" : valuation.data ? formatPriceWhole(valuation.data.totals.value) : "…"}
             </span>
           </Link>
         )}

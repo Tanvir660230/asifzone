@@ -9,7 +9,7 @@ import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked
 import { CohortRetentionGrid } from "@/components/admin/cohort-retention-grid";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as biApi from "@/lib/api/bi";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatPriceWhole } from "@/lib/format";
 import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 function toBarItems<T>(rows: T[] | undefined, opts: { key: (r: T) => string; label: (r: T) => string; value: (r: T) => number; valueLabel: (r: T) => string }): RankedBarListItem[] {
@@ -24,7 +24,7 @@ export default function LifetimeDataPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-fg">Lifetime Data</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">Lifetime data</h2>
         <p className="mt-1 text-sm text-ink-500">The store&apos;s all-time numbers, year over year, and how well it holds onto customers.</p>
       </div>
 
@@ -36,9 +36,9 @@ export default function LifetimeDataPage() {
             Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Lifetime net sales" value={formatPrice(overview.revenueLifetime)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Lifetime net sales" value={formatPriceWhole(overview.revenueLifetime)} icon={<Wallet size={18} />} tone="accent" />
               <StatTile label="Lifetime Orders" value={overview.ordersLifetime.toLocaleString(DISPLAY_LOCALE)} icon={<TrendingUp size={18} />} />
-              <StatTile label="Average Order Value" value={formatPrice(overview.aovLifetime)} icon={<Wallet size={18} />} />
+              <StatTile label="Average order value" value={formatPriceWhole(overview.aovLifetime)} icon={<Wallet size={18} />} />
               <StatTile label="Repeat Purchase Rate" value={`${overview.repeatPurchaseRatePct.toFixed(1)}%`} icon={<Repeat size={18} />} />
             </>
           )}
