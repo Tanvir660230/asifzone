@@ -420,6 +420,13 @@ decisions make sure two installations never see, use or disturb each other's dat
 | D20 | **Queues and jobs carry their installation by construction.** Every BullMQ queue and worker uses the installation prefix (`install:<id>:bull`), so a worker only ever consumes its own installation's jobs, and a job runs against the database of the process that consumes it. Jobs never carry or trust a store id from their payload. | A job can't run against the wrong store's data if workers can't even see another installation's queues. | `lib/queue.ts` `createQueue()`, `lib/observability/jobs.ts` `createObservedWorker()`; the isolation guard allows BullMQ constructors only there |
 | D21 | **Isolation is proved with two real installations.** The proof starts two API processes from one checkout, on two disposable databases and one shared Redis, deliberately with the same JWT secrets. It checks admins, staff, products, customers, orders, locks, analytics, the settings cache and queues. It also asserts that every key in the shared Redis is inside one installation's namespace. Disposable resources only; they are dropped afterwards. | Unit tests show the key names differ; only two running stores show nothing leaks. | `apps/api/scripts/isolation/two-installations.ts` (`pnpm --filter api test:installations`) |
 
+## Admin access decisions (owner, 2026-10-25 — admin audit phase 2)
+
+| ID | Decision | Why | Enforcement |
+|---|---|---|---|
+| D-AA1 | **A MANAGER role** runs the store and the books day to day, but never staff accounts, settings, partner / payroll money, closing a month, high-value approvals, count losses over the limit, permanent deletes, System health repairs or confirming AI changes. The Claude staff account moves from OWNER to MANAGER. | All three admin accounts were OWNER; an assistant account doesn't need the owner's own powers. | `packages/shared/src/permissions.ts` (`MANAGER_EXCLUDED`); `apps/api/src/domain/auth/manager-role.test.ts` |
+| D-AA2 | **2-step sign-in** (an authenticator-app code after the password or Google) is available to every admin and recommended for owners; the Team page flags owners without it. 8 one-time recovery codes; 5 wrong codes lock the step for 15 minutes; a code is never accepted twice; an owner can reset a teammate's (audited, signs them out). Optional, so nobody is locked out by a rollout. | Owners see everything, including money; a leaked password alone should not open the console. | `apps/api/src/modules/auth/two-step.service.ts`, `lib/totp.ts`; `modules/auth/two-step.integration.test.ts` |
+
 ## Order flow decision (owner, 2026-10-25 — admin audit phase 3)
 
 | ID | Decision | Why | Enforcement |

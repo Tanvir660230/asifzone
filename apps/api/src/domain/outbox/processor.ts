@@ -190,8 +190,10 @@ export async function dispatcherHealthy(now: Date = new Date()): Promise<boolean
 }
 
 /** Operational visibility: counts, the oldest undelivered intent, recent failures, dispatcher heartbeat. */
+const RECENT_FAILURE_MS = 7 * 86_400_000;
+
 export async function outboxStatus(now: Date = new Date()) {
-  const [groups, oldestPending, oldestFailed, failures, heartbeat] = await Promise.all([
+  const [groups, oldestPending, oldestFailed, failures, heartbeat, failedRecent] = await Promise.all([
     prisma.outboxEvent.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.outboxEvent.findFirst({ where: { status: { in: ["PENDING", "ENQUEUED", "PROCESSING"] } }, orderBy: { createdAt: "asc" }, select: { id: true, eventType: true, consumer: true, createdAt: true, attempts: true, lastError: true } }),
     prisma.outboxEvent.findFirst({ where: { status: "FAILED" }, orderBy: { createdAt: "asc" }, select: { id: true, createdAt: true } }),
@@ -202,12 +204,15 @@ export async function outboxStatus(now: Date = new Date()) {
       select: { id: true, eventType: true, consumer: true, eventKey: true, aggregateType: true, aggregateId: true, attempts: true, lastError: true, createdAt: true, updatedAt: true },
     }),
     cacheGet<{ at: string }>(HEARTBEAT_KEY),
+    // Failures stay FAILED until retried; the ones from the last week are the ones still worth a look.
+    prisma.outboxEvent.count({ where: { status: "FAILED", updatedAt: { gte: new Date(now.getTime() - RECENT_FAILURE_MS) } } }),
   ]);
   const counts = Object.fromEntries(["PENDING", "ENQUEUED", "PROCESSING", "PROCESSED", "FAILED"].map((s) => [s, groups.find((g) => g.status === s)?._count._all ?? 0]));
   const lastRun = heartbeat ? new Date(heartbeat.at) : null;
   return {
     counts,
     undelivered: counts.PENDING! + counts.ENQUEUED! + counts.PROCESSING!,
+    failedRecent,
     oldestUndelivered: oldestPending ? { ...oldestPending, ageSeconds: Math.round((now.getTime() - oldestPending.createdAt.getTime()) / 1000) } : null,
     oldestFailedAgeSeconds: oldestFailed ? Math.round((now.getTime() - oldestFailed.createdAt.getTime()) / 1000) : null,
     recentFailures: failures,

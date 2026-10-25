@@ -75,7 +75,7 @@ export function TopBar({ compact = false, draft, device, onDevice, checks, onPub
     <header className={cn("flex h-14 shrink-0 items-center border-b border-line-subtle bg-surface", compact ? "gap-1 px-1.5" : "gap-3 px-3")} data-testid="studio-top-bar">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <Tooltip content="Back to the admin">
-          <Link href="/admin" aria-label="Back to the admin" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg">
+          <Link href="/admin/dashboard" aria-label="Back to the admin" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg">
             <ArrowLeft size={18} />
           </Link>
         </Tooltip>

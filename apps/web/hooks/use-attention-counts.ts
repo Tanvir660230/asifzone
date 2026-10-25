@@ -47,7 +47,10 @@ export function useAttentionCounts() {
     financeAlerts: finance.data ? finance.data.counts.critical + finance.data.counts.warning : undefined,
     /** Finance alerts by severity, for Home's Action Center (undefined without finance.view). */
     financeAlertCounts: finance.data?.counts,
-    /** True until the first answer — lets callers show a skeleton instead of a premature "all clear". */
-    loading: !ready || query.isLoading,
+    /** The finance alerts themselves — Home names the critical ones and the courier's unpaid parcels. */
+    financeAlertList: finance.data?.alerts,
+    /** True until the first answer — lets callers show a skeleton instead of a premature "all clear". Waits for the
+     * finance alerts too (when this admin reads them), so the count doesn't jump once they arrive. */
+    loading: !ready || query.isLoading || finance.isLoading,
   };
 }

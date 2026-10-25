@@ -32,7 +32,7 @@ export type NavIconName =
   | "settings"
   | "administration";
 /** Work-queue counts a node may show — resolved by the shell from the dashboard's attention counts. */
-export type NavBadgeSource = "orders" | "messages" | "finance";
+export type NavBadgeSource = "orders" | "messages" | "inbox" | "reviews" | "finance";
 
 export interface NavCommand {
   id: string;
@@ -301,7 +301,7 @@ export const NAV_NODES: readonly NavNode[] = [
     goKey: "e",
     keywords: ["support", "feedback"],
   },
-  { id: "messages.feedback", label: "Inbox", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", order: 0, keywords: ["support", "messages", "feedback", "contact form", "reply"] },
+  { id: "messages.feedback", label: "Inbox", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", badge: "inbox", order: 0, keywords: ["support", "messages", "feedback", "contact form", "reply"] },
   {
     id: "messages.answers",
     label: "Saved answers",
@@ -313,7 +313,7 @@ export const NAV_NODES: readonly NavNode[] = [
     order: 1,
     keywords: ["auto reply", "faq", "learned", "quick reply", "templates"],
   },
-  { id: "messages.reviews", label: term("review"), kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", order: 2 },
+  { id: "messages.reviews", label: term("review"), kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", badge: "reviews", order: 2 },
 
   // ── Grow ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   {

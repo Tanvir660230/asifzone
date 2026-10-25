@@ -9,6 +9,8 @@ export interface ReliabilityReport {
     outbox: {
       undelivered: number;
       failed: number;
+      /** Of `failed`, the ones from the last 7 days — older failures are history unless retried. */
+      failedLast7Days?: number;
       oldestUndelivered: { eventType: string; consumer: string; ageSeconds: number } | null;
       dispatcherHealthy: boolean;
       recentFailures: Array<{ id: string; eventType: string; consumer: string; attempts: number; lastError: string | null; updatedAt: string }>;

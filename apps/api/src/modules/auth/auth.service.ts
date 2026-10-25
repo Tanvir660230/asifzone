@@ -5,7 +5,8 @@ import { ADMIN_ROLES, permissionsForRole, type AdminLoginInput, type AdminRoleNa
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
-import { signAccessToken } from "../../lib/jwt";
+import { signAccessToken, signTwoStepChallenge, verifyTwoStepChallenge } from "../../lib/jwt";
+import { checkCode } from "./two-step.service";
 import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
@@ -25,8 +26,32 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
 
 /** What the admin console learns about the signed-in admin: its role and the permissions that role resolves to (Phase
  * 10) — the web decides visibility from `permissions`, never by comparing role strings. */
-function sessionAdmin(admin: { id: string; name: string; email: string; role: AdminRoleName }) {
-  return { id: admin.id, name: admin.name, email: admin.email, role: admin.role, permissions: permissionsForRole(admin.role) };
+function sessionAdmin(admin: { id: string; name: string; email: string; role: AdminRoleName; totpEnabledAt?: Date | null }) {
+  return { id: admin.id, name: admin.name, email: admin.email, role: admin.role, permissions: permissionsForRole(admin.role), twoStepEnabled: Boolean(admin.totpEnabledAt) };
+}
+
+type SignInAdmin = { id: string; name: string; email: string; role: AdminRoleName; totpEnabledAt: Date | null };
+
+/** The session for an admin who has passed every step. */
+async function issueSession(admin: SignInAdmin, userAgent?: string) {
+  const refreshToken = await issueRefreshToken(admin.id, userAgent);
+  return { accessToken: signAccessToken({ adminId: admin.id, role: admin.role }), refreshToken, admin: sessionAdmin(admin) };
+}
+
+/** After the first step: a session, or — with 2-step sign-in on — a challenge the code must come back with. */
+async function afterFirstStep(admin: SignInAdmin, userAgent?: string) {
+  if (admin.totpEnabledAt) return { twoStepRequired: true as const, challenge: signTwoStepChallenge(admin.id) };
+  return issueSession(admin, userAgent);
+}
+
+/** The second step: the challenge from the first step plus a code from the app (or a recovery code). */
+export async function completeTwoStepSignIn(challenge: string, code: string, userAgent?: string) {
+  const adminId = verifyTwoStepChallenge(challenge);
+  if (!adminId) throw AppError.unauthorized("This sign-in has expired — enter your password again");
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
+  if (!admin || !admin.isActive) throw AppError.unauthorized("This sign-in has expired — enter your password again");
+  if (!(await checkCode(admin.id, code))) throw AppError.unauthorized("That code didn't match — try the newest code in your app");
+  return issueSession(admin, userAgent);
 }
 
 function generateOpaqueToken(): string {
@@ -55,13 +80,7 @@ export async function loginAdmin(input: AdminLoginInput, userAgent?: string) {
   const admin = await prisma.adminUser.findUnique({ where: { email: input.email } });
   const passwordMatches = await bcrypt.compare(input.password, admin?.passwordHash ?? DUMMY_PASSWORD_HASH);
   if (!admin || !admin.isActive || !passwordMatches) throw AppError.unauthorized("Invalid email or password");
-
-  const refreshToken = await issueRefreshToken(admin.id, userAgent);
-  return {
-    accessToken: signAccessToken({ adminId: admin.id, role: admin.role }),
-    refreshToken,
-    admin: sessionAdmin(admin),
-  };
+  return afterFirstStep(admin, userAgent);
 }
 
 /** Unlike the customer Google login, this never creates an AdminUser — admin accounts are
@@ -101,13 +120,7 @@ export async function signInAdminWithGoogleIdentity(identity: { sub: string; ema
     admin = await prisma.adminUser.update({ where: { id: existingByEmail.id }, data: { googleId } });
   }
   if (!admin.isActive) throw AppError.unauthorized("This admin account has been deactivated");
-
-  const refreshToken = await issueRefreshToken(admin.id, userAgent);
-  return {
-    accessToken: signAccessToken({ adminId: admin.id, role: admin.role }),
-    refreshToken,
-    admin: sessionAdmin(admin),
-  };
+  return afterFirstStep(admin, userAgent);
 }
 
 /** Rotates the refresh token on every use (old one is marked revoked+replaced) so a stolen token that
@@ -136,8 +149,10 @@ export async function revokeRefreshToken(rawToken: string) {
 }
 
 /** "Log out of all devices" — revokes every still-active session for this admin. */
+/** Ends every session of the admin; returns how many were live. */
 export async function revokeAllRefreshTokens(adminId: string) {
-  await prisma.refreshToken.updateMany({ where: { adminId, revokedAt: null }, data: { revokedAt: new Date() } });
+  const { count } = await prisma.refreshToken.updateMany({ where: { adminId, revokedAt: null }, data: { revokedAt: new Date() } });
+  return count;
 }
 
 /** The admin's signed-in devices (one active refresh token each — rotation revokes the old row). `current` marks the
@@ -195,11 +210,24 @@ export function roleCatalog() {
   });
 }
 
+/** The team list (Administration › Team): each admin with 2-step sign-in on or off, when they were last active (a session
+ * is renewed every few minutes while the console is open, so the newest session row is the last activity) and how many
+ * devices are signed in now. */
 export async function listAdmins() {
-  return prisma.adminUser.findMany({
-    select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const now = new Date();
+  const [admins, latest, live] = await Promise.all([
+    prisma.adminUser.findMany({ select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true, totpEnabledAt: true }, orderBy: { createdAt: "asc" } }),
+    prisma.refreshToken.groupBy({ by: ["adminId"], _max: { createdAt: true } }),
+    prisma.refreshToken.groupBy({ by: ["adminId"], where: { revokedAt: null, expiresAt: { gt: now } }, _count: { _all: true } }),
+  ]);
+  const last = new Map(latest.map((r) => [r.adminId, r._max.createdAt]));
+  const devices = new Map(live.map((r) => [r.adminId, r._count._all]));
+  return admins.map(({ totpEnabledAt, ...a }) => ({
+    ...a,
+    twoStepEnabled: Boolean(totpEnabledAt),
+    lastActiveAt: last.get(a.id)?.toISOString() ?? null,
+    activeSessions: devices.get(a.id) ?? 0,
+  }));
 }
 
 const adminListSelect = { id: true, name: true, email: true, role: true, isActive: true, createdAt: true } as const;

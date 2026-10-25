@@ -70,7 +70,7 @@ test.describe("admin on a phone", () => {
     const table = page.locator("main table").first();
     await expect(table).toHaveAttribute("data-stack", "on", NAV);
     // Each value sits beside its column's name; nothing scrolls sideways.
-    await expect(table.locator("tbody td[data-label='Email']").first()).toBeVisible();
+    await expect(table.locator("tbody td[data-label='Role']").first()).toBeVisible();
     const overflow = await page.locator("main").evaluate((main) => main.parentElement!.scrollWidth - main.parentElement!.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });

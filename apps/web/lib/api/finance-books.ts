@@ -108,7 +108,9 @@ export interface AdCampaign {
   costPerOrder: number | null; roas: number | null; lastActualDay: string | null;
   foreignSpend?: Array<{ currency: string; amount: number }>; budgetHistory?: Array<{ from: string; budgetType: "DAILY" | "LIFETIME" | null; budget: number | null }>;
 }
-export const listCampaigns = (q: { from?: string; to?: string }) => apiFetch<{ period: { from: string; to: string }; campaigns: AdCampaign[]; totals: { spend: number; orders: number; revenue: number }; meta: { connected: boolean } }>(`${BASE}/ads/campaigns${qs(q)}`);
+/** A utm_campaign value visitors came with that no campaign claims yet (Meta sends the campaign's numeric id). */
+export interface UnlinkedAdTag { tag: string; sessions: number; orders: number }
+export const listCampaigns = (q: { from?: string; to?: string }) => apiFetch<{ period: { from: string; to: string }; campaigns: AdCampaign[]; totals: { spend: number; orders: number; revenue: number }; unlinkedTags?: UnlinkedAdTag[]; meta: { connected: boolean } }>(`${BASE}/ads/campaigns${qs(q)}`);
 export const createCampaign = (body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns`, { method: "POST", body });
 export const updateCampaign = (id: string, body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns/${id}`, { method: "PATCH", body });
 export const recordDaySpend = (id: string, body: { date: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<{ ok: true }>(`${BASE}/ads/campaigns/${id}/spend`, { method: "PUT", body });
@@ -166,7 +168,7 @@ export interface ProfitReport {
   products: Array<{ name: string; units: number; sales: number; costs: number; contribution: number; marginPct: number | null }>;
 }
 export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitReport>(`${BASE}/profit${qs(q)}`);
-export interface LaunchReport { period: { from: string; to: string }; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
+export interface LaunchReport { /** null: the books open before the first order, so there were no weeks before them. */ period: { from: string; to: string } | null; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
 /** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts. */
 export interface ProfitDay { date: string; orders: number; sales: number; goods: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; profit: number }
