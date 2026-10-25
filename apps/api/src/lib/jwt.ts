@@ -25,3 +25,22 @@ export function verifyAccessToken(token: string): AdminTokenPayload {
   assertTokenInstallation(payload);
   return { adminId: payload.adminId, role: payload.role as AdminTokenPayload["role"] };
 }
+
+const TWO_STEP_TYPE = "admin-2fa";
+
+/** Admin audit phase 2: after a correct password (or Google) for an admin with 2-step sign-in, this short-lived token
+ * stands for "first step done" until the code arrives. A different `typ`, so it never passes as an access token and an
+ * access token never passes as it; it must name this installation. */
+export function signTwoStepChallenge(adminId: string): string {
+  return jwt.sign({ adminId, typ: TWO_STEP_TYPE }, env.jwtAccessSecret, { expiresIn: "5m", audience: TOKEN_AUDIENCE });
+}
+
+/** The admin the challenge was issued to, or null when it is forged, expired, from another installation or not a challenge. */
+export function verifyTwoStepChallenge(token: string): string | null {
+  try {
+    const payload = jwt.verify(token, env.jwtAccessSecret, { audience: TOKEN_AUDIENCE }) as { adminId?: unknown; typ?: unknown };
+    return payload.typ === TWO_STEP_TYPE && typeof payload.adminId === "string" ? payload.adminId : null;
+  } catch {
+    return null;
+  }
+}
