@@ -31,6 +31,7 @@ import { FreeDeliveryField } from "@/components/admin/free-delivery-field";
 import { SoldOutField } from "@/components/admin/sold-out-field";
 import { StockingField } from "@/components/admin/stock/stocking-field";
 import { CostSheetField } from "@/components/admin/cost-sheet/cost-sheet-field";
+import { KitPanel } from "@/components/admin/stock/kit-panel";
 import * as aiApi from "@/lib/api/ai";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { storeCurrencyCode, stripHtml } from "@/lib/format";
@@ -403,6 +404,12 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
           </Field>
         </div>
       </FormSection>
+
+      {initial && (
+        <FormSection title="What goes out with one sale" description="Its recipe (or the item itself) and the parcel's packing — what is in stock, how many sales that covers, when it runs out.">
+          <KitPanel productId={initial.id} />
+        </FormSection>
+      )}
 
       {initial && (
         <FormSection title="How it's stocked" description="Ready on the shelf, filled to order from a recipe (attar), or a material used to make other products.">
