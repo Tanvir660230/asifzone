@@ -372,3 +372,19 @@ part shows what is in stock, how many sales that covers, days left at the last 3
 when costing knows an average — never guessed) and the last purchase (date, unit cost). The part that runs out first
 decides how many more sales the stock covers. **Bought** and **Count** open the Stock page's sheets for that part; the
 recipe and the packing rules are changed on their own pages.
+
+## 12. Correcting what stock on hand is worth (2026-10-27)
+
+For a value the books took wrongly at go-live — items valued at an old price (the B caps at ৳587 when the batch cost
+৳476.77), or units held with no value at all (a hand entry, a cancelled never-costed sale) — that no purchase document can
+carry because the purchase is already in the books (the owner's capital). `POST /api/v1/finance/stock/value-corrections`
+(`costing.adjust`, commit owner-only: `finance.sensitive`; `stock-value-correction.service.ts`):
+
+- Body `{ reason, lines: [{ variantId, unitCost }], commit }`. `commit: false` previews per item: units held, how many had
+  no value, the value before and after, the change — nothing written. A commit needs an Idempotency-Key; the same key
+  replays.
+- Every held unit — valued or not — is set to the unit cost (costing `SET_UNIT_COST`: one REVALUATION entry per item;
+  unvalued units become valued). Units issued short are left alone.
+- The change is booked Dr/Cr inventory against **opening balance equity (3900)** through `inventory.valued`
+  (`counterKey: equity.opening_balance`): a go-live value put right, not a sale — no order line is re-costed and profit
+  doesn't move. The next sale takes the corrected average.

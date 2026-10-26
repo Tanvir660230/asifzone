@@ -43,6 +43,7 @@ import {
   stockPurchaseListQuerySchema,
   stockPurchaseFinishSchema,
   stockCountsSchema,
+  stockValueCorrectionSchema,
   stockPolicySchema,
   stockFillSchema,
   stockingSchema,
@@ -76,6 +77,7 @@ import * as claims from "../../domain/finance/courier-claims.service";
 import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
 import * as stockPurchases from "../../domain/stock/purchase.service";
 import * as stockCounts from "../../domain/stock/count.service";
+import { correctStockValues } from "../../domain/finance/stock-value-correction.service";
 import { setStockPolicy, stockHub } from "../../domain/stock/stock-hub.service";
 import { recordFill } from "../../domain/stock/fill.service";
 import { getStocking, setStocking } from "../../domain/stock/stocking.service";
@@ -238,6 +240,11 @@ ownerBooksRouter.post("/stock/purchases/:id/finish", requirePermission("purchasi
 }));
 // Counted: what is on the shelf (inventory.adjust — who may correct stock); a shortfall needs its reason, a difference
 // is booked at the running average.
+// The owner's stock value correction (docs/STOCK_HUB.md §12): a preview, then the change against opening balance equity.
+ownerBooksRouter.post("/stock/value-corrections", requirePermission("costing.adjust"), validate(stockValueCorrectionSchema), asyncHandler(async (req, res) => {
+  const r = await correctStockValues(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.committed && !r.replayed ? 201 : 200).json(r);
+}));
 ownerBooksRouter.post("/stock/counts", requirePermission("inventory.adjust"), validate(stockCountsSchema), asyncHandler(async (req, res) => {
   const r = await stockCounts.recordCounts(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
