@@ -15,7 +15,7 @@ import { actorCan, recordFinanceAudit, type FinanceActor } from "./finance-audit
 import { businessToday, getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
 import { financeError, toMajorNumber, toMinor } from "./finance-values";
-import { activeCostingInTx, applyCostOperation, correctHeldValuesInTx, positionOf } from "./costing.service";
+import { activeCostingInTx, correctHeldValuesInTx, positionOf, previewHeldValue } from "./costing.service";
 
 const SOURCE = "StockValueCorrection";
 
@@ -43,7 +43,7 @@ export async function correctStockValues(raw: StockValueCorrectionInput, actor: 
     if (!v.product.trackInventory) throw financeError(400, "VALUE_UNTRACKED", `Line ${i + 1}: ${v.product.name} isn't stock-tracked`);
     const pos = positionOf(v.costState, cur);
     const unitCostMinor = toMinor(l.unitCost, cur);
-    const { next, entry } = applyCostOperation(pos, { type: "SET_UNIT_COST", unitCostMinor }, cur);
+    const { next, entry } = previewHeldValue(pos, unitCostMinor, cur);
     return {
       variantId: v.id, sku: v.sku, name: `${v.product.name}${v.size ? ` — ${v.size}` : ""}`, unitCostMinor,
       held: pos.valuedQty + pos.unvaluedQty, unvalued: pos.unvaluedQty, short: pos.deficitQty,

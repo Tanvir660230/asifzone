@@ -901,6 +901,11 @@ export async function revalueForDocumentInTx(
   return out;
 }
 
+/** The value correction's preview: what setting a position's held units to a unit cost would give (nothing written). */
+export function previewHeldValue(pos: CostPosition, unitCostMinor: number, currency: string) {
+  return applyCostOperation(pos, { type: "SET_UNIT_COST", unitCostMinor }, currency);
+}
+
 /**
  * The owner's stock value correction (docs/STOCK_HUB.md §12): each variant's units on hand set to a unit cost — the
  * units held without a value get one, the valued ones are revalued — one REVALUATION entry per variant, and an
