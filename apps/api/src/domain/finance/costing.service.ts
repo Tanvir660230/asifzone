@@ -113,6 +113,10 @@ export type CostOperation =
   /** A value change (late invoice difference, landed cost) for `qty` units received earlier: the share still held revalues
    * the stock, the rest (sold) becomes a cost adjustment. */
   | { type: "REVALUE"; deltaMinor: number; qty: number }
+  /** The owner's correction of what the units on hand are worth (docs/STOCK_HUB.md §12): every held unit — valued or not —
+   * at `unitCostMinor`; units issued short are left as they are. The caller books the change (against opening balance
+   * equity: it corrects a value the books took at go-live, not a sale). */
+  | { type: "SET_UNIT_COST"; unitCostMinor: number }
   /** The one-time cutover: the variant's first entry. qty = its physical stock (may be ≤ 0); valueMinor null = no cost.
    * `deficitUnitCostMinor`: units short (qty < 0) of a fill-to-order variant start as an unbooked layer at this cost. */
   | { type: "CUTOVER"; qty: number; valueMinor: number | null; status?: Extract<FinanceValuationStatus, "KNOWN" | "ESTIMATED">; deficitUnitCostMinor?: number | null };
@@ -353,6 +357,19 @@ export function applyCostOperation(pos: CostPosition, op: CostOperation, currenc
         costBasis: op.basis.kind === "SNAPSHOT" ? "SNAPSHOT" : "AVERAGE", valuationStatus: status,
         deficitQtyChange: d, unvaluedQtyChange: -u, unbookedDeficitChange: unbooked ? BigInt(provisional!) * BigInt(d) : 0n,
       },
+    };
+  }
+
+  if (op.type === "SET_UNIT_COST") {
+    assertMinor(op.unitCostMinor, "unit cost");
+    if (op.unitCostMinor < 0) throw new Error("a unit cost can't be negative");
+    const held = pos.valuedQty + pos.unvaluedQty;
+    const target = BigInt(op.unitCostMinor) * BigInt(held);
+    const V = target - pos.value;
+    const next = withAverage({ ...pos, valuedQty: held, unvaluedQty: 0, value: target }, scale);
+    return {
+      next,
+      entry: { ...base, kind: "REVALUATION", qtyChange: 0, unvaluedQtyChange: -pos.unvaluedQty, valueChange: V, bookValue: V, costAdjustment: 0n, unitCostScaled: next.avgScaled, costBasis: "DOCUMENT", valuationStatus: "KNOWN" },
     };
   }
 
@@ -880,6 +897,50 @@ export async function revalueForDocumentInTx(
       });
     }
     out.push({ variantId: items[k]!.variantId, entryId: r.entryId, heldShareMinor: Number(r.figures.valueChange), soldShareMinor: -adjustment });
+  }
+  return out;
+}
+
+/**
+ * The owner's stock value correction (docs/STOCK_HUB.md §12): each variant's units on hand set to a unit cost — the
+ * units held without a value get one, the valued ones are revalued — one REVALUATION entry per variant, and an
+ * `inventory.valued` event that books the change against opening balance equity (the value the books took at go-live
+ * was wrong; no sale is re-costed, so profit doesn't move). In the caller's transaction; variants locked in id order.
+ */
+export async function correctHeldValuesInTx(
+  tx: AppTransactionClient,
+  input: { scope: CostingScope; sourceId: string; financialDate: string; note?: string | null; items: Array<{ variantId: string; unitCostMinor: number }> },
+): Promise<Array<{ variantId: string; entryId: string; valueChangeMinor: number }>> {
+  const items = [...input.items].sort((a, b) => (a.variantId < b.variantId ? -1 : 1));
+  if (!items.length) return [];
+  const results = await recordValuationsInTx(tx, items.map((i) => ({
+    business: { id: input.scope.business.id, baseCurrency: input.scope.business.baseCurrency },
+    brandId: input.scope.brand.id,
+    variantId: i.variantId,
+    stockMovementId: null,
+    sourceType: "StockValueCorrection",
+    sourceId: input.sourceId,
+    financialDate: input.financialDate,
+    note: input.note ?? null,
+    op: { type: "SET_UNIT_COST" as const, unitCostMinor: i.unitCostMinor },
+  })));
+  const out = [];
+  for (const [k, r] of results.entries()) {
+    const book = Number(r.figures.bookValue);
+    if (book !== 0) {
+      await recordFinancialEvent(tx, {
+        contract: "finance.event",
+        contractVersion: 1,
+        businessKey: input.scope.business.key,
+        brandKey: input.scope.brand.key,
+        source: { installId, system: "inventory", entityType: "InventoryValuationEntry", entityId: r.entryId },
+        event: { type: INVENTORY_VALUED_EVENT, version: 1, key: `valuation:${r.entryId}`, occurredAt: new Date().toISOString() },
+        financialDate: input.financialDate,
+        currency: input.scope.business.baseCurrency,
+        payload: { entryId: r.entryId, movementId: `StockValueCorrection:${input.sourceId}`, variantId: items[k]!.variantId, reason: "VALUE_CORRECTION", orderId: null, bookMinor: book, counterKey: "equity.opening_balance", costAdjustmentMinor: 0, status: r.figures.valuationStatus },
+      });
+    }
+    out.push({ variantId: items[k]!.variantId, entryId: r.entryId, valueChangeMinor: Number(r.figures.valueChange) });
   }
   return out;
 }

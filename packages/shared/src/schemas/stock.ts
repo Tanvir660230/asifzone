@@ -67,6 +67,15 @@ export const stockCountsSchema = z.object({
 });
 export type StockCountsInput = z.input<typeof stockCountsSchema>;
 
+/** The owner's stock value correction (docs/STOCK_HUB.md §12): what each item's units on hand are really worth a piece.
+ * `commit` false = a preview, nothing written. */
+export const stockValueCorrectionSchema = z.object({
+  reason: z.string().trim().min(5).max(300),
+  lines: z.array(z.object({ variantId: id, unitCost: financeAmountSchema.refine((v) => v >= 0, "Not below zero").refine((v) => v <= STOCK_PURCHASE_MAX_AMOUNT, "At most 1,000,000,000") })).min(1).max(100).refine(onceEach, "Each item once"),
+  commit: z.boolean().default(false),
+});
+export type StockValueCorrectionInput = z.input<typeof stockValueCorrectionSchema>;
+
 /** How a fill-to-order product sells past what is filled and makeable (inventory recovery phase 2): TRACKED — only what
  * is filled plus what the free materials can make; UNLIMITED — never blocks, each unit sold past the bottles is a costed
  * deficit filled later; BACKORDER — up to `backorderLimit` units per variant beyond that. Caps, clothing and every other

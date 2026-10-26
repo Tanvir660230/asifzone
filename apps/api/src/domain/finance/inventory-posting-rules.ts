@@ -4,6 +4,7 @@
  * lines that name MAPPING KEYS only:
  *  - the movement's own value, when no other owner books it (manual adjustments, write-offs, count changes):
  *    Dr/Cr asset.inventory against cogs.inventory_shrinkage (damaged / lost) or cogs.count_adjustments (other counts);
+ *    the owner's stock value correction against equity.opening_balance (a go-live value put right, not a sale);
  *  - the cost adjustment = valuation change − ledger change (deficit issue / cover, rounding at zero, a stale snapshot):
  *    Dr/Cr asset.inventory against cogs.cost_adjustments (5150) — so the ledger always equals the valuation.
  * Order-linked units are booked by the Phase 3 order accounting at the line snapshot; for them only the adjustment posts.
@@ -22,7 +23,8 @@ const payload = z.object({
   reason: z.string(),
   orderId: z.string().nullable(),
   bookMinor: z.number().int(),
-  counterKey: z.enum(["cogs.inventory_shrinkage", "cogs.count_adjustments", "cogs.packaging"]).nullable(),
+  /** `equity.opening_balance`: the owner's stock value correction (costing.service correctHeldValuesInTx). */
+  counterKey: z.enum(["cogs.inventory_shrinkage", "cogs.count_adjustments", "cogs.packaging", "equity.opening_balance"]).nullable(),
   costAdjustmentMinor: z.number().int(),
   /** Of the adjustment, the change of the unbooked fill-to-order deficit (costing.service header): held off the inventory
    * account, so it is not posted — the ledger moves costAdjustment − this. */
@@ -33,7 +35,7 @@ const payload = z.object({
 });
 
 /** Inventory up by `amount` (down when negative) against `other`. */
-function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjustments" | "cogs.cost_adjustments" | "cogs.packaging" | "asset.inventory_sent_outside", amount: number, status: PostingRuleLine["valuationStatus"], memo: string): PostingRuleLine[] {
+function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjustments" | "cogs.cost_adjustments" | "cogs.packaging" | "asset.inventory_sent_outside" | "equity.opening_balance", amount: number, status: PostingRuleLine["valuationStatus"], memo: string): PostingRuleLine[] {
   if (amount === 0) return [];
   const up = amount > 0;
   const a = Math.abs(amount);
