@@ -336,6 +336,12 @@
     box-shadow: inset 0 0 0 1px var(--hero-secondary-ring);
   }
 
+  /* A garment hang-tag (components/storefront/presets/tahafi/hang-tag.tsx): both top corners cut, a punched hole drawn
+     by the component. */
+  .ui-hang-tag {
+    clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
+  }
+
   /* Pointed (two-centred) arch — the mihrab preset's frame for photography (components/storefront/presets/mihrab/arch.tsx).
      The mask scales with the box, so arches are drawn on 4:5 or taller frames. */
   .ui-arch {

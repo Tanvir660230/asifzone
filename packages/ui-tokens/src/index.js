@@ -298,6 +298,10 @@ const componentTokens = {
   "--line-item-radius": "var(--radius-lg)",
   "--stepper-radius": "9999px",
   // Product card.
+  // The product photo's shape on a card (square in the base design).
+  "--card-media-aspect": "1 / 1",
+  // The thread a preset's hang-tag hangs from (Tahafi's hero).
+  "--tag-thread": "rgb(var(--color-ink-300))",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -522,6 +526,119 @@ const themeDefinitions = {
     },
     // Inside the navy sections: the mid tones the dark palette uses for text, re-valued light enough for navy.
     darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
+  },
+  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). Olive-black (#1E211B) for type, olive
+  // (#3E4A33) for actions, warm cream (#F4F0E8) page, sand (#E9E2D2) wells, brass (#A8843C) only for small marks (nav
+  // underline, badges, accents on dark), terracotta (#B4492F) for promotions. Instrument Serif titles over Geist; its own
+  // layout preset (`tahafi`): the brand's hang-tag carries the hero's featured price.
+  tahafi: {
+    label: "Tahafi (olive · cream · brass)",
+    layout: "tahafi",
+    palette: {
+      ink: {
+        50: "#efeadf", // subtle fills
+        100: "#e7e1d4", // subtle hairlines
+        200: "#ddd6c8", // warm border (lines, inputs)
+        300: "#cfc6b4", // strong line
+        400: "#5f6357", // tertiary text (struck prices, hints) — 5.4:1 on cream, 4.7:1 on sand
+        500: "#575b50", // secondary text — 6.1:1 on cream
+        600: "#3b3f36",
+        700: "#2a2e25", // body text
+        800: "#303a27", // olive, deeper: hover of olive actions
+        900: "#1e211b", // olive-black: headings, text — 14.6:1 on cream
+        950: "#1e211b", // the dark sections and footer
+      },
+      // 100 = the cream page; 200 = sand wells behind product photos.
+      cream: { 50: "#fbf9f5", 100: "#f4f0e8", 200: "#e9e2d2", 300: "#ddd4c0" },
+      // Terracotta, the one promotional accent: 5.6:1 under the light badge text, 5.0:1 as text on cream.
+      sale: { 50: "#f6e6e1", 500: "#b4492f", 600: "#963b26" },
+    },
+    radii: { sm: "2px", DEFAULT: "3px", md: "4px", lg: "6px", xl: "8px", "2xl": "10px", "3xl": "14px" },
+    fontVariables: {
+      "--font-body-family": "var(--font-geist)",
+      "--font-display-family": "var(--font-instrument-serif)",
+      "--font-display-weight": "400",
+      "--font-display-tracking": "-0.01em",
+      "--eyebrow-weight": "500",
+    },
+    components: {
+      // Olive actions (9.9:1 under cream text) — the role, not a palette step, so text stays olive-black.
+      "--color-accent": "62 74 51",
+      "--color-accent-hover": "48 58 39",
+      "--accent-hover": "rgb(48 58 39)",
+      // Sentence case everywhere: no tracked-out capitals.
+      "--caps-transform": "none",
+      "--caps-spread": "0",
+      "--eyebrow-transform": "none",
+      "--eyebrow-spread": "0",
+      "--gloss": "0",
+      "--glass-alpha": "0.95",
+      "--header-shadow": "0 1px 0 0 rgb(var(--color-ink-200))",
+      "--nav-hover": "rgb(62 74 51)",
+      "--nav-underline": "rgb(168 132 60)",
+      "--tag-thread": "rgb(168 132 60)",
+      "--icon-stroke": "1.5",
+      "--band-accent": "rgb(200 184 154)",
+      "--badge-note-bg": "rgb(168 132 60)",
+      "--badge-note-fg": "rgb(30 33 27)",
+      "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
+      // Product cards: the photograph on sand, 4:5, no frame and no lift.
+      "--card-media-aspect": "4 / 5",
+      "--card-lift": "0",
+      "--card-frame-border": "transparent",
+      "--card-frame-shadow": "none",
+      "--card-frame-shadow-hover": "none",
+      "--card-image-zoom": "1.03",
+      "--card-title-tracking": "0",
+      "--card-tier-display": "none",
+      "--product-tier-display": "none",
+      "--panel-border": "rgb(var(--color-ink-200))",
+      "--panel-shadow": "none",
+      "--line-item-radius": "var(--radius-md)",
+      // The serif runs large: it is narrow and light.
+      "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
+      "--product-title-size": "clamp(2.125rem, 1.75rem + 1.2vw, 2.875rem)",
+      "--product-title-leading": "1.02",
+      "--product-title-weight": "400",
+      "--product-title-tracking": "-0.01em",
+      "--section-title-size": "2rem",
+      "--section-title-leading": "1.05",
+      "--section-title-size-sm": "2.75rem",
+      "--section-title-leading-sm": "1",
+      "--section-rhythm": "1.15",
+      "--page-title-size": "2.5rem",
+      "--page-title-leading": "1.02",
+      "--page-title-size-sm": "3.5rem",
+      "--page-title-leading-sm": "1",
+      "--section-heading-size": "2.125rem",
+      "--section-heading-leading": "1.05",
+      "--section-heading-size-sm": "3rem",
+      "--section-heading-leading-sm": "1",
+      // Editorial hero: left-aligned copy beside a tall photograph from 1024px.
+      "--hero-align": "left",
+      "--hero-layout-lg": "grid",
+      "--hero-media-aspect-lg": "4 / 5",
+      "--hero-content-max-w-lg": "80rem",
+      "--hero-copy-pad-lg": "2rem",
+      "--hero-media-offset-lg": "0",
+      "--hero-secondary-ring": "transparent",
+      "--hero-primary-mr": "1.25rem",
+      "--hero-secondary-ml": "0px",
+      "--tile-caption-padding": "1.125rem",
+      "--story-media-max-w": "64rem",
+      "--story-media-h-sm": "28rem",
+      "--sheet-radius": "1rem",
+    },
+    // The hero and the brand story render on cream; the footer, flash sale and promo bands stay olive-black.
+    lightBands: ["hero", "story"],
+    bandSurface: "cream-100",
+    bandComponents: {
+      "--hero-cta-fill": "rgb(62 74 51)",
+      "--hero-cta-text": "rgb(244 240 232)",
+      "--band-accent": "rgb(62 74 51)",
+    },
+    // Inside the dark sections: sand and warm greys for the secondary text.
+    darkBandPalette: { ink: { 300: "#dcd5c6", 400: "#c8b89a", 500: "#a9a493" } },
   },
 };
 

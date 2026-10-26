@@ -153,7 +153,7 @@ jobs:
     # protection drops connections from GitHub's hosted-runner IP ranges. Only this push-to-main-gated job uses the
     # label; `test` stays on a hosted runner so PRs (including from forks) never execute on it.
     #
-    # Both stores are installations of this one codebase on the same VPS (/opt/asifzone, /opt/nasihamart), each with
+    # All stores are installations of this one codebase on the same VPS (/opt/asifzone, /opt/nasihamart, /opt/tahafi), each with
     # its own docker/.env kept on the server — the source of truth for its settings since the VPS move. The job does
     # exactly the manual deploy: fast-forward the install's checkout to this commit, then docker/deploy.sh (backup,
     # migrate, switch, readiness gate). It never writes docker/.env: rebuilding it from GitHub secrets would overwrite
@@ -175,6 +175,17 @@ jobs:
       - name: Deploy Nasihamart
         working-directory: /opt/nasihamart
         run: |
+          git fetch origin main
+          git merge --ff-only "$DEPLOY_SHA"
+          bash docker/deploy.sh
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+
+      # The third installation (docs/installations/tahafi.md). Skipped until its first deployment has created /opt/tahafi.
+      - name: Deploy Tahafi
+        run: |
+          if [ ! -d /opt/tahafi ]; then echo "Tahafi is not installed on this server yet — skipping"; exit 0; fi
+          cd /opt/tahafi
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
           bash docker/deploy.sh

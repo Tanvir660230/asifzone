@@ -13,9 +13,9 @@ share a database.
 | Secrets | `docker/.env` (or per-store GitHub Environment secrets) | `JWT_*`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, provider credentials |
 | Provider selection | `docker/.env` | `PAYMENT_GATEWAYS`, `SMS_PROVIDER`, `EMAIL_PROVIDER`, `COURIER_PROVIDER`, `PUSH_PROVIDER` |
 | Store identity & business settings | the store's database, entered in **Admin → Settings** | name, logo, favicon, legal name, address, governing law, support hours, currency, timezone, tax, shipping, payment methods, store policy (return window and conditions, dispatch time) |
-| Look | `STORE_THEME` in `docker/.env` (themes: `packages/ui-tokens`, docs/DESIGN_SYSTEM.md) | `default`, `nasihamart` |
+| Look | `STORE_THEME` in `docker/.env` (themes: `packages/ui-tokens`, docs/DESIGN_SYSTEM.md) | `default`, `nasihamart`, `tahafi` |
 
-Per-store runbooks: [docs/installations/](installations/) (e.g. `nasihamart.md`).
+Per-store runbooks: [docs/installations/](installations/) (`nasihamart.md`, `tahafi.md`).
 
 Never copy one store's `JWT_*`, database or Redis passwords to another.
 

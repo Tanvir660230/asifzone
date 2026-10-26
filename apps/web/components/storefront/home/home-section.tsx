@@ -22,6 +22,7 @@ import type {
 // is fetched by the browser and blocked by the nonce CSP ('strict-dynamic') — docs/DESIGN_SYSTEM.md §2.
 import { BrandStory } from "@/components/storefront/brand-story";
 import { Hero } from "@/components/storefront/hero";
+import { TahafiHero } from "../presets/tahafi/hero";
 import { SmartRecommendations } from "@/components/storefront/smart-recommendations";
 import { ValuesGrid } from "@/components/storefront/values-grid";
 import { HeroCarousel } from "@/components/storefront/hero-carousel";
@@ -71,7 +72,7 @@ export interface HomeSectionData {
  */
 export function HomeSection({ section, data, layout }: { section: RenderableSection; data: HomeSectionData; layout: StoreLayout }) {
   const appearance = (section.config.appearance ?? undefined) as SectionAppearance | undefined;
-  const body = renderSection(section, data, layout === "mihrab", appearance);
+  const body = renderSection(section, data, layout, appearance);
   if (!body) return null;
   return (
     <SectionFrame id={section.id} appearance={appearance}>
@@ -80,8 +81,9 @@ export function HomeSection({ section, data, layout }: { section: RenderableSect
   );
 }
 
-function renderSection(section: RenderableSection, data: HomeSectionData, mihrab: boolean, appearance: SectionAppearance | undefined) {
+function renderSection(section: RenderableSection, data: HomeSectionData, layout: StoreLayout, appearance: SectionAppearance | undefined) {
   const { storeName, tagline } = data;
+  const mihrab = layout === "mihrab";
   switch (section.type) {
     case "HERO": {
       if (data.banners.length > 0) return <HeroCarousel banners={data.banners} />;
@@ -100,7 +102,9 @@ function renderSection(section: RenderableSection, data: HomeSectionData, mihrab
         mobileImageUrl: config.mobileImageUrl,
         imageAltText: config.imageAltText,
       };
-      return mihrab ? <MihrabHero {...props} /> : <Hero {...props} tone={appearance?.tone} layout={appearance?.layout} />;
+      if (mihrab) return <MihrabHero {...props} />;
+      if (layout === "tahafi") return <TahafiHero {...props} tone={appearance?.tone} layout={appearance?.layout} />;
+      return <Hero {...props} tone={appearance?.tone} layout={appearance?.layout} />;
     }
     case "TRUST_STRIP": {
       const config = section.config as TrustStripConfig;

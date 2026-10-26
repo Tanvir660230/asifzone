@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -51,6 +51,8 @@ interface HeroProps {
   /** The store's own choice for this section (Storefront Studio → Style); absent = the theme decides. */
   tone?: SectionAppearance["tone"];
   layout?: SectionAppearance["layout"];
+  /** Drawn over the photograph (a layout preset's own mark, e.g. Tahafi's hang-tag); only shown with an image. */
+  mediaOverlay?: ReactNode;
 }
 
 /** The homepage hero when no hero banners are active. Its message is entirely the store's (Admin → Homepage → Hero, then
@@ -72,6 +74,7 @@ export function Hero({
   imageAltText,
   tone,
   layout,
+  mediaOverlay,
 }: HeroProps) {
   const copy = (
     <div className="ui-hero-copy relative z-10 px-4">
@@ -179,6 +182,7 @@ export function Hero({
               sizes={mobileImageUrl ? "(min-width: 1280px) 1216px, (min-width: 640px) 100vw, 1px" : "(min-width: 1280px) 1216px, 100vw"}
               className={mobileImageUrl ? "hidden object-cover sm:block" : "object-cover"}
             />
+            {mediaOverlay}
           </div>
         </motion.div>
       </div>

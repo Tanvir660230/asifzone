@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Inter, Instrument_Sans, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
+import { Geist, Inter, Instrument_Sans, Instrument_Serif, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -46,6 +46,25 @@ const newsreader = Newsreader({
 const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
   variable: "--font-grotesk",
+  display: "swap",
+  preload: false,
+  weight: "variable",
+});
+
+// Tahafi's pair: a narrow display serif for titles and a clean grotesk for everything else. Not preloaded, like the faces
+// above — only a store whose theme names them downloads them.
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  variable: "--font-instrument-serif",
+  display: "swap",
+  preload: false,
+  weight: "400",
+  style: ["normal", "italic"],
+});
+
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist",
   display: "swap",
   preload: false,
   weight: "variable",
@@ -140,7 +159,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html
       lang="en"
       data-brand={themeId}
-      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${notoSansBengali.variable} ${takaSign.variable}`}
+      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${instrumentSerif.variable} ${geist.variable} ${notoSansBengali.variable} ${takaSign.variable}`}
     >
       <body>
         {/* The store's own design choices (Storefront Studio → Site design): token re-values only, validated on publish.
