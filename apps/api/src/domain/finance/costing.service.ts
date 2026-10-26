@@ -594,7 +594,9 @@ function exitCost(position: CostPosition, qty: number, currency: string, fillToO
   const source: LineCostSource = unit === null ? "NONE" : qty > position.valuedQty ? "INVENTORY_PROVISIONAL" : "INVENTORY";
   if (fillToOrder) {
     if (unit !== null) return { unitCostMinor: unit, source, unbooked: true };
-    if (fillToOrder.recipeMinor !== null && position.unvaluedQty === 0) return { unitCostMinor: fillToOrder.recipeMinor, source: "INVENTORY_PROVISIONAL", unbooked: true };
+    // No average: the recipe's standard cost — also when unvalued bottles are on hand (a cancelled sale of a never-costed
+    // bottle comes back unvalued; costing the next sale at nothing raised a missing cost every time, 2026-10-26).
+    if (fillToOrder.recipeMinor !== null) return { unitCostMinor: fillToOrder.recipeMinor, source: "INVENTORY_PROVISIONAL", unbooked: true };
   }
   return { unitCostMinor: unit, source, unbooked: false };
 }
@@ -746,11 +748,10 @@ export async function valueStockMovementsInTx(
   const cur = scope.business.baseCurrency;
   const positions = new Map<string, CostPosition>();
   for (const [id, v] of facts) if (inScope(v, scope)) positions.set(id, positionOf(v.position, cur));
-  // Order exits of fill-to-order variants: their deficits are unbooked; one never valued (no average) takes its recipe's
-  // standard cost.
+  // Order exits of fill-to-order variants: their deficits are unbooked; one with no average takes its recipe's standard cost.
   const fillToOrder = new Set([...new Set(movements.filter((m) => m.basis.kind === "ORDER_EXIT" && m.movement.change < 0).map((m) => m.movement.variantId))]
     .filter((id) => positions.has(id) && facts.get(id)!.fillToOrder));
-  const neverValued = [...fillToOrder].filter((id) => { const p = positions.get(id)!; return p.avgScaled === null && p.unvaluedQty === 0; });
+  const neverValued = [...fillToOrder].filter((id) => positions.get(id)!.avgScaled === null);
   const recipe = neverValued.length ? await recipeCostsAtAverage(tx, neverValued.sort(), cur) : new Map<string, number | null>();
 
   // A variant appears at most once per persisted batch (its next movement needs the position this one produces).

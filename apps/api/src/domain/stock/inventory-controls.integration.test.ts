@@ -189,4 +189,15 @@ describe("F-e: owner alerts name the item, the quantity and what to do", () => {
     const { alerts } = await financeAlerts();
     expect(alerts.find((a) => a.key === "inventory.gains")).toBeUndefined();
   });
+
+  it("an entry whose item was counted again afterwards is settled — the alerts' own advice (24 Oct attar, fixed by a count)", async () => {
+    await updateBusinessSettings({ inventoryGainAlertThreshold: 500, reason: "alert threshold" } as never, OWNER);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "inventory.gains")?.count).toBe(1);
+    // the shelf counted again: as many as the books say (a count records the check even when nothing differs)
+    await recordCounts({ lines: [{ variantId: capSizes[1]!, counted: await stockOf(capSizes[1]!) }, { variantId: attar, counted: await stockOf(attar) }] }, OWNER, `count-recheck-${RUN}`);
+    const { alerts } = await financeAlerts();
+    expect(alerts.find((a) => a.key === "inventory.gains")).toBeUndefined();
+    expect(alerts.find((a) => a.key === "inventory.bottles_without_fill")).toBeUndefined();
+    expect(alerts.find((a) => a.key === "inventory.unvalued_receipts")?.detail ?? "").not.toMatch(/\+3/); // the bottles' too
+  });
 });
