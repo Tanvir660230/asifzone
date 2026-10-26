@@ -20,9 +20,10 @@ import { processFaviconImage, processLogoImage, processProductImage, processSoci
 import { rebuildAllReadModels } from "../../src/domain/storefront/read-model.service";
 import { renderPlaceholder, type ArtKind } from "./placeholder-art";
 import { nasihamart } from "./nasihamart.fixture";
-import type { SampleStore } from "./types";
+import { tahafi } from "./tahafi.fixture";
+import type { SampleImage, SampleStore } from "./types";
 
-const STORES: Record<string, SampleStore> = { nasihamart };
+const STORES: Record<string, SampleStore> = { nasihamart, tahafi };
 
 function refuseUnlessLocal(): void {
   const target = parseDatabaseTarget(process.env.DATABASE_URL ?? "");
@@ -41,6 +42,24 @@ function refuseUnlessLocal(): void {
 async function upload(kind: ArtKind, tone: string, width: number, height: number, name: string, variant = 0): Promise<string> {
   const { url } = await processProductImage(await renderPlaceholder(kind, tone, width, height, variant), name);
   return url;
+}
+
+/** A sample photograph from the repository, through the same pipeline as an admin upload. */
+async function uploadPhoto(file: string): Promise<string> {
+  const { url } = await processProductImage(await readFile(path.resolve(__dirname, "../../../..", file)), path.basename(file));
+  return url;
+}
+
+async function uploadSectionImage(image: SampleImage, name: string): Promise<string> {
+  return "photo" in image ? uploadPhoto(image.photo) : upload(image.art, image.tone, image.width, image.height, name);
+}
+
+/** Sets a dotted path (`items.0.imageUrl`) on a plain config object, creating nothing that isn't already there. */
+function setPath(target: Record<string, unknown>, dotted: string, value: unknown) {
+  const keys = dotted.split(".");
+  let node = target as Record<string, unknown>;
+  for (const key of keys.slice(0, -1)) node = node[key] as Record<string, unknown>;
+  node[keys[keys.length - 1]!] = value;
 }
 
 /** Validates section config with the same schema the admin API uses — sample content can't be something the admin couldn't save. */
@@ -76,7 +95,7 @@ async function main() {
   // Categories.
   const categoryIds = new Map<string, string>();
   for (const [index, category] of store.categories.entries()) {
-    const imageUrl = await upload(category.art, category.tone, 960, 1200, `${category.key}.webp`);
+    const imageUrl = category.photo ? await uploadPhoto(category.photo) : await upload(category.art, category.tone, 960, 1200, `${category.key}.webp`);
     const data = { name: category.name, imageUrl, imageAltText: `${category.name} (sample image)`, sortOrder: index, isActive: true, isFeatured: true, deletedAt: null };
     const row = await prisma.category.upsert({ where: { slug: category.key }, create: { slug: category.key, ...data }, update: data });
     categoryIds.set(category.key, row.id);
@@ -87,10 +106,9 @@ async function main() {
   for (const [index, p] of store.products.entries()) {
     const categoryId = categoryIds.get(p.category);
     if (!categoryId) throw new Error(`Unknown category "${p.category}" for ${p.slug}`);
-    const images = [
-      await upload(p.art, p.tone, 1200, 1200, `${p.slug}-1.webp`),
-      await upload(p.art, p.tone, 1200, 1200, `${p.slug}-2.webp`, 1),
-    ];
+    const images = p.photos
+      ? await Promise.all(p.photos.map((photo) => uploadPhoto(photo)))
+      : [await upload(p.art, p.tone, 1200, 1200, `${p.slug}-1.webp`), await upload(p.art, p.tone, 1200, 1200, `${p.slug}-2.webp`, 1)];
     const colors: [string, string | null][] = p.variants.colors.length ? p.variants.colors : [["", null]];
     const variants = p.variants.sizes.flatMap((size, s) =>
       colors.map(([color, colorHex], c) => ({
@@ -126,7 +144,7 @@ async function main() {
     }
     const productId = existing?.id ?? (await prisma.product.create({ data: { slug: p.slug, ...fields } })).id;
     await prisma.productImage.createMany({
-      data: images.map((url, sortOrder) => ({ productId, url, altText: `${p.name} (sample image)`, width: 1200, height: 1200, sortOrder })),
+      data: images.map((url, sortOrder) => ({ productId, url, altText: `${p.name} (sample image)`, width: p.photos ? 800 : 1200, height: p.photos ? 1000 : 1200, sortOrder })),
     });
     await prisma.productVariant.createMany({ data: variants.map((v) => ({ ...v, productId })) });
   }
@@ -144,9 +162,9 @@ async function main() {
   // uploaded through the normal pipeline.
   const sections = [];
   for (const [index, section] of store.homepage.entries()) {
-    const config = { ...section.config };
+    const config = structuredClone(section.config);
     for (const [field, image] of Object.entries(section.images ?? {})) {
-      config[field] = await upload(image.art, image.tone, image.width, image.height, `${section.type.toLowerCase()}-${index}-${field}.webp`);
+      setPath(config, field, await uploadSectionImage(image, `${section.type.toLowerCase()}-${index}-${field}.webp`));
     }
     sections.push({ type: section.type, config });
   }

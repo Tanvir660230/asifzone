@@ -109,6 +109,41 @@ describe("brand themes", () => {
       expect(contrast(step("nasihamart", text, "band"), band), `band ${text}`).toBeGreaterThanOrEqual(4.5);
     }
   });
+
+  it("gives Tahafi its own identity: olive / cream / brass, Instrument Serif over Geist, the tahafi preset", () => {
+    const t = tokens.themes.tahafi!.cssVariables;
+    expect(t["--color-ink-900"]).toBe("30 33 27"); // olive-black #1E211B
+    expect(t["--color-cream-100"]).toBe("244 240 232"); // cream #F4F0E8
+    expect(t["--color-accent"]).toBe("62 74 51"); // olive actions #3E4A33
+    expect(t["--font-display-family"]).toBe("var(--font-instrument-serif)");
+    expect(t["--font-body-family"]).toBe("var(--font-geist)");
+    expect(t["--card-media-aspect"]).toBe("4 / 5");
+    expect(tokens.themes.tahafi!.layout).toBe("tahafi");
+    expect(tokens.themes.tahafi!.lightBandRoles).toEqual(["hero", "story"]);
+  });
+
+  it("keeps Tahafi's text and actions legible (WCAG AA 4.5:1) on cream, on olive-black and inside the light band", () => {
+    const olive = channels(tokens.themes.tahafi!.cssVariables["--color-accent"]!);
+    for (const ground of ["cream-100", "cream-50", "cream-200"]) {
+      for (const text of ["ink-900", "ink-700", "ink-500", "ink-400"]) {
+        expect(contrast(step("tahafi", text), step("tahafi", ground)), `${text} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    const canvas = step("tahafi", "cream-100");
+    expect(contrast(olive, canvas), "olive action on canvas").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "cream-50"), olive), "light text on olive").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "cream-50"), step("tahafi", "sale-500")), "badge text on terracotta").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "sale-500"), canvas), "sale price on canvas").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hex("#1E211B"), hex("#A8843C")), "olive-black on the brass note badge").toBeGreaterThanOrEqual(4.5);
+    const dark = step("tahafi", "ink-950", "dark");
+    for (const text of ["cream-50", "cream-200", "ink-300", "ink-400", "ink-500"]) {
+      expect(contrast(step("tahafi", text, "dark"), dark), `dark section ${text}`).toBeGreaterThanOrEqual(4.5);
+    }
+    const band = step("tahafi", "ink-950", "band");
+    for (const text of ["cream-50", "cream-200", "ink-300", "ink-400"]) {
+      expect(contrast(step("tahafi", text, "band"), band), `band ${text}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });
 
 describe("per-section band tone (Storefront Studio)", () => {

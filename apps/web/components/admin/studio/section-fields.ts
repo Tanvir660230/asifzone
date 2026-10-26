@@ -73,7 +73,7 @@ const TONE: FieldDef = {
     { value: "light", label: "Light" },
   ],
   hint: "Theme follows your store's design. Dark and light keep text readable automatically.",
-  presets: ["classic"],
+  presets: ["classic", "tahafi"],
 };
 
 const BACKGROUND: FieldDef = {
@@ -141,7 +141,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
         kind: "image",
         spec: "heroSectionPhone",
         hint: "Without it, phones show the middle of the photograph above.",
-        presets: ["classic"],
+        presets: ["classic", "tahafi"],
         showIf: has("imageUrl"),
       },
     ],
@@ -157,7 +157,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
           { value: "stacked", label: "Below text" },
           { value: "split", label: "Beside text" },
         ],
-        presets: ["classic"],
+        presets: ["classic", "tahafi"],
         showIf: has("imageUrl"),
       },
     ],
@@ -224,7 +224,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
           { value: 1, label: "One row" },
           { value: 2, label: "Two rows" },
         ],
-        presets: ["classic"],
+        presets: ["classic", "tahafi"],
       },
     ],
   },
@@ -263,7 +263,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
           { value: "image-right", label: "Right" },
           { value: "backdrop", label: "Behind text" },
         ],
-        presets: ["classic"],
+        presets: ["classic", "tahafi"],
         showIf: has("imageUrl"),
       },
       {
@@ -326,7 +326,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
           { value: "contained", label: "In page" },
           { value: "full", label: "Edge to edge" },
         ],
-        presets: ["classic"],
+        presets: ["classic", "tahafi"],
         showIf: has("imageUrl"),
       },
       {
@@ -338,7 +338,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
           { value: "start", label: "Left" },
           { value: "center", label: "Centred" },
         ],
-        presets: ["classic"],
+        presets: ["classic", "tahafi"],
       },
     ],
   },

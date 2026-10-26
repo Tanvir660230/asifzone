@@ -1,13 +1,9 @@
 import type { HomepageSectionType } from "@clothing-brand/shared";
 import type { ArtKind } from "./placeholder-art";
 
-/** A placeholder image to generate and upload for a homepage section field (`imageUrl`, `mobileImageUrl`). */
-export interface SampleImage {
-  art: ArtKind;
-  tone: string;
-  width: number;
-  height: number;
-}
+/** An image to upload for a homepage section field (`imageUrl`, `mobileImageUrl`, or a dotted path such as
+ * `items.0.imageUrl`): a generated placeholder, or a sample photograph (`photo`, a path from the repository root). */
+export type SampleImage = { art: ArtKind; tone: string; width: number; height: number } | { photo: string };
 
 /** A local-only sample store: placeholder content to build and review a storefront before its real catalog exists. */
 export interface SampleStore {
@@ -30,11 +26,11 @@ export interface SampleStore {
   };
   /** Brand files (paths from the repository root), uploaded through the same pipeline as Admin → Settings. */
   brand: { logo: string; logoOnDark: string; favicon: string; socialImage: string };
-  categories: { key: string; name: string; art: ArtKind; tone: string }[];
+  categories: { key: string; name: string; art: ArtKind; tone: string; photo?: string }[];
   products: SampleProduct[];
   /** The homepage, in order — only existing section types, each config validated by the admin's own schema. Image fields
    * listed in `images` are generated and uploaded, then set on the config. */
-  homepage: { type: HomepageSectionType; config: Record<string, unknown>; images?: Partial<Record<"imageUrl" | "mobileImageUrl", SampleImage>> }[];
+  homepage: { type: HomepageSectionType; config: Record<string, unknown>; images?: Record<string, SampleImage> }[];
 }
 
 export interface SampleProduct {
@@ -52,4 +48,6 @@ export interface SampleProduct {
   description: string;
   /** Every size × colour becomes one variant (a product with no colours gets one variant per size). */
   variants: { sizes: string[]; colors: [name: string, hex: string][]; stock: number };
+  /** Sample photographs (paths from the repository root) instead of generated placeholders; the second is the hover image. */
+  photos?: string[];
 }

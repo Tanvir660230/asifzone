@@ -90,7 +90,7 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
 
   return (
     <div data-nav-pending-scope className="ui-press group block transition-transform duration-300 ease-smooth hover:translate-y-[var(--card-lift)]">
-      <div className="ui-card-frame relative aspect-square overflow-hidden rounded-xl bg-ink-100">
+      <div className="ui-card-frame relative aspect-[var(--card-media-aspect)] overflow-hidden rounded-xl bg-ink-100">
         <Link href={`/product/${product.slug}`} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
             <>
