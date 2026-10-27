@@ -17,7 +17,9 @@
 #   BACKUP_AGE_RECIPIENT_RECOVERY=age1…   offline recovery key-এর public অংশ
 #   BACKUP_REQUIRE_TWO_RECIPIENTS=1       দুটোই না থাকলে ব্যাকআপ ব্যর্থ (D3-3) — ব্যর্থতার সতর্কবার্তা যাচাই
 #                                         হওয়ার পরেই চালু করবেন (D3-4)
-# একটাও recipient না থাকলে কিছুই আপলোড হয় না, FAILED লেখা হয় — খোলা (plaintext) ব্যাকআপে ফিরে যাওয়ার পথ নেই।
+# recipient না থাকলে, ভুল হলে বা encrypt ব্যর্থ হলে ডাটাবেস/settings Drive-এ যায় না, FAILED লেখা হয় — খোলা
+# (plaintext) ব্যাকআপে ফিরে যাওয়ার পথ নেই। তবু সার্ভারের লোকাল কপি আর ছবির sync আগের মতো চলে, আর সেই রাতে
+# Drive-এর পুরনো ব্যাকআপ মোছা হয় না (নতুন কপি না গেলে পুরনোগুলোই একমাত্র off-site কপি)।
 #
 # এক কপি ডাটাবেস সার্ভারেও থাকে (/var/backups/clothing-brand, ৭ দিন)।
 set -euo pipefail
@@ -47,39 +49,36 @@ status() { printf '%s\n' "$@" > "$TMP/last-backup.txt"; rclone copy "$TMP/last-b
 on_error() {
   status "FAILED — ব্যাকআপ ব্যর্থ হয়েছে" "সময়: $STAMP" "লাইন $1-এ সমস্যা। সার্ভারে cron লগ দেখুন।"
 }
-fail() {
-  trap - ERR
-  echo "[$STAMP] ব্যাকআপ ব্যর্থ — $1"
-  status "FAILED — ব্যাকআপ ব্যর্থ হয়েছে" "সময়: $STAMP" "$1"
-  exit 1
-}
 trap 'on_error $LINENO' ERR
 trap 'rm -rf "$TMP"' EXIT
 
 echo "[$STAMP] ব্যাকআপ শুরু"
 
-# ০. encryption-এর key — ডাটাবেস dump করার আগেই যাচাই, যাতে ভুল config-এ খোলা ফাইল তৈরিই না হয়।
-# X25519 recipient: "age1" + 58 bech32 অক্ষর।
+# ০. encryption-এর key। ভুল হলে OFFSITE_ERROR-এ কারণ থাকে: ডাটাবেস/settings Drive-এ যায় না, কিন্তু লোকাল কপি
+# আর ছবি চলতে থাকে, শেষে FAILED। X25519 recipient: "age1" + 58 bech32 অক্ষর।
+OFFSITE_ERROR=""
 valid_recipient() { [[ "$1" =~ ^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$ ]]; }
 RECIPIENTS=()
 for r in "$RECIPIENT_PRIMARY" "$RECIPIENT_RECOVERY"; do
   [ -n "$r" ] || continue
-  valid_recipient "$r" || fail "BACKUP_AGE_RECIPIENT_* সঠিক age public key নয় — কিছু আপলোড হয়নি।"
-  RECIPIENTS+=("$r")
+  if valid_recipient "$r"; then RECIPIENTS+=("$r")
+  else OFFSITE_ERROR="BACKUP_AGE_RECIPIENT_* সঠিক age public key নয়"; fi
 done
-[ "${#RECIPIENTS[@]}" -gt 0 ] || fail "BACKUP_AGE_RECIPIENT_PRIMARY/RECOVERY সেট নেই — encrypt ছাড়া কিছু আপলোড হয় না।"
-if [ "${#RECIPIENTS[@]}" -eq 2 ] && [ "${RECIPIENTS[0]}" = "${RECIPIENTS[1]}" ]; then
-  fail "primary আর recovery recipient একই — দুটো আলাদা key লাগবে।"
-fi
-if [ "$REQUIRE_TWO" = "1" ] && [ "${#RECIPIENTS[@]}" -ne 2 ]; then
-  fail "BACKUP_REQUIRE_TWO_RECIPIENTS=1, কিন্তু দুটো recipient সেট নেই — কিছু আপলোড হয়নি।"
+if [ -z "$OFFSITE_ERROR" ] && [ "${#RECIPIENTS[@]}" -eq 0 ]; then
+  OFFSITE_ERROR="BACKUP_AGE_RECIPIENT_PRIMARY/RECOVERY সেট নেই"
+elif [ -z "$OFFSITE_ERROR" ] && [ "${#RECIPIENTS[@]}" -eq 2 ] && [ "${RECIPIENTS[0]}" = "${RECIPIENTS[1]}" ]; then
+  OFFSITE_ERROR="primary আর recovery recipient একই — দুটো আলাদা key লাগবে"
+elif [ -z "$OFFSITE_ERROR" ] && [ "$REQUIRE_TWO" = "1" ] && [ "${#RECIPIENTS[@]}" -ne 2 ]; then
+  OFFSITE_ERROR="BACKUP_REQUIRE_TWO_RECIPIENTS=1, কিন্তু দুটো recipient সেট নেই"
 fi
 AGE_ARGS=()
-for r in "${RECIPIENTS[@]}"; do AGE_ARGS+=(-r "$r"); done
-# age-এর ফাইল এই লাইন দিয়ে শুরু হয়; মাঝপথে থেমে যাওয়া বা ফাঁকা ফাইল আপলোড হয় না।
+for r in "${RECIPIENTS[@]+"${RECIPIENTS[@]}"}"; do AGE_ARGS+=(-r "$r"); done
+# age-এর ফাইল এই লাইন দিয়ে শুরু হয়; মাঝপথে থেমে যাওয়া, ফাঁকা বা ভুল ফাইল ব্যর্থ ধরা হয় আর মুছে ফেলা হয়।
 encrypt() {
-  age "${AGE_ARGS[@]}" -o "$2" "$1" || fail "$(basename "$1") encrypt করা যায়নি — কিছু আপলোড হয়নি।"
-  [ "$(head -c 21 "$2" 2>/dev/null)" = "age-encryption.org/v1" ] || fail "$(basename "$2") সঠিক age ফাইল নয় — আপলোড হয়নি।"
+  if age "${AGE_ARGS[@]}" -o "$2" "$1" && [ "$(head -c 21 "$2" 2>/dev/null)" = "age-encryption.org/v1" ]; then return 0; fi
+  rm -f "$2"
+  OFFSITE_ERROR="$(basename "$1") encrypt করা যায়নি (age আছে কি না দেখুন)"
+  return 1
 }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
@@ -93,15 +92,18 @@ mkdir -p "$LOCAL_DIR"
 cp "$TMP/database.sql.gz" "$LOCAL_DIR/$POSTGRES_DB-$DAY.sql.gz"
 find "$LOCAL_DIR" -name "$POSTGRES_DB-*.sql.gz" -mtime +7 -delete
 
-encrypt "$TMP/database.sql.gz" "$TMP/database.sql.gz.age"
+DB_SHA=""
+if [ -z "$OFFSITE_ERROR" ] && encrypt "$TMP/database.sql.gz" "$TMP/database.sql.gz.age"; then
+  DB_SHA="$(sha "$TMP/database.sql.gz.age")"
+  rclone copy "$TMP/database.sql.gz.age" "$REMOTE/daily/$DAY" --quiet
+fi
 rm -f "$TMP/database.sql.gz"
-DB_SHA="$(sha "$TMP/database.sql.gz.age")"
-rclone copy "$TMP/database.sql.gz.age" "$REMOTE/daily/$DAY" --quiet
 
 # ২. মাসিক কপি — মাসের প্রথম সফল ব্যাকআপটা রাখা হয়। settings সরাসরি .env থেকে encrypt হয়; খোলা কপি কোথাও লেখা হয় না।
+# settings encrypt না হলে মাসের ফোল্ডারে কিছুই যায় না, তাই পরের রাতে আবার চেষ্টা হয়।
 SETTINGS_SHA=""
-if [ -z "$(rclone lsf "$REMOTE/monthly/$MONTH/" 2>/dev/null)" ]; then
-  encrypt "$COMPOSE_DIR/.env" "$TMP/settings.env.age"
+if [ -n "$DB_SHA" ] && [ -z "$(rclone lsf "$REMOTE/monthly/$MONTH/" 2>/dev/null)" ] \
+  && encrypt "$COMPOSE_DIR/.env" "$TMP/settings.env.age"; then
   SETTINGS_SHA="$(sha "$TMP/settings.env.age")"
   rclone copy "$TMP/database.sql.gz.age" "$REMOTE/monthly/$MONTH" --quiet
   rclone copy "$TMP/settings.env.age" "$REMOTE/monthly/$MONTH" --quiet
@@ -114,13 +116,22 @@ UPLOADS="$(docker volume inspect "${PROJECT}_uploads_data" --format '{{ .Mountpo
 rclone sync "$UPLOADS" "$REMOTE/images" --exclude '.trash/**' --backup-dir "$REMOTE/deleted-images/$DAY" --quiet
 IMG_COUNT="$(find "$UPLOADS" -path "$UPLOADS/.trash" -prune -o -type f -print | wc -l)"
 
-# ৪. পুরনো ব্যাকআপ মোছা
+ORDERS="$(dc exec -T postgres psql -U postgres -d "$POSTGRES_DB" -tAc 'SELECT count(*) FROM "Order"' 2>/dev/null || echo '?')"
+
+# encrypted off-site কপি যায়নি: লোকাল কপি আর ছবি হয়েছে, কিন্তু রাতটা FAILED। পুরনো ব্যাকআপ মোছা হয় না।
+if [ -n "$OFFSITE_ERROR" ]; then
+  trap - ERR
+  echo "[$STAMP] ব্যাকআপ ব্যর্থ — $OFFSITE_ERROR। ডাটাবেস/settings Drive-এ যায়নি; লোকাল কপি আর ছবি হয়েছে।"
+  status "FAILED — ব্যাকআপ ব্যর্থ হয়েছে" "সময়: $STAMP" "$OFFSITE_ERROR — ডাটাবেস/settings Drive-এ যায়নি (খোলা কপি পাঠানো হয় না)।" \
+    "সার্ভারের লোকাল কপি: হয়েছে ($DB_SIZE, মোট অর্ডার: $ORDERS)" "ছবি: $IMG_COUNT টি ফাইল (sync হয়েছে)" "পুরনো ব্যাকআপ মোছা হয়নি।"
+  exit 1
+fi
+
+# ৪. পুরনো ব্যাকআপ মোছা — শুধু নতুন encrypted কপি পৌঁছানোর পরে
 rclone delete "$REMOTE/daily" --min-age 30d --quiet || true
 rclone delete "$REMOTE/monthly" --min-age 365d --quiet || true
 rclone delete "$REMOTE/deleted-images" --min-age 30d --quiet || true
 rclone rmdirs "$REMOTE" --leave-root --quiet || true
-
-ORDERS="$(dc exec -T postgres psql -U postgres -d "$POSTGRES_DB" -tAc 'SELECT count(*) FROM "Order"' 2>/dev/null || echo '?')"
 # D3-8: শুধু public key আর ফাইলের SHA-256 — কোনো private key বা secret মান নয়।
 KEY_LINES=("primary key: ${RECIPIENT_PRIMARY:-নেই}" "recovery key: ${RECIPIENT_RECOVERY:-নেই}")
 [ "${#RECIPIENTS[@]}" -eq 2 ] || KEY_LINES+=("সতর্কতা: শুধু একটা recipient — অন্য key দিয়ে খোলা যাবে না")

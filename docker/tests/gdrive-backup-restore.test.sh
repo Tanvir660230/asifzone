@@ -60,6 +60,7 @@ done
 in="$1"
 if [ "$dec" = 0 ]; then
   [ "${AGE_MOCK_FAIL:-0}" = 1 ] && { printf 'age-enc' > "$out"; echo "age mock: forced failure" >&2; exit 1; }
+  [ -n "${AGE_MOCK_FAIL_MATCH:-}" ] && [[ "$in" == *"$AGE_MOCK_FAIL_MATCH" ]] && { printf 'age-enc' > "$out"; exit 1; }
   [ "${AGE_MOCK_GARBAGE:-0}" = 1 ] && { printf 'garbage' > "$out"; exit 0; }
   { echo "age-encryption.org/v1"; for r in "${recips[@]}"; do echo "-> MOCK $r"; done; echo "---"; base64 < "$in"; } > "$out"
 else
@@ -97,7 +98,7 @@ new_case() {
   echo img1 > "$W/uploads/a.jpg"; echo img2 > "$W/uploads/b.jpg"; echo trashed > "$W/uploads/.trash/c.jpg"
   write_mocks "$W/bin"
   export PATH="$W/bin:$ORIG_PATH" BACKUP_DIR="$W/local"
-  unset BACKUP_AGE_RECIPIENT_PRIMARY BACKUP_AGE_RECIPIENT_RECOVERY BACKUP_REQUIRE_TWO_RECIPIENTS AGE_MOCK_FAIL AGE_MOCK_GARBAGE BACKUP_AGE_IDENTITY EXPECT_SHA256
+  unset BACKUP_AGE_RECIPIENT_PRIMARY BACKUP_AGE_RECIPIENT_RECOVERY BACKUP_REQUIRE_TWO_RECIPIENTS AGE_MOCK_FAIL AGE_MOCK_GARBAGE AGE_MOCK_FAIL_MATCH BACKUP_AGE_IDENTITY EXPECT_SHA256
   # Safety: the mocks must shadow any real docker/rclone/age on this machine.
   for t in docker rclone age; do
     [ "$(command -v $t)" = "$W/bin/$t" ] || { echo "ABORT: $t does not resolve to the mock"; exit 2; }
@@ -112,40 +113,43 @@ no_plaintext_on_remote() {
   ! find "$W/remote" -type f \( -name 'database.sql.gz' -o -name 'settings.env' \) | grep -q . &&
   ! grep -rqs "$SECRET_MARKER" "$W/remote" && ! grep -rqs "MOCK DUMP" "$W/remote"
 }
+local_and_images_kept() { [ -f "$W/local/clothing_brand-$DAY.sql.gz" ] && [ -f "$(remote images/a.jpg)" ] && [ ! -e "$(remote images/.trash/c.jpg)" ]; }
+no_deletes() { ! grep -qE '^rclone (delete|rmdirs)' "$W/rclone.log"; }
+offsite_failed() { [ "$(rc)" != 0 ] && status_file | grep -q "^FAILED" && status_file | grep -q "লোকাল কপি: হয়েছে"; }
 identity() { printf '# created: test (mock identity, not a real key)\n# public key: %s\nAGE-SECRET-KEY-1MOCKONLYNOTAREALKEY\n' "$1" > "$2"; }
 run_restore() { echo RESTORE | bash "$W/store/docker/gdrive-restore.sh" "$@" > "$W/rout.txt" 2>&1; echo $? > "$W/rrc"; }
 rrc() { cat "$W/rrc"; }
 
 ORIG_PATH="$PATH"
 
+# Cases 1-4, 9-12: the encrypted off-site copy is unavailable. Nothing reaches Drive in plaintext, the run is
+# FAILED, but the local server copy and the image sync still happen and no old backup is deleted.
+offsite_unavailable_checks() {
+  check "exits non-zero, status FAILED, says local copy was made" 'offsite_failed'
+  check "no database/settings upload" '[ ! -e "$(remote daily)" ] && [ ! -e "$(remote monthly)" ]'
+  check "no plaintext on remote" 'no_plaintext_on_remote'
+  check "local server copy and image sync still ran" 'local_and_images_kept'
+  check "old backups not deleted" 'no_deletes'
+}
+
 echo "1. No recipient set"
-new_case; run_backup
-check "exits non-zero" '[ "$(rc)" != 0 ]'
-check "status FAILED uploaded" 'status_file | grep -q "^FAILED"'
-check "pg_dump never ran" '! grep -q pg_dump "$W/docker.log" 2>/dev/null'
-check "no daily/monthly upload" '[ ! -e "$(remote daily)" ] && [ ! -e "$(remote monthly)" ]'
-check "no plaintext on remote" 'no_plaintext_on_remote'
+new_case; run_backup; offsite_unavailable_checks
 rm -rf "$W"
 
 echo "2. Malformed recipient"
-new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "age1notavalidkey"; run_backup
-check "exits non-zero" '[ "$(rc)" != 0 ]'
-check "status FAILED" 'status_file | grep -q "^FAILED"'
-check "nothing uploaded" '[ ! -e "$(remote daily)" ]'
+new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "age1notavalidkey"; set_env BACKUP_AGE_RECIPIENT_RECOVERY "$R2"; run_backup
+offsite_unavailable_checks
+check "age never ran (a valid second key does not bypass the bad one)" '[ ! -s "$W/age.log" ]'
 rm -rf "$W"
 
 echo "3. Primary and recovery identical"
 new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "$R1"; set_env BACKUP_AGE_RECIPIENT_RECOVERY "$R1"; run_backup
-check "exits non-zero" '[ "$(rc)" != 0 ]'
-check "status FAILED" 'status_file | grep -q "^FAILED"'
-check "nothing uploaded" '[ ! -e "$(remote daily)" ]'
+offsite_unavailable_checks
 rm -rf "$W"
 
 echo "4. Strict two-recipient rule on, only primary set"
 new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "$R1"; set_env BACKUP_REQUIRE_TWO_RECIPIENTS 1; run_backup
-check "exits non-zero" '[ "$(rc)" != 0 ]'
-check "status FAILED" 'status_file | grep -q "^FAILED"'
-check "nothing uploaded" '[ ! -e "$(remote daily)" ]'
+offsite_unavailable_checks
 rm -rf "$W"
 
 echo "5. Strict rule off (default), only primary set"
@@ -209,16 +213,51 @@ rm -rf "$W"
 
 echo "9. Encryption fails part-way"
 new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "$R1"; set_env BACKUP_AGE_RECIPIENT_RECOVERY "$R2"; export AGE_MOCK_FAIL=1; run_backup
-check "exits non-zero" '[ "$(rc)" != 0 ]'
-check "status FAILED" 'status_file | grep -q "^FAILED"'
-check "partial file not uploaded" '[ ! -e "$(remote daily)" ] && [ ! -e "$(remote monthly)" ]'
+offsite_unavailable_checks
 rm -rf "$W"
 
 echo "10. age exits 0 but writes a non-age file"
 new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "$R1"; set_env BACKUP_AGE_RECIPIENT_RECOVERY "$R2"; export AGE_MOCK_GARBAGE=1; run_backup
-check "exits non-zero" '[ "$(rc)" != 0 ]'
-check "status FAILED" 'status_file | grep -q "^FAILED"'
-check "nothing uploaded" '[ ! -e "$(remote daily)" ]'
+offsite_unavailable_checks
+rm -rf "$W"
+
+echo "11. age not installed on the host"
+new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "$R1"; set_env BACKUP_AGE_RECIPIENT_RECOVERY "$R2"; rm -f "$W/bin/age"
+if command -v age >/dev/null 2>&1; then
+  echo "  SKIP  a real age is installed on this machine ($(command -v age))"
+else
+  run_backup; offsite_unavailable_checks
+fi
+rm -rf "$W"
+
+echo "12. Settings encryption fails on the first night of the month, then recovers"
+new_case; set_env BACKUP_AGE_RECIPIENT_PRIMARY "$R1"; set_env BACKUP_AGE_RECIPIENT_RECOVERY "$R2"; export AGE_MOCK_FAIL_MATCH="/.env"; run_backup
+check "exits non-zero, status FAILED, says local copy was made" 'offsite_failed'
+check "daily encrypted dump still uploaded" '[ -f "$(remote daily/$DAY/database.sql.gz.age)" ]'
+check "month folder left empty, so the next night retries" '[ -z "$(ls -A "$(remote monthly/$MONTH)" 2>/dev/null)" ]'
+check "no plaintext on remote" 'no_plaintext_on_remote'
+check "image sync still ran; old backups not deleted" 'local_and_images_kept && no_deletes'
+unset AGE_MOCK_FAIL_MATCH; run_backup
+check "next night: OK and the monthly settings arrive" '[ "$(rc)" = 0 ] && [ -f "$(remote monthly/$MONTH/settings.env.age)" ] && [ -f "$(remote monthly/$MONTH/database.sql.gz.age)" ]'
+rm -rf "$W"
+
+echo "13. check-settings (manual settings recovery helper)"
+new_case
+S="$W/keys/settings.env"
+printf 'INSTALL_ID=teststore\nSERVER_NAME=test.example\nSERVER_ALIASES=www.test.example\nCERT_NAME=test.example\nPOSTGRES_PASSWORD=%s\nREDIS_PASSWORD=r\nJWT_ACCESS_SECRET=j\nGDRIVE_REMOTE=fake:store-backups\nBACKUP_AGE_RECIPIENT_PRIMARY=%s\n' "$SECRET_MARKER" "$R1" > "$S"
+CHK() { bash "$W/store/docker/gdrive-restore.sh" check-settings "$1" > "$W/cout.txt" 2>&1; echo $? > "$W/crc"; }
+rm -f "$W/store/docker/.env"
+CHK "$S"
+check "valid settings pass, even with no docker/.env yet" '[ "$(cat "$W/crc")" = 0 ] && grep -q "INSTALL_ID=teststore" "$W/cout.txt"'
+check "no secret value printed" '! grep -q "$SECRET_MARKER" "$W/cout.txt"'
+{ echo "age-encryption.org/v1"; echo x; } > "$W/keys/enc.env"; CHK "$W/keys/enc.env"
+check "still-encrypted file refused" '[ "$(cat "$W/crc")" != 0 ]'
+grep -v '^JWT_ACCESS_SECRET=' "$S" > "$W/keys/missing.env"; CHK "$W/keys/missing.env"
+check "missing required key refused (named, no value)" '[ "$(cat "$W/crc")" != 0 ] && grep -q "JWT_ACCESS_SECRET" "$W/cout.txt"'
+sed 's/$/\r/' "$S" > "$W/keys/crlf.env"; CHK "$W/keys/crlf.env"
+check "CRLF line endings refused" '[ "$(cat "$W/crc")" != 0 ]'
+{ cat "$S"; echo "REDIS_PASSWORD=again"; } > "$W/keys/dup.env"; CHK "$W/keys/dup.env"
+check "duplicate key refused" '[ "$(cat "$W/crc")" != 0 ] && grep -q REDIS_PASSWORD "$W/cout.txt" && ! grep -q again "$W/cout.txt"'
 rm -rf "$W"
 
 echo
