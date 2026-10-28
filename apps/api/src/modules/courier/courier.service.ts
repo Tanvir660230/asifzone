@@ -158,9 +158,9 @@ async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, d
 
 /** Owner, 2026-10-25 (admin audit, docs/BUSINESS_DECISIONS.md D-AA3): a parcel booked with Steadfast is leaving, so the
  * order becomes SHIPPED at booking — through PACKED when it hadn't been packed yet, so the timeline keeps every step.
- * Steadfast reports no pickup, so nothing else would ever move it on. */
-export async function shipOnBooking(orderId: string, status: OrderStatus) {
-  if (!PRE_PACKED_ORDER_STATUSES.includes(status) && status !== "PACKED") return;
+ * Steadfast reports no pickup, so nothing else would ever move it on. Returns whether the order's status changed. */
+export async function shipOnBooking(orderId: string, status: OrderStatus): Promise<boolean> {
+  if (!PRE_PACKED_ORDER_STATUSES.includes(status) && status !== "PACKED") return false;
   // Both steps commit in ONE transaction (blueprint P0.5): a failure between them used to leave a booked parcel stuck at
   // PACKED. Each step validates against the locked status, so a concurrent change wins and the next step is skipped.
   const outcomes = await prisma.$transaction(async (tx) => {
@@ -177,6 +177,7 @@ export async function shipOnBooking(orderId: string, status: OrderStatus) {
     return done;
   });
   for (const outcome of outcomes) await runTransitionSideEffects(outcome);
+  return outcomes.some((o) => o.changed);
 }
 
 /** A booked parcel whose ship step never committed (the process died between saving the consignment and shipOnBooking,
@@ -198,8 +199,7 @@ async function repairBookedNotShipped(now: Date = new Date()): Promise<number> {
   let repaired = 0;
   for (const order of stuck) {
     try {
-      await shipOnBooking(order.id, order.status);
-      repaired++;
+      if (await shipOnBooking(order.id, order.status)) repaired++;
     } catch (err) {
       captureError(err, { msg: `[courier-status-cron] could not ship booked order ${order.id}:` });
     }

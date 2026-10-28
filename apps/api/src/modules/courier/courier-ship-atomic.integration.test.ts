@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, placeOrder } from "../../test-fixtures";
-import { bookOrderWithSteadfast, syncPendingCourierStatuses } from "./courier.service";
+import { bookOrderWithSteadfast, shipOnBooking, syncPendingCourierStatuses } from "./courier.service";
 
 // Blueprint P0.5 failure injection: the SHIPPED step fails after PACKED was applied. Both steps share one transaction,
 // so nothing commits — the order is never left half-way at PACKED — and the courier sweep then ships it.
@@ -53,7 +53,10 @@ describe("booking ships in one transaction", () => {
     expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: { in: ["PACKED", "SHIPPED"] } } })).toBe(0);
 
     failShipped.on = false;
-    await syncPendingCourierStatuses();
+    expect(await syncPendingCourierStatuses()).toBeGreaterThanOrEqual(1);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("SHIPPED");
+    // already shipped (a stale status read): nothing moves, and it isn't counted as a repair
+    expect(await shipOnBooking(order.id, "PACKED")).toBe(false);
+    expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: "SHIPPED" } })).toBe(1);
   });
 });
