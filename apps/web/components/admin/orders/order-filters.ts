@@ -21,6 +21,7 @@ import { courierStatusLabel, orderStatusShortLabel, paymentStatusLabel } from "@
 export const ORDER_QUEUE_LABELS: Record<OrderQueueId, string> = {
   needsAction: "Needs action",
   followUpDue: "Follow-up due",
+  codPendingStale: "COD pending > 48 h",
   unpaid: "Unpaid",
   cod: "COD",
   courierIssue: "Courier issues",

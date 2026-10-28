@@ -3,6 +3,10 @@
 import Link from "next/link";
 import {
   AlertOctagon,
+  Banknote,
+  Copy,
+  FlaskConical,
+  ClipboardCheck,
   BookOpen,
   Bug,
   CheckCircle2,
@@ -58,26 +62,29 @@ interface ActionCenterProps {
   financeAlertList?: FinanceAlert[];
   /** Open errors from the last 24 h (Site health) — only for roles with ops.read. */
   openErrors?: number;
+  /** Receipts flagged as a possible duplicate, not explained (blueprint P0.3) — only for roles that read purchasing. */
+  possibleDuplicatePurchases?: number;
+  /** Stock work waiting on a person — only for roles that read stock. */
+  stockWaiting?: { countLossesToApprove: number; fillFailures: number };
   loading: boolean;
 }
 
 /** Everything waiting on an admin, as a to-do list: only non-zero items show, most urgent first, each one a link straight
  * to the filtered list where it gets done. An empty list is the goal — it renders as an explicit "all clear". */
-export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, financeAlertList, openErrors, loading }: ActionCenterProps) {
+export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, financeAlertList, openErrors, possibleDuplicatePurchases, stockWaiting, loading }: ActionCenterProps) {
   const q = orderStats?.queueCounts;
   // The overview's failure list reaches back weeks; only the last day's are still worth chasing.
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
   const freshFailures = payments?.recentFailures.filter((f) => new Date(f.failedAt).getTime() >= dayAgo).length ?? 0;
-  // Named finance rows: every critical alert, and money the courier still holds. The rest stay one "Finance to-dos" row.
-  const named = (financeAlertList ?? []).filter((a) => a.severity === "critical" || a.key === "courier.unpaid");
-  const namedWarnings = named.filter((a) => a.severity === "warning").length;
-  const financeRows: ActionItem[] = named.map((a) => ({
+  // Every finance alert is a row of its own with its own link (blueprint P1.2: Home shows every existing alert type — none
+  // is folded away), most urgent first by the alert's own severity.
+  const financeRows: ActionItem[] = (financeAlertList ?? []).map((a) => ({
     key: `finance-${a.key}`,
     label: a.amount ? `${a.title} · ${formatPrice(Math.round(a.amount))}` : a.title,
     hint: a.action,
-    count: a.count,
+    count: Math.max(1, a.count),
     href: a.href,
-    severity: a.severity === "critical" ? "critical" : "warning",
+    severity: a.severity,
     icon: a.key === "courier.unpaid" ? Truck : BookOpen,
   }));
   const candidates: ActionItem[] = [
@@ -116,6 +123,43 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       href: "/admin/system-health#errors",
       severity: "warning",
       icon: Bug,
+    },
+    {
+      // Owner decision Q6: a COD order still unconfirmed after 48 h — reviewed by a person; nothing is released automatically
+      key: "cod-pending-48h",
+      label: "COD orders pending over 48 h",
+      hint: "Review each order — confirm, call or cancel; stock stays held until you decide",
+      count: q?.codPendingStale ?? 0,
+      href: "/admin/orders?queue=codPendingStale",
+      severity: "warning",
+      icon: Banknote,
+    },
+    {
+      key: "duplicate-purchases",
+      label: "Possible duplicate purchases",
+      hint: "Received goods that look like a purchase already entered — check before paying twice",
+      count: possibleDuplicatePurchases ?? 0,
+      href: "/admin/finance/goods-receipts",
+      severity: "warning",
+      icon: Copy,
+    },
+    {
+      key: "count-losses",
+      label: "Count losses to approve",
+      hint: "A count found less than the books — approve or reject the write-off",
+      count: stockWaiting?.countLossesToApprove ?? 0,
+      href: "/admin/stock",
+      severity: "warning",
+      icon: ClipboardCheck,
+    },
+    {
+      key: "fill-failures",
+      label: "Bottles not filled at booking",
+      hint: "A booked parcel's bottles are still owed — try the fill again",
+      count: stockWaiting?.fillFailures ?? 0,
+      href: "/admin/stock",
+      severity: "warning",
+      icon: FlaskConical,
     },
     {
       key: "follow-up",
@@ -183,16 +227,10 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
     // Without the list (still loading, or an older API), fall back to the counts.
     ...(financeAlertList
       ? financeRows
-      : [{ key: "finance-critical", label: "Finance problems", hint: "Postings that failed, checks that differ or cash forecast below zero", count: financeAlerts?.critical ?? 0, href: "/admin/finance/attention", severity: "critical" as const, icon: BookOpen }]),
-    {
-      key: "finance-todo",
-      label: "Finance to-dos",
-      hint: "Approvals, bills and costs due, months to close",
-      count: Math.max(0, (financeAlerts?.warning ?? 0) - namedWarnings),
-      href: "/admin/finance/attention",
-      severity: "warning",
-      icon: BookOpen,
-    },
+      : [
+          { key: "finance-critical", label: "Finance problems", hint: "Postings that failed, checks that differ or cash forecast below zero", count: financeAlerts?.critical ?? 0, href: "/admin/finance/attention", severity: "critical" as const, icon: BookOpen },
+          { key: "finance-todo", label: "Finance to-dos", hint: "Approvals, bills and costs due, months to close", count: financeAlerts?.warning ?? 0, href: "/admin/finance/attention", severity: "warning" as const, icon: BookOpen },
+        ]),
     {
       key: "feedback",
       label: "Unread messages",

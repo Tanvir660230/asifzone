@@ -178,6 +178,8 @@ export default function DashboardPage() {
         financeAlerts={attention.financeAlertCounts}
         financeAlertList={attention.financeAlertList}
         openErrors={attention.openErrors}
+        possibleDuplicatePurchases={attention.possibleDuplicatePurchases}
+        stockWaiting={attention.stockWaiting}
         loading={attention.loading}
       />
 

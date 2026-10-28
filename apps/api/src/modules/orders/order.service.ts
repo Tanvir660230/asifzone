@@ -19,6 +19,7 @@ import {
   MONEY_HELD_PAYMENT_STATUSES,
   ORDER_QUEUE_FILTERS,
   ORDER_QUEUE_IDS,
+  COD_PENDING_ALERT_HOURS,
   PRICE_ADJUSTMENT_LOCKED_STATUSES,
   type OrderQueueId,
   type OrderTransitionRule,
@@ -875,6 +876,8 @@ function buildOrderWhere(query: OrderListQuery) {
     // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
     // mutually-exclusive pattern as the other quick filters).
     ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
+    // Owner decision Q6: COD orders still PENDING after 48 h — listed for a person to decide; never released automatically.
+    ...(query.codPendingStale === "true" ? { status: "PENDING" as const, paymentMethod: "COD" as const, createdAt: { lte: new Date(Date.now() - COD_PENDING_ALERT_HOURS * 3_600_000) } } : {}),
     // The refund-risk queue — CANCELLED orders still holding customer money (one shared predicate from the payment
     // ledger), surfaced via the "Cancelled but paid" admin alert (updateOrderStatus/getOrderStats).
     ...(query.cancelledButPaid === "true" ? REFUND_QUEUE_WHERE : {}),

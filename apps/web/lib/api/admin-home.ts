@@ -12,6 +12,10 @@ export interface AdminAttention {
   unreadNotifications: number;
   /** Open errors seen in the last 24 h (Site health) — null without ops.read. */
   openErrors: number | null;
+  /** Receipts flagged as a possible duplicate in the last 30 days with no reason given (blueprint P0.3) — null without purchasing.read. */
+  possibleDuplicatePurchases?: number | null;
+  /** Stock work waiting on a person — null without inventory.read. */
+  stock?: { countLossesToApprove: number; fillFailures: number } | null;
 }
 
 /** What the store's own data says it does (owner decision Q-G) — the menu shows Production only where it exists. */
