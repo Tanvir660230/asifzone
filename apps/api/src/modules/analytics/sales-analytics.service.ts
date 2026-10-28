@@ -11,7 +11,6 @@ import {
   customerStats,
   distinctOrdersBy,
   enumerateBuckets,
-  fromMajor,
   groupContributions,
   localClock,
   previousRange,

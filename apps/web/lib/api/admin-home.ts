@@ -14,6 +14,15 @@ export interface AdminAttention {
   openErrors: number | null;
 }
 
+/** What the store's own data says it does (owner decision Q-G) — the menu shows Production only where it exists. */
+export interface StoreCapabilities {
+  production: boolean;
+}
+
+export function getStoreCapabilities() {
+  return apiFetch<StoreCapabilities>("/api/v1/admin/store-capabilities");
+}
+
 export function getAttention() {
   return apiFetch<AdminAttention>("/api/v1/admin/attention");
 }

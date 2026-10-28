@@ -37,3 +37,22 @@ describe("admin attention composite", () => {
     expect((await request(app).get("/api/v1/admin/attention")).status).toBe(401);
   });
 });
+
+describe("store capabilities (owner decision Q-G)", () => {
+  it("says whether the store has production, from its own data", async () => {
+    const agent = await asOwner();
+    const res = await agent.get("/api/v1/admin/store-capabilities");
+    expect(res.status).toBe(200);
+    const has = Boolean(
+      (await prisma.product.count({ where: { kind: "MATERIAL", deletedAt: null } })) ||
+        (await prisma.product.count({ where: { fillToOrder: true, deletedAt: null } })) ||
+        (await prisma.billOfMaterials.count()) ||
+        (await prisma.productionOrder.count()),
+    );
+    expect(res.body).toEqual({ production: has });
+  });
+
+  it("refuses an anonymous caller", async () => {
+    expect((await request(app).get("/api/v1/admin/store-capabilities")).status).toBe(401);
+  });
+});

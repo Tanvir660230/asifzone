@@ -4,6 +4,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { createSavedViewSchema, savedViewListQuerySchema } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { adminAttention } from "./attention.service";
+import { storeCapabilities } from "./store-capabilities.service";
 import { createSavedView, deleteSavedView, listSavedViews } from "./saved-views.service";
 
 /** /api/v1/admin — composite reads for the Store Console shell (Blueprint V2 PERF-03). */
@@ -15,6 +16,15 @@ adminHomeRouter.get(
   "/attention", requireSelf,
   asyncHandler(async (req, res) => {
     res.json(await adminAttention(req.admin!));
+  }),
+);
+
+/** GET /api/v1/admin/store-capabilities — what this store's own data says it does (Q-G): the menu shows Production only
+ * where the store has production. Any signed-in admin; it reveals no record, only whether such records exist. */
+adminHomeRouter.get(
+  "/store-capabilities", requireSelf,
+  asyncHandler(async (_req, res) => {
+    res.json(await storeCapabilities());
   }),
 );
 

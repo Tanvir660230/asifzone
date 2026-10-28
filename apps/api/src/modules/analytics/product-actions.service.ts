@@ -4,7 +4,7 @@
  * add-to-carts (last 30 days), distinct orders containing it, finished parcels and refusals (§4.7, last 60 days), and the
  * cost value of variants with stock and no order in 60 days.
  */
-import { addDays, businessDate, contributions, fromMajor, money, resolveBusinessRange, toMajor } from "@clothing-brand/shared";
+import { addDays, businessDate, contributions, money, resolveBusinessRange, toMajor } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { resolveVariantCosts } from "../../domain/finance/cost-resolver";
 import { cacheGet, cacheSet } from "../../config/redis";

@@ -42,10 +42,13 @@ function shellRoutes(dir = SHELL): string[] {
   });
 }
 
-const access = (role: "OWNER" | "STAFF", flags: string[] = ["ai-assistant"]): NavAccess => ({
+const access = (role: keyof typeof ROLE_PERMISSIONS, flags: string[] = ["ai-assistant"], production = true): NavAccess => ({
   can: (c: Capability) => can(c, { permissions: ROLE_PERMISSIONS[role], providers: { courier: true, sms: true, email: true, push: true } }),
   flagEnabled: (f) => flags.includes(f),
+  storeHas: (c) => c === "production" && production,
 });
+const modulesOf = (a: NavAccess) => navTree(a).flatMap((g) => g.modules);
+const childIds = (a: NavAccess, id: string) => modulesOf(a).find((m) => m.node.id === id)?.children.map((c) => c.node.id) ?? [];
 
 describe("navigation manifest — structure", () => {
   it("has unique node ids and unique routes", () => {
@@ -145,24 +148,48 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/nowhere")).toBeUndefined();
   });
 
-  it("organises Finance as Overview, Needs attention and five groups — payments inside Sales & payments, My cash inside Money", () => {
+  it("organises Money, Books and Reports (blueprint tab 2 §2) — every URL unchanged, only the menu moved", () => {
     expect(resolveNavNode("/admin/finance")?.id).toBe("finance.home");
-    expect(navNode("finance")?.index).toBe("/admin/finance");
+    expect(navNode("finance")?.label).toBe("Money");
     const owner = access("OWNER");
-    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Needs attention", "Money", "Sales & payments", "Purchasing", "Books & setup", "Payroll & partners"]);
-    // admin audit phase 3: My cash is a money account the admin holds; setup and checks sit with the books
+    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Accounts & cash", "Expenses", "Bills to pay", "Payments & refunds", "Courier & gateway", "Loans", "Prepaid costs", "Bank reconciliation"]);
+    expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Needs attention", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
+    expect(navChildren("analytics", owner).map((c) => c.node.label)).toEqual(["Profit", "Product costs & price planner", "Store analytics", "Purchasing reports", "AI assistant"]);
     expect(resolveNavNode("/admin/finance/my-cash")?.parent).toBe("finance.money");
-    // Quick refill was Stock › Filled bottles a second time — its old address opens that sheet
     expect(deprecatedRedirect("/admin/finance/refills")).toBe("/admin/stock?open=filled");
-    for (const route of ["/admin/payments/transactions", "/admin/payments/refunds", "/admin/payments/attempts", "/admin/payments/overview", "/admin/finance/settlements", "/admin/finance/sales"]) {
-      expect(resolveNavNode(route)?.parent, route).toBe("finance.selling");
-    }
-    expect(navChildren("finance.books", owner).map((c) => c.href).slice(-8)).toEqual([
-      "/admin/finance/opening", "/admin/finance/rates", "/admin/finance/checks", "/admin/finance/exceptions", "/admin/finance/inventory-cutover", "/admin/finance/tax-codes", "/admin/finance/mappings", "/admin/finance/activity",
+    for (const route of ["/admin/payments/transactions", "/admin/payments/refunds", "/admin/payments/attempts", "/admin/payments/overview"]) expect(resolveNavNode(route)?.parent, route).toBe("finance.selling");
+    for (const route of ["/admin/finance/settlements", "/admin/finance/courier", "/admin/finance/courier-costs"]) expect(resolveNavNode(route)?.parent, route).toBe("finance.courier-gateway");
+    // the formal purchasing path sits under Stock › More; suppliers under Stock; ads under Marketing
+    expect(resolveNavNode("/admin/finance/goods-receipts")?.parent).toBe("inventory.more");
+    expect(resolveNavNode("/admin/finance/suppliers")?.parent).toBe("inventory");
+    expect(resolveNavNode("/admin/finance/ads")?.parent).toBe("marketing");
+    // one-time books setup lives in Settings
+    expect(navChildren("settings.books", owner).map((c) => c.href)).toEqual([
+      "/admin/finance/opening", "/admin/finance/inventory-cutover", "/admin/finance/mappings", "/admin/finance/rates", "/admin/finance/tax-codes", "/admin/finance/checks", "/admin/finance/activity",
     ]);
-    // every listed finance page explains itself in one sentence (the Overview's map shows it)
-    const listed = ["finance.money", "finance.selling", "finance.purchasing", "finance.books", "finance.people"].flatMap((g) => navChildren(g, owner));
+    // every listed money and books page explains itself in one sentence (the Overview's map shows it)
+    const listed = ["finance", "books", "settings.books", "inventory.more"].flatMap((g) => navChildren(g, owner)).flatMap((i) => (i.children.length ? i.children : [i]));
     for (const item of listed) expect(item.node.description, item.node.id).toBeTruthy();
+  });
+
+  it("blueprint P0.6 (Q8): a finance-only role reaches its money and books pages without any new permission", () => {
+    const roles = (["FINANCE_ADMIN", "ACCOUNTANT", "FINANCE_VIEWER"] as const).filter((r) => r in ROLE_PERMISSIONS);
+    expect(roles.length).toBeGreaterThan(0);
+    for (const role of roles) {
+      const a = access(role);
+      expect(modulesOf(a).map((m) => m.node.id), role).toContain("books");
+      expect(childIds(a, "books"), role).toContain("books.statements");
+      // nothing they can't open is linked: every visible page's own capability is one the role holds
+      for (const m of modulesOf(a)) for (const c of m.children) if (c.node.capability) expect(a.can(c.node.capability), role + " " + c.node.id).toBe(true);
+    }
+  });
+
+  it("owner decision Q-G: Production shows only when the admin may see it AND the store has production", () => {
+    expect(childIds(access("OWNER"), "inventory")).toContain("inventory.production");
+    expect(childIds(access("OWNER", ["ai-assistant"], false), "inventory")).not.toContain("inventory.production");
+    // not known yet (no store answer) → hidden, never flashed on a store without production
+    const unknown: NavAccess = { ...access("OWNER"), storeHas: undefined };
+    expect(childIds(unknown, "inventory")).not.toContain("inventory.production");
   });
 
   it("builds breadcrumbs and titles from the tree", () => {
@@ -176,17 +203,20 @@ describe("navigation manifest — derivation", () => {
   it("derives the sidebar per role: owner-only pages hidden from staff, empty modules dropped", () => {
     const owner = navTree(access("OWNER")).flatMap((g) => g.modules.map((m) => m.node.id));
     const staff = navTree(access("STAFF")).flatMap((g) => g.modules.map((m) => m.node.id));
-    expect(owner).toEqual(["home", "orders", "products", "inventory", "customers", "messages", "marketing", "storefront", "finance", "analytics", "settings", "administration"]);
-    // Team, audit log and storage are owner-only; staff see Administration only for System health (ops.read).
-    expect(staff).toContain("administration");
-    const staffAdmin = navTree(access("STAFF")).flatMap((g) => g.modules).find((m) => m.node.id === "administration");
-    expect(staffAdmin?.children.map((c) => c.node.id) ?? []).toEqual(["administration.system-health"]);
-    const staffSettings = navTree(access("STAFF")).flatMap((g) => g.modules).find((m) => m.node.id === "settings")!;
-    expect(staffSettings.children.map((c) => c.node.id)).toEqual(["settings.store", "settings.payment-methods"]);
+    // tab 21 §2: Home; Sell; Make & stock; Grow; Money; Settings in the footer — twelve sections
+    expect(owner).toEqual(["home", "orders", "messages", "customers", "products", "inventory", "marketing", "storefront", "finance", "books", "analytics", "settings"]);
+    expect(navTree(access("OWNER")).map((g) => g.label)).toEqual([null, "Sell", "Make & stock", "Grow", "Money", null]);
+    // Staff keep Money › Payments & refunds (blueprint Q8 note) and never see the books
+    expect(staff).toContain("finance");
+    expect(staff).not.toContain("books");
+    expect(childIds(access("STAFF"), "finance")).toContain("finance.selling");
+    expect(childIds(access("STAFF"), "finance")).not.toContain("finance.home");
+    // Team, audit log and storage are owner-only; staff see Settings › System only for System health (ops.read).
+    expect(childIds(access("STAFF"), "settings")).toEqual(["settings.store", "settings.payment-methods", "settings.system"]);
   });
 
   it("hides flagged nodes until the installation switches the flag on", () => {
-    const analytics = (flags: string[]) => navTree(access("OWNER", flags)).flatMap((g) => g.modules).find((m) => m.node.id === "analytics")!;
+    const analytics = (flags: string[]) => modulesOf(access("OWNER", flags)).find((m) => m.node.id === "analytics")!;
     expect(analytics([]).children.map((c) => c.node.id)).not.toContain("analytics.ai-assistant");
     expect(analytics(["ai-assistant"]).children.map((c) => c.node.id)).toContain("analytics.ai-assistant");
   });
@@ -197,7 +227,7 @@ describe("navigation manifest — derivation", () => {
     // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels, Stock check (admin
     // audit phase 3: where every piece went, moved from Finance) and Production, whose own pages are its tabs; a lone module
     // still shows none (Customers).
-    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/finance/stock-check", "/admin/manufacturing/home"]);
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
     expect(sectionTabsFor("/admin/manufacturing/boms", access("OWNER")).map((t) => t.href)).toEqual(["/admin/manufacturing/home", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
     expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
@@ -215,7 +245,7 @@ describe("navigation manifest — derivation", () => {
     expect(sectionBarFor("/admin/orders/abc123", access("OWNER"))).toBeNull();
     expect(sectionBarFor("/admin/products/abc123/edit", access("OWNER"))).toBeNull();
     // Inventory holds Stock and Manufacturing (docs/MANUFACTURING.md), so it has a section bar of its own
-    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/inventory", "/admin/finance/stock-check", "/admin/manufacturing/home"]);
+    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
     // a Production page keeps the module bar on "Production"
     expect(sectionBarFor("/admin/manufacturing/materials", access("OWNER"))?.activeHref).toBe("/admin/manufacturing/home");
     expect(sectionBarFor("/admin/manufacturing/production-orders/po1", access("OWNER"))).toBeNull(); // a detail view
