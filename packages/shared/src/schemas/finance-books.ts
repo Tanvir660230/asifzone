@@ -132,6 +132,10 @@ export const adPeriodSpendSchema = z
   .refine((v) => v.from <= v.to, "The period ends after it starts")
   .refine((v) => (v.amount ?? null) !== null || ((v.originalAmount ?? null) !== null && !!v.currency), "Give the total in taka, or in its currency");
 export const adCsvImportSchema = z.object({ financialAccountId: id, csv: z.string().min(1).max(2_000_000), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable(), commit: z.boolean() });
+/** Blueprint P0.7 (Q-E): archive / bring back a campaign. */
+export const adCampaignArchiveSchema = z.object({ archived: z.boolean(), reason: z.string().trim().max(500).optional().nullable() });
+/** Owner-confirmed zero spend for days that have none (finance.post); a reason is required. */
+export const adConfirmZeroSchema = z.object({ dates: z.array(businessDate).min(1).max(62), reason: z.string().trim().min(3).max(500) });
 export const adCampaignListQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional() });
 export const metaSpendImportSchema = z.object({ days: z.number().int().min(1).max(400).optional(), since: businessDate.optional() });
 

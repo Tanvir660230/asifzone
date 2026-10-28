@@ -120,6 +120,8 @@ function MonthEnd({ initialMonth, canClose }: { initialMonth: string | null; can
         </div>
         <div className="flex items-center gap-2">
           {!c.period ? <Badge variant="outline">Nothing posted</Badge> : closed ? <Badge variant="success" dot>Closed</Badge> : c.period.status === "SOFT_CLOSED" ? <Badge variant="warning" dot>Soft-closed</Badge> : <Badge variant="neutral" dot>Open</Badge>}
+          {/* blueprint I-4: Final only once closed with every step done — a closed month with open steps is still Draft */}
+          {c.label && <Badge variant={c.label === "FINAL" ? "success" : "outline"} title={c.label === "FINAL" ? "Closed with every step done — the figures are final" : "Figures can still change until the month is closed with every step done"} data-testid="month-final-label">{c.label === "FINAL" ? "Final" : "Draft"}</Badge>}
           <span className="text-sm tabular-nums text-ink-600" data-testid="steps-done">{done} of {c.steps.length} done</span>
         </div>
       </div>

@@ -14,6 +14,8 @@ import {
   gatewayFeeRateSchema,
   adCampaignCreateSchema,
   adCampaignListQuerySchema,
+  adCampaignArchiveSchema,
+  adConfirmZeroSchema,
   adCampaignUpdateSchema,
   adSpendDaySchema,
   adPeriodSpendSchema,
@@ -150,6 +152,9 @@ ownerBooksRouter.put("/ads/campaigns/:id/spend", requirePermission("finance.tran
   await ads.recordDaySpend(id(req), req.body, await actorOf(req));
   res.json({ ok: true });
 }));
+// Blueprint P0.7 (Q-E): archive takes a campaign out of the month-end check; a confirmed zero needs finance.post + a reason.
+ownerBooksRouter.post("/ads/campaigns/:id/archive", requirePermission("finance.transact"), validate(adCampaignArchiveSchema), asyncHandler(async (req, res) => res.json(await ads.setCampaignArchived(id(req), req.body, await actorOf(req)))));
+ownerBooksRouter.post("/ads/campaigns/:id/confirm-zero", requirePermission("finance.post"), validate(adConfirmZeroSchema), asyncHandler(async (req, res) => res.json(await ads.confirmZeroSpendDays(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.put("/ads/campaigns/:id/period-spend", requirePermission("finance.transact"), validate(adPeriodSpendSchema), asyncHandler(async (req, res) => res.json(await ads.recordPeriodSpend(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.post("/ads/import-meta", requirePermission("finance.transact"), validate(metaSpendImportSchema), asyncHandler(async (req, res) => res.json(await ads.importMetaSpend(req.body, await actorOf(req)))));
 

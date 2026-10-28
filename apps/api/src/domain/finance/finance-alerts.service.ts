@@ -14,6 +14,7 @@ import { listReconciliationChecks } from "./reconciliation.service";
 import { unpaidDeliveredCod } from "./courier-payouts.service";
 import { dueDates } from "./expenses.service";
 import { payrollOverview, payrollStartMonth } from "./payroll.service";
+import { adSpendGaps } from "./ads.service";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 export interface FinanceAlert {
@@ -253,6 +254,14 @@ export interface ChecklistStep {
   href: string;
 }
 
+/** Blueprint I-4: a month reads Final once its period is CLOSED and no month-end step is open — or when it was closed
+ * before the rule took effect, so months shared under the old rule keep their label. Draft otherwise. Pure. */
+export function monthLabel(period: { status: string; closedAt: Date | null } | null, openSteps: number, effectiveAt: Date): "FINAL" | "DRAFT" {
+  if (period?.status !== "CLOSED") return "DRAFT";
+  if (openSteps === 0) return "FINAL";
+  return period.closedAt && period.closedAt < effectiveAt ? "FINAL" : "DRAFT";
+}
+
 /** What has to be true before a month is closed, in the order an accountant works through it. Default: last month. */
 export async function monthEndChecklist(q: { month?: string } = {}) {
   const { business } = await getFinanceContext();
@@ -279,6 +288,11 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     prisma.loanAccrualRun.findFirst({ where: { businessId: business.id, periodKey: month, status: "POSTED" }, select: { id: true } }),
     prisma.recurringCommitment.findMany({ where: { businessId: business.id, isActive: true }, include: { expenses: { select: { periodKey: true, movement: { select: { status: true } } } } } }),
     latestCheckRuns(business.id),
+  ]);
+  const [draftPayouts, adGaps, rule] = await Promise.all([
+    prisma.clearingSettlement.count({ where: { businessId: business.id, status: "DRAFT", settlementDate: { lte: day(to) } } }),
+    adSpendGaps(month),
+    prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { monthEndRuleEffectiveAt: true } }),
   ]);
   const [payRun, payees, payrollStart] = await Promise.all([
     prisma.payRun.findFirst({ where: { businessId: business.id, periodKey: month, status: { not: "REVERSED" } }, select: { number: true, status: true } }),
@@ -313,6 +327,19 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
   const labels = new Map<string, string>(listReconciliationChecks().map((c) => [c.key, c.label]));
   const afterMonth = checkRuns.filter((r) => businessDateOf(r.createdAt) > to);
   const differing = checkRuns.filter((r) => r.status === "DIFFERENCE" || r.status === "ERROR").map((r) => labels.get(r.checkKey) ?? r.checkKey);
+  // Blueprint P0.7 step 10 (P-5): payouts already imported or entered are posted. Money Steadfast still holds is a
+  // receivable shown as information, never a step.
+  step({ key: "payouts", label: "Courier and gateway payouts posted", status: draftPayouts ? "TODO" : "DONE", detail: draftPayouts ? `${plural(draftPayouts, "payout")} dated by ${to} entered but not posted.` : "Every payout entered so far is posted.", href: "/admin/finance/settlements" });
+  // Step 11 (Q16 = A, Q-E): every in-scope campaign has each day's spend, or a confirmed zero.
+  const gapDays = adGaps.reduce((s, g) => s + g.missing.length, 0);
+  step({
+    key: "ads",
+    label: "Ad spend complete",
+    status: gapDays ? "TODO" : "DONE",
+    detail: gapDays ? `${plural(gapDays, "day")} without spend or a confirmed zero: ${adGaps.map((g) => `${g.name} (${g.missing.length})`).join(", ")}.` : "Every campaign with spend has each day recorded.",
+    href: `/admin/finance/ads?from=${from}&to=${to}`,
+  });
+
   step({ key: "checks", label: "Finance checks match", status: differing.length || afterMonth.length < labels.size ? "TODO" : "DONE", detail: differing.length ? `Difference: ${differing.join(", ")}.` : afterMonth.length < labels.size ? `Run every check after ${to}.` : "Every check matched after the month ended.", href: "/admin/finance/checks" });
 
   const before = steps.filter((s) => s.status === "TODO").length;
@@ -324,5 +351,8 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     open: before,
     /** Every step done (or not applicable) and the month has ended. */
     ready: before === 0 && to < today,
+    /** Blueprint I-4: Final once CLOSED with every step done, or closed before the rule took effect; Draft otherwise. */
+    label: monthLabel(period ? { status: period.status, closedAt: period.closedAt } : null, before, rule.monthEndRuleEffectiveAt),
+    adGaps,
   };
 }

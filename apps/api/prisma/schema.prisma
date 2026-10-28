@@ -3295,6 +3295,9 @@ model FinanceBusiness {
   /// once the opening balances are posted.
   openingDate                 DateTime?                 @db.Date
   /// Phase 3: may an approved ESTIMATED cost be posted for a sale line with no recorded cost? Default: never (KNOWN only).
+  /// Blueprint P0.7 / I-4: a CLOSED month is Final when every month-end step is done, or when it was closed before this
+  /// rule took effect (set when the column was added, so months closed earlier keep their Final label).
+  monthEndRuleEffectiveAt     DateTime                  @default(now())
   costPolicy                  FinanceCostPolicy         @default(KNOWN_ONLY)
   /// Phase 4: when inventory costing became authoritative (set by the 4C valuation cutover). Null = costing is not active:
   /// order lines keep the catalog cost (labelled CATALOG) and no valuation entry is written.
@@ -3597,6 +3600,10 @@ model AdCampaign {
   /// The page the ads send people to (a landing page /lp/<slug>, a product) — for profit after ads.
   landingPath        String?
   isActive           Boolean          @default(true)
+  /// Owner decision Q-E: an explicit Archive takes the campaign out of the month-end ad-spend check (blueprint P0.7).
+  archivedAt         DateTime?
+  archivedByAdminId  String?
+  archiveReason      String?
   notes              String?
   createdByAdminId   String?
   createdAt          DateTime         @default(now())
@@ -3623,6 +3630,11 @@ model AdSpendDay {
   impressions      Int?
   clicks           Int?
   purchases        Int?
+  /// Owner decision Q-E: a day with no spend counts as recorded only once a person confirms the zero (finance.post +
+  /// reason). Zero rows from imports (CSV, PERIOD, the API) stay unconfirmed until then.
+  confirmedZeroAt        DateTime?
+  confirmedZeroByAdminId String?
+  confirmedZeroReason    String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 

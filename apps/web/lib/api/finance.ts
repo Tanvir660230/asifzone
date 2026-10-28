@@ -666,6 +666,10 @@ export interface MonthEndChecklist {
   month: string; from: string; to: string; asOf: string; ended: boolean;
   period: { id: string; status: "OPEN" | "SOFT_CLOSED" | "CLOSED"; closedAt: string | null } | null;
   steps: ChecklistStep[]; open: number; ready: boolean;
+  /** Blueprint I-4: Final once CLOSED with every step done (or closed before the rule took effect); Draft otherwise. */
+  label?: "FINAL" | "DRAFT";
+  /** Step 11: in-scope campaigns and the days they still lack (spend > 0 or a confirmed zero). */
+  adGaps?: Array<{ campaignId: string; name: string; missing: string[] }>;
 }
 export const alertKeys = { all: ["finance", "alerts"] as const, monthEnd: (month: string) => ["finance", "month-end", month] as const };
 export const getFinanceAlerts = () => apiFetch<FinanceAlerts>(`${BASE}/alerts`);

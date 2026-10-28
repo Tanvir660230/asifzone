@@ -107,6 +107,10 @@ export interface AdCampaign {
   period: { from: string; to: string }; spend: number; actualSpend: number; plannedSpend: number; orders: number; delivered: number; revenue: number;
   costPerOrder: number | null; roas: number | null; lastActualDay: string | null;
   foreignSpend?: Array<{ currency: string; amount: number }>; budgetHistory?: Array<{ from: string; budgetType: "DAILY" | "LIFETIME" | null; budget: number | null }>;
+  /** Blueprint P0.7 (Q-E): an archived campaign is out of the month-end ad-spend check. */
+  archivedAt?: string | null; archiveReason?: string | null;
+  /** Days in the period a person confirmed as zero spend. */
+  confirmedZeroDays?: string[];
 }
 /** A utm_campaign value visitors came with that no campaign claims yet (Meta sends the campaign's numeric id). */
 export interface UnlinkedAdTag { tag: string; sessions: number; orders: number }
@@ -117,6 +121,10 @@ export const recordDaySpend = (id: string, body: { date: string; amount?: number
 export interface PeriodSpendResult { from: string; to: string; total: number; original: number | null; currency: string | null; rate: number | null; estimated: boolean; ownDays: number; ownTotal: number; sharedDays: number; shared: number }
 /** A total for a stretch of days, shared over the days that have no figure of their own. */
 export const recordPeriodSpend = (id: string, body: { from: string; to: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<PeriodSpendResult>(`${BASE}/ads/campaigns/${id}/period-spend`, { method: "PUT", body });
+/** Archive (or bring back) a campaign — it then leaves (or rejoins) the month-end ad-spend check. */
+export const setCampaignArchived = (id: string, body: { archived: boolean; reason?: string | null }) => apiFetch<{ id: string; archivedAt: string | null }>(`${BASE}/ads/campaigns/${id}/archive`, { method: "POST", body });
+/** Confirm that a campaign spent nothing on these days (needs finance.post and a reason). */
+export const confirmZeroSpend = (id: string, body: { dates: string[]; reason: string }) => apiFetch<{ campaignId: string; confirmed: string[] }>(`${BASE}/ads/campaigns/${id}/confirm-zero`, { method: "POST", body });
 export const importMetaSpend = (body: { days?: number; since?: string }) =>
   apiFetch<{ since: string; until: string; accounts: Array<{ adAccountId: string; financialAccount: string | null; days: number; campaigns: number; error: string | null }> }>(`${BASE}/ads/import-meta`, { method: "POST", body });
 

@@ -321,6 +321,9 @@ const OWNER_ONLY_ROUTES = [
   "PATCH /api/v1/finance/ads/campaigns/:id",
   "PUT /api/v1/finance/ads/campaigns/:id/spend",
   "PUT /api/v1/finance/ads/campaigns/:id/period-spend",
+  // blueprint P0.7 (Q-E): archive a campaign, confirm zero-spend days
+  "POST /api/v1/finance/ads/campaigns/:id/archive",
+  "POST /api/v1/finance/ads/campaigns/:id/confirm-zero",
   "POST /api/v1/finance/ads/import-meta",
   "GET /api/v1/finance/prepaid",
   "POST /api/v1/finance/prepaid",
@@ -551,7 +554,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill; +1: the activity
     // +5: 2-step sign-in (admin audit phase 2) — own setup / enable / disable, an owner's reset, an owner's sign-out-everywhere
     // +1: the owner's stock value correction (docs/STOCK_HUB.md §12)
-    expect(routes).toHaveLength(752);
+    // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
+    expect(routes).toHaveLength(756);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
