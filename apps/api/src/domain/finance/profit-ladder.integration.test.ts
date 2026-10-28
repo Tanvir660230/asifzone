@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PERMISSIONS, businessDate } from "@clothing-brand/shared";
+import { businessDate } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, markOpeningPostedInTx, ownerId, purgeFinanceTables } from "../../test-fixtures";
 import { adjustVariantStock } from "../../modules/inventory/inventory.service";
@@ -17,7 +17,6 @@ import type { FinanceActor } from "./finance-audit";
 // rule in the ladder and the daily view, so selling margins are never moved by a write-off.
 
 const SYSTEM: FinanceActor = { type: "SYSTEM", label: "test" };
-let OWNER: FinanceActor;
 let admin = "";
 let variantId = "";
 let today = "";
@@ -33,7 +32,6 @@ async function postPending() {
 beforeAll(async () => {
   await purgeFinanceTables();
   admin = await ownerId();
-  OWNER = { type: "ADMIN", adminId: admin, label: "owner@test", permissions: [...PERMISSIONS] };
   const ctx = await getFinanceContext();
   today = businessDate(new Date(), ctx.business.timezone);
   await ensureCommerceAccounting(SYSTEM);
