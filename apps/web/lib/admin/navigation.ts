@@ -333,7 +333,7 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "grow",
     index: "/admin/flash-sales",
-    activeFor: ["/admin/flash-sales", "/admin/coupons", "/admin/bundles", "/admin/campaigns", "/admin/finance/ads"],
+    activeFor: ["/admin/flash-sales", "/admin/coupons", "/admin/bundles", "/admin/campaigns", "/admin/finance/ads", "/admin/marketing"],
     icon: "marketing",
     order: 60,
     goKey: "m",
@@ -343,6 +343,8 @@ export const NAV_NODES: readonly NavNode[] = [
       { id: "create.flash-sale", kind: "create", label: "New flash sale", hint: term("marketing"), route: "/admin/flash-sales", capability: "promotions.manage" },
     ],
   },
+  // Blueprint P2.5: every published product's one-page order form for ads (/lp/<slug>)
+  { id: "marketing.landing-pages", label: "Landing pages", kind: "page", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages", capability: "promotions.manage", order: -0.5, keywords: ["lp", "landing page", "ad link", "facebook ad", "order form"] },
   { id: "marketing.flash-sales", label: term("flashSale"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/flash-sales", capability: "promotions.manage", order: 0 },
   { id: "marketing.coupons", label: term("coupon"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/coupons", capability: "promotions.manage", order: 1, keywords: ["discount code"] },
   { id: "marketing.bundles", label: term("bundle"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/bundles", capability: "promotions.manage", order: 2 },
