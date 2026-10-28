@@ -42,6 +42,7 @@ import {
   financeAutopilotSchema,
   ownerHomeQuerySchema,
   stockPurchaseSchema,
+  ownerRepaySchema,
   purchaseDuplicateCheckSchema,
   stockPurchaseListQuerySchema,
   stockPurchaseFinishSchema,
@@ -67,6 +68,7 @@ import { idempotencyKeyOf } from "../orders/order.controller";
 import { actorOf } from "./finance.routes";
 import type { FinanceViewer } from "../../domain/finance/finance-values";
 import * as custody from "../../domain/finance/custody.service";
+import * as ownerAdvances from "../../domain/finance/owner-advances.service";
 import * as rateCards from "../../domain/finance/rate-cards.service";
 import * as courierPayouts from "../../domain/finance/courier-payouts.service";
 import * as ads from "../../domain/finance/ads.service";
@@ -108,6 +110,12 @@ const viewerOf = (req: Request): FinanceViewer => ({ sensitive: req.admin!.permi
 ownerBooksRouter.get("/owner-home", requirePermission("finance.read"), validate(ownerHomeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ownerHome(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/money-map", requirePermission("finance.read"), validate(moneyMapQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await custody.moneyMap(req.query as never, viewerOf(req)))));
 ownerBooksRouter.put("/financial-accounts/:id/custodian", requirePermission("finance.configure"), validate(custodianUpdateSchema), asyncHandler(async (req, res) => res.json(await custody.setCustodian(id(req), req.body, await actorOf(req)))));
+// Owner decision Q-F: what is owed back to the owner, line by line, and "Repay owner" (owner-only, like his money in/out).
+ownerBooksRouter.get("/equity/owner/advances", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await ownerAdvances.listOwnerAdvances())));
+ownerBooksRouter.post("/equity/owner/repay", requirePermission("finance.sensitive"), validate(ownerRepaySchema), asyncHandler(async (req, res) => {
+  const r = await ownerAdvances.repayOwner(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
 ownerBooksRouter.get("/custody/me", requirePermission("finance.custody"), asyncHandler(async (req, res) => res.json(await custody.myCustody(await actorOf(req)))));
 ownerBooksRouter.post("/custody/handovers", requirePermission("finance.custody"), validate(handoverCreateSchema), asyncHandler(async (req, res) => {
   const r = await custody.requestHandover(req.body, await actorOf(req), idempotencyKeyOf(req));

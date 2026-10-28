@@ -305,6 +305,9 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/v1/finance/money-map",
   "PUT /api/v1/finance/financial-accounts/:id/custodian",
   "POST /api/v1/finance/expenses/owner-paid",
+  // Owner decision Q-F: what is owed back to the owner, and repaying him
+  "GET /api/v1/finance/equity/owner/advances",
+  "POST /api/v1/finance/equity/owner/repay",
   "GET /api/v1/finance/rate-cards",
   "PUT /api/v1/finance/rate-cards/courier",
   "DELETE /api/v1/finance/rate-cards/courier/:id",
@@ -556,7 +559,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: the owner's stock value correction (docs/STOCK_HUB.md §12)
     // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
     // +1: parcels to receive (blueprint P1.5)
-    expect(routes).toHaveLength(757);
+    expect(routes).toHaveLength(759);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

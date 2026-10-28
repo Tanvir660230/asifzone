@@ -3362,6 +3362,8 @@ model FinanceBusiness {
   stockCountApprovals         StockCountApproval[]
   materialRolls               MaterialRoll[]
   stockHubEntries             StockHubEntry[]
+  ownerAdvances               OwnerAdvance[]
+  ownerAdvanceAllocations     OwnerAdvanceAllocation[]
   landedCosts                 LandedCost[]
   courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
@@ -4249,6 +4251,8 @@ model TreasuryMovement {
   landedCost             LandedCost?
   matches                BankTransactionMatch[]
   supplierAllocations    SupplierAllocation[]
+  ownerAdvance           OwnerAdvance?          @relation("OwnerAdvanceFunding")
+  ownerAdvanceRepayments OwnerAdvanceAllocation[] @relation("OwnerAdvanceRepayment")
   expense                Expense?
   loanDrawdown           Loan?                  @relation("LoanDrawdown")
   loanRepaymentPrincipal LoanRepayment?         @relation("RepaymentPrincipal")
@@ -6298,6 +6302,48 @@ enum StockHubEntryKind {
 }
 
 /// Stock hub (docs/STOCK_HUB.md): one Bought or Counted entry made on /admin/stock, keyed by its Idempotency-Key. Each
+/// Owner decision Q-F (blueprint P1.4): the owner-advance subledger. One line per purchase or expense the owner paid from
+/// his own pocket to be repaid (its funding deposit credits liability.owner_reimbursable); a line counts once that deposit
+/// is POSTED. Ledger entries are unchanged — the subledger only links each repayment to what it repays.
+model OwnerAdvance {
+  id                String                   @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// The deposit that brought the owner's money in, owed back to him.
+  fundingMovementId String                   @unique
+  fundingMovement   TreasuryMovement         @relation("OwnerAdvanceFunding", fields: [fundingMovementId], references: [id], onDelete: Restrict)
+  /// StockPurchase (a stock hub entry) or Expense.
+  sourceType        String
+  sourceId          String
+  amount            Decimal                  @db.Decimal(18, 2)
+  advanceDate       DateTime                 @db.Date
+  description       String
+  createdByAdminId  String?
+  createdAt         DateTime                 @default(now())
+  allocations       OwnerAdvanceAllocation[]
+
+  @@index([businessId, advanceDate])
+  @@index([sourceType, sourceId])
+}
+
+/// Part of a "Repay owner" withdrawal set against one advance line. It counts while the withdrawal is waiting for approval
+/// or posted; a rejected or reversed withdrawal frees it (read from the movement's status, never copied here).
+model OwnerAdvanceAllocation {
+  id                  String           @id @default(cuid())
+  businessId          String
+  business            FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  advanceId           String
+  advance             OwnerAdvance     @relation(fields: [advanceId], references: [id], onDelete: Restrict)
+  repaymentMovementId String
+  repaymentMovement   TreasuryMovement @relation("OwnerAdvanceRepayment", fields: [repaymentMovementId], references: [id], onDelete: Restrict)
+  amount              Decimal          @db.Decimal(18, 2)
+  createdByAdminId    String?
+  createdAt           DateTime         @default(now())
+
+  @@unique([repaymentMovementId, advanceId])
+  @@index([advanceId])
+}
+
 /// entry composes existing documents (receipt, bill, payment, landed cost; counts and adjustments); `steps` records what
 /// each step made, so a retry after a mid-way failure resumes where it stopped and a replay writes nothing. `leaseUntil`:
 /// only one request works on an entry at a time (a double tap can't write twice).

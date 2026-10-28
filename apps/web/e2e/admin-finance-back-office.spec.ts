@@ -124,6 +124,41 @@ test("owner & partners: a working partner gets their own accounts and a monthly 
   expect(e.equity.total).toBe(bs.sections.find((s: { key: string }) => s.key === "equity").total);
 });
 
+test("owed back to the owner: an expense he paid to be repaid is a line; Repay owner pays it and says what for (Q-F)", async () => {
+  test.skip(!(await api(owner, "GET", "/business")).body?.business?.openingDate, "the books haven't started on this database");
+  const account = async (body: object) => {
+    const r = await api(owner, "POST", "/financial-accounts", body);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    return r.body.id as string;
+  };
+  const pocket = await account({ kind: "CASH", name: `QA owner pocket ${RUN}` });
+  const bank = await account({ kind: "BANK", name: `QA repay bank ${RUN}` });
+  const accounts = (await api(owner, "GET", "/accounts")).body.accounts as Array<{ id: string; code: string }>;
+  const what = `QA domain renewal ${RUN}`;
+  const csrf = (await owner.context().cookies()).find((c) => c.name === "csrf_token")?.value ?? "";
+  const paid = await owner.request.post(`${API}/api/v1/finance/expenses/owner-paid`, {
+    headers: { "X-CSRF-Token": csrf, "Idempotency-Key": `qa-owner-paid-${RUN}` },
+    data: { cashFinancialAccountId: pocket, expenseAccountId: accounts.find((a) => a.code === "6400")!.id, amount: 1200, description: what, funding: "REIMBURSE" },
+  });
+  expect(paid.status(), await paid.text()).toBe(201);
+
+  await owner.goto("/admin/finance/equity");
+  const section = owner.getByTestId("owed-to-owner");
+  // a table on desktop, cards on a phone: whichever is on screen
+  await expect(section.getByText(what).filter({ visible: true }).first()).toBeVisible(NAV);
+  await section.getByTestId("repay-owner").click();
+  const dialog = owner.getByRole("dialog", { name: "Repay owner" });
+  // only this run's line: untick any other still owed
+  for (const row of await dialog.getByTestId("repay-line").all()) {
+    if (!(await row.textContent())?.includes(what)) await row.getByRole("checkbox").uncheck();
+  }
+  await dialog.getByTestId("repay-from").selectOption(bank);
+  await dialog.getByTestId("repay-save").click();
+  await expect(dialog).toBeHidden(NAV);
+  const lines = (await api(owner, "GET", "/equity/owner/advances")).body.lines as Array<{ description: string; outstanding: number; repaid: number }>;
+  expect(lines.find((l) => l.description === what)).toMatchObject({ repaid: 1200, outstanding: 0 });
+});
+
 test("staff can't see payroll — page and API", async ({ browser }) => {
   const staff = await login(browser, STAFF);
   await staff.goto("/admin/finance/payroll");

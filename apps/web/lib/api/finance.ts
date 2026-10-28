@@ -740,7 +740,18 @@ export interface EquityOverview {
   asOf: string; partners: Partner[]; totals: { capital: number; current: number; total: number; agreedSharesPct: number };
   equity: { lines: Array<{ accountId: string | null; code: string; name: string; group: string | null; amount: number | null }>; total: number };
 }
-export const equityKeys = { overview: (asOf?: string) => ["finance", "equity", asOf ?? "today"] as const };
+export const equityKeys = { overview: (asOf?: string) => ["finance", "equity", asOf ?? "today"] as const, ownerAdvances: () => ["finance", "equity", "owner-advances"] as const };
+
+/** Owner decision Q-F: what is owed back to the owner, one line per purchase or expense he paid to be repaid. */
+export interface OwnerAdvanceLine {
+  id: string; date: string; description: string; sourceType: "StockPurchase" | "Expense"; sourceId: string;
+  amount: number; repaid: number; outstanding: number;
+  repayments: Array<{ movementId: string; status: string; date: string; amount: number }>;
+}
+export interface OwnerAdvances { lines: OwnerAdvanceLine[]; outstanding: number; ledgerBalance: number; unlinked: number }
+export const getOwnerAdvances = () => apiFetch<OwnerAdvances>(`${BASE}/equity/owner/advances`);
+export const repayOwner = (body: { fromFinancialAccountId: string; date?: string; lines: Array<{ advanceId: string; amount: number }>; note?: string | null }, idempotencyKey: string) =>
+  apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/owner/repay`, { method: "POST", body, idempotencyKey });
 export const getEquity = (asOf?: string) => apiFetch<EquityOverview>(`${BASE}/equity${asOf ? `?asOf=${asOf}` : ""}`);
 export const savePartner = (id: string | null, body: Record<string, unknown>) => apiFetch<Partner>(id ? `${BASE}/equity/partners/${id}` : `${BASE}/equity/partners`, { method: id ? "PATCH" : "POST", body });
 

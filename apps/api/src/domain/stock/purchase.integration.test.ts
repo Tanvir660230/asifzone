@@ -465,9 +465,13 @@ describe("Bought — the owner's money owed back (owner decision Q14 = B)", () =
     expect(await balanceOf("equity.owner_capital")).toBe(capitalBefore);
     const pocket = r.body.purchase.paidFrom.financialAccountId as string;
     expect(await balance(pocket)).toBe(0); // in and out the same day
+    // owner decision Q-F: the purchase is a line "Repay owner" can pay
+    const lines = (await api().get("/equity/owner/advances")).body.lines as Array<{ sourceType: string; sourceId: string; amount: number; outstanding: number }>;
+    expect(lines.filter((l) => l.sourceId === r.body.purchase.id)).toEqual([expect.objectContaining({ sourceType: "StockPurchase", amount: 700, outstanding: 700 })]);
     // a replay posts nothing twice
     expect((await api().post("/stock/purchases", body, `sp-owed-${RUN}`)).body.replayed).toBe(true);
     expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    expect(await prisma.ownerAdvance.count({ where: { sourceId: r.body.purchase.id } })).toBe(1);
     // without a choice it stays capital, as before
     const capitalPaid = await api().post("/stock/purchases", { ...body, paidFrom: { ownerPocket: true } }, `sp-owed-capital-${RUN}`);
     expect(capitalPaid.status, JSON.stringify(capitalPaid.body)).toBe(201);

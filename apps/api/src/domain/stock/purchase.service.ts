@@ -45,10 +45,7 @@ import { createSupplierInvoice, postSupplierInvoice } from "../finance/supplier-
 import { paySupplier } from "../finance/supplier-payments.service";
 import { createLandedCost } from "../finance/landed-costs.service";
 import { ownerMoney } from "../finance/partner-profit.service";
-import { requestMovementInTx } from "../finance/treasury.service";
-import { resolveMappedAccount } from "../finance/chart.service";
-import { ensureOwnerBooksSetupInTx } from "../finance/owner-books-setup.service";
-import { financeTransaction } from "../finance/finance-tx";
+import { ownerOwedBack } from "../finance/owner-advances.service";
 import { createFinancialAccount } from "../finance/financial-accounts.service";
 import { moneyBalanceAt } from "../finance/ledger.service";
 import { findDuplicateReceipts, findDuplicateSimplePurchases, type DuplicateMatch } from "./duplicate-purchase";
@@ -255,18 +252,6 @@ async function assertMoneyFor(business: FinanceBusinessInfo, paidFrom: { kind: s
       balance: toMajorNumber(balance, cur), needed: toMajorNumber(neededMinor, cur),
     });
   }
-}
-
-/** The owner's money owed back to him (Q14 = B): it comes into his own-money cash account against
- * liability.owner_reimbursable — the posting an owner-paid expense with funding REIMBURSE makes (custody.service). */
-async function ownerOwedBack(financialAccountId: string, amount: number, date: string, description: string, actor: FinanceActor, key: string) {
-  const { business } = await getFinanceContext();
-  return financeTransaction(async (tx) => {
-    await ensureOwnerBooksSetupInTx(tx, business);
-    const owed = await resolveMappedAccount(tx, business.id, "liability.owner_reimbursable");
-    const { movement } = await requestMovementInTx(tx, business, { kind: "DEPOSIT", movementDate: date, amount, toFinancialAccountId: financialAccountId, counterAccountId: owed.id, description: description.slice(0, 300) }, actor, `request:owner-owed:${key}`);
-    return { movement };
-  });
 }
 
 async function costingLive(businessId: string): Promise<boolean> {
@@ -581,7 +566,7 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
       await renewLease(lease);
       const what = req.lines.map((l) => `${l.quantity} ${l.unit} ${l.name}`).join(", ");
       const { movement } = req.paidFrom.funding === "REIMBURSE"
-        ? await ownerOwedBack(req.paidFrom.financialAccountId, steps.total, date, `Paid by the owner (to repay): bought ${steps.receiptNumber}: ${what}`, actor, tag(key, "funding"))
+        ? await ownerOwedBack({ financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, description: `Paid by the owner (to repay): bought ${steps.receiptNumber}: ${what}`, sourceType: "StockPurchase", sourceId: lease.id }, actor, tag(key, "funding"))
         : await ownerMoney({ kind: "INVEST", financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, note: `Bought ${steps.receiptNumber}: ${what}`.slice(0, 200) }, actor, tag(key, "funding"));
       if (movement.status !== "POSTED") throw financeError(409, "FUNDING_NEEDS_APPROVAL", "The owner's money must post before the purchase can be paid from it — approve it, then finish the purchase");
       steps.fundingMovementId = movement.id;

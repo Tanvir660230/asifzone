@@ -57,6 +57,14 @@ export const custodyExpenseSchema = z.object({
 /** An expense the owner paid from their own pocket: their money comes into a cash account (owed back to them, or added
  * as capital) and the expense is paid from it in the same step. */
 export const OWNER_FUNDING_KINDS = ["REIMBURSE", "CAPITAL"] as const;
+/** Owner decision Q-F: repay the owner for chosen owed-back purchases and expenses, from one money account. */
+export const ownerRepaySchema = z.object({
+  fromFinancialAccountId: id,
+  date: businessDate.optional(),
+  lines: z.array(z.object({ advanceId: id, amount: positive })).min(1).max(100).refine((ls) => new Set(ls.map((l) => l.advanceId)).size === ls.length, "Each line once"),
+  note: optionalText(300),
+});
+export type OwnerRepayInput = z.input<typeof ownerRepaySchema>;
 export const ownerPaidExpenseSchema = z.object({
   cashFinancialAccountId: id,
   expenseAccountId: id,
