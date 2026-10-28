@@ -23,6 +23,8 @@ import { ParcelsToReceive } from "@/components/admin/orders/parcels-to-receive";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { UnitStepper } from "@/components/admin/orders/detail/unit-stepper";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
+import { useUrlState } from "@/hooks/use-url-state";
+import { urlParam } from "@/lib/url-state";
 import { approvalStatusBadgeVariant, formatPrice, formatStoreDate, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
@@ -54,6 +56,8 @@ function approvalEffects(r: ReturnRequest, damagedUnits = 0): string[] {
   ];
 }
 
+const TAB_URL = { tab: urlParam.enum(["requests", "parcels"], "requests") };
+
 export default function AdminReturnRequestsPage() {
   const queryClient = useQueryClient();
   const perms = useOrderPermissions();
@@ -67,22 +71,15 @@ export default function AdminReturnRequestsPage() {
   /** Approving a return: units per order line that came back damaged (written off instead of restocked). */
   const [damaged, setDamaged] = useState<Record<string, number>>({});
 
-  // Blueprint P1.5: two tabs — customers' requests, and parcels cancelled after shipping that are on their way back.
-  const [tab, setTab] = useState<"requests" | "parcels">("requests");
-  // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link); ?tab=parcels from Home.
+  // Blueprint P1.5: two tabs — customers' requests, and parcels cancelled after shipping that are on their way back
+  // (?tab=parcels, linked from Home).
+  const [{ tab }, setUrl] = useUrlState(TAB_URL, { history: "push" });
+  const switchTab = (t: "requests" | "parcels") => setUrl({ tab: t });
+  // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const s = params.get("status");
+    const s = new URLSearchParams(window.location.search).get("status");
     if (s && STATUS_FILTERS.some((f) => f.value === s)) setStatus(s as StatusFilter);
-    if (params.get("tab") === "parcels") setTab("parcels");
   }, []);
-  const switchTab = (t: "requests" | "parcels") => {
-    setTab(t);
-    const url = new URL(window.location.href);
-    if (t === "parcels") url.searchParams.set("tab", "parcels");
-    else url.searchParams.delete("tab");
-    window.history.replaceState(null, "", url.toString());
-  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-return-requests", { status, page }],
