@@ -171,7 +171,11 @@ export const quickRefill = (body: { variantId: string; quantity: number; used?: 
 
 export interface ProfitReport {
   period: { from: string; to: string };
-  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; outsideSalesCost: number; outsideSaleCostPct: number | null; otherCosts: number; netProfit: number };
+  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; outsideSalesCost: number; outsideSaleCostPct: number | null; stockCorrections?: number; grossMargin?: number; otherCosts: number; netProfit: number };
+  /** The books profit ladder (blueprint P2.4): net sales down to the income statement's net profit; subtotals marked. */
+  ladder?: Array<{ key: string; label: string; amount: number; subtotal?: boolean }>;
+  /** What the figures still lean on: sales with no cost, costs booked as estimates, and a whole month's status. */
+  completeness?: { missingCostLines: number; estimatedCostLines: number; monthStatus: "OPEN" | "SOFT_CLOSED" | "CLOSED" | null };
   orders: Array<{ orderId: string; orderNumber: string; date: string; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number }>;
   products: Array<{ name: string; units: number; sales: number; costs: number; contribution: number; marginPct: number | null }>;
 }
@@ -179,7 +183,8 @@ export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitR
 export interface LaunchReport { /** null: the books open before the first order, so there were no weeks before them. */ period: { from: string; to: string } | null; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
 /** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts.
- * `stockCorrections`: count differences and cost corrections (positive = a cost, negative = a gain) — stock put right, not
+ * `stockCorrections`: damaged or lost stock written off, count differences and cost corrections (owner decision Q15 = A;
+ * positive = a cost, negative = a gain) — stock put right, not
  * goods sold. `salesProfit`: the profit from selling, before them; `profit` (the books) = salesProfit − stockCorrections. */
 export interface ProfitDay { date: string; orders: number; sales: number; goods: number; stockCorrections: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; salesProfit: number; profit: number }
 export type ProfitTotals = Omit<ProfitDay, "date"> & { marginPct: number | null; salesMarginPct: number | null; salesPerAdTaka: number | null };

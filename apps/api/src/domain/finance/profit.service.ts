@@ -21,6 +21,12 @@ import { unpaidDeliveredCod } from "./courier-payouts.service";
 
 const signed = (v: Prisma.Decimal | null, cur: string) => (v === null ? 0 : v.isNegative() ? -toMinor(v.abs(), cur) : toMinor(v, cur));
 
+/** Owner decision Q15 = A (blueprint P2.4): stock corrections — damaged or lost stock written off (shrinkage), count
+ * differences (5210), cost corrections (5150) and purchase price differences — sit on their own line between contribution
+ * and net profit, so order, product and daily margins show selling performance only. The same rule in every view; the
+ * total still reconciles to the income statement's net profit (presentation only). */
+const CORRECTION_KEYS = new Set(["cogs.inventory_shrinkage", "cogs.count_adjustments", "cogs.cost_adjustments", "cogs.purchase_price_differences"]);
+
 interface OrderRow {
   orderId: string;
   orderNumber: string;
@@ -44,7 +50,7 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
   // Every revenue reduction an order can carry (refunds, returns, returns settled in store credit) and every cost booked
   // against it — goods, damaged returns written off (net of courier claims), packaging, courier, gateway.
   const SALES_KEYS = ["revenue.merchandise", "revenue.shipping", "revenue.price_adjustments", "revenue.returns_refunds", "revenue.other_refunds", "revenue.store_credit_returns"];
-  const keys = [...SALES_KEYS, "cogs.goods", "cogs.inventory_shrinkage", "expense.courier_fees", "expense.gateway_fees", "expense.advertising", "cogs.packaging"];
+  const keys = [...SALES_KEYS, "cogs.goods", "expense.courier_fees", "expense.gateway_fees", "expense.advertising", "cogs.packaging", ...CORRECTION_KEYS];
   const maps = await prisma.accountMapping.findMany({ where: { businessId: business.id, key: { in: keys } } });
   const accountKey = new Map(maps.map((m) => [m.accountId, m.key]));
   // Order-party lines of the period on the accounts above (Σ credit − debit for revenue, debit − credit for costs).
@@ -108,7 +114,8 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
     const o = ordersById.get(orderId);
     if (!o) continue;
     const sales = -SALES_KEYS.reduce((s, k) => s + (a[k] ?? 0), 0);
-    lines.push({ orderId, orderNumber: o.orderNumber, date: businessDate(o.createdAt, business.timezone), sales, cogs: (a["cogs.goods"] ?? 0) + (a["cogs.inventory_shrinkage"] ?? 0), packaging: a["cogs.packaging"] ?? 0, courier: a["expense.courier_fees"] ?? 0, gateway: a["expense.gateway_fees"] ?? 0, ads: 0, contribution: 0 });
+    // goods only: a damaged return written off is a stock correction (Q15 = A), on its own line below
+    lines.push({ orderId, orderNumber: o.orderNumber, date: businessDate(o.createdAt, business.timezone), sales, cogs: a["cogs.goods"] ?? 0, packaging: a["cogs.packaging"] ?? 0, courier: a["expense.courier_fees"] ?? 0, gateway: a["expense.gateway_fees"] ?? 0, ads: 0, contribution: 0 });
   }
   const totalSales = lines.reduce((s, l) => s + Math.max(0, l.sales), 0);
   let given = 0;
@@ -147,6 +154,13 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
   const m = (v: number) => toMajorNumber(v, cur);
   const contribution = sum("contribution");
   const net = income.current.netProfit;
+  // Every stock correction the books took in the period — on orders or not (counts, cost corrections have no order).
+  const correctionAccounts = maps.filter((x) => CORRECTION_KEYS.has(x.key));
+  let stockCorrections = 0;
+  for (const a of correctionAccounts) stockCorrections += await sumAccount(business.id, a.accountId, from, to, cur);
+  const grossMargin = sum("sales") - sum("cogs");
+  const otherCosts = Math.round((m(contribution + outsideSales - outsideSalesCost - stockCorrections) - net) * 100) / 100;
+  const completeness = await ladderCompleteness(business.id, from, to);
   return {
     period: { from, to },
     totals: {
@@ -157,10 +171,32 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
       /** Their estimated cost of goods (Finance Center › Settings percent); null percent = not set, so none was booked. */
       outsideSalesCost: m(outsideSalesCost),
       outsideSaleCostPct: outsideSaleCostPct === null ? null : Number(outsideSaleCostPct),
-      /** Everything else the books carry for the period (rent, salaries, hosting, cash over/short, …) — so contribution + outside sales − their cost − this = net profit. */
-      otherCosts: Math.round((m(contribution + outsideSales - outsideSalesCost) - net) * 100) / 100,
+      /** Damaged / lost stock, count differences and cost corrections (Q15 = A) — stock put right, not selling. */
+      stockCorrections: m(stockCorrections),
+      grossMargin: m(grossMargin),
+      /** Everything else the books carry for the period (rent, salaries, hosting, cash over/short, …) — so contribution + outside sales − their cost − stock corrections − this = net profit. */
+      otherCosts,
       netProfit: net,
     },
+    /**
+     * The books profit ladder (blueprint P2.4, owner decisions Q2 = A, Q15 = A): each step from net sales to the income
+     * statement's net profit, which it equals by construction. Book figures only — Analytics' margins are sales estimates.
+     */
+    ladder: [
+      { key: "netSales", label: "Net sales", amount: m(sum("sales")) },
+      { key: "goods", label: "Cost of goods", amount: -m(sum("cogs")) },
+      { key: "grossMargin", label: "Gross margin", amount: m(grossMargin), subtotal: true },
+      { key: "packaging", label: "Packaging", amount: -m(sum("packaging")) },
+      { key: "delivery", label: "Delivery", amount: -m(sum("courier")) },
+      { key: "paymentFees", label: "Payment fees", amount: -m(sum("gateway")) },
+      { key: "ads", label: "Ads", amount: -m(adSpend) },
+      { key: "contribution", label: "Contribution", amount: m(contribution), subtotal: true },
+      { key: "outsideSales", label: "Sales outside the website, less their cost", amount: m(outsideSales - outsideSalesCost) },
+      { key: "stockCorrections", label: "Stock corrections", amount: -m(stockCorrections) },
+      { key: "otherCosts", label: "Running costs and other items", amount: -otherCosts },
+      { key: "netProfit", label: "Net profit", amount: net, subtotal: true },
+    ],
+    completeness,
     orders: lines.sort((a, b) => a.contribution - b.contribution).map((l) => ({ ...l, sales: m(l.sales), cogs: m(l.cogs), packaging: m(l.packaging), courier: m(l.courier), gateway: m(l.gateway), ads: m(l.ads), contribution: m(l.contribution) })),
     /** Per size (variant), each cost apart — what planned vs actual reads. */
     sizes: [...sizes.values()].map((z) => ({ ...z, sales: m(z.sales), cogs: m(z.cogs), packaging: m(z.packaging), courier: m(z.courier), gateway: m(z.gateway), ads: m(z.ads), contribution: m(z.contribution) })),
@@ -173,9 +209,6 @@ const MAX_DAYS = 366;
 
 type DayFigures = { orders: number; sales: number; goods: number; stockCorrections: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number };
 const emptyDay = (): DayFigures => ({ orders: 0, sales: 0, goods: 0, stockCorrections: 0, packaging: 0, delivery: 0, paymentFees: 0, ads: 0, running: 0 });
-/** Count differences (5210) and cost corrections (5150): stock put right, not goods sold — kept apart so a correction day
- * isn't read as a selling loss (or gain). Shrinkage (damaged, lost) stays in goods: those are real costs. */
-const CORRECTION_KEYS = new Set(["cogs.count_adjustments", "cogs.cost_adjustments", "cogs.purchase_price_differences"]);
 
 /**
  * Profit by day (docs/FINANCE_PROFIT_DASHBOARD.md): each business day's posted income-statement lines folded into the
@@ -257,6 +290,20 @@ export async function profitByDay(q: { from?: string; to?: string }) {
     totals: total(from, to),
     priorTotals: total(priorFrom, priorTo),
   };
+}
+
+/** What the ladder's figures still lean on (blueprint P2.4 completeness badges): sales with no cost booked, costs booked as
+ * estimates, and — for a whole calendar month — whether the month is closed. Read-only. */
+async function ladderCompleteness(businessId: string, from: string, to: string) {
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T23:59:59Z`);
+  const [missingCost, estimatedCost] = await Promise.all([
+    prisma.financeException.count({ where: { businessId, kind: "MISSING_COST", status: "OPEN", createdAt: { gte: start, lte: end } } }),
+    prisma.financeException.count({ where: { businessId, kind: "MISSING_COST", resolution: "ESTIMATE_APPROVED", createdAt: { gte: start, lte: end } } }),
+  ]);
+  const wholeMonth = from.endsWith("-01") && addDays(to, 1).endsWith("-01") && from.slice(0, 7) === to.slice(0, 7);
+  const period = wholeMonth ? await prisma.financialPeriod.findUnique({ where: { businessId_startDate: { businessId, startDate: start } }, select: { status: true } }) : null;
+  return { missingCostLines: missingCost, estimatedCostLines: estimatedCost, monthStatus: wholeMonth ? (period?.status ?? "OPEN") : null };
 }
 
 async function sumAccount(businessId: string, accountId: string, from: string, to: string, cur: string) {
