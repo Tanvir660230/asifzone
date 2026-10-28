@@ -4416,6 +4416,8 @@ model BankReconciliation {
 enum FinanceCostPolicy {
   KNOWN_ONLY
   APPROVED_ESTIMATES
+  /// Blueprint P0.2 (Q3 = A, Q-D): a sold line with no cost is booked at an automatic, labelled estimate.
+  AUTO_ESTIMATE
 }
 
 enum FinanceExceptionKind {

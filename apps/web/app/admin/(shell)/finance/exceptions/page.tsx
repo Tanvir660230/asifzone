@@ -37,6 +37,13 @@ const ESTIMABLE = new Set(["MISSING_COST", "UNVALUED_STOCK_WRITE_OFF"]);
 
 /** Finance exceptions (docs/FINANCE_PHASE_3.md §6): what the books won't guess about. A missing cost is acknowledged (it
  * stays missing) or — only under the APPROVED_ESTIMATES policy — resolved with an approved estimate, labelled ESTIMATED. */
+/** The three cost policies (owner decisions Q3 = A, Q-D) — what each means for a sale with no recorded cost. */
+const POLICY: Record<financeApi.CostPolicy, { label: string; detail: string; reason: string }> = {
+  KNOWN_ONLY: { label: "Known costs only", detail: "A sale without a cost books no cost and stays here until someone resolves it.", reason: "Owner books known costs only" },
+  APPROVED_ESTIMATES: { label: "Approved estimates", detail: "A person may approve an estimate for each missing cost; it is booked labelled ESTIMATED.", reason: "Owner allows approved estimates" },
+  AUTO_ESTIMATE: { label: "Automatic estimates", detail: "A missing cost is booked at the book average, recipe, last purchase or catalog cost — labelled ESTIMATED and listed for you to confirm.", reason: "Owner allows automatic labelled estimates" },
+};
+
 export default function FinanceExceptionsPage() {
   const { can, ready } = useCapabilities();
   const queryClient = useQueryClient();
@@ -64,7 +71,7 @@ export default function FinanceExceptionsPage() {
     onError: (err) => toast.error(getErrorMessage(err, "Couldn't resolve the exception")),
   });
   const policy = useMutation({
-    mutationFn: (next: "KNOWN_ONLY" | "APPROVED_ESTIMATES") => financeApi.setCostPolicy(next, next === "APPROVED_ESTIMATES" ? "Owner allows approved estimates" : "Owner books known costs only"),
+    mutationFn: (next: financeApi.CostPolicy) => financeApi.setCostPolicy(next, POLICY[next].reason),
     onSuccess: () => { refresh(); toast.success("Cost policy changed"); },
     onError: (err) => toast.error(getErrorMessage(err, "Couldn't change the policy")),
   });
@@ -87,19 +94,22 @@ export default function FinanceExceptionsPage() {
       </div>
     );
   }
-  const estimates = business.data?.costPolicy === "APPROVED_ESTIMATES";
+  const current = business.data?.costPolicy ?? "KNOWN_ONLY";
+  // a person may approve an estimate under either estimate policy (an automatic one only fills the ones it can)
+  const estimates = current !== "KNOWN_ONLY";
   return (
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader title="Missing costs & exceptions" description="Accounting problems the books won't guess about — each names its source record. Missing costs are never invented." />
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <p className="text-sm text-ink-700">
-          Cost policy: <span className="font-semibold">{estimates ? "approved estimates allowed (labelled ESTIMATED)" : "known costs only"}</span>
-        </p>
+        <div className="min-w-0 text-sm text-ink-700">
+          <p>Cost policy: <span className="font-semibold">{POLICY[current].label}</span></p>
+          <p className="text-xs text-fg-muted">{POLICY[current].detail}</p>
+        </div>
         {can("finance.configure") && (
-          <Button size="sm" variant="outline" loading={policy.isPending} onClick={() => policy.mutate(estimates ? "KNOWN_ONLY" : "APPROVED_ESTIMATES")}>
-            {estimates ? "Book known costs only" : "Allow approved estimates"}
-          </Button>
+          <Select aria-label="Cost policy" className="w-full sm:w-64" value={current} disabled={policy.isPending} onChange={(e) => policy.mutate(e.target.value as financeApi.CostPolicy)} data-testid="cost-policy">
+            {(Object.keys(POLICY) as financeApi.CostPolicy[]).map((p) => <option key={p} value={p}>{POLICY[p].label}</option>)}
+          </Select>
         )}
       </Card>
       {can("finance.configure") && business.data && (

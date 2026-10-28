@@ -27,7 +27,7 @@ export const exceptionEstimateSchema = z.object({
   note: z.string().trim().min(3).max(500),
 });
 
-export const financeCostPolicySchema = z.object({ costPolicy: z.enum(["KNOWN_ONLY", "APPROVED_ESTIMATES"]), reason: z.string().trim().min(3).max(500) });
+export const financeCostPolicySchema = z.object({ costPolicy: z.enum(["KNOWN_ONLY", "APPROVED_ESTIMATES", "AUTO_ESTIMATE"]), reason: z.string().trim().min(3).max(500) });
 
 /** A line collects money for an order, or — a returned parcel (owner's books §3.3) — only carries the charge deducted. */
 const settlementLine = z

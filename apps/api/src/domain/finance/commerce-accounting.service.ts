@@ -37,6 +37,7 @@ import { commerceReadiness, ensureCommerceAccountingInTx } from "./commerce-setu
 import { chargeEstimatesForOrder, loadRateCards } from "./charge-projection";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 import { OUTSIDE_RELEASE_REASONS, outsideReleaseInTx } from "./outside-stock";
+import { ESTIMATE_SOURCE_LABEL, estimateUnitCosts } from "./cost-estimate";
 
 export const PROJECTOR_ACTOR: FinanceActor = { type: "SYSTEM", label: "system:commerce-projector" };
 
@@ -446,8 +447,14 @@ export async function projectOrder(orderId: string, opts: { process?: boolean; r
   if (!(await booksStarted(ctx.business))) return { recorded: [] as string[], outcomes: {} };
   const [o] = await loadOrderFacts([orderId], ctx.business.baseCurrency);
   if (!o) return { recorded: [] as string[], outcomes: {} };
-  const extras = await loadExtras(o, ctx);
-  const { events, exceptions } = desiredForOrder(o, extras);
+  let extras = await loadExtras(o, ctx);
+  let { events, exceptions } = desiredForOrder(o, extras);
+  // Blueprint P0.2 (AUTO_ESTIMATE): a sold line with no cost gets its estimate before anything is posted, so the sale is
+  // booked once, at the estimate, labelled ESTIMATED — never posted without cost and then corrected.
+  if (await autoEstimateMissingCosts(ctx, exceptions)) {
+    extras = await loadExtras(o, ctx);
+    ({ events, exceptions } = desiredForOrder(o, extras));
+  }
   // Owner's books §3.3 / §4: the courier charge and gateway fee estimates of the order, until their payout replaces them.
   const charges = await chargeEstimatesForOrder(o.id, ctx, opts.rates);
   events.push(...charges.events);
@@ -456,6 +463,36 @@ export async function projectOrder(orderId: string, opts: { process?: boolean; r
     return applyDesired(tx, ctx, `order:${o.id}:`, { orderId: o.id, orderNumber: o.orderNumber }, events, exceptions, charges.withdrawnAt);
   });
   return { recorded, outcomes: opts.process === false ? {} : await processAll(recorded) };
+}
+
+/**
+ * Under the AUTO_ESTIMATE policy (owner decisions Q3 = A, Q-D), resolves each sold line's MISSING_COST with the first cost
+ * source that exists (cost-estimate.ts: book average → approved recipe → last posted purchase → catalog), labelled as an
+ * automatic estimate and put in the owner's "figures to confirm" list. Lines with no source stay missing. Only sale lines
+ * (cost:line:) in the books' period; returns and write-offs then use the same line estimate. True when any was resolved.
+ */
+async function autoEstimateMissingCosts(ctx: FinanceContext, exceptions: DatedException[]): Promise<boolean> {
+  const missing = exceptions.filter((e) => e.kind === "MISSING_COST" && e.key.startsWith("cost:line:") && ctx.business.openingDate && businessDate(e.at, ctx.business.timezone) >= ctx.business.openingDate);
+  if (!missing.length) return false;
+  const policy = (await prisma.financeBusiness.findUniqueOrThrow({ where: { id: ctx.business.id }, select: { costPolicy: true } })).costPolicy;
+  if (policy !== "AUTO_ESTIMATE") return false;
+  const variantOf = (e: DatedException) => (e.details as { variantId: string }).variantId;
+  const estimates = await estimateUnitCosts(missing.map(variantOf), ctx.business.baseCurrency);
+  const resolvable = missing.filter((e) => estimates.has(variantOf(e)));
+  if (!resolvable.length) return false;
+  await financeTransaction(async (tx) => {
+    for (const spec of resolvable) {
+      const ex = await upsertException(tx, ctx.business, ctx.brand.id, spec, PROJECTOR_ACTOR);
+      if (ex.status === "RESOLVED") continue;
+      const est = estimates.get(variantOf(spec))!;
+      const note = `Automatic estimate from the ${ESTIMATE_SOURCE_LABEL[est.source]} — confirm or correct it`;
+      await markEstimateApproved(tx, ctx.business, ex.id, est.unitCostMinor, note, PROJECTOR_ACTOR);
+      const key = { businessId_entityType_entityId: { businessId: ctx.business.id, entityType: "FinanceException", entityId: ex.id } };
+      const v = { status: "ESTIMATED" as const, source: `Automatic estimate (${ESTIMATE_SOURCE_LABEL[est.source]})`, note: spec.title };
+      await tx.financeVerification.upsert({ where: key, create: { businessId: ctx.business.id, entityType: "FinanceException", entityId: ex.id, ...v }, update: v });
+    }
+  });
+  return true;
 }
 
 /** A store-credit entry outside any existing order: one that names no order, or names an order that was permanently

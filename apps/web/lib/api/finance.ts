@@ -366,7 +366,7 @@ export const listExceptions = (q: { status?: string; kind?: string; page?: numbe
 export const acknowledgeException = (id: string, note: string) => apiFetch<FinanceException>(`${BASE}/exceptions/${id}/acknowledge`, { method: "POST", body: { note } });
 export const approveEstimate = (id: string, unitCost: number, note: string) => apiFetch<{ outcomes: Record<string, string> }>(`${BASE}/exceptions/${id}/approve-estimate`, { method: "POST", body: { unitCost, note } });
 export interface BusinessSettings {
-  costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES";
+  costPolicy: CostPolicy;
   business: { id: string; name: string; baseCurrency: string; timezone: string; fiscalYearStartMonth: number; openingDate: string | null };
   brands: Array<{ id: string; key: string; name: string; isActive: boolean }>;
   /** DRAFT while the opening balances are being prepared, POSTED once the books have started; null before either. */
@@ -437,7 +437,10 @@ export const listFinancialEvents = (q: { status?: FinancialEventStatus; page?: n
 export const retryFinancialEvent = (id: string) => apiFetch<{ outcome: unknown }>(`${BASE}/events/${id}/retry`, { method: "POST", body: {} });
 export const listFinanceAudit = (q: { entityType?: string; page?: number; pageSize?: number } = {}) =>
   apiFetch<{ total: number; page: number; pageSize: number; entries: FinanceAuditRow[] }>(`${BASE}/audit${qs(q)}`);
-export const setCostPolicy = (costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES", reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
+/** How a sale with no recorded cost is booked (blueprint P0.2): never, after a person approves an estimate, or at an
+ * automatic labelled estimate (book average → recipe → last purchase → catalog). */
+export type CostPolicy = "KNOWN_ONLY" | "APPROVED_ESTIMATES" | "AUTO_ESTIMATE";
+export const setCostPolicy = (costPolicy: CostPolicy, reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
 
 export const listSettlements = (q: { status?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; settlements: Settlement[] }>(`${BASE}/settlements${qs(q)}`);
 export const createSettlement = (body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ settlement: Settlement; replayed: boolean }>(`${BASE}/settlements`, { method: "POST", body, idempotencyKey });

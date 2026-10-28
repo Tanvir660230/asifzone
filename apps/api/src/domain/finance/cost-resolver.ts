@@ -28,7 +28,7 @@ export interface ResolvedCost {
 export interface CostFacts {
   costingLive: boolean;
   /** The store's FinanceBusiness.costPolicy; KNOWN_ONLY never turns a catalog cost into an estimate. */
-  costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES";
+  costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES" | "AUTO_ESTIMATE";
   bookAvgMinor: number | null;
   recipeMinor: number | null;
   catalogMinor: number | null;

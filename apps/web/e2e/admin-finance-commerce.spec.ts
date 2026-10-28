@@ -104,7 +104,7 @@ test("exceptions: a missing cost is never invented — an approved estimate post
   expect(recognition.status).toBe("POSTED");
   await shot(owner, "p3-exceptions-open");
 
-  await owner.getByRole("button", { name: "Allow approved estimates" }).click();
+  await owner.getByTestId("cost-policy").selectOption("APPROVED_ESTIMATES");
   await toast(owner, "Cost policy changed");
   await row.getByRole("button", { name: "Approve estimate" }).click();
   const dialog = owner.getByRole("dialog");

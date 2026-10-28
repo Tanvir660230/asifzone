@@ -28,7 +28,7 @@ const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId
 
 // ── verification ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export const VERIFIABLE_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay"] as const;
+export const VERIFIABLE_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay", "FinanceException"] as const;
 export type VerifiableType = (typeof VERIFIABLE_TYPES)[number];
 
 /** The record's amount (minor units) and a label, or null when it is not this business's record. */
@@ -61,6 +61,12 @@ async function verifiable(businessId: string, type: VerifiableType, id: string, 
     case "TreasuryMovement": {
       const r = await prisma.treasuryMovement.findFirst({ where: { id, businessId }, select: { amount: true, description: true, movementDate: true } });
       return r && { amount: toMinor(r.amount, cur), label: r.description ?? "Money movement", date: businessDateOf(r.movementDate) };
+    }
+    case "FinanceException": {
+      // an automatic cost estimate (blueprint P0.2) waiting for the owner to confirm it
+      const r = await prisma.financeException.findFirst({ where: { id, businessId }, select: { estimatedUnitCost: true, details: true, title: true, resolvedAt: true } });
+      const units = Number((r?.details as { units?: number } | null)?.units ?? 1);
+      return r && r.estimatedUnitCost && { amount: toMinor(r.estimatedUnitCost, cur) * units, label: r.title, date: r.resolvedAt ? businessDateOf(r.resolvedAt) : null };
     }
     case "AdSpendDay": {
       const r = await prisma.adSpendDay.findFirst({ where: { id, campaign: { businessId } }, select: { amount: true, date: true, campaign: { select: { name: true } } } });

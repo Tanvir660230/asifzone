@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
-import { asOwner, cleanupFixtures, ownerId } from "../../test-fixtures";
+import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { getOrderStats } from "../orders/order.service";
 import { adminAttention } from "./attention.service";
 
@@ -60,7 +60,6 @@ describe("store capabilities (owner decision Q-G)", () => {
 
 describe("Home queue additions (blueprint P1.2)", () => {
   it("owner decision Q6: a COD order still pending after 48 h is listed and counted; a fresh one is not", async () => {
-    const { createStockedProduct, placeOrder } = await import("../../test-fixtures");
     const { variants } = await createStockedProduct({ stocks: [5] });
     const old = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
     const fresh = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);

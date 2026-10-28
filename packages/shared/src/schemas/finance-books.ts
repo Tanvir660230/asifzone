@@ -207,7 +207,7 @@ export const landedCostCancelSchema = z.object({ reason: z.string().trim().min(3
 // ── Finance Center (docs/FINANCE_CENTER.md) ────────────────────────────────────────────────────────────────────────────
 
 export const ENTRY_VERIFICATIONS = ["CONFIRMED", "ESTIMATED", "NEEDS_CHECK", "DISPUTED"] as const;
-export const VERIFIABLE_ENTITY_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay"] as const;
+export const VERIFIABLE_ENTITY_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay", "FinanceException"] as const;
 export const verificationSetSchema = z.object({ entityType: z.enum(VERIFIABLE_ENTITY_TYPES), entityId: id, status: z.enum(ENTRY_VERIFICATIONS), source: optionalText(200), note: optionalText(1000) });
 export const verificationListQuerySchema = z.object({ status: z.enum(ENTRY_VERIFICATIONS).optional() });
 export const expenseAllocationSchema = z.object({

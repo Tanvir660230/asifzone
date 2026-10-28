@@ -206,7 +206,7 @@ export async function resolveMappedAccount(db: AppTransactionClient | typeof pri
 }
 
 /** Phase 3: whether approved ESTIMATED costs may be posted for sale lines / stock with no recorded cost. Owner decision. */
-export async function setCostPolicy(input: { costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES"; reason: string }, actor: FinanceActor) {
+export async function setCostPolicy(input: { costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES" | "AUTO_ESTIMATE"; reason: string }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   await inTransaction(async (tx) => {
     const before = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id } });
