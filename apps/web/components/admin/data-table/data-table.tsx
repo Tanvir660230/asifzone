@@ -279,7 +279,8 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                 <li key={id} className="rounded-xl border border-line bg-surface p-3">
                   <div className="flex items-start gap-3">
                     {selectable && <Checkbox checked={selected.has(id)} onChange={() => toggleRow(row)} aria-label="Select" className="mt-0.5" />}
-                    <button type="button" disabled={!onRowOpen} onClick={() => onRowOpen?.(row)} className="min-w-0 flex-1 text-left">
+                    {/* a card is a button only when it opens something — a plain card may hold its own buttons */}
+                    <CardBody open={onRowOpen ? () => onRowOpen(row) : undefined}>
                       <div className="text-sm font-medium text-ink-900">{titleColumn?.cell(row)}</div>
                       <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                         {metaColumns.map((col) => (
@@ -289,7 +290,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                           </div>
                         ))}
                       </dl>
-                    </button>
+                    </CardBody>
                     {rowActions && <RowActionsMenu row={row} id={`card-${id}`} actions={rowActions(row)} open={menuFor === `card-${id}`} onOpen={() => setMenuFor(`card-${id}`)} onClose={() => setMenuFor(null)} />}
                   </div>
                 </li>
@@ -348,5 +349,16 @@ function RowActionsMenu<Row>({
         items={actions.map((a) => ({ label: a.label, icon: a.icon, destructive: a.destructive, disabled: a.disabled, onClick: () => a.onSelect(row) }))}
       />
     </>
+  );
+}
+
+/** A phone card's body: a button when the row opens, otherwise a plain block (no nested interactive elements). */
+function CardBody({ open, children }: { open?: () => void; children: ReactNode }) {
+  return open ? (
+    <button type="button" onClick={open} className="min-w-0 flex-1 text-left">
+      {children}
+    </button>
+  ) : (
+    <div className="min-w-0 flex-1">{children}</div>
   );
 }

@@ -27,7 +27,7 @@ export function PeriodChip({ className }: { className?: string }) {
       href={`/admin/finance/month-end?month=${c.month}`}
       title={final ? "Closed with every month-end step done — its figures are final" : closed ? "Closed, but month-end steps are still open" : "The month has ended; close it from Month-end"}
       className={cn(
-        "hidden items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-fast ease-smooth lg:inline-flex",
+        "hidden items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-fast ease-smooth lg:inline-flex",
         final ? "border-success-200 bg-success-50 text-success-700 hover:bg-success-100" : "border-line text-ink-700 hover:bg-ink-900/[0.04]",
         className,
       )}
