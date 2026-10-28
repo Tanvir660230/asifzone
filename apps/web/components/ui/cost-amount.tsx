@@ -12,7 +12,7 @@ const LABEL: Partial<Record<CostBasis, string>> = { PROVISIONAL: "Provisional", 
 export function CostAmount({ value, basis, currency, className }: { value: number | string | null; basis?: CostBasis | string; currency?: string; className?: string }) {
   if (value === null || basis === "MISSING") {
     return (
-      <Badge variant="warning" className={className}>
+      <Badge className={cn("bg-[var(--data-missing-bg)] text-[var(--data-missing-fg)]", className)}>
         Cost missing
       </Badge>
     );
@@ -22,7 +22,7 @@ export function CostAmount({ value, basis, currency, className }: { value: numbe
     <span className={cn("inline-flex items-center gap-1.5", className)}>
       <Money value={value} currency={currency} />
       {label && (
-        <Badge variant="neutral" className="px-1.5 py-0 text-[11px]" title={label === "Estimated" ? "Not from the books — an estimate from the catalog cost" : "From the recipe until the stock is valued"}>
+        <Badge className="bg-[var(--data-estimate-bg)] px-1.5 py-0 text-[11px] text-[var(--data-estimate-fg)]" title={label === "Estimated" ? "Not from the books — an estimate from the catalog cost" : "From the recipe until the stock is valued"}>
           {label}
         </Badge>
       )}
