@@ -278,8 +278,8 @@ export const NAV_NODES: readonly NavNode[] = [
   // Production home (docs/STOCK_HUB.md §9): bought, filled, recipes, price & profit — and what the materials can still make.
   { id: "inventory.production-home", label: "Home", title: "Production", breadcrumb: "Home", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/home", capability: "manufacturing.view", order: -1, keywords: ["production", "can still make", "fill", "owed", "bottles", "low materials"] },
   { id: "inventory.production-overview", label: "Overview", title: "Production overview", breadcrumb: "Overview", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing", capability: "manufacturing.view", order: 0, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
-  { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
-  { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "stock", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
+  { id: "inventory.production-orders", label: "Production runs", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
+  { id: "inventory.production-order-detail", label: "Production run", kind: "detail", parent: "inventory", domain: "stock", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
   { id: "inventory.boms", label: "Recipes", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 2, keywords: ["bom", "bill of materials", "recipe", "materials per unit"] },
   { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 3, keywords: ["raw materials", "oil", "bottle", "box", "sticker", "fabric", "trims", "packaging", "purchase unit", "litre", "dozen"] },
 
@@ -563,7 +563,8 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.settlements",
-    label: "Courier & gateway payouts",
+    label: "Payouts",
+    title: "Courier & gateway payouts",
     kind: "page",
     parent: "finance.courier-gateway",
     domain: "manage",
@@ -587,7 +588,8 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.courier-costs",
-    label: "Courier costs",
+    label: "Costs",
+    title: "Courier costs",
     kind: "page",
     parent: "finance.courier-gateway",
     domain: "manage",
@@ -623,7 +625,8 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.sales",
-    label: "Sales accounting",
+    label: "Sales",
+    title: "Sales accounting",
     kind: "page",
     parent: "books.statements",
     domain: "manage",

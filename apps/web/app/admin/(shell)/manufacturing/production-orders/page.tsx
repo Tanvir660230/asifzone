@@ -58,9 +58,9 @@ export default function ProductionOrdersPage() {
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader
-        title="Production orders"
+        title="Production runs"
         description="Products you commission from a factory or make in-house — planned by size and colour, with the materials and costs they need."
-        action={can("manufacturing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-mo"><Plus className="h-4 w-4" /> New production order</Button>}
+        action={can("manufacturing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-mo"><Plus className="h-4 w-4" /> New production run</Button>}
       />
       {setup.data && !setup.data.readiness.ready && <SetupNotice canSetUp={can("finance.configure")} />}
       <div className="flex flex-wrap gap-3">
@@ -101,7 +101,7 @@ export default function ProductionOrdersPage() {
             </tbody>
           </Table>
         </HScrollShadow>
-        {list.data?.productionOrders.length === 0 && <EmptyState icon={Factory} title="No production orders" description={status || q ? "Nothing matches these filters." : "Plan your first production run."} />}
+        {list.data?.productionOrders.length === 0 && <EmptyState icon={Factory} title="No production runs" description={status || q ? "Nothing matches these filters." : "Plan your first production run."} />}
       </Card>
       {creating && <ProductionOrderModal onClose={() => setCreating(false)} />}
     </div>
@@ -151,13 +151,13 @@ function ProductionOrderModal({ onClose }: { onClose: () => void }) {
         plannedCosts: costs.map((c) => ({ categoryId: c.categoryId, amount: Number(c.amount), basis: c.basis.trim() || null })),
       }),
     onSuccess: (o) => { void queryClient.invalidateQueries({ queryKey: mfg.manufacturingKeys.all }); toast.success(`${o.number} saved as a draft`); router.push(`/admin/manufacturing/production-orders/${o.id}`); },
-    onError: (err) => toast.error(getErrorMessage(err, "The production order couldn't be saved")),
+    onError: (err) => toast.error(getErrorMessage(err, "The production run couldn't be saved")),
   });
   return (
     <Modal
       open
       onClose={onClose}
-      title="New production order"
+      title="New production run"
       description="Saved as a draft: materials are worked out from the bill of materials; approve it to start."
       widthClassName="max-w-4xl"
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={create.isPending} disabled={!valid} onClick={() => create.mutate()} data-testid="save-mo">Save draft</Button></>}
