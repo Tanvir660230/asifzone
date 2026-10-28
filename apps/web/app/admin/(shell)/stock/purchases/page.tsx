@@ -16,6 +16,8 @@ import { PageHeader } from "@/components/admin/page-header";
 import { PermissionState } from "@/components/admin/permission-state";
 import { useCapabilities } from "@/hooks/use-capability";
 import * as purchasingApi from "@/lib/api/purchasing";
+import * as stockApi from "@/lib/api/stock";
+import type { StockPurchase } from "@/lib/api/stock";
 import type { GoodsReceipt } from "@/lib/api/purchasing";
 import { formatBookDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -40,10 +42,39 @@ export default function StockPurchasesPage() {
   const [filter, setFilter] = useState<Filter>("ALL");
   const query = { page, pageSize: PAGE_SIZE };
   const list = useQuery({ queryKey: purchasingApi.purchasingDocKeys.receipts(query), queryFn: () => purchasingApi.listGoodsReceipts(query), enabled: allowed, placeholderData: (prev) => prev });
+  // Blueprint P1.4: purchases recorded before stock costing started have no receipt — they come from the stock hub's list
+  const hub = useQuery({ queryKey: [...stockApi.stockKeys.purchases(), "page", 50], queryFn: () => stockApi.listStockPurchases(50), enabled: allowed });
 
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={PackageCheck} page="Purchases" /></div>;
 
   const rows = (list.data?.goodsReceipts ?? []).filter((r) => filter === "ALL" || Boolean(r.duplicateWarning));
+  const simpleRows = (hub.data?.purchases ?? []).filter((p) => p.mode === "SIMPLE" && (filter === "ALL" || p.duplicateMatches > 0));
+  const simpleColumns: DataTableColumn<StockPurchase>[] = [
+    {
+      id: "purchase",
+      header: "Purchase",
+      card: "title",
+      cell: (p) => (
+        <span className="block min-w-0">
+          <span className="block font-medium text-fg">{p.supplier.name}</span>
+          <span className="block text-xs text-fg-muted">{formatBookDate(p.date)}</span>
+        </span>
+      ),
+    },
+    { id: "items", header: "Items", align: "right", cell: (p) => <span className="tabular-nums">{p.lines.length} · {p.lines.reduce((s, l) => s + l.quantity, 0).toLocaleString("en-US")} units</span> },
+    { id: "total", header: "Paid", align: "right", cell: (p) => (p.total === null ? <span className="text-fg-muted">—</span> : <Money value={p.total} />) },
+    {
+      id: "status",
+      header: "Status",
+      cell: (p) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="success">In stock</Badge>
+          {p.moneyPending && <Badge variant="neutral" title="What was paid is kept with the purchase and goes into the books when they start">Not in the books yet</Badge>}
+          {p.duplicateMatches > 0 && <Badge variant="warning">Possible duplicate</Badge>}
+        </span>
+      ),
+    },
+  ];
   const columns: DataTableColumn<GoodsReceipt>[] = [
     {
       id: "receipt",
@@ -107,9 +138,20 @@ export default function StockPurchasesPage() {
         empty={
           filter === "DUPLICATES"
             ? <EmptyState icon={PackageCheck} title="No possible duplicates on this page" description="A purchase that looks like one already entered shows here." />
-            : <EmptyState icon={PackageCheck} title="No purchases yet" description="Record what arrived with Received goods — it adds the stock and what you paid." action={can("purchasing.receive") ? <Link href="/admin/stock?open=bought" className="text-sm font-medium text-accent hover:underline">Received goods</Link> : undefined} />
+            : simpleRows.length
+              ? <EmptyState icon={PackageCheck} title="No purchases in the books yet" description="The purchases below were recorded before stock costing started." />
+              : <EmptyState icon={PackageCheck} title="No purchases yet" description="Record what arrived with Received goods — it adds the stock and what you paid." action={can("purchasing.receive") ? <Link href="/admin/stock?open=bought" className="text-sm font-medium text-accent hover:underline">Received goods</Link> : undefined} />
         }
       />
+      {simpleRows.length > 0 && (
+        <section aria-labelledby="purchases-before-costing" className="space-y-3" data-testid="purchases-before-costing">
+          <div>
+            <h2 id="purchases-before-costing" className="text-base font-semibold text-fg">Recorded before stock costing started</h2>
+            <p className="text-sm text-fg-muted">The goods are in stock. What was paid is kept with each purchase and goes into the books when they start.</p>
+          </div>
+          <DataTable caption="Purchases recorded before stock costing started" columns={simpleColumns} rows={simpleRows} getRowId={(p) => p.id} cardBelow="md" />
+        </section>
+      )}
     </div>
   );
 }

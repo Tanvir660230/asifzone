@@ -85,6 +85,39 @@ export async function findDuplicateReceipts(
   return out;
 }
 
+/** Purchases recorded before costing was live (blueprint P1.4 simple mode): no receipt exists, so they are kept on their
+ * stock hub entry and matched by the supplier's name (case-insensitive) under the same four-condition rule. */
+export async function findDuplicateSimplePurchases(
+  db: AppTransactionClient | typeof prisma,
+  args: { businessId: string; supplierName: string; shape: PurchaseShape; currency: string; excludeEntryId?: string },
+): Promise<DuplicateMatch[]> {
+  const day = Date.parse(`${args.shape.date}T00:00:00Z`);
+  const window = DUPLICATE_PURCHASE_RULE.maxDaysApart * DAY_MS;
+  const rows = await db.stockHubEntry.findMany({
+    where: {
+      businessId: args.businessId,
+      kind: "PURCHASE",
+      completedAt: { not: null },
+      entryDate: { gte: new Date(day - window), lte: new Date(day + window) },
+      ...(args.excludeEntryId ? { id: { not: args.excludeEntryId } } : {}),
+    },
+    select: { id: true, entryDate: true, steps: true },
+    orderBy: { entryDate: "desc" },
+  });
+  const name = args.supplierName.trim().toLowerCase();
+  const out: DuplicateMatch[] = [];
+  for (const r of rows) {
+    const s = r.steps as { mode?: string; request?: { supplierName?: string; lines?: Array<{ variantId: string; amount: number }> } };
+    if (s.mode !== "SIMPLE" || s.request?.supplierName?.trim().toLowerCase() !== name) continue;
+    const lines = s.request.lines ?? [];
+    const date = r.entryDate.toISOString().slice(0, 10);
+    const totalMinor = lines.reduce((sum, l) => sum + toMinor(l.amount, args.currency), 0);
+    const hit = compareAsDuplicate(args.shape, { date, variantIds: lines.map((l) => l.variantId), totalMinor });
+    if (hit) out.push({ receiptId: r.id, number: "Purchase (not in the books)", receiptDate: date, total: toMajorNumber(totalMinor, args.currency), ...hit });
+  }
+  return out;
+}
+
 /** What is stored on the receipt (GoodsReceipt.duplicateWarning). */
 export interface DuplicateWarning {
   matches: DuplicateMatch[];

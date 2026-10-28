@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -89,8 +90,12 @@ function startLines(choices: Choice[], start: BoughtStart | undefined): Line[] {
   return out;
 }
 
-export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; start?: BoughtStart; onClose: () => void }) {
+export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; start?: BoughtStart; onClose: () => void }) {
   const qc = useQueryClient();
+  // Blueprint P1.4 (owner decision Q-F): before stock costing is live the purchase is recorded in simple mode — stock in,
+  // catalog cost set from it unless unticked, the money kept with the purchase and nothing booked.
+  const simple = !overview.costingActive;
+  const [updateCatalogCost, setUpdateCatalogCost] = useState(canEditCatalog);
   const formId = useRef(`stock-bought:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).current;
   const choices = useMemo(() => byUse(choicesOf(overview), purchases), [overview, purchases]);
   const lastCost = useMemo(() => new Map((start?.lines ?? []).filter((l) => l.lastUnitCost !== null).map((l) => [l.variantId, l.lastUnitCost!])), [start]);
@@ -146,7 +151,8 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
   const extraErrors = extras.map((e) => (!e.description.trim() ? "Say what it was" : !amountOk(e.amount) ? "Enter the amount" : null));
   const supplierError = supplier.trim().length === 1 ? "At least 2 letters" : null;
   const account = accounts.find((a) => a.id === paidFrom);
-  const shortOf = account && NO_OVERDRAFT.has(account.kind) && account.currentBalance * 100 < totalMinor ? account : null;
+  // nothing is paid from the account in simple mode, so its balance isn't checked
+  const shortOf = !simple && account && NO_OVERDRAFT.has(account.kind) && account.currentBalance * 100 < totalMinor ? account : null;
   // the bill counts what was bought — litres, dozens — so a line entered that way counts in its own unit here
   const unitsEntered = lines.reduce((s, l, i) => s + (l.buy ? Number(l.buy.qty) || 0 : totals[i]!.qty), 0);
   const documentUnits = /^\d+(\.\d{1,4})?$/.test(documentTotal.trim()) ? Number(documentTotal) : 0;
@@ -174,6 +180,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
     extras: extras.map((e) => ({ description: e.description.trim(), amount: Number(e.amount) })),
     paidFrom: paidFrom === OWNER ? { ownerPocket: true } : { financialAccountId: paidFrom },
     duplicateReason: duplicateReason.trim() || null,
+    ...(simple ? { updateCatalogCost } : {}),
   });
   const goodsLines = () => body().lines.map((l) => ({ variantId: l.variantId, amount: l.amount }));
   const duplicatesQ = useQuery({
@@ -193,7 +200,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
     },
     onSuccess: (r) => {
       settleIdempotencyKey(formId);
-      toast.success(r.replayed ? "Already recorded — nothing was added twice" : `Purchase recorded${r.purchase.receipt?.number ? ` (${r.purchase.receipt.number})` : ""}`);
+      toast.success(r.replayed ? "Already recorded — nothing was added twice" : r.purchase.mode === "SIMPLE" ? "Purchase recorded — the stock is in; the money goes into the books when they start" : `Purchase recorded${r.purchase.receipt?.number ? ` (${r.purchase.receipt.number})` : ""}`);
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
       void qc.invalidateQueries({ queryKey: ["finance"] });
       onClose();
@@ -246,6 +253,13 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
     >
       <form id="stock-bought-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
         {problem && <div ref={errorRef}><ProblemAlert problem={problem} /></div>}
+        {simple && (
+          <div data-testid="bought-simple">
+            <Alert variant="info" title="Stock costing hasn't started on this store">
+              The goods go into stock now. What you paid is kept with the purchase and goes into the books when they start — no bill or payment is made today.
+            </Alert>
+          </div>
+        )}
 
         {reviewing && (
           <section aria-labelledby="bought-review" className="space-y-3" data-testid="bought-review">
@@ -380,6 +394,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
             error={tried && !paidFrom ? "Choose who paid" : undefined}
             hint={
               shortOf ? <span className="text-warning-700">{shortOf.name} holds {formatPrice(shortOf.currentBalance)}; this needs {formatPrice(totalMinor / 100)}.</span>
+                : simple && paidFrom ? "Kept with the purchase — nothing is booked until the books start."
                 : paidFrom === OWNER ? "Booked as money the owner put in, then paid to the supplier."
                 : accountsForbidden ? (canOwnerMoney ? "Your role can't see the money accounts — only the owner's own money is listed." : "Your role can't see the money accounts. Ask the owner to record this purchase.")
                 : accountsQ.isError ? "The money accounts couldn't be loaded." : undefined
@@ -391,6 +406,17 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({formatPrice(a.currentBalance)})</option>)}
             </Select>
           </Field>
+          {simple && (
+            <div className="sm:col-span-2">
+              <label className="flex items-start gap-2.5 text-sm text-fg">
+                <Checkbox className="mt-0.5" checked={updateCatalogCost} disabled={!canEditCatalog} onChange={(e) => setUpdateCatalogCost(e.target.checked)} data-testid="bought-catalog-cost" />
+                <span>
+                  Set each item&apos;s catalog cost from this purchase
+                  <span className="block text-xs text-fg-muted">{canEditCatalog ? "What you paid per unit, with the extras shared by value. Margins use it until costing starts." : "Your role can't edit products, so catalog costs stay as they are."}</span>
+                </span>
+              </label>
+            </div>
+          )}
         </section>
         </div>
       </form>

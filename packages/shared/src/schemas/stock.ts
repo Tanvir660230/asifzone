@@ -35,6 +35,9 @@ export const stockPurchaseSchema = z
     documentTotal: z.number().int().min(1).max(100_000_000),
     extras: z.array(z.object({ description: z.string().trim().min(1).max(120), amount: positive })).max(20).default([]),
     paidFrom,
+    /** Before stock costing is live (blueprint P1.4, owner decision Q-F): set each item's catalog cost from this purchase.
+     * Omitted = yes. Ignored once costing is live (the purchase is booked and the average cost moves instead). */
+    updateCatalogCost: z.boolean().optional(),
   })
   .refine((p) => [...p.lines, ...p.extras].reduce((s, x) => s + x.amount, 0) <= STOCK_PURCHASE_MAX_TOTAL, { message: "A purchase is at most 10,000,000,000 in all", path: ["lines"] })
   .superRefine((p, ctx) => {

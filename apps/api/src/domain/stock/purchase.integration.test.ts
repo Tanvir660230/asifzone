@@ -138,15 +138,8 @@ afterAll(async () => {
 const oilPurchase = (paidFrom: object, extras = [{ description: "Transport", amount: 400 }]) => ({ lines: [{ variantId: oil, quantity: 500, amount: 12000 }], documentTotal: 500, extras, paidFrom });
 
 describe("Bought — before go-live", () => {
-  it("refused before costing is active, with the reason, and nothing is written", async () => {
-    const before = await counts();
-    const r = await api().post("/stock/purchases", oilPurchase({ financialAccountId: bank }), `sp-early-${RUN}`);
-    expect(r.status, JSON.stringify(r.body)).toBe(409);
-    expect(r.body.details?.code).toBe("COSTING_NOT_ACTIVE");
-    expect(r.body.error).toMatch(/go-live/);
-    expect(await counts()).toEqual(before);
-    expect(await prisma.stockHubEntry.count()).toBe(0);
-  });
+  // Before costing is live a purchase is recorded in simple mode, never booked (blueprint P1.4, Q-F) — covered with its own
+  // data in simple-purchase.integration.test.ts; nothing is recorded here, so the oil's valuation below starts at zero.
 
   it("go-live: the valuation cutover activates costing", async () => {
     await draftCutover({}, OWNER);

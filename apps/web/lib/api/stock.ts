@@ -51,7 +51,7 @@ export interface StockOverview {
   rolls: StockRoll[];
 }
 
-export type PurchaseStep = "supplier" | "receipt" | "invoice" | "funding" | "payment" | "extras";
+export type PurchaseStep = "supplier" | "receipt" | "invoice" | "funding" | "payment" | "extras" | "stock";
 
 export interface StockPurchase {
   id: string;
@@ -71,6 +71,13 @@ export interface StockPurchase {
   landedCostId: string | null;
   complete: boolean;
   pendingStep: PurchaseStep | null;
+  /** BOOKED: receipt, bill and payment in the books. SIMPLE (blueprint P1.4): recorded before costing was live — stock only. */
+  mode: "BOOKED" | "SIMPLE";
+  /** Simple mode: what was paid is kept with the purchase, not in the books yet. */
+  moneyPending: boolean;
+  /** Simple mode: catalog costs the purchase set (amounts null without costing.read). */
+  catalogCosts: Array<{ variantId: string; before: number | null; after: number | null }>;
+  duplicateMatches: number;
   createdAt: string;
 }
 
@@ -88,6 +95,8 @@ export interface PurchaseBody {
   paidFrom: PaidFrom;
   /** Why it is recorded anyway when it looks like a purchase already entered (blueprint P0.3). */
   duplicateReason?: string | null;
+  /** Before costing is live (P1.4, Q-F): set each item's catalog cost from this purchase. Omitted = yes. */
+  updateCatalogCost?: boolean;
 }
 
 /** A live receipt a new purchase looks like: same supplier, ±3 days, ≥ 70% of the items, total within 1%. */
@@ -211,6 +220,7 @@ export interface StockProblem {
 
 const TITLES: Record<string, string> = {
   COSTING_NOT_ACTIVE: "Stock costing starts at go-live",
+  COSTING_NOW_ACTIVE: "Stock costing has just started",
   INSUFFICIENT_FUNDS: "Not enough money in that account",
   SUPPLIER_ON_HOLD: "This supplier is on hold",
   BEFORE_OPENING_DATE: "That date is before the books start",
@@ -278,7 +288,7 @@ export function describeStockError(err: unknown, fallbackTitle: string): StockPr
 
 /** Errors that mean nothing was written: the same form can be fixed and sent again. */
 export const CHECKED_BEFORE_WRITING = new Set([
-  "COSTING_NOT_ACTIVE", "INSUFFICIENT_FUNDS", "SUPPLIER_ON_HOLD", "BEFORE_OPENING_DATE", "PERIOD_CLOSED", "PERIOD_SOFT_CLOSED", "OPENING_DATE_NOT_SET",
+  "COSTING_NOT_ACTIVE", "COSTING_NOW_ACTIVE", "INSUFFICIENT_FUNDS", "SUPPLIER_ON_HOLD", "BEFORE_OPENING_DATE", "PERIOD_CLOSED", "PERIOD_SOFT_CLOSED", "OPENING_DATE_NOT_SET",
   "STOCK_PURCHASE_PERMISSION", "PAYMENT_SOURCE_KIND", "FINANCIAL_ACCOUNT_NOT_FOUND", "PURCHASE_IN_FUTURE", "PURCHASE_LINE_AMOUNT", "PURCHASE_UNTRACKED",
   "VARIANT_NOT_FOUND", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS", "FILL_SHORT", "NO_RECIPE", "FILL_MATERIAL_NOT_IN_RECIPE",
 ]);
@@ -290,6 +300,7 @@ export const PENDING_STEP_LABEL: Record<PurchaseStep, string> = {
   funding: "putting in the owner's money",
   payment: "the payment",
   extras: "the extra costs",
+  stock: "putting the goods into stock",
 };
 
 // ── production home (docs/STOCK_HUB.md §9) ─────────────────────────────────────────────────────────────────────────────

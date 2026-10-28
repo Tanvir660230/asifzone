@@ -120,6 +120,20 @@ test("buy oil, fill a bottle and count — the stock follows each", async ({ pag
   await expect(page.getByTestId("stock-summary")).toContainText("Last counted");
 });
 
+test("before stock costing is live, Received goods opens in simple mode: nothing booked, catalog cost on by default", async ({ page }) => {
+  await login(page);
+  await expect(page.getByTestId("stock-list")).toBeVisible(NAV);
+  test.skip((await overview(page)).costingActive, "stock costing is live on this database — purchases are booked there");
+  // blueprint P1.4 (owner decision Q-F): fills and counts wait for go-live, Received goods doesn't
+  await expect(page.getByTestId("stock-golive")).toContainText("Received goods can be recorded now");
+  await page.getByTestId("stock-action-bought").click();
+  const bought = page.getByRole("dialog", { name: "Received goods" });
+  await expect(bought.getByTestId("bought-simple")).toContainText("Stock costing hasn't started");
+  await expect(bought.getByTestId("bought-catalog-cost")).toBeChecked();
+  await bought.getByRole("button", { name: "Cancel" }).click();
+  await expect(bought).toBeHidden(NAV);
+});
+
 test("a sheet with typed counts asks before it closes; an empty one closes at once", async ({ page }) => {
   await login(page);
   await expect(page.getByTestId("stock-action-counted")).toBeVisible(NAV);
