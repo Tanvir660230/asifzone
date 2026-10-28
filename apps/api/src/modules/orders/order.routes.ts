@@ -54,6 +54,8 @@ orderRouter.get("/", requireAdmin, requirePermission("orders.read"), validate(or
 orderRouter.post("/admin", requireAdmin, requirePermission("orders.manage"), validate(adminCreateOrderSchema), orderController.createManual);
 // Must come before "/:id" — otherwise Express would match "stats"/"export" as an :id param.
 orderRouter.get("/stats", requireAdmin, requirePermission("orders.read"), orderController.stats);
+// Blueprint P1.5: parcels cancelled after shipping that haven't come back yet (receive them with POST /:id/receive-return)
+orderRouter.get("/parcels-to-receive", requireAdmin, requirePermission("orders.read"), orderController.parcelsToReceive);
 orderRouter.get("/export/csv", requireAdmin, requirePermission("orders.export"), validate(orderListQuerySchema, "query"), orderController.exportCsv);
 orderRouter.post("/bulk/status", requireAdmin, requirePermission("orders.manage"), validate(bulkOrderStatusSchema), orderController.bulkStatus);
 orderRouter.post("/bulk/delete", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkDelete);

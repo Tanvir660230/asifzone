@@ -204,9 +204,15 @@ test.describe("orders workspace", () => {
 
   test("return requests: status filter and deep link", async ({ page }) => {
     await page.goto("/admin/return-requests?status=ALL");
-    await expect(page.getByRole("heading", { name: "Return requests" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Returns & refused parcels" })).toBeVisible();
     await expect(page.getByRole("group", { name: "Filter by review status" })).toBeVisible();
     await expect(page.getByRole("button", { name: "All", pressed: true })).toBeVisible();
+  });
+
+  test("parcels to receive: the second tab lists cancelled-after-shipping parcels (P1.5)", async ({ page }) => {
+    await page.goto("/admin/return-requests?tab=parcels");
+    await expect(page.getByRole("button", { name: "Parcels to receive", pressed: true })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Parcels to receive" }).or(page.getByText("No parcels on their way back")).first()).toBeVisible();
   });
 
   test("responsive: cards below xl, no horizontal page scroll", async ({ page }) => {

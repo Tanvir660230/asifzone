@@ -66,12 +66,14 @@ interface ActionCenterProps {
   possibleDuplicatePurchases?: number;
   /** Stock work waiting on a person — only for roles that read stock. */
   stockWaiting?: { countLossesToApprove: number; fillFailures: number };
+  /** Parcels cancelled after shipping still out with the courier (P1.5). */
+  parcelsToReceive?: { total: number; overdue: number };
   loading: boolean;
 }
 
 /** Everything waiting on an admin, as a to-do list: only non-zero items show, most urgent first, each one a link straight
  * to the filtered list where it gets done. An empty list is the goal — it renders as an explicit "all clear". */
-export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, financeAlertList, openErrors, possibleDuplicatePurchases, stockWaiting, loading }: ActionCenterProps) {
+export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, financeAlertList, openErrors, possibleDuplicatePurchases, stockWaiting, parcelsToReceive, loading }: ActionCenterProps) {
   const q = orderStats?.queueCounts;
   // The overview's failure list reaches back weeks; only the last day's are still worth chasing.
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -133,6 +135,16 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       href: "/admin/orders?queue=codPendingStale",
       severity: "warning",
       icon: Banknote,
+    },
+    {
+      // Owner decision Q-B: past 14 days a parcel still out is a follow-up; until then it is just on its way back
+      key: "parcels-to-receive",
+      label: parcelsToReceive?.overdue ? "Parcels out over 14 days" : "Parcels to receive",
+      hint: "Cancelled after shipping — receive each parcel on its order when it is back",
+      count: parcelsToReceive?.overdue || parcelsToReceive?.total || 0,
+      href: "/admin/return-requests?tab=parcels",
+      severity: parcelsToReceive?.overdue ? "warning" : "info",
+      icon: PackageX,
     },
     {
       key: "duplicate-purchases",

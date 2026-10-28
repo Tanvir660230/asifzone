@@ -19,6 +19,7 @@ import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
+import { ParcelsToReceive } from "@/components/admin/orders/parcels-to-receive";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { UnitStepper } from "@/components/admin/orders/detail/unit-stepper";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
@@ -66,11 +67,22 @@ export default function AdminReturnRequestsPage() {
   /** Approving a return: units per order line that came back damaged (written off instead of restocked). */
   const [damaged, setDamaged] = useState<Record<string, number>>({});
 
-  // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link).
+  // Blueprint P1.5: two tabs — customers' requests, and parcels cancelled after shipping that are on their way back.
+  const [tab, setTab] = useState<"requests" | "parcels">("requests");
+  // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link); ?tab=parcels from Home.
   useEffect(() => {
-    const s = new URLSearchParams(window.location.search).get("status");
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("status");
     if (s && STATUS_FILTERS.some((f) => f.value === s)) setStatus(s as StatusFilter);
+    if (params.get("tab") === "parcels") setTab("parcels");
   }, []);
+  const switchTab = (t: "requests" | "parcels") => {
+    setTab(t);
+    const url = new URL(window.location.href);
+    if (t === "parcels") url.searchParams.set("tab", "parcels");
+    else url.searchParams.delete("tab");
+    window.history.replaceState(null, "", url.toString());
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-return-requests", { status, page }],
@@ -156,8 +168,11 @@ export default function AdminReturnRequestsPage() {
 
   return (
     <div>
-      <PageHeader title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
+      <PageHeader title="Returns & refused parcels" description="Customers' returns and exchanges to review, and parcels cancelled after shipping that are on their way back." />
       <ModuleTabs />
+      <SegmentedControl aria-label="Show" className="mb-4" value={tab} onChange={switchTab} options={[{ value: "requests" as const, label: "Requests" }, { value: "parcels" as const, label: "Parcels to receive" }]} />
+      {tab === "parcels" ? <ParcelsToReceive /> : (
+      <>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl
@@ -343,6 +358,8 @@ export default function AdminReturnRequestsPage() {
           </div>
         )}
       </Modal>
+      </>
+      )}
     </div>
   );
 }

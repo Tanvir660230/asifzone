@@ -555,7 +555,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +5: 2-step sign-in (admin audit phase 2) — own setup / enable / disable, an owner's reset, an owner's sign-out-everywhere
     // +1: the owner's stock value correction (docs/STOCK_HUB.md §12)
     // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
-    expect(routes).toHaveLength(756);
+    // +1: parcels to receive (blueprint P1.5)
+    expect(routes).toHaveLength(757);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

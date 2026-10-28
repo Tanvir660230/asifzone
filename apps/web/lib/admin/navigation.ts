@@ -173,14 +173,16 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "orders.all", label: "All orders", title: term("order"), kind: "page", parent: "orders", domain: "operate", route: "/admin/orders", capability: "orders.view", order: 0 },
   {
     id: "orders.returns",
-    label: term("returnRequest"),
+    // blueprint tab 2 §2: customers' requests and parcels on their way back, as two tabs of one page
+    label: "Returns & refused parcels",
+    shortLabel: "Returns",
     kind: "page",
     parent: "orders",
     domain: "operate",
     route: "/admin/return-requests",
     capability: "orders.view",
     order: 1,
-    keywords: ["exchange", "refund", "returns"],
+    keywords: ["exchange", "refund", "returns", "return requests", "refused parcel", "receive parcel"],
   },
   { id: "orders.new", label: "New order", kind: "create", parent: "orders", domain: "operate", route: "/admin/orders/new", capability: "orders.manage", order: 2, visibility: "hidden" },
   { id: "orders.print-labels", label: "Print labels", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/print-labels", capability: "orders.view", order: 3, visibility: "hidden" },

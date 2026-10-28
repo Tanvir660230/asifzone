@@ -25,7 +25,7 @@ import { approveCutover, draftCutover, postCutover } from "../finance/inventory-
 import { processFinancialEvent } from "../finance/events.service";
 import { runReconciliation } from "../finance/reconciliation.service";
 import { handleSteadfastWebhook } from "../../modules/courier/courier.service";
-import { receiveReturnedParcel, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
+import { listParcelsToReceive, receiveReturnedParcel, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
 import { recordCounts } from "./count.service";
 import { stockHub } from "./stock-hub.service";
 
@@ -167,8 +167,15 @@ describe("inventory acceptance", () => {
     await ship(shipped.id);
     await updateOrderStatus(shipped.id, { status: "CANCELLED", note: "refused at the door" }, owner);
     expect(await stockOf(v)).toBe(4);
+    // blueprint P1.5: the parcel still out is listed to receive; the one cancelled while packed never is
+    const waiting = (await listParcelsToReceive()).parcels;
+    expect(waiting.find((x) => x.orderId === shipped.id)).toMatchObject({ units: 1, overdue: false, daysOut: 0 });
+    expect(waiting.find((x) => x.orderId === packed.id)).toBeUndefined();
+    // 15 days later it is a follow-up (owner decision Q-B: 14 days)
+    expect((await listParcelsToReceive(new Date(Date.now() + 15 * 86_400_000))).parcels.find((x) => x.orderId === shipped.id)?.overdue).toBe(true);
     await receiveReturnedParcel(shipped.id, owner, { note: "parcel back from the courier" });
     expect(await stockOf(v)).toBe(5);
+    expect((await listParcelsToReceive()).parcels.find((x) => x.orderId === shipped.id)).toBeUndefined();
     await assertInventoryInvariants(v);
   });
 

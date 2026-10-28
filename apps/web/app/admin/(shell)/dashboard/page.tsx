@@ -180,6 +180,7 @@ export default function DashboardPage() {
         openErrors={attention.openErrors}
         possibleDuplicatePurchases={attention.possibleDuplicatePurchases}
         stockWaiting={attention.stockWaiting}
+        parcelsToReceive={attention.parcelsToReceive}
         loading={attention.loading}
       />
 
