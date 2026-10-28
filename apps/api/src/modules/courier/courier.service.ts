@@ -2,7 +2,7 @@ import { canTransitionOrder, COURIER_UNBOOKABLE_STATUSES, normalizeBdPhone, type
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
-import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
+import { applyOrderTransition, changeOrderStatus, getOrderById, runTransitionSideEffects, type OrderTransitionOutcome } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import type { Prisma } from "@prisma/client";
 import { codToCollectFor, settleCourierCollected } from "../../domain/payments/payment-ledger.service";
@@ -22,14 +22,8 @@ import { fillForBookedOrder, planAutoFill, type AutoFillPlan } from "../../domai
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "cancelled"];
 
-// Booking a Steadfast consignment only means a courier *record* now exists — the box still has to
-// actually be packed and handed over, which in practice happens after the admin prints the label
-// (apps/web/app/admin/(shell)/orders/print-labels). Advancing straight to SHIPPED at booking time
-// used to fire the SHIPPED customer SMS before the parcel had physically left the building, which
-// is worse than just being an inaccurate status. So booking only nudges pre-fulfillment orders up
-// to PACKED; SHIPPED stays a deliberate, manual admin action once the parcel is actually handed
-// off. Orders already at PACKED or later are left alone — booking never rewinds or re-nudges
-// anything an admin has already progressed by hand.
+// Orders a booking first moves to PACKED on its way to SHIPPED (shipOnBooking), so the timeline keeps every step.
+// Orders already past PACKED are left alone — booking never rewinds anything an admin progressed by hand.
 const PRE_PACKED_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING"];
 
 // Steadfast's status_by_cid API never reports a distinct "picked up / in transit" state — it only
@@ -165,12 +159,52 @@ async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, d
 /** Owner, 2026-10-25 (admin audit, docs/BUSINESS_DECISIONS.md D-AA3): a parcel booked with Steadfast is leaving, so the
  * order becomes SHIPPED at booking — through PACKED when it hadn't been packed yet, so the timeline keeps every step.
  * Steadfast reports no pickup, so nothing else would ever move it on. */
-async function shipOnBooking(orderId: string, status: OrderStatus) {
-  if (PRE_PACKED_ORDER_STATUSES.includes(status)) {
-    await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast" });
-    status = "PACKED";
+export async function shipOnBooking(orderId: string, status: OrderStatus) {
+  if (!PRE_PACKED_ORDER_STATUSES.includes(status) && status !== "PACKED") return;
+  // Both steps commit in ONE transaction (blueprint P0.5): a failure between them used to leave a booked parcel stuck at
+  // PACKED. Each step validates against the locked status, so a concurrent change wins and the next step is skipped.
+  const outcomes = await prisma.$transaction(async (tx) => {
+    const done: OrderTransitionOutcome[] = [];
+    let current = status;
+    if (PRE_PACKED_ORDER_STATUSES.includes(current)) {
+      const packed = await applyOrderTransition(tx, orderId, { status: "PACKED", note: "Booked with Steadfast" }, { quietNoop: true });
+      done.push(packed);
+      current = packed.order.status;
+    }
+    if (current === "PACKED") {
+      done.push(await applyOrderTransition(tx, orderId, { status: "SHIPPED", note: "Booked with Steadfast — handed to the courier" }, { quietNoop: true }));
+    }
+    return done;
+  });
+  for (const outcome of outcomes) await runTransitionSideEffects(outcome);
+}
+
+/** A booked parcel whose ship step never committed (the process died between saving the consignment and shipOnBooking,
+ * or the step failed) is moved on by the courier sweep — booking means the parcel is leaving (D-AA3). Never fails the
+ * sweep; returns how many orders it moved. Only recent bookings: parcels booked before D-AA3 stayed PACKED by design, and
+ * shipping them now would text customers about parcels long gone. */
+export const BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS = 48 * 60 * 60_000;
+async function repairBookedNotShipped(now: Date = new Date()): Promise<number> {
+  const stuck = await prisma.order.findMany({
+    where: {
+      courierConsignmentId: { not: null },
+      courierBookedAt: { gte: new Date(now.getTime() - BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS) },
+      deletedAt: null,
+      status: { in: [...PRE_PACKED_ORDER_STATUSES, "PACKED"] },
+      OR: [{ courierStatus: null }, { courierStatus: { notIn: TERMINAL_COURIER_STATUSES } }],
+    },
+    select: { id: true, status: true },
+  });
+  let repaired = 0;
+  for (const order of stuck) {
+    try {
+      await shipOnBooking(order.id, order.status);
+      repaired++;
+    } catch (err) {
+      captureError(err, { msg: `[courier-status-cron] could not ship booked order ${order.id}:` });
+    }
   }
-  if (status === "PACKED") await updateOrderStatus(orderId, { status: "SHIPPED", note: "Booked with Steadfast — handed to the courier" });
+  return repaired;
 }
 
 /** The auto-fill plan (docs/STOCK_HUB.md §7) must never stop a booking: if it can't be read, nothing is filled. */
@@ -635,6 +669,7 @@ async function recordCourierCollected(order: { id: string; courierCollectedAmoun
  * never configured in the Steadfast merchant panel, or whose delivery got dropped in transit.
  * Returns how many orders changed status. */
 export async function syncPendingCourierStatuses(): Promise<number> {
+  const repaired = await repairBookedNotShipped();
   const pending = await prisma.order.findMany({
     where: {
       courierConsignmentId: { not: null },
@@ -644,7 +679,7 @@ export async function syncPendingCourierStatuses(): Promise<number> {
     select: { id: true, orderNumber: true, status: true, courierConsignmentId: true, courierStatus: true, courierSyncError: true },
   });
 
-  let changed = 0;
+  let changed = repaired;
   for (const order of pending) {
     try {
       const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId!);
