@@ -7,6 +7,7 @@ import { ensureCommerceAccounting } from "./commerce-setup.service";
 import { activateInventoryCostingInTx, recordValuationInTx } from "./costing.service";
 import { processFinancialEvent } from "./events.service";
 import { getFinanceContext } from "./finance-context";
+import { FULL_VIEW } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
 import { profitByDay, profitReport } from "./profit.service";
 import type { FinanceActor } from "./finance-audit";
@@ -65,13 +66,13 @@ describe("the books profit ladder", () => {
     expect(after.totals.stockCorrections - before.totals.stockCorrections).toBeCloseTo(200, 2); // 2 × ৳100
     expect(after.totals.salesProfit).toBeCloseTo(before.totals.salesProfit, 2);
 
-    const r = await profitReport({ from: today, to: today }, OWNER);
+    const r = await profitReport({ from: today, to: today }, FULL_VIEW);
     expect(r.totals.stockCorrections).toBeCloseTo(after.totals.stockCorrections, 2);
     expect(r.ladder.find((s) => s.key === "stockCorrections")!.amount).toBeCloseTo(-after.totals.stockCorrections, 2);
   });
 
   it("every step adds up to the income statement's net profit; the subtotals are what they say", async () => {
-    const r = await profitReport({ from: today, to: today }, OWNER);
+    const r = await profitReport({ from: today, to: today }, FULL_VIEW);
     const step = (k: string) => r.ladder.find((s) => s.key === k)!.amount;
     const steps = r.ladder.filter((s) => !("subtotal" in s && s.subtotal));
     expect(steps.reduce((s, x) => s + x.amount, 0)).toBeCloseTo(r.totals.netProfit, 2);
