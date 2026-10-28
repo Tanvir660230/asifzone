@@ -23,6 +23,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { FinanceException } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const KIND_LABEL: Record<string, string> = {
   MISSING_COST: "Missing cost",
@@ -90,7 +91,7 @@ export default function FinanceExceptionsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={AlertTriangle} title="Finance is limited to finance roles" />
+        <PermissionState icon={AlertTriangle} page="this finance page" />
       </div>
     );
   }

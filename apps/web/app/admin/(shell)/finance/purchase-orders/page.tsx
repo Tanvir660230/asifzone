@@ -31,6 +31,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchasableVariant, PurchaseOrderStatus } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 
 /** Purchase orders (docs/FINANCE_PHASE_4D.md): what was ordered from whom, at what price, and how much has arrived. An order
@@ -49,7 +50,7 @@ export default function PurchaseOrdersPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={ClipboardList} title="Purchasing isn't available to your role" />
+        <PermissionState icon={ClipboardList} page="Purchasing" />
       </div>
     );
   }

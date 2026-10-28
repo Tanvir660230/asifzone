@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { OpeningStockEditor, itemValue } from "@/components/admin/finance/opening-stock-editor";
@@ -26,6 +25,7 @@ import { listSuppliers, purchasingKeys } from "@/lib/api/purchasing";
 import type { ChartAccount, FinancialAccount, FinancialAccountKind, OpeningBalanceCategory, OpeningInventoryItem, OpeningLine } from "@/lib/api/finance";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 /** Which opening category a money account's balance belongs to (the API checks the account's kind against it). */
@@ -69,7 +69,7 @@ export default function StartTheBooksPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Flag} title="Setting up the books isn't available to your role" />
+        <PermissionState icon={Flag} page="Setting up the books" />
       </div>
     );
   }

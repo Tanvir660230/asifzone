@@ -15,7 +15,6 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatTile } from "@/components/admin/stat-tile";
@@ -29,6 +28,7 @@ import { OrderStatusBadge } from "@/components/admin/orders/order-badges";
 import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** Owner's books §3.6: the courier's side of the books on one page — what the books expect from Steadfast next to its own
  * balance, payouts to bring in and post, and the parcels that need a look (unpaid, stuck, status mismatch, partial). */
@@ -55,7 +55,7 @@ export default function CourierCheckPage() {
     onError: (e) => toast.error(getErrorMessage(e, "Steadfast's payouts couldn't be read")),
   });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Truck} title="This page isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Truck} page="This page" /></div>;
   const d = rec.data;
   return (
     <div className="space-y-6">

@@ -23,6 +23,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { ChartAccount, LedgerAccountType } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const TYPE_LABEL: Record<LedgerAccountType, string> = { ASSET: "Assets", LIABILITY: "Liabilities", EQUITY: "Equity", REVENUE: "Revenue", COGS: "Cost of goods sold", EXPENSE: "Operating expenses", OTHER_INCOME: "Other income", OTHER_EXPENSE: "Other expenses" };
 const TYPES = Object.keys(TYPE_LABEL) as LedgerAccountType[];
@@ -50,7 +51,7 @@ export default function LedgerPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={BookOpen} title="The ledger isn't available to your role" />
+        <PermissionState icon={BookOpen} page="the ledger" />
       </div>
     );
   }

@@ -11,7 +11,6 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { SegmentedControl } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { ProfitDashboard, type ProfitPeriod } from "@/components/admin/finance/profit-dashboard";
@@ -24,6 +23,7 @@ import { formatBookDate, formatPrice } from "@/lib/format";
 import { GRAINS, presetRange, PROFIT_PRESETS } from "@/lib/profit-period";
 import { urlParam } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 const PERIOD_URL = { view: urlParam.enum(PROFIT_PRESETS, "30d"), from: urlParam.date(), to: urlParam.date(), gran: urlParam.optionalEnum(GRAINS) };
@@ -54,7 +54,7 @@ export default function ProfitPage() {
   const opening = business.data?.business.openingDate ?? null;
   const launch = useQuery({ queryKey: booksApi.booksKeys.launch({}), queryFn: () => booksApi.getLaunchReport({}), enabled: allowed && Boolean(opening) });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={TrendingUp} title="Profit isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={TrendingUp} page="Profit" /></div>;
   const r = report.data;
   return (
     <div className="space-y-6">

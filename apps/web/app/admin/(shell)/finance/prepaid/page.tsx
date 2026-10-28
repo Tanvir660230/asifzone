@@ -23,6 +23,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { PrepaidCost } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 const STATUS: Record<PrepaidCost["status"], { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
@@ -40,7 +41,7 @@ export default function PrepaidPage() {
   const [ending, setEnding] = useState<PrepaidCost | null>(null);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={CalendarClock} title="Prepaid costs aren't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={CalendarClock} page="Prepaid costs" /></div>;
   const d = list.data;
   return (
     <div className="space-y-6">

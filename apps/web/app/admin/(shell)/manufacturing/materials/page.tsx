@@ -28,6 +28,7 @@ import * as mfg from "@/lib/api/manufacturing";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { formatUnitCost } from "@/components/admin/manufacturing/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const SKU_RE = /^[A-Za-z0-9][A-Za-z0-9._-]+$/;
 
@@ -53,7 +54,7 @@ export default function MaterialsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Layers} title="Manufacturing isn't available to your role" />
+        <PermissionState icon={Layers} page="Manufacturing" />
       </div>
     );
   }

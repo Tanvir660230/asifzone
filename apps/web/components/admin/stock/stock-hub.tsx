@@ -12,7 +12,6 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -43,6 +42,7 @@ import { TraceSheet } from "./trace-sheet";
 import type { ProductGroup } from "./stock-shared";
 import { byProduct } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type Sheet = "bought" | "reorder" | "filled" | "batch-fill" | "counted" | "guided-count" | null;
 const GO_LIVE = "Stock costing starts at go-live";
@@ -113,7 +113,7 @@ export function StockHub() {
     setSheet(want === "filled" && today.data?.fill ? "batch-fill" : want);
   }, [params, overview.data, today.data]);
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Boxes} page="Stock" /></div>;
 
   const data = overview.data;
   const live = data?.costingActive ?? false;

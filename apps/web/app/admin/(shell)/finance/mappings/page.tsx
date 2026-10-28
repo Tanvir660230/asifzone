@@ -10,13 +10,13 @@ import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { AccountMapping, ChartAccount, LedgerAccountType } from "@/lib/api/finance";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** A mapping key's prefix: what the section is called and the account type the API requires (chart.service EXPECTED_TYPE). */
 const SECTIONS: Array<{ prefix: string; title: string; type: LedgerAccountType }> = [
@@ -50,7 +50,7 @@ export default function AccountMappingPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Waypoints} title="Account mapping isn't available to your role" />
+        <PermissionState icon={Waypoints} page="Account mapping" />
       </div>
     );
   }

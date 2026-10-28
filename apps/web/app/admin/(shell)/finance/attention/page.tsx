@@ -19,6 +19,7 @@ import * as financeApi from "@/lib/api/finance";
 import type { AlertSeverity } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const SEVERITY: Record<AlertSeverity, { label: string; variant: "danger" | "warning" | "info" }> = {
   critical: { label: "Critical", variant: "danger" },
@@ -43,7 +44,7 @@ export default function FinanceAttentionPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={BellRing} title="Finance alerts aren't available to your role" />
+        <PermissionState icon={BellRing} page="Finance alerts" />
       </div>
     );
   }

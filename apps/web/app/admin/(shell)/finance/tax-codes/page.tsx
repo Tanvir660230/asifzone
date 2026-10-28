@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** A percentage 0–100 with at most 4 decimals — checked as text (the API stores it as a decimal, never a float). */
 const PERCENT = /^(100(\.0{1,4})?|\d{1,2}(\.\d{1,4})?)$/;
@@ -56,7 +57,7 @@ export default function TaxCodesPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Percent} title="Purchasing isn't available to your role" />
+        <PermissionState icon={Percent} page="Purchasing" />
       </div>
     );
   }

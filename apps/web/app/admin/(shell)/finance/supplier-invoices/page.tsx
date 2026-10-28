@@ -24,6 +24,7 @@ import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { SupplierInvoice, SupplierInvoiceKind } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const errorCode = (err: unknown) => (err instanceof ApiError ? (err.details as { code?: string } | undefined)?.code : undefined);
 
@@ -67,7 +68,7 @@ export default function SupplierInvoicesPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={FileText} title="Payables aren't available to your role" />
+        <PermissionState icon={FileText} page="Payables" />
       </div>
     );
   }

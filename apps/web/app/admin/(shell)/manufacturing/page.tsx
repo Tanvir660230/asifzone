@@ -19,6 +19,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
 import type { ProductionOrderStatus } from "@/lib/api/manufacturing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const pct = (v: number | null) => (v === null ? "—" : `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`);
 const STATUS_ORDER: ProductionOrderStatus[] = ["DRAFT", "APPROVED", "IN_PRODUCTION", "PARTIALLY_RECEIVED", "RECEIVED", "CLOSED"];
@@ -34,7 +35,7 @@ export default function ProductionOverviewPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Factory} title="Manufacturing isn't available to your role" />
+        <PermissionState icon={Factory} page="Manufacturing" />
       </div>
     );
   }

@@ -31,6 +31,7 @@ import * as mfg from "@/lib/api/manufacturing";
 import type { ProducibleProduct, ProductionOrderStatus } from "@/lib/api/manufacturing";
 import * as purchasingApi from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** Production orders (docs/MANUFACTURING.md §5): what is being made, by whom, in which sizes and colours, from which
  * materials, at what planned cost. */
@@ -48,7 +49,7 @@ export default function ProductionOrdersPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Factory} title="Manufacturing isn't available to your role" />
+        <PermissionState icon={Factory} page="Manufacturing" />
       </div>
     );
   }

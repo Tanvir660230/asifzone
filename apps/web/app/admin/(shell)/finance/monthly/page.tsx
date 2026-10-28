@@ -11,7 +11,6 @@ import { Card } from "@/components/ui/card";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
-import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -19,6 +18,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { ProfitMonth } from "@/lib/api/finance-books";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const monthName = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 const lastDay = (m: string) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10);
@@ -32,7 +32,7 @@ export default function MonthlyProfitPage() {
   const allowed = can("finance.view");
   const q = useQuery({ queryKey: ["finance", "profit", "monthly"], queryFn: booksApi.getProfitByMonth, enabled: allowed });
   const [open, setOpen] = useState<string | null>(null);
-  if (ready && !allowed) return <EmptyState icon={CalendarRange} title="Finance isn't available to your role" />;
+  if (ready && !allowed) return <PermissionState icon={CalendarRange} page="Finance" />;
   const months = [...(q.data?.months ?? [])].reverse();
   const total = months.reduce((s, m) => ({ sales: s.sales + m.sales, profit: s.profit + m.profit }), { sales: 0, profit: 0 });
 

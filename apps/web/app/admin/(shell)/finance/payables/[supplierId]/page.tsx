@@ -25,6 +25,7 @@ import * as purchasingApi from "@/lib/api/purchasing";
 import type { SupplierAccount } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
 import { listFinancialAccounts } from "@/lib/api/finance";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type Source = { kind: "payment"; id: string; label: string; left: number } | { kind: "credit"; id: string; label: string; left: number };
 
@@ -48,7 +49,7 @@ export default function SupplierAccountPage() {
   });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: purchasingApi.purchasingKeys.all });
 
-  if (ready && !allowed) return <EmptyState icon={Wallet} title="Payables aren't available to your role" />;
+  if (ready && !allowed) return <PermissionState icon={Wallet} page="Payables" />;
   if (q.isLoading) return <Skeleton className="h-64 w-full" />;
   if (q.isError || !q.data) return <Alert variant="danger" title="This supplier's account couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>;
   const a = q.data;

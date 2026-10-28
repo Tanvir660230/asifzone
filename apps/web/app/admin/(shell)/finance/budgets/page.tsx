@@ -24,6 +24,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { BudgetRow, CashForecast } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type View = "forecast" | "budget";
 const SOURCE_LABEL: Record<CashForecast["lines"][number]["source"], string> = { CLEARING: "in transit", SUPPLIER_BILL: "supplier bill", COMMITMENT: "recurring cost", LOAN: "loan", PURCHASE_ORDER: "purchase order", PAYROLL: "payroll" };
@@ -38,7 +39,7 @@ export default function BudgetsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={TrendingUp} title="Budgets aren't available to your role" />
+        <PermissionState icon={TrendingUp} page="Budgets" />
       </div>
     );
   }

@@ -27,6 +27,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { AdCampaign, UnlinkedAdTag } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 /** The month before `date` (YYYY-MM) — the month-end check looks at the month that just ended. */
@@ -131,7 +132,7 @@ export default function AdSpendPage() {
     onError: (e) => toast.error(getErrorMessage(e, "Meta's spend couldn't be read")),
   });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Megaphone} title="Ad spend isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Megaphone} page="Ad spend" /></div>;
   const d = list.data;
   return (
     <div className="space-y-6">

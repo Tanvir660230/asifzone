@@ -127,7 +127,7 @@ test("owner & partners: a working partner gets their own accounts and a monthly 
 test("staff can't see payroll — page and API", async ({ browser }) => {
   const staff = await login(browser, STAFF);
   await staff.goto("/admin/finance/payroll");
-  await expect(staff.getByText("Payroll isn't available to your role")).toBeVisible(NAV);
+  await expect(staff.getByText("You don't have access to Payroll")).toBeVisible(NAV);
   expect((await api(staff, "GET", "/payroll")).status).toBe(403);
   expect((await api(staff, "GET", "/equity")).status).toBe(403);
 });

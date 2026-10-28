@@ -26,6 +26,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { DepreciationMethod, FixedAsset } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** Fixed assets (docs/FINANCE_FIXED_ASSETS.md): what the business owns and uses for years — cost, depreciation month by
  * month, book value — and the monthly run that books it. The register always equals the fixed-asset accounts. */
@@ -54,7 +55,7 @@ export default function FixedAssetsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Building2} title="Fixed assets aren't available to your role" />
+        <PermissionState icon={Building2} page="Fixed assets" />
       </div>
     );
   }
