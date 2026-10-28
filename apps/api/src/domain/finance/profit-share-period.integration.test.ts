@@ -32,6 +32,7 @@ const api = () => {
       return (key ? r.set("Idempotency-Key", key) : r).send(body);
     },
     patch: (url: string, body: object = {}) => auth(request(app).patch(`/api/v1/finance${url}`)).send(body),
+    put: (url: string, body: object = {}) => auth(request(app).put(`/api/v1/finance${url}`)).send(body),
   };
 };
 let bank = "";
@@ -210,6 +211,28 @@ describe("corrections", () => {
     expect(prop.body).toMatchObject({ status: "POLICY_REVIEW", amount: -2_000 });
     expect((await api().post(`/equity/adjustments/${prop.body.id}/approve`)).body.details.code).toBe("ADJUSTMENT_NEEDS_POLICY");
     expect(await owed(A)).toBe(0);
+  });
+});
+
+describe("ad spend (blueprint P-6, Q16 = A)", () => {
+  it("a month with a day of ad spend missing is blocked; confirming the quiet days as zero unblocks it", async () => {
+    const ads = await api().post("/financial-accounts", { kind: "AD_PLATFORM", name: `PSP Meta ${RUN}`, provider: "Meta", accountReference: `act_psp_${RUN}` });
+    expect(ads.status, JSON.stringify(ads.body)).toBe(201);
+    const c = await api().post("/ads/campaigns", { financialAccountId: ads.body.id, name: `June push ${RUN}`, startDate: "2026-06-01", endDate: "2026-06-30" });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect((await api().put(`/ads/campaigns/${c.body.id}/spend`, { date: "2026-06-01", amount: 50 })).status).toBe(200);
+    await sale("2026-06-10", 3_000);
+    await close("2026-06");
+
+    const p = (await api().post("/equity/share-periods/2026-06/prepare")).body;
+    expect(p).toMatchObject({ status: "PREPARED", blocked: true });
+    expect(p.readiness.steps.find((s: { key: string }) => s.key === "ads")).toMatchObject({ status: "TODO", blocking: true });
+    expect((await api().post("/equity/share-periods/2026-06/verify", { confirmProfit: 2_950 })).body.details.code).toBe("PERIOD_BLOCKED");
+
+    const rest = Array.from({ length: 29 }, (_, i) => `2026-06-${String(i + 2).padStart(2, "0")}`);
+    const z = await api().post(`/ads/campaigns/${c.body.id}/confirm-zero`, { dates: rest, reason: "campaign paused after day one" });
+    expect(z.status, JSON.stringify(z.body)).toBe(200);
+    expect((await api().post("/equity/share-periods/2026-06/prepare")).body.blocked).toBe(false);
   });
 });
 
