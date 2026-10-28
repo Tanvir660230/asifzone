@@ -171,8 +171,14 @@ describe("inventory acceptance", () => {
     const waiting = (await listParcelsToReceive()).parcels;
     expect(waiting.find((x) => x.orderId === shipped.id)).toMatchObject({ units: 1, overdue: false, daysOut: 0 });
     expect(waiting.find((x) => x.orderId === packed.id)).toBeUndefined();
-    // 15 days later it is a follow-up (owner decision Q-B: 14 days)
+    // 15 days later it is a follow-up (owner decision Q-B: 14 days, the store's setting)
     expect((await listParcelsToReceive(new Date(Date.now() + 15 * 86_400_000))).parcels.find((x) => x.orderId === shipped.id)?.overdue).toBe(true);
+    // a store that gives parcels 20 days isn't chased at 15
+    await updateBusinessSettings({ returnFollowUpDays: 20, reason: "slower courier" }, OWNER);
+    const later = await listParcelsToReceive(new Date(Date.now() + 15 * 86_400_000));
+    expect(later.followUpDays).toBe(20);
+    expect(later.parcels.find((x) => x.orderId === shipped.id)?.overdue).toBe(false);
+    await updateBusinessSettings({ returnFollowUpDays: 14, reason: "back to the default" }, OWNER);
     await receiveReturnedParcel(shipped.id, owner, { note: "parcel back from the courier" });
     expect(await stockOf(v)).toBe(5);
     expect((await listParcelsToReceive()).parcels.find((x) => x.orderId === shipped.id)).toBeUndefined();

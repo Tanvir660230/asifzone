@@ -17,7 +17,7 @@ export interface AdminAttention {
   /** Stock work waiting on a person — null without inventory.read. */
   stock?: { countLossesToApprove: number; fillFailures: number } | null;
   /** Parcels cancelled after shipping still out with the courier (blueprint P1.5) — null without orders.read. */
-  parcelsToReceive?: { total: number; overdue: number } | null;
+  parcelsToReceive?: { total: number; overdue: number; followUpDays: number } | null;
 }
 
 /** What the store's own data says it does (owner decision Q-G) — the menu shows Production only where it exists. */

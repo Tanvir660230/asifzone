@@ -3329,6 +3329,8 @@ model FinanceBusiness {
   /// Smart stock page: a count loss by someone without inventory.approve worth at least this (at the average cost) waits for
   /// the owner (StockCountApproval) instead of moving the stock.
   countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
+  /// Owner decision Q-B: a parcel or return still out after this many days is a Home follow-up.
+  returnFollowUpDays          Int                       @default(14)
   /// What the last night's run did, for the settings page.
   autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())

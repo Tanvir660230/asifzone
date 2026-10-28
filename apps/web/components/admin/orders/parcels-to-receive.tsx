@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 /**
  * Parcels to receive (blueprint P1.5, under today's rule): orders cancelled after they shipped whose units are still out
  * with the courier. Their stock comes back only when someone receives the parcel on the order (good, damaged or lost) —
- * never at the cancellation. One past the follow-up days (owner decision Q-B: 14) is marked overdue.
+ * never at the cancellation. One past the store's follow-up days (owner decision Q-B; 14 by default) is marked overdue.
  */
 export function ParcelsToReceive() {
   const q = useQuery({ queryKey: ["orders", "parcels-to-receive"], queryFn: adminOrdersApi.listParcelsToReceive });

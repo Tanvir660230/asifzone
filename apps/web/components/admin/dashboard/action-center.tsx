@@ -67,7 +67,7 @@ interface ActionCenterProps {
   /** Stock work waiting on a person — only for roles that read stock. */
   stockWaiting?: { countLossesToApprove: number; fillFailures: number };
   /** Parcels cancelled after shipping still out with the courier (P1.5). */
-  parcelsToReceive?: { total: number; overdue: number };
+  parcelsToReceive?: { total: number; overdue: number; followUpDays: number };
   loading: boolean;
 }
 
@@ -137,9 +137,9 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       icon: Banknote,
     },
     {
-      // Owner decision Q-B: past 14 days a parcel still out is a follow-up; until then it is just on its way back
+      // Owner decision Q-B: past the store's follow-up days (14 by default) a parcel still out is a follow-up
       key: "parcels-to-receive",
-      label: parcelsToReceive?.overdue ? "Parcels out over 14 days" : "Parcels to receive",
+      label: parcelsToReceive?.overdue ? `Parcels out over ${parcelsToReceive.followUpDays} days` : "Parcels to receive",
       hint: "Cancelled after shipping — receive each parcel on its order when it is back",
       count: parcelsToReceive?.overdue || parcelsToReceive?.total || 0,
       href: "/admin/return-requests?tab=parcels",

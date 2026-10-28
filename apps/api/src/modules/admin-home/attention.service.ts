@@ -26,7 +26,7 @@ export async function adminAttention(identity: AdminIdentity) {
     can(identity, "inventory.read") ? stockWaiting() : null,
     can(identity, "orders.read") ? listParcelsToReceive() : null,
   ]);
-  const parcelsToReceive = parcels ? { total: parcels.parcels.length, overdue: parcels.overdue } : null;
+  const parcelsToReceive = parcels ? { total: parcels.parcels.length, overdue: parcels.overdue, followUpDays: parcels.followUpDays } : null;
   return { orders, payments, pendingReviews, unreadFeedback, unreadNotifications, openErrors, possibleDuplicatePurchases, stock, parcelsToReceive };
 }
 

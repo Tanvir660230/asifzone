@@ -46,6 +46,7 @@ import type {
 } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
+import { FINANCE_BUSINESS_KEY } from "../../domain/finance/finance-context";
 import { opsEventOrderIds } from "../analytics/ops-pulse.service";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
@@ -1726,8 +1727,13 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   return order;
 }
 
-/** Owner decision Q-B: a parcel still out this many days after its cancellation is a Home follow-up. */
+/** Owner decision Q-B: a parcel still out this many days after its cancellation is a Home follow-up — the store's
+ * FinanceBusiness.returnFollowUpDays, this default until the finance home exists (read only: never created from here). */
 export const PARCEL_FOLLOW_UP_DAYS = 14;
+async function parcelFollowUpDays(): Promise<number> {
+  const biz = await prisma.financeBusiness.findUnique({ where: { key: FINANCE_BUSINESS_KEY }, select: { returnFollowUpDays: true } });
+  return biz?.returnFollowUpDays ?? PARCEL_FOLLOW_UP_DAYS;
+}
 
 /**
  * Parcels to receive (blueprint P1.5 "Returns & refused parcels", under today's rule): orders cancelled after they shipped
@@ -1747,15 +1753,16 @@ export async function listParcelsToReceive(now: Date = new Date()) {
     HAVING SUM(i.quantity - i."restockedQuantity") > 0
     ORDER BY "cancelledAt" ASC NULLS FIRST`;
   const day = 86_400_000;
+  const followUpDays = await parcelFollowUpDays();
   const parcels = rows.map((r) => {
     const daysOut = r.cancelledAt ? Math.floor((now.getTime() - r.cancelledAt.getTime()) / day) : null;
     return {
       orderId: r.id, orderNumber: r.orderNumber, customerName: r.customerName, customerPhone: r.customerPhone, trackingNumber: r.trackingNumber, courierStatus: r.courierStatus,
       cancelledAt: r.cancelledAt, units: Number(r.units), value: r.value === null ? 0 : Number(r.value),
-      daysOut, overdue: daysOut !== null && daysOut >= PARCEL_FOLLOW_UP_DAYS,
+      daysOut, overdue: daysOut !== null && daysOut >= followUpDays,
     };
   });
-  return { followUpDays: PARCEL_FOLLOW_UP_DAYS, parcels, overdue: parcels.filter((p) => p.overdue).length };
+  return { followUpDays, parcels, overdue: parcels.filter((p) => p.overdue).length };
 }
 
 /** A parcel cancelled after it shipped is back at the shop (inventory recovery F-d): its units go back into stock now —
