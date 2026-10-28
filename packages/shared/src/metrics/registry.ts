@@ -83,7 +83,7 @@ export const METRIC_DEFINITIONS: readonly MetricDefinition[] = [
   def("stock_on_hand", "Stock on hand", "count", "now", NONE, "Σ stock of tracked, active variants of products not in trash."),
   def("low_stock_variants", "Low-stock variants", "count", "now", NONE, "Sellable tracked variants at or below their product's low-stock threshold (per variant)."),
   def("out_of_stock_variants", "Out-of-stock variants", "count", "now", NONE, "Sellable tracked variants with no stock."),
-  def("inventory_value", "Inventory value", "money", "now", NONE, "Σ stock × current cost of tracked, active variants of products not in trash.", { estimated: true }),
+  def("inventory_value", "Inventory value", "money", "now", NONE, "Σ stock × unit cost of tracked, active variants of products not in trash — book average where costing is live, catalog cost where it is not (blueprint P-1). Variants without any cost are left out and reported as coverage (variants), never valued at 0.", { estimated: true }),
 ];
 
 const BY_KEY = new Map(METRIC_DEFINITIONS.map((d) => [d.key, d]));

@@ -214,7 +214,9 @@ describe("aggregation (§4)", () => {
       { variantId: "b", productId: "p", stock: 0, trackInventory: true, lowStockThreshold: 5, held: true, purchasable: true, currentUnitCost: T(100) },
       { variantId: "c", productId: "p", stock: 0, trackInventory: false, lowStockThreshold: 5, held: true, purchasable: true, currentUnitCost: T(100) },
       { variantId: "d", productId: "q", stock: 9, trackInventory: true, lowStockThreshold: 5, held: true, purchasable: false, currentUnitCost: T(10) },
+      // a held variant with stock but no cost: counted in stock, left out of the value (never valued at 0) — blueprint P-1
+      { variantId: "e", productId: "q", stock: 4, trackInventory: true, lowStockThreshold: 0, held: true, purchasable: false, currentUnitCost: null },
     ]);
-    expect(t).toEqual({ stockOnHand: 11, lowStockVariants: 1, outOfStockVariants: 1, inventoryValue: T(290) });
+    expect(t).toEqual({ stockOnHand: 15, lowStockVariants: 1, outOfStockVariants: 1, inventoryValue: T(290), costedVariants: 2, costMissingVariants: 1 });
   });
 });

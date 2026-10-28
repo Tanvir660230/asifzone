@@ -4,8 +4,10 @@
  * Each cost line is set at the nearest level that sets it — this size, the product, its category, the shop — else it is
  * worked out (AUTO) from what the books already know:
  *
- *   MAKING          the latest approved recipe at the materials' moving averages (a material without one: its reference
- *                   cost, marked an estimate); no recipe → the size's stock average → its cost price; else unknown
+ *   MAKING          the one cost rule (blueprint P-1, cost-resolver.ts): costing live → the size's book average, then the
+ *                   latest approved recipe at the materials' moving averages (a material without one: its reference cost,
+ *                   marked an estimate), then the cost price only as an estimate when the cost policy allows estimates;
+ *                   costing not live → the recipe, then the cost price; else unknown ("cost missing")
  *   PACKAGING       the active packing rules for a one-item parcel, at the materials' averages
  *   COURIER         the rate card: inside-Dhaka share × the Dhaka fee + the rest × the outside fee
  *   PAYMENT_FEE     COD % × the cash-on-delivery share + the gateway's % and fixed fee × the online share
@@ -29,6 +31,7 @@ import { packagingFor } from "./packaging.service";
 import { rateCardFor, zoneOf } from "./charge-estimates";
 import { loadRateCards } from "./charge-projection";
 import { profitReport } from "./profit.service";
+import { loadCostingState } from "./cost-resolver";
 
 type Level = "VARIANT" | "PRODUCT" | "CATEGORY" | "BUSINESS";
 export const DEFAULTS = { insideDhakaPct: 50, codPct: 100, targetMarginPct: 30 } as const;
@@ -91,7 +94,7 @@ async function load(productIds: string[]) {
     orderBy: { name: "asc" },
   });
   const variantIds = products.flatMap((p) => p.variants.map((v) => v.id));
-  const [profiles, boms, rules, rates, adSpend, orders, outcomes] = await Promise.all([
+  const [profiles, boms, rules, rates, costing, adSpend, orders, outcomes] = await Promise.all([
     prisma.costProfile.findMany({ where: { businessId: business.id }, select: { scope: true, scopeId: true, insideDhakaPct: true, codPct: true, returnRatePct: true, targetMarginPct: true, notes: true, updatedAt: true, lines: { select: { kind: true, mode: true, amount: true, label: true, variantId: true }, orderBy: { sortOrder: "asc" } } } }),
     prisma.billOfMaterials.findMany({
       where: { productId: { in: productIds }, status: "APPROVED" },
@@ -100,6 +103,7 @@ async function load(productIds: string[]) {
     }),
     prisma.packingRule.findMany({ where: { isActive: true }, select: { id: true, scope: true, scopeId: true, materialVariantId: true, quantity: true, per: true, createdAt: true, materialVariant: { select: { product: { select: { costPrice: true } } } } } }),
     loadRateCards(business.id, cur),
+    loadCostingState(),
     prisma.adSpendDay.aggregate({ where: { date: { gte: since30 } }, _sum: { amount: true } }),
     prisma.order.count({ where: { deletedAt: null, createdAt: { gte: since30 }, status: { notIn: ["CANCELLED"] } } }),
     prisma.order.groupBy({ by: ["status"], where: { deletedAt: null, createdAt: { gte: since60 }, status: { in: ["DELIVERED", "PARTIALLY_DELIVERED", "RETURNED"] } }, _count: { _all: true } }),
@@ -110,7 +114,7 @@ async function load(productIds: string[]) {
   const delivered = outcomes.filter((o) => o.status !== "RETURNED").reduce((s, o) => s + o._count._all, 0);
   const returned = outcomes.find((o) => o.status === "RETURNED")?._count._all ?? 0;
   return {
-    cur, products, profiles: profiles as LoadedProfile[], boms, rules, rates, avg,
+    cur, products, profiles: profiles as LoadedProfile[], boms, rules, rates, avg, costing,
     adsPerOrder: adSpend._sum.amount === null ? 0 : orders > 0 ? toMinor(adSpend._sum.amount, cur) / orders : null,
     adSpendMinor: adSpend._sum.amount === null ? 0 : toMinor(adSpend._sum.amount, cur),
     orders30: orders,
@@ -164,6 +168,9 @@ function autoLine(d: Loaded, product: Loaded["products"][number], variant: Loade
   const zoneFee = card ? s * zoneOf(card, "Dhaka", null).charge + (1 - s) * card.defaultCharge : null;
   switch (kind) {
     case "MAKING": {
+      // Costing live: the book average is the cost (P-1) — the same figure Analytics and the books use for this size.
+      const book = d.costing.costingLive ? d.avg.get(variant.id) : undefined;
+      if (book !== undefined) return { fixed: toMinor(book.toFixed(2), cur), percent: 0, how: "Book average cost of the stock", estimate: false };
       const bom = d.boms.find((b) => b.productId === product.id);
       const lines = bom?.lines.filter((l) => !l.finishedVariantId || l.finishedVariantId === variant.id) ?? [];
       if (lines.length) {
@@ -177,11 +184,11 @@ function autoLine(d: Loaded, product: Loaded["products"][number], variant: Loade
         }
         return { fixed: toMinor(sum.toFixed(2), cur), percent: 0, how: `Recipe v${bom!.version} at today's material costs${estimate ? " (some are reference costs)" : ""}`, estimate };
       }
-      const av = d.avg.get(variant.id);
-      if (av !== undefined) return { fixed: toMinor(av.toFixed(2), cur), percent: 0, how: "Average cost of the stock", estimate: false };
       const cp = variant.costPrice ?? product.costPrice;
-      if (cp !== null) return { fixed: toMinor(cp, cur), percent: 0, how: "Cost price on the product", estimate: true };
-      return { fixed: null, percent: 0, how: "No recipe, stock cost or cost price", estimate: false };
+      // Costing not live: the catalog cost is the cost. Live: only a labelled estimate, and only if the policy allows one.
+      if (cp !== null && !d.costing.costingLive) return { fixed: toMinor(cp, cur), percent: 0, how: "Cost price on the product", estimate: false };
+      if (cp !== null && d.costing.costPolicy !== "KNOWN_ONLY") return { fixed: toMinor(cp, cur), percent: 0, how: "Cost price on the product — not yet in the books", estimate: true };
+      return { fixed: null, percent: 0, how: d.costing.costingLive ? "Cost missing — no book cost or recipe yet" : "No recipe or cost price", estimate: false };
     }
     case "PACKAGING": {
       const uses = packagingFor([{ variantId: variant.id, productId: product.id, categoryId: product.categoryId, quantity: 1 }], d.rules);

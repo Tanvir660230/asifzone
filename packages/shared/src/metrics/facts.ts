@@ -380,5 +380,8 @@ export interface InventoryVariantFact {
   held: boolean;
   /** Product published, not trashed, variant active — sellable. */
   purchasable: boolean;
-  currentUnitCost: number;
+  /** Minor units from the one cost resolver (blueprint P-1); null = cost missing — never counted as 0. */
+  currentUnitCost: number | null;
+  /** BOOK, PROVISIONAL, ESTIMATED, CATALOG or MISSING (apps/api domain/finance/cost-resolver.ts). */
+  costBasis?: string;
 }

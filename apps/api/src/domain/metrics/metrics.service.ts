@@ -174,6 +174,7 @@ async function computeUncached(req: MetricsRequest, range: BusinessRange, curren
       value = key === "outstanding_cod" ? totals.outstandingCod : key === "amount_due" ? totals.amountDue : totals.refundDue;
     } else if (INVENTORY_KEYS.has(key)) {
       const totals = inventoryTotals(await loadInventoryFacts(currency));
+      if (key === "inventory_value") coverage = { recorded: totals.costedVariants, missing: totals.costMissingVariants };
       value =
         key === "stock_on_hand" ? totals.stockOnHand : key === "low_stock_variants" ? totals.lowStockVariants : key === "out_of_stock_variants" ? totals.outOfStockVariants : totals.inventoryValue;
     }

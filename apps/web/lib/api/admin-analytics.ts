@@ -764,7 +764,9 @@ export interface DeadStockVariant {
   size: string;
   color: string;
   stock: number;
-  tiedUpValue: number;
+  /** null = cost missing (blueprint P-1), never 0. */
+  tiedUpValue: number | null;
+  costBasis: "BOOK" | "PROVISIONAL" | "ESTIMATED" | "CATALOG" | "MISSING";
 }
 
 export function getDeadStock(days = 90, limit = 10) {

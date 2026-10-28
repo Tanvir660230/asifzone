@@ -6,6 +6,7 @@
  */
 import { addDays, businessDate, contributions, fromMajor, money, resolveBusinessRange, toMajor } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { resolveVariantCosts } from "../../domain/finance/cost-resolver";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { loadFactsForRange } from "../../domain/metrics/metrics.service";
 import { storeContext, utcInstant } from "../../domain/metrics/store-time";
@@ -62,7 +63,7 @@ export async function getProductActions(now: Date = new Date()): Promise<Product
   const viewsBy = new Map(views.map((v) => [v.productId, Number(v.n)]));
   const cartsBy = new Map(carts.map((v) => [v.productId, Number(v.n)]));
   const refusalsBy = new Map(breakdown(parcels, (p) => p.products.map((x) => x.id)).map((r) => [r.key, r]));
-  const minor = (v: { toString(): string } | null) => fromMajor(v?.toString() ?? "0", currency).amount;
+  const costs = await resolveVariantCosts(variants, currency);
 
   const products = new Map<string, ProductSignals>();
   for (const v of variants) {
@@ -84,7 +85,9 @@ export async function getProductActions(now: Date = new Date()): Promise<Product
     const sold30 = units30.get(v.id) ?? 0;
     const label = [v.color, v.size].filter((x) => x && x.trim()).join(" / ") || v.sku;
     sig.variants.push({ label, stock: v.stock, unitsPerDay: sold30 / 30, unitsSold30: sold30 });
-    if (v.stock > 0 && !units60.has(v.id)) sig.deadStockValue += toMajor(money(v.stock * minor(v.costPrice ?? p.costPrice), currency));
+    // tied-up value at the one resolved cost (blueprint P-1); a variant without a cost adds nothing rather than a fake 0
+    const unit = costs.get(v.id)!.unitCostMinor;
+    if (v.stock > 0 && !units60.has(v.id) && unit !== null) sig.deadStockValue += toMajor(money(v.stock * unit, currency));
     products.set(p.id, sig);
   }
 
