@@ -277,7 +277,7 @@ function FinishDialog({ purchase, canOwnerMoney, onClose }: { purchase: StockPur
   const [from, setFrom] = useState("");
   const [problem, setProblem] = useState<StockProblem | null>(null);
   const finish = useMutation({
-    mutationFn: () => stockApi.finishStockPurchase(purchase.id, from === "" ? {} : { paidFrom: from === "owner" ? { ownerPocket: true } : { financialAccountId: from } }),
+    mutationFn: () => stockApi.finishStockPurchase(purchase.id, from === "" ? {} : { paidFrom: from === "owner" ? { ownerPocket: true, funding: "CAPITAL" } : from === "owner-repay" ? { ownerPocket: true, funding: "REIMBURSE" } : { financialAccountId: from } }),
     onSuccess: () => {
       toast.success("Purchase finished");
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
@@ -300,8 +300,9 @@ function FinishDialog({ purchase, canOwnerMoney, onClose }: { purchase: StockPur
         <p className="text-sm text-fg-muted">It stopped at {purchase.pendingStep ? stockApi.PENDING_STEP_LABEL[purchase.pendingStep] : "the last step"}. Finishing runs the steps that are left.</p>
         <Field htmlFor="finish-from" label="Paid from" hint="Another account can be chosen only while nothing has been paid for it.">
           <Select id="finish-from" value={from} onChange={(e) => setFrom(e.target.value)} disabled={accountsQ.isLoading}>
-            <option value="">As before: {purchase.paidFrom.kind === "OWNER" ? "owner's own money" : purchase.paidFrom.name}</option>
-            {canOwnerMoney && purchase.paidFrom.kind !== "OWNER" && <option value="owner">Owner&apos;s own money</option>}
+            <option value="">As before: {purchase.paidFrom.kind === "OWNER" ? (purchase.paidFrom.funding === "REIMBURSE" ? "owner's own money, to repay" : "owner's own money, as capital") : purchase.paidFrom.name}</option>
+            {canOwnerMoney && purchase.paidFrom.kind !== "OWNER" && <option value="owner-repay">Owner&apos;s own money — to repay later</option>}
+            {canOwnerMoney && purchase.paidFrom.kind !== "OWNER" && <option value="owner">Owner&apos;s own money — put in as capital</option>}
             {accounts.filter((a) => a.id !== purchase.paidFrom.financialAccountId).map((a) => <option key={a.id} value={a.id}>{a.name} ({formatPrice(a.currentBalance)})</option>)}
           </Select>
         </Field>

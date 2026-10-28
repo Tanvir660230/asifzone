@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { isBusinessDate } from "../finance/periods";
 import { financeAmountSchema } from "./finance-money";
+import { OWNER_FUNDING_KINDS } from "./finance-books";
 
 const businessDate = z.string().refine(isBusinessDate, "Use a valid date (YYYY-MM-DD)");
 const id = z.string().trim().min(1).max(64);
@@ -16,8 +17,10 @@ const positive = financeAmountSchema.refine((v) => v > 0, "Amount must be more t
 const quantity = z.number().int("Whole units (stock units: ml, pcs…)").min(1).max(1_000_000);
 const onceEach = (lines: Array<{ variantId: string }>) => new Set(lines.map((l) => l.variantId)).size === lines.length;
 const materialOnce = (lines: Array<{ materialVariantId: string }>) => new Set(lines.map((l) => l.materialVariantId)).size === lines.length;
-/** Who pays: a money account (cash, bank, wallet) or the owner's own money (owner-only). */
-const paidFrom = z.union([z.object({ financialAccountId: id }).strict(), z.object({ ownerPocket: z.literal(true) }).strict()]);
+/** Who pays: a money account (cash, bank, wallet) or the owner's own money (owner-only). For the owner's money, owner
+ * decision Q14 = B: `funding` says whether it is owed back to the owner (REIMBURSE) or added as capital (CAPITAL, the
+ * default when omitted — what the form did before the choice existed). */
+const paidFrom = z.union([z.object({ financialAccountId: id }).strict(), z.object({ ownerPocket: z.literal(true), funding: z.enum(OWNER_FUNDING_KINDS).optional() }).strict()]);
 
 /** Bought: what arrived, the line total paid for each item, extras spread over the items by value, and who paid. */
 export const stockPurchaseSchema = z

@@ -64,7 +64,8 @@ export interface StockPurchase {
   goods: number | null;
   extras: number | null;
   total: number | null;
-  paidFrom: { kind: "ACCOUNT" | "OWNER"; financialAccountId: string | null; name: string };
+  /** funding: the owner's own money as capital or owed back to him (Q14 = B); absent before the choice existed (capital). */
+  paidFrom: { kind: "ACCOUNT" | "OWNER"; financialAccountId: string | null; name: string; funding?: "REIMBURSE" | "CAPITAL" };
   receipt: { id: string; number: string | null } | null;
   invoice: { id: string; number: string | null } | null;
   paymentStatus: string | null;
@@ -81,7 +82,7 @@ export interface StockPurchase {
   createdAt: string;
 }
 
-export type PaidFrom = { financialAccountId: string } | { ownerPocket: true };
+export type PaidFrom = { financialAccountId: string } | { ownerPocket: true; funding?: "REIMBURSE" | "CAPITAL" };
 
 export interface PurchaseBody {
   date?: string;

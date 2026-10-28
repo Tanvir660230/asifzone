@@ -8,8 +8,10 @@
  *   3. bill           a supplier invoice matched line by line to that receipt, posted: it
  *                     clears GRNI at exactly the receipt's value (no price difference)          supplier-invoices.service
  *   4. funding        paid from the owner's own money only (owner-only: finance.sensitive, like POST /equity/owner/money):
- *                     his money comes into his "<owner> — own money" cash account as capital
- *                     first (made the first time, as the owner's history does)                  partner-profit.service ownerMoney
+ *                     his money comes into his "<owner> — own money" cash account first (made the first time, as the
+ *                     owner's history does) — as capital, or owed back to him (owner decision Q14 = B: the person
+ *                     chooses per purchase; credit liability.owner_reimbursable, as an owner-paid expense does)
+ *                                                                                            partner-profit.service ownerMoney
  *   5. payment        the bill paid from that account                                           supplier-payments.service
  *   6. extras         transport, customs… one landed cost spread over the receipt by value,
  *                     paid from the same account                                                landed-costs.service
@@ -43,6 +45,10 @@ import { createSupplierInvoice, postSupplierInvoice } from "../finance/supplier-
 import { paySupplier } from "../finance/supplier-payments.service";
 import { createLandedCost } from "../finance/landed-costs.service";
 import { ownerMoney } from "../finance/partner-profit.service";
+import { requestMovementInTx } from "../finance/treasury.service";
+import { resolveMappedAccount } from "../finance/chart.service";
+import { ensureOwnerBooksSetupInTx } from "../finance/owner-books-setup.service";
+import { financeTransaction } from "../finance/finance-tx";
 import { createFinancialAccount } from "../finance/financial-accounts.service";
 import { moneyBalanceAt } from "../finance/ledger.service";
 import { findDuplicateReceipts, findDuplicateSimplePurchases, type DuplicateMatch } from "./duplicate-purchase";
@@ -60,7 +66,11 @@ const NO_OVERDRAFT = new Set(["CASH", "MOBILE_WALLET"]);
 const NEEDS = ["purchasing.receive", "purchasing.approve", "ap.manage", "finance.transact"] as const;
 const KEY_PREFIX = "purchase:";
 
-type PaidFrom = { kind: "ACCOUNT" | "OWNER"; financialAccountId: string; name: string };
+type OwnerFunding = "REIMBURSE" | "CAPITAL";
+/** `funding` only for the owner's own money (Q14 = B); absent on purchases saved before the choice existed = CAPITAL. */
+type PaidFrom = { kind: "ACCOUNT" | "OWNER"; financialAccountId: string; name: string; funding?: OwnerFunding };
+/** The funding a request asks for: the owner's money is capital unless it says it is owed back. */
+const fundingOf = (p: StockPurchaseFinishInput["paidFrom"]): OwnerFunding | undefined => (p && "ownerPocket" in p ? p.funding ?? "CAPITAL" : undefined);
 interface PurchaseSteps {
   request: {
     supplierName: string;
@@ -175,7 +185,7 @@ async function ensureOwnerPocket(businessId: string, actor: FinanceActor): Promi
 }
 
 /** Who pays, from the request: an account (cash, bank or wallet) or the owner's own money (`account` null: made later). */
-async function resolvePaidFrom(businessId: string, paidFrom: StockPurchaseFinishInput["paidFrom"] & object): Promise<PaidFrom | { kind: "OWNER"; financialAccountId: null; name: string }> {
+async function resolvePaidFrom(businessId: string, paidFrom: StockPurchaseFinishInput["paidFrom"] & object): Promise<PaidFrom | { kind: "OWNER"; financialAccountId: null; name: string; funding?: OwnerFunding }> {
   if ("ownerPocket" in paidFrom) {
     const { name, account } = await findOwnerPocket(businessId);
     return account ? { kind: "OWNER", financialAccountId: account.id, name: account.name } : { kind: "OWNER", financialAccountId: null, name };
@@ -245,6 +255,18 @@ async function assertMoneyFor(business: FinanceBusinessInfo, paidFrom: { kind: s
       balance: toMajorNumber(balance, cur), needed: toMajorNumber(neededMinor, cur),
     });
   }
+}
+
+/** The owner's money owed back to him (Q14 = B): it comes into his own-money cash account against
+ * liability.owner_reimbursable — the posting an owner-paid expense with funding REIMBURSE makes (custody.service). */
+async function ownerOwedBack(financialAccountId: string, amount: number, date: string, description: string, actor: FinanceActor, key: string) {
+  const { business } = await getFinanceContext();
+  return financeTransaction(async (tx) => {
+    await ensureOwnerBooksSetupInTx(tx, business);
+    const owed = await resolveMappedAccount(tx, business.id, "liability.owner_reimbursable");
+    const { movement } = await requestMovementInTx(tx, business, { kind: "DEPOSIT", movementDate: date, amount, toFinancialAccountId: financialAccountId, counterAccountId: owed.id, description: description.slice(0, 300) }, actor, `request:owner-owed:${key}`);
+    return { movement };
+  });
 }
 
 async function costingLive(businessId: string): Promise<boolean> {
@@ -317,7 +339,8 @@ async function recordSimplePurchase(input: ParsedPurchase, actor: FinanceActor, 
   const goodsMinor = input.lines.reduce((s, l) => s + toMinor(l.amount, cur), 0);
   const extrasMinor = input.extras.reduce((s, e) => s + toMinor(e.amount, cur), 0);
   // read-only: an account is checked, the owner's own-money account is never made here (nothing is booked)
-  const paidFrom = (await resolvePaidFrom(business.id, input.paidFrom)) as PaidFrom;
+  const resolved = (await resolvePaidFrom(business.id, input.paidFrom)) as PaidFrom;
+  const paidFrom: PaidFrom = resolved.kind === "OWNER" ? { ...resolved, funding: fundingOf(input.paidFrom) } : resolved;
   const shape = { date, variantIds: input.lines.map((l) => l.variantId), totalMinor: goodsMinor };
   const matches = await findDuplicateSimplePurchases(prisma, { businessId: business.id, supplierName, shape, currency: cur });
   const initial: PurchaseSteps = {
@@ -412,7 +435,7 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
   }
 
   let paidFrom: PaidFrom;
-  if ("ownerPocket" in input.paidFrom) paidFrom = existing ? (existing.steps as unknown as PurchaseSteps).request.paidFrom : await ensureOwnerPocket(business.id, actor);
+  if ("ownerPocket" in input.paidFrom) paidFrom = existing ? (existing.steps as unknown as PurchaseSteps).request.paidFrom : { ...(await ensureOwnerPocket(business.id, actor)), funding: fundingOf(input.paidFrom) };
   else paidFrom = (await resolvePaidFrom(business.id, input.paidFrom)) as PaidFrom;
 
   const initial: PurchaseSteps = {
@@ -449,8 +472,10 @@ export async function finishPurchase(id: string, raw: StockPurchaseFinishInput, 
   if (found.completedAt) return outcome(found.id, found.steps as unknown as PurchaseSteps, true, found);
   const s = found.steps as unknown as PurchaseSteps;
 
-  const wanted = input.paidFrom ? await resolvePaidFrom(business.id, input.paidFrom) : s.request.paidFrom;
-  const changes = wanted.kind !== s.request.paidFrom.kind || (wanted.financialAccountId !== null && wanted.financialAccountId !== s.request.paidFrom.financialAccountId);
+  const resolvedWanted = input.paidFrom ? await resolvePaidFrom(business.id, input.paidFrom) : s.request.paidFrom;
+  const wanted = input.paidFrom && resolvedWanted.kind === "OWNER" ? { ...resolvedWanted, funding: fundingOf(input.paidFrom) } : resolvedWanted;
+  const changes = wanted.kind !== s.request.paidFrom.kind || (wanted.financialAccountId !== null && wanted.financialAccountId !== s.request.paidFrom.financialAccountId)
+    || (wanted.kind === "OWNER" && (wanted.funding ?? "CAPITAL") !== (s.request.paidFrom.funding ?? "CAPITAL"));
   if (changes && moneyMoved(s)) throw financeError(409, "PAID_FROM_LOCKED", `Part of this purchase was already paid from ${s.request.paidFrom.name} — finish it from there`);
   assertCan(actor, wanted.kind === "OWNER");
   await assertCostingLive(business.id);
@@ -458,7 +483,7 @@ export async function finishPurchase(id: string, raw: StockPurchaseFinishInput, 
   else await supplierByName(business.id, s.request.supplierName);
   await assertBooksOpen(business, businessDateOf(found.entryDate), actor);
   await assertMoneyFor(business, wanted, stillToPay(s, cur));
-  const paidFrom: PaidFrom = wanted.kind === "OWNER" && wanted.financialAccountId === null ? await ensureOwnerPocket(business.id, actor) : (wanted as PaidFrom);
+  const paidFrom: PaidFrom = wanted.kind === "OWNER" && wanted.financialAccountId === null ? { ...(await ensureOwnerPocket(business.id, actor)), funding: wanted.funding } : (wanted as PaidFrom);
 
   const { entry, done, lease } = await claimEntryById(business.id, "PURCHASE", id);
   if (done || !lease) return outcome(entry.id, entry.steps as unknown as PurchaseSteps, true, entry);
@@ -551,11 +576,13 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
       await save();
     }
 
-    // 4. the owner's own money comes in as capital first
+    // 4. the owner's own money comes in first: as capital, or owed back to him (Q14 = B)
     if (req.paidFrom.kind === "OWNER" && !steps.fundingMovementId) {
       await renewLease(lease);
       const what = req.lines.map((l) => `${l.quantity} ${l.unit} ${l.name}`).join(", ");
-      const { movement } = await ownerMoney({ kind: "INVEST", financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, note: `Bought ${steps.receiptNumber}: ${what}`.slice(0, 200) }, actor, tag(key, "funding"));
+      const { movement } = req.paidFrom.funding === "REIMBURSE"
+        ? await ownerOwedBack(req.paidFrom.financialAccountId, steps.total, date, `Paid by the owner (to repay): bought ${steps.receiptNumber}: ${what}`, actor, tag(key, "funding"))
+        : await ownerMoney({ kind: "INVEST", financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, note: `Bought ${steps.receiptNumber}: ${what}`.slice(0, 200) }, actor, tag(key, "funding"));
       if (movement.status !== "POSTED") throw financeError(409, "FUNDING_NEEDS_APPROVAL", "The owner's money must post before the purchase can be paid from it — approve it, then finish the purchase");
       steps.fundingMovementId = movement.id;
       await save();

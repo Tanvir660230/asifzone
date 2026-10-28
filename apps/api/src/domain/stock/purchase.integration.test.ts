@@ -445,3 +445,34 @@ describe("Duplicate-purchase warning (blueprint P0.3)", () => {
     expect(unknownSupplier.body.matches).toEqual([]);
   });
 });
+
+describe("Bought — the owner's money owed back (owner decision Q14 = B)", () => {
+  it("chosen per purchase: owed back raises what the business owes him, capital stays as it was; the books match", async () => {
+    const { business } = await getFinanceContext();
+    const balanceOf = async (key: string) => {
+      const m = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: business.id, key } } });
+      if (!m) return 0;
+      const s = await prisma.journalLine.aggregate({ where: { accountId: m.accountId, entry: { status: "POSTED" } }, _sum: { debit: true, credit: true } });
+      return Number(s._sum.credit ?? 0) - Number(s._sum.debit ?? 0);
+    };
+    const owedBefore = await balanceOf("liability.owner_reimbursable");
+    const capitalBefore = await balanceOf("equity.owner_capital");
+    const body = { supplierName: `Owed back ${RUN}`, lines: [{ variantId: cap, quantity: 2, amount: 700 }], documentTotal: 2, paidFrom: { ownerPocket: true, funding: "REIMBURSE" } };
+    const r = await api().post("/stock/purchases", body, `sp-owed-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.purchase.paidFrom).toMatchObject({ kind: "OWNER", funding: "REIMBURSE" });
+    expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    expect(await balanceOf("equity.owner_capital")).toBe(capitalBefore);
+    const pocket = r.body.purchase.paidFrom.financialAccountId as string;
+    expect(await balance(pocket)).toBe(0); // in and out the same day
+    // a replay posts nothing twice
+    expect((await api().post("/stock/purchases", body, `sp-owed-${RUN}`)).body.replayed).toBe(true);
+    expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    // without a choice it stays capital, as before
+    const capitalPaid = await api().post("/stock/purchases", { ...body, paidFrom: { ownerPocket: true } }, `sp-owed-capital-${RUN}`);
+    expect(capitalPaid.status, JSON.stringify(capitalPaid.body)).toBe(201);
+    expect(await balanceOf("equity.owner_capital")).toBe(capitalBefore + 700);
+    expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    await booksMatch();
+  });
+});

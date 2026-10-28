@@ -27,6 +27,8 @@ import { byProduct, colorOf, num, sizeOf, spreadWords, todayLocal, variantWords 
 import { ProblemAlert } from "./stock-problem";
 
 const OWNER = "owner";
+/** Owner decision Q14 = B: the owner's own money is chosen per purchase as capital (OWNER) or owed back to him. */
+const OWNER_REPAY = "owner-repay";
 const PAYING = new Set(["CASH", "BANK", "MOBILE_WALLET"]);
 const NO_OVERDRAFT = new Set(["CASH", "MOBILE_WALLET"]);
 const DEFAULT_SUPPLIER = "Local market";
@@ -178,7 +180,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
       return vs.map((v, k) => ({ variantId: v.variantId, quantity: qtyOf(l.qty[v.variantId]), amount: amounts[k]! / 100 }));
     }),
     extras: extras.map((e) => ({ description: e.description.trim(), amount: Number(e.amount) })),
-    paidFrom: paidFrom === OWNER ? { ownerPocket: true } : { financialAccountId: paidFrom },
+    paidFrom: paidFrom === OWNER ? { ownerPocket: true, funding: "CAPITAL" } : paidFrom === OWNER_REPAY ? { ownerPocket: true, funding: "REIMBURSE" } : { financialAccountId: paidFrom },
     duplicateReason: duplicateReason.trim() || null,
     ...(simple ? { updateCatalogCost } : {}),
   });
@@ -396,13 +398,15 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
               shortOf ? <span className="text-warning-700">{shortOf.name} holds {formatPrice(shortOf.currentBalance)}; this needs {formatPrice(totalMinor / 100)}.</span>
                 : simple && paidFrom ? "Kept with the purchase — nothing is booked until the books start."
                 : paidFrom === OWNER ? "Booked as money the owner put in, then paid to the supplier."
+                : paidFrom === OWNER_REPAY ? "Booked as owed back to the owner, then paid to the supplier. It shows in Money until it is repaid."
                 : accountsForbidden ? (canOwnerMoney ? "Your role can't see the money accounts — only the owner's own money is listed." : "Your role can't see the money accounts. Ask the owner to record this purchase.")
                 : accountsQ.isError ? "The money accounts couldn't be loaded." : undefined
             }
           >
             <Select id="bought-paid-from" value={paidFrom} onChange={(e) => setPaidFrom(e.target.value)} disabled={accountsQ.isLoading} data-testid="bought-paid-from">
               <option value="">{accountsQ.isLoading ? "Loading…" : "Choose…"}</option>
-              {canOwnerMoney && <option value={OWNER}>Owner&apos;s own money</option>}
+              {canOwnerMoney && <option value={OWNER_REPAY}>Owner&apos;s own money — to repay later</option>}
+              {canOwnerMoney && <option value={OWNER}>Owner&apos;s own money — put in as capital</option>}
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({formatPrice(a.currentBalance)})</option>)}
             </Select>
           </Field>
