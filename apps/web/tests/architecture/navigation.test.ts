@@ -153,7 +153,7 @@ describe("navigation manifest — derivation", () => {
     expect(navNode("finance")?.label).toBe("Money");
     const owner = access("OWNER");
     expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Accounts & cash", "Expenses", "Bills to pay", "Payments & refunds", "Courier & gateway", "Loans", "Prepaid costs", "Bank reconciliation"]);
-    expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Needs attention", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
+    expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Month-end", "Needs attention", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
     expect(navChildren("analytics", owner).map((c) => c.node.label)).toEqual(["Profit", "Product costs & price planner", "Store analytics", "Purchasing reports", "AI assistant"]);
     expect(resolveNavNode("/admin/finance/my-cash")?.parent).toBe("finance.money");
     expect(deprecatedRedirect("/admin/finance/refills")).toBe("/admin/stock?open=filled");

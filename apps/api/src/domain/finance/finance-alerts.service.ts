@@ -223,7 +223,7 @@ export async function financeAlerts() {
 
   if (periods.length) {
     const first = businessDateOf(periods[0]!.startDate).slice(0, 7);
-    add({ key: "periods.open", severity: "info", title: "Months ended but not closed", detail: `From ${first}. Closing a month stops further postings into it.`, count: periods.length, href: `/admin/finance/attention?view=month-end&month=${first}`, action: "Month-end checklist" });
+    add({ key: "periods.open", severity: "info", title: "Months ended but not closed", detail: `From ${first}. Closing a month stops further postings into it.`, count: periods.length, href: `/admin/finance/month-end?month=${first}`, action: "Month-end checklist" });
   }
 
   // Finance Center: subscriptions to renew, the SMS balance running low, costs still to split (docs/FINANCE_CENTER.md)

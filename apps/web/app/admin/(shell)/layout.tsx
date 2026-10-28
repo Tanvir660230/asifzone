@@ -11,6 +11,7 @@ import { PhoneTables } from "@/components/admin/phone-tables";
 import { SectionBar } from "@/components/admin/section-bar";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
+import { PeriodChip } from "@/components/admin/period-chip";
 import { CommandPalette, useCommandPaletteHotkey, useCreateCommands } from "@/components/admin/command-palette";
 import { NAV_ICONS } from "@/components/admin/nav-icons";
 import { ShortcutHelp } from "@/components/admin/shortcut-help";
@@ -196,6 +197,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                 >
                   <ExternalLink size={17} />
                 </Link>
+                <PeriodChip className="mr-1" />
                 <NotificationBell />
                 <span className="mx-2 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
                 <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />

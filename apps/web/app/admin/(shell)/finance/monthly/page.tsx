@@ -91,7 +91,7 @@ export default function MonthlyProfitPage() {
           </Table>
         </HScrollShadow>
       </Card>
-      <p className="text-xs text-fg-muted">Stock fixes are count differences and cost corrections — stock put right, not goods sold. The months add up to the income statement. Goods marked as estimated get their real cost once purchase bills are in; a month is closed from <Link href="/admin/finance/attention?view=month-end" className="font-medium text-accent hover:underline">Month-end</Link>.</p>
+      <p className="text-xs text-fg-muted">Stock fixes are count differences and cost corrections — stock put right, not goods sold. The months add up to the income statement. Goods marked as estimated get their real cost once purchase bills are in; a month is closed from <Link href="/admin/finance/month-end" className="font-medium text-accent hover:underline">Month-end</Link>.</p>
     </div>
   );
 }

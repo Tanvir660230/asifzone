@@ -38,7 +38,7 @@ test.beforeAll(async ({ browser }) => {
   owner = await login(browser, OWNER);
 });
 
-test("needs attention: every alert links to its fix; the month-end checklist covers every step", async () => {
+test("needs attention: every alert links to its fix; Month-end has its own page covering every step", async () => {
   await owner.goto("/admin/finance/attention");
   await expect(owner.getByRole("heading", { name: "Needs attention" })).toBeVisible(NAV);
   await expect(owner.getByTestId("alert-counts").or(owner.getByTestId("alerts-empty"))).toBeVisible(NAV);
@@ -46,14 +46,18 @@ test("needs attention: every alert links to its fix; the month-end checklist cov
   for (const a of body.alerts as Array<{ key: string; href: string }>) {
     await expect(owner.getByTestId(`alert-${a.key}`).getByRole("link")).toHaveAttribute("href", a.href);
   }
-  await owner.getByRole("radio", { name: "Month-end close" }).or(owner.getByRole("button", { name: "Month-end close" })).first().click();
+  await owner.getByRole("link", { name: "Month-end close" }).click();
+  await expect(owner).toHaveURL(/\/admin\/finance\/month-end/, NAV);
   await expect(owner.getByTestId("month-label")).toBeVisible(NAV);
-  for (const key of ["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "checks"]) {
+  for (const key of ["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "payouts", "ads", "checks"]) {
     await expect(owner.getByTestId(`step-${key}`)).toBeVisible();
   }
   const before = await owner.getByTestId("month-label").innerText();
   await owner.getByRole("button", { name: "Previous month" }).click();
   await expect(owner.getByTestId("month-label")).not.toHaveText(before, NAV);
+  // an old link to the month-end tab lands on the page, month kept
+  await owner.goto("/admin/finance/attention?view=month-end&month=2026-09");
+  await expect(owner).toHaveURL(/\/admin\/finance\/month-end\?month=2026-09/, NAV);
 });
 
 test("budgets & cash: the forecast loads from the books", async () => {
