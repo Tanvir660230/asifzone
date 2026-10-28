@@ -227,7 +227,7 @@ describe("navigation manifest — derivation", () => {
     // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels, Stock check (admin
     // audit phase 3: where every piece went, moved from Finance) and Production, whose own pages are its tabs; a lone module
     // still shows none (Customers).
-    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/stock/purchases", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
     expect(sectionTabsFor("/admin/manufacturing/boms", access("OWNER")).map((t) => t.href)).toEqual(["/admin/manufacturing/home", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
     expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
@@ -245,7 +245,7 @@ describe("navigation manifest — derivation", () => {
     expect(sectionBarFor("/admin/orders/abc123", access("OWNER"))).toBeNull();
     expect(sectionBarFor("/admin/products/abc123/edit", access("OWNER"))).toBeNull();
     // Inventory holds Stock and Manufacturing (docs/MANUFACTURING.md), so it has a section bar of its own
-    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
+    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(["/admin/stock", "/admin/stock/purchases", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
     // a Production page keeps the module bar on "Production"
     expect(sectionBarFor("/admin/manufacturing/materials", access("OWNER"))?.activeHref).toBe("/admin/manufacturing/home");
     expect(sectionBarFor("/admin/manufacturing/production-orders/po1", access("OWNER"))).toBeNull(); // a detail view
