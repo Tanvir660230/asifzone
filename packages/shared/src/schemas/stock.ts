@@ -27,6 +27,8 @@ export const stockPurchaseSchema = z
     supplierName: z.string().trim().max(120).optional().nullable().transform((v) => (v ? v : null)).refine((v) => v === null || v.length >= 2, "At least 2 characters"),
     reference: optionalText(100),
     note: optionalText(500),
+    /** Why it was entered anyway when it looked like a purchase already recorded (blueprint P0.3) — optional. */
+    duplicateReason: optionalText(500),
     lines: z.array(z.object({ variantId: id, quantity, amount: positive })).min(1).max(100).refine(onceEach, "Each item once — add the quantities together"),
     /** Total units on the supplier's invoice or receipt, typed from the document: the lines must add up to it, so a size
      * typed into the wrong row or a missing size is caught before anything is written (inventory recovery F-c). */
@@ -42,6 +44,18 @@ export const stockPurchaseSchema = z
     }
   });
 export type StockPurchaseInput = z.input<typeof stockPurchaseSchema>;
+
+/** Before saving a purchase: does it look like one already entered (blueprint P0.3)? The supplier by id (formal receipt)
+ * or by name (the stock hub's form); amounts are line totals in major units. */
+export const purchaseDuplicateCheckSchema = z
+  .object({
+    supplierId: id.optional().nullable(),
+    supplierName: z.string().trim().max(120).optional().nullable(),
+    date: businessDate.optional(),
+    lines: z.array(z.object({ variantId: id, amount: z.number().min(0).max(STOCK_PURCHASE_MAX_TOTAL) })).min(1).max(200),
+  })
+  .refine((p) => Boolean(p.supplierId) || Boolean(p.supplierName), "Name the supplier");
+export type PurchaseDuplicateCheckInput = z.input<typeof purchaseDuplicateCheckSchema>;
 
 /** Finishing a purchase stuck mid-way: optionally from another account (only while nothing has been paid for it). */
 export const stockPurchaseFinishSchema = z.object({ paidFrom: paidFrom.optional() });

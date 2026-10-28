@@ -86,7 +86,12 @@ export interface PurchaseBody {
   documentTotal: number;
   extras: Array<{ description: string; amount: number }>;
   paidFrom: PaidFrom;
+  /** Why it is recorded anyway when it looks like a purchase already entered (blueprint P0.3). */
+  duplicateReason?: string | null;
 }
+
+/** A live receipt a new purchase looks like: same supplier, ±3 days, ≥ 70% of the items, total within 1%. */
+export interface DuplicatePurchaseMatch { receiptId: string; number: string; receiptDate: string; total: number; itemOverlap: number; totalDifference: number }
 
 export interface PurchaseResult { receiptId: string | null; invoiceId: string | null; landedCostId: string | null; replayed: boolean; purchase: StockPurchase }
 
@@ -116,6 +121,8 @@ export const stockKeys = {
 export const getStockOverview = () => apiFetch<StockOverview>(BASE);
 export const listStockPurchases = (limit = 20) => apiFetch<{ purchases: StockPurchase[] }>(`${BASE}/purchases?limit=${limit}`);
 export const recordStockPurchase = (body: PurchaseBody, idempotencyKey: string) => apiFetch<PurchaseResult>(`${BASE}/purchases`, { method: "POST", body, idempotencyKey });
+export const checkPurchaseDuplicates = (body: { supplierName: string | null; date?: string; lines: Array<{ variantId: string; amount: number }> }) =>
+  apiFetch<{ matches: DuplicatePurchaseMatch[] }>(`${BASE}/purchases/duplicate-check`, { method: "POST", body: { ...body, supplierName: body.supplierName ?? "Local market" } });
 export const finishStockPurchase = (id: string, body: { paidFrom?: PaidFrom }) => apiFetch<PurchaseResult>(`${BASE}/purchases/${id}/finish`, { method: "POST", body });
 export const recordStockCount = (body: CountBody, idempotencyKey: string) => apiFetch<CountResult>(`${BASE}/counts`, { method: "POST", body, idempotencyKey });
 

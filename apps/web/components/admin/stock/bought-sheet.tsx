@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
@@ -12,6 +13,7 @@ import { useDiscardGuard } from "@/components/ui/discard-guard";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { Table } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -114,6 +116,8 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
   const [tried, setTried] = useState(false);
   // Last look before anything is written: every colour / size and the total, against the bill (inventory recovery F-c).
   const [reviewing, setReviewing] = useState(false);
+  // Blueprint P0.3: a purchase that looks like one already entered is flagged before it is recorded — never refused.
+  const [duplicateReason, setDuplicateReason] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
 
   const added = new Set(lines.map((l) => l.choice.id));
@@ -169,7 +173,17 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
     }),
     extras: extras.map((e) => ({ description: e.description.trim(), amount: Number(e.amount) })),
     paidFrom: paidFrom === OWNER ? { ownerPocket: true } : { financialAccountId: paidFrom },
+    duplicateReason: duplicateReason.trim() || null,
   });
+  const goodsLines = () => body().lines.map((l) => ({ variantId: l.variantId, amount: l.amount }));
+  const duplicatesQ = useQuery({
+    queryKey: ["stock-hub", "duplicate-check", supplier.trim(), date, JSON.stringify(reviewing ? goodsLines() : [])],
+    queryFn: () => stockApi.checkPurchaseDuplicates({ supplierName: supplier.trim() || null, date, lines: goodsLines() }),
+    enabled: reviewing,
+    // a warning, never a gate: when the check itself fails the purchase can still be recorded
+    retry: false,
+  });
+  const duplicates = duplicatesQ.data?.matches ?? [];
 
   const save = useMutation({
     mutationFn: () => {
@@ -259,6 +273,21 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, start, onClose
                 </tr>
               </tfoot>
             </Table>
+            {duplicates.length > 0 && (
+              <Alert variant="warning" title="This looks like a purchase already recorded" className="mt-3">
+                <ul className="mt-1 space-y-0.5" data-testid="bought-duplicates">
+                  {duplicates.map((d) => (
+                    <li key={d.receiptId}>
+                      {d.number} on {d.receiptDate} · {formatPrice(d.total)} · {Math.round(d.itemOverlap * 100)}% of the same items
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2">Record it only if these goods really arrived again.</p>
+                <Field htmlFor="bought-duplicate-reason" label="Why it is not a duplicate (optional)" className="mt-2 text-fg">
+                  <Textarea id="bought-duplicate-reason" rows={2} maxLength={500} value={duplicateReason} onChange={(e) => setDuplicateReason(e.target.value)} />
+                </Field>
+              </Alert>
+            )}
           </section>
         )}
 

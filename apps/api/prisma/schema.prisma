@@ -4913,6 +4913,11 @@ model GoodsReceipt {
   evidence                String?
   /// Over-receipt beyond the tolerance needs purchasing.approve and a reason.
   overReceiptReason       String?
+  /// Blueprint P0.3 (owner Q7): other live receipts this one looked like when it was entered (same supplier, ±3 days,
+  /// ≥ 70% items, total ±1%) — a warning only, never a refusal. Null when nothing matched.
+  duplicateWarning        Json?
+  /// Why the person went ahead despite the warning (optional).
+  duplicateReason         String?
   createdByAdminId        String?
   postedByAdminId         String?
   postedAt                DateTime?

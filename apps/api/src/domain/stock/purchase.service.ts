@@ -28,7 +28,7 @@
  * while nothing has been paid yet — another account. Stock documents need costing (decision D-P1): before go-live the
  * purchase is refused with the reason.
  */
-import { monthPeriod, goodsReceiptCreateSchema, stockPurchaseFinishSchema, stockPurchaseSchema, supplierCreateSchema, supplierInvoiceCreateSchema, type StockPurchaseFinishInput, type StockPurchaseInput } from "@clothing-brand/shared";
+import { monthPeriod, goodsReceiptCreateSchema, stockPurchaseFinishSchema, stockPurchaseSchema, supplierCreateSchema, supplierInvoiceCreateSchema, type PurchaseDuplicateCheckInput, type StockPurchaseFinishInput, type StockPurchaseInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { actorCan, type FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "../finance/finance-context";
@@ -41,6 +41,7 @@ import { createLandedCost } from "../finance/landed-costs.service";
 import { ownerMoney } from "../finance/partner-profit.service";
 import { createFinancialAccount } from "../finance/financial-accounts.service";
 import { moneyBalanceAt } from "../finance/ledger.service";
+import { findDuplicateReceipts } from "./duplicate-purchase";
 import { claimEntry, claimEntryById, completeEntry, findEntry, fingerprintOf, isUniqueViolation, releaseEntry, renewLease, saveSteps, unitOf, variantLabel, type Lease } from "./hub-entry";
 
 export type { StockPurchaseInput, StockPurchaseFinishInput };
@@ -60,6 +61,7 @@ interface PurchaseSteps {
     supplierName: string;
     reference: string | null;
     note: string | null;
+    duplicateReason?: string | null;
     lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number }>;
     extras: Array<{ description: string; amount: number }>;
     paidFrom: PaidFrom;
@@ -179,6 +181,18 @@ async function supplierByName(businessId: string, name: string): Promise<string 
   return null;
 }
 
+/** Blueprint P0.3: the live receipts a purchase about to be saved looks like (same supplier, ±3 days, ≥ 70% items,
+ * total ±1%). Read-only; a supplier not found by name has no history, so nothing matches. Never blocks the save. */
+export async function checkPurchaseDuplicates(input: PurchaseDuplicateCheckInput) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  let supplierId = input.supplierId ?? null;
+  if (!supplierId && input.supplierName) supplierId = await supplierByName(business.id, input.supplierName).catch(() => null);
+  if (!supplierId) return { matches: [] };
+  const shape = { date: input.date ?? businessToday(business), variantIds: input.lines.map((l) => l.variantId), totalMinor: input.lines.reduce((s, l) => s + toMinor(l.amount, cur), 0) };
+  return { matches: await findDuplicateReceipts(prisma, { businessId: business.id, supplierId, shape, currency: cur }) };
+}
+
 async function assertSupplierUsable(id: string) {
   const s = await prisma.supplier.findUniqueOrThrow({ where: { id }, select: { status: true, displayName: true, statusReason: true } });
   if (s.status === "ON_HOLD") throw onHold(s);
@@ -268,7 +282,7 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
 
   const initial: PurchaseSteps = {
     request: {
-      supplierName, reference: input.reference, note: input.note,
+      supplierName, reference: input.reference, note: input.note, duplicateReason: input.duplicateReason ?? null,
       lines: input.lines.map((l) => {
         const v = byId.get(l.variantId)!;
         return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), quantity: l.quantity, amount: l.amount };
@@ -366,7 +380,7 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
       steps.receiptId = await onceByStamp(
         () => prisma.goodsReceipt.findFirst({ where: { businessId: business.id, evidence: tag(key, "receipt"), status: { not: "REVERSED" } }, select: { id: true } }),
         () => createGoodsReceipt(goodsReceiptCreateSchema.parse({
-          supplierId: steps.supplierId, receiptDate: date, supplierRef: req.reference, notes: req.note, evidence: tag(key, "receipt"), directReason: PURCHASE_REASON,
+          supplierId: steps.supplierId, receiptDate: date, supplierRef: req.reference, notes: req.note, evidence: tag(key, "receipt"), directReason: PURCHASE_REASON, duplicateReason: req.duplicateReason ?? null,
           lines: req.lines.flatMap((l) => exactLines(l.quantity, toMinor(l.amount, cur)).map((x) => ({ variantId: l.variantId, qtyAccepted: x.qty, unitCost: toMajorNumber(x.unitMinor, cur) }))),
         }), actor),
       );

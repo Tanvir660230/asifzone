@@ -430,3 +430,25 @@ describe("Bought — review fixes", () => {
     expect(hidden).toMatchObject({ goods: null, extras: null, total: null, lines: [{ variantId: oil, quantity: 500, amount: null, unitCost: null }], extrasLines: [{ description: "Transport", amount: null }] });
   });
 });
+
+describe("Duplicate-purchase warning (blueprint P0.3)", () => {
+  it("a purchase like one already entered is warned before saving, saved anyway with its reason, and never refused", async () => {
+    const check = await api().post("/stock/purchases/duplicate-check", { supplierName: "Local market", lines: [{ variantId: oil, amount: 12000 }] });
+    expect(check.status, JSON.stringify(check.body)).toBe(200);
+    expect(check.body.matches.length).toBeGreaterThan(0);
+    expect(check.body.matches[0]).toMatchObject({ itemOverlap: 1, totalDifference: 0 });
+
+    const r = await api().post("/stock/purchases", { ...oilPurchase({ financialAccountId: bank }, []), duplicateReason: "second delivery of the same order" }, `sp-dup-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const receipt = await prisma.goodsReceipt.findUniqueOrThrow({ where: { id: r.body.receiptId ?? r.body.steps?.receiptId } });
+    expect((receipt.duplicateWarning as { matches: unknown[] }).matches.length).toBeGreaterThan(0);
+    expect(receipt.duplicateReason).toBe("second delivery of the same order");
+  });
+
+  it("a different total or another supplier is not a duplicate", async () => {
+    const otherTotal = await api().post("/stock/purchases/duplicate-check", { supplierName: "Local market", lines: [{ variantId: oil, amount: 15000 }] });
+    expect(otherTotal.body.matches).toEqual([]);
+    const unknownSupplier = await api().post("/stock/purchases/duplicate-check", { supplierName: `Nobody ${RUN}`, lines: [{ variantId: oil, amount: 12000 }] });
+    expect(unknownSupplier.body.matches).toEqual([]);
+  });
+});

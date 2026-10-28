@@ -40,6 +40,7 @@ import {
   financeAutopilotSchema,
   ownerHomeQuerySchema,
   stockPurchaseSchema,
+  purchaseDuplicateCheckSchema,
   stockPurchaseListQuerySchema,
   stockPurchaseFinishSchema,
   stockCountsSchema,
@@ -229,6 +230,8 @@ ownerBooksRouter.post("/center/rolls/:id/finish", requirePermission("finance.tra
 const canSeeCost = (req: Request) => req.admin!.permissions.includes("costing.read");
 ownerBooksRouter.get("/stock/purchases", requirePermission("purchasing.read"), validate(stockPurchaseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await stockPurchases.listPurchases(req.query as never, { canSeeCost: canSeeCost(req) }))));
 ownerBooksRouter.get("/stock/purchases/:id", requirePermission("purchasing.read"), asyncHandler(async (req, res) => res.json(await stockPurchases.getPurchase(id(req), { canSeeCost: canSeeCost(req) }))));
+// Blueprint P0.3: the duplicate-purchase warning, asked before saving (a warning only — the save is never refused).
+ownerBooksRouter.post("/stock/purchases/duplicate-check", requirePermission("purchasing.receive"), validate(purchaseDuplicateCheckSchema), asyncHandler(async (req, res) => res.json(await stockPurchases.checkPurchaseDuplicates(req.body))));
 ownerBooksRouter.post("/stock/purchases", requirePermission("purchasing.receive"), validate(stockPurchaseSchema), asyncHandler(async (req, res) => {
   const r = await stockPurchases.recordPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
