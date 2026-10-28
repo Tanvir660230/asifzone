@@ -480,10 +480,13 @@ async function autoEstimateMissingCosts(ctx: FinanceContext, exceptions: DatedEx
   const estimates = await estimateUnitCosts(missing.map(variantOf), ctx.business.baseCurrency);
   const resolvable = missing.filter((e) => estimates.has(variantOf(e)));
   if (!resolvable.length) return false;
+  const decided = await prisma.financeException.findMany({ where: { businessId: ctx.business.id, key: { in: resolvable.map((e) => e.key) }, status: { not: "OPEN" } }, select: { key: true } });
+  if (decided.length === resolvable.length) return false;
   await financeTransaction(async (tx) => {
     for (const spec of resolvable) {
       const ex = await upsertException(tx, ctx.business, ctx.brand.id, spec, PROJECTOR_ACTOR);
-      if (ex.status === "RESOLVED") continue;
+      // only an OPEN one: RESOLVED is final, and ACKNOWLEDGED is the owner saying "leave it missing"
+      if (ex.status !== "OPEN") continue;
       const est = estimates.get(variantOf(spec))!;
       const note = `Automatic estimate from the ${ESTIMATE_SOURCE_LABEL[est.source]} — confirm or correct it`;
       await markEstimateApproved(tx, ctx.business, ex.id, est.unitCostMinor, note, PROJECTOR_ACTOR);

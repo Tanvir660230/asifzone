@@ -15,7 +15,9 @@
  */
 import { minorDigits } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
-import { prisma } from "../../config/prisma";
+import { prisma, type AppTransactionClient } from "../../config/prisma";
+
+type Db = AppTransactionClient | typeof prisma;
 import { recipeStandardCosts, type RecipeCostLine } from "./costing.service";
 import { loadCostingState } from "./cost-resolver";
 
@@ -36,9 +38,9 @@ const toMinor = (major: Prisma.Decimal | { toString(): string }, currency: strin
   new Prisma.Decimal(major.toString()).mul(new Prisma.Decimal(10).pow(minorDigits(currency))).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_EVEN).toNumber();
 
 /** Recipe lines of each variant's product's latest APPROVED bill of materials (lines the business supplies). */
-async function approvedRecipeLines(variantIds: string[]): Promise<RecipeCostLine[]> {
+async function approvedRecipeLines(db: Db, variantIds: string[]): Promise<RecipeCostLine[]> {
   if (!variantIds.length) return [];
-  return prisma.$queryRaw<RecipeCostLine[]>`
+  return db.$queryRaw<RecipeCostLine[]>`
     SELECT v.id AS "variantId", l."materialVariantId", l."qtyPerUnit", l."wastagePct"
     FROM "ProductVariant" v
     JOIN LATERAL (SELECT b.id FROM "BillOfMaterials" b WHERE b."productId" = v."productId" AND b.status = 'APPROVED' ORDER BY b.version DESC LIMIT 1) b ON TRUE
@@ -47,25 +49,25 @@ async function approvedRecipeLines(variantIds: string[]): Promise<RecipeCostLine
 }
 
 /** The Q-D chain for each variant; a variant with no source is absent from the map. Read-only. */
-export async function estimateUnitCosts(variantIds: string[], currency: string): Promise<Map<string, CostEstimate>> {
+export async function estimateUnitCosts(variantIds: string[], currency: string, db: Db = prisma): Promise<Map<string, CostEstimate>> {
   const ids = [...new Set(variantIds)];
   const out = new Map<string, CostEstimate>();
   if (!ids.length) return out;
 
-  const states = await prisma.inventoryCostState.findMany({ where: { variantId: { in: ids }, avgUnitCost: { not: null } }, select: { variantId: true, avgUnitCost: true } });
+  const states = await db.inventoryCostState.findMany({ where: { variantId: { in: ids }, avgUnitCost: { not: null } }, select: { variantId: true, avgUnitCost: true } });
   for (const s of states) out.set(s.variantId, { unitCostMinor: toMinor(s.avgUnitCost!, currency), source: "BOOK_AVERAGE" });
 
   let left = ids.filter((id) => !out.has(id));
-  const lines = await approvedRecipeLines(left);
+  const lines = await approvedRecipeLines(db, left);
   if (lines.length) {
-    const mats = await prisma.inventoryCostState.findMany({ where: { variantId: { in: [...new Set(lines.map((l) => l.materialVariantId))] } }, select: { variantId: true, avgUnitCost: true } });
+    const mats = await db.inventoryCostState.findMany({ where: { variantId: { in: [...new Set(lines.map((l) => l.materialVariantId))] } }, select: { variantId: true, avgUnitCost: true } });
     const avg = new Map(mats.map((m) => [m.variantId, m.avgUnitCost]));
     for (const [id, minor] of recipeStandardCosts(lines, (m) => avg.get(m) ?? null, currency)) if (minor !== null && minor > 0) out.set(id, { unitCostMinor: minor, source: "RECIPE" });
   }
 
   left = ids.filter((id) => !out.has(id));
   if (left.length) {
-    const receipts = await prisma.goodsReceiptLine.findMany({
+    const receipts = await db.goodsReceiptLine.findMany({
       where: { variantId: { in: left }, qtyAccepted: { gt: 0 }, goodsReceipt: { status: "POSTED" } },
       orderBy: [{ goodsReceipt: { receiptDate: "desc" } }, { goodsReceipt: { postedAt: "desc" } }],
       select: { variantId: true, unitCost: true },
@@ -75,7 +77,7 @@ export async function estimateUnitCosts(variantIds: string[], currency: string):
 
   left = ids.filter((id) => !out.has(id));
   if (left.length) {
-    const variants = await prisma.productVariant.findMany({ where: { id: { in: left } }, select: { id: true, costPrice: true, product: { select: { costPrice: true } } } });
+    const variants = await db.productVariant.findMany({ where: { id: { in: left } }, select: { id: true, costPrice: true, product: { select: { costPrice: true } } } });
     for (const v of variants) {
       const c = v.costPrice ?? v.product.costPrice;
       if (c !== null && toMinor(c, currency) > 0) out.set(v.id, { unitCostMinor: toMinor(c, currency), source: "CATALOG" });
@@ -89,12 +91,12 @@ export async function estimateUnitCosts(variantIds: string[], currency: string):
  * costing is live and the store's policy is AUTO_ESTIMATE, the product is stock-tracked, and it is being published for the
  * first time (from DRAFT or READY — an UNPUBLISHED product was published before and is never held back).
  */
-export async function variantsWithoutAnyCost(productId: string, fromStatus: string, currency: string): Promise<string[]> {
+export async function variantsWithoutAnyCost(productId: string, fromStatus: string, currency: string, db: Db = prisma): Promise<string[]> {
   if (fromStatus !== "DRAFT" && fromStatus !== "READY") return [];
   const state = await loadCostingState();
   if (!state.costingLive || state.costPolicy !== "AUTO_ESTIMATE") return [];
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { trackInventory: true, variants: { where: { isActive: true }, select: { id: true, sku: true } } } });
+  const product = await db.product.findUnique({ where: { id: productId }, select: { trackInventory: true, variants: { where: { isActive: true }, select: { id: true, sku: true } } } });
   if (!product?.trackInventory || !product.variants.length) return [];
-  const est = await estimateUnitCosts(product.variants.map((v) => v.id), currency);
+  const est = await estimateUnitCosts(product.variants.map((v) => v.id), currency, db);
   return product.variants.filter((v) => !est.has(v.id)).map((v) => v.sku);
 }

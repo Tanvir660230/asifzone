@@ -58,7 +58,7 @@ export function compareAsDuplicate(a: PurchaseShape, b: PurchaseShape): Pick<Dup
 /** Live (draft or posted) receipts of `supplierId` that match `shape` under the rule, newest first. */
 export async function findDuplicateReceipts(
   db: AppTransactionClient | typeof prisma,
-  args: { businessId: string; supplierId: string; shape: PurchaseShape; currency: string; excludeReceiptId?: string },
+  args: { businessId: string; supplierId: string; shape: PurchaseShape; currency: string; excludeReceiptId?: string; purchaseOrderId?: string | null },
 ): Promise<DuplicateMatch[]> {
   const day = Date.parse(`${args.shape.date}T00:00:00Z`);
   const window = DUPLICATE_PURCHASE_RULE.maxDaysApart * DAY_MS;
@@ -69,6 +69,8 @@ export async function findDuplicateReceipts(
       status: { in: ["DRAFT", "POSTED"] },
       receiptDate: { gte: new Date(day - window), lte: new Date(day + window) },
       ...(args.excludeReceiptId ? { id: { not: args.excludeReceiptId } } : {}),
+      // deliveries against the same purchase order are its parts (a partial receipt and the rest), never a duplicate
+      ...(args.purchaseOrderId ? { OR: [{ purchaseOrderId: null }, { purchaseOrderId: { not: args.purchaseOrderId } }] } : {}),
     },
     select: { id: true, number: true, receiptDate: true, lines: { select: { variantId: true, value: true } } },
     orderBy: { receiptDate: "desc" },

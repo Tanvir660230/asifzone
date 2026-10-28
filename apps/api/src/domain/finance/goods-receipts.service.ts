@@ -132,6 +132,7 @@ export async function createGoodsReceipt(input: GoodsReceiptCreateInput, actor: 
       businessId: business.id,
       supplierId,
       currency: cur,
+      purchaseOrderId: input.purchaseOrderId ?? null,
       shape: { date: receiptDate, variantIds: rows.map((r) => r.variantId), totalMinor: rows.reduce((s, r) => s + toMinor(r.value as Prisma.Decimal, cur), 0) },
     });
     const duplicateWarning: DuplicateWarning | null = matches.length ? { matches, checkedAt: new Date().toISOString() } : null;

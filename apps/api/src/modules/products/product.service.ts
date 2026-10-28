@@ -1580,8 +1580,8 @@ function costMissingMessage(skus: string[]) {
 }
 
 /** The publishing guard on one product moving to PUBLISHED from `fromStatus` (cost-estimate.ts decides when it applies). */
-async function assertCostForPublish(productId: string, fromStatus: ProductStatus) {
-  const noCost = await variantsWithoutAnyCost(productId, fromStatus, await getCurrency());
+async function assertCostForPublish(productId: string, fromStatus: ProductStatus, db?: Prisma.TransactionClient) {
+  const noCost = await variantsWithoutAnyCost(productId, fromStatus, await getCurrency(), db);
   if (noCost.length) throw new AppError(409, costMissingMessage(noCost), { code: "PUBLISH_COST_MISSING", skus: noCost });
 }
 
@@ -1791,7 +1791,6 @@ export async function updateProduct(
     else if (existing.status === "PUBLISHED") target = "UNPUBLISHED";
   }
   const statusChanged = target !== undefined && target !== existing.status;
-  if (statusChanged && target === "PUBLISHED") await assertCostForPublish(id, existing.status);
   if (statusChanged) {
     data.status = target;
     data.isActive = target === "PUBLISHED";
@@ -1952,6 +1951,8 @@ export async function updateProduct(
 
       // Only a *move* to READY/PUBLISHED is gated: saving an already-live product never re-litigates its completeness.
       if (statusChanged && target && GATED_STATUSES.has(target)) await assertPublishable(tx, id, target);
+      // P0.2 cost guard on the product as this save leaves it (a cost entered in the same save counts)
+      if (statusChanged && target === "PUBLISHED") await assertCostForPublish(id, existing.status, tx);
     });
   } catch (err) {
     // Same race as createProduct — the ensureUniqueSlug check above isn't atomic with the write.

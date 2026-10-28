@@ -7,6 +7,7 @@ import { projectOrder } from "./commerce-accounting.service";
 import { activateInventoryCostingInTx, recordValuationInTx } from "./costing.service";
 import { setCostPolicy } from "./chart.service";
 import { estimateUnitCosts, variantsWithoutAnyCost } from "./cost-estimate";
+import { acknowledgeException } from "./finance-exceptions.service";
 import { getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
 import type { FinanceActor } from "./finance-audit";
@@ -18,6 +19,7 @@ import type { FinanceActor } from "./finance-audit";
 
 const SYSTEM: FinanceActor = { type: "SYSTEM", label: "test" };
 let admin = "";
+let acknowledgedOrderId = "";
 const v: Record<string, { id: string; productId: string }> = {};
 
 async function variant(name: string, stock: number, catalogCost: number | null) {
@@ -79,6 +81,9 @@ describe("booking a sale with no recorded cost", () => {
     expect((await recognitionCogs(o.id)).length).toBe(0);
     const ex = await prisma.financeException.findFirstOrThrow({ where: { orderId: o.id, kind: "MISSING_COST" } });
     expect(ex.status).toBe("OPEN");
+    // the owner decides this one stays missing
+    await acknowledgeException(ex.id, "no cost — leave it missing", { type: "ADMIN", adminId: admin, label: "owner", permissions: [] });
+    acknowledgedOrderId = o.id;
   });
 
   it("AUTO_ESTIMATE: booked once at the catalog estimate, labelled ESTIMATED, and put in the figures to confirm", async () => {
@@ -97,6 +102,12 @@ describe("booking a sale with no recorded cost", () => {
     // a replay posts nothing new
     await projectOrder(o.id);
     expect(await prisma.financialEvent.count({ where: { eventKey: { startsWith: `order:${o.id}:recognition#` } } })).toBe(1);
+  });
+
+  it("AUTO_ESTIMATE never overrides a missing cost the owner acknowledged", async () => {
+    await projectOrder(acknowledgedOrderId);
+    expect((await recognitionCogs(acknowledgedOrderId)).length).toBe(0);
+    expect((await prisma.financeException.findFirstOrThrow({ where: { orderId: acknowledgedOrderId, kind: "MISSING_COST" } })).status).toBe("ACKNOWLEDGED");
   });
 
   it("AUTO_ESTIMATE with no source at all: the line stays cost missing, never 0", async () => {
