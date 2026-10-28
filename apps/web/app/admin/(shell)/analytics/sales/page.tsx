@@ -15,7 +15,7 @@ export default function AnalyticsSalesPage() {
       views={[
         { value: "sales", label: "Sales", Component: SalesView },
         { value: "why", label: "Why it changed", Component: WhyView },
-        { value: "financial", label: "Profit", Component: FinancialView },
+        { value: "financial", label: "Margin estimate", Component: FinancialView },
       ]}
     />
   );
