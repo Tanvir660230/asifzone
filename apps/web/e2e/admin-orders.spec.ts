@@ -212,7 +212,8 @@ test.describe("orders workspace", () => {
   test("parcels to receive: the second tab lists cancelled-after-shipping parcels (P1.5)", async ({ page }) => {
     await page.goto("/admin/return-requests?tab=parcels");
     await expect(page.getByRole("button", { name: "Parcels to receive", pressed: true })).toBeVisible();
-    await expect(page.getByRole("table", { name: "Parcels to receive" }).or(page.getByText("No parcels on their way back")).first()).toBeVisible();
+    // the list renders as a table on desktop and as cards on phones: whichever is on screen
+    await expect(page.getByRole("table", { name: "Parcels to receive" }).or(page.getByText("No parcels on their way back")).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("responsive: cards below xl, no horizontal page scroll", async ({ page }) => {
