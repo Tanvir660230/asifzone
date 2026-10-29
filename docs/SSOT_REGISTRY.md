@@ -310,3 +310,14 @@ rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
 `computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 6 implements and tests I30–I32 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)). Phase 7 implements and tests I33 ([PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)). Phase 8 implements and tests I34 ([PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)). Phase 9 implements and tests I35 ([PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)). Phase 10 implements and tests I36 ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). Phase 11 implements and tests I37 ([PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)). Phase 4 implements and tests
 I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).
+
+## Part D — ERP blueprint rows (27 Oct 2026, implemented on feat/erp-core)
+
+| Fact | Source of truth | Readers | Rule |
+|---|---|---|---|
+| Unit cost of a held or sold unit (screens) | `domain/finance/cost-resolver.ts` | stock value, dead stock, cost sheet, product page | BOOK when costing is live, CATALOG when not, PROVISIONAL / ESTIMATED labelled, MISSING is never 0 (Q1, P0.1) |
+| Profit | the books profit ladder (`profit.service.ts`) | Profit pages, Money overview | Net sales → cost of goods → gross margin → packaging, delivery, payment fees, ads → contribution → sales outside the website, stock corrections, running costs → net profit (Q2, Q15); ladder net = statement net |
+| Margin in Analytics | metrics engine | Analytics | Labelled "Sales estimate (before costs)" — never called profit (Q2) |
+| Missing sale cost under AUTO_ESTIMATE | `cost-estimate.ts` | commerce projector | Book average → recipe → last purchase → catalog, labelled ESTIMATED (Q3, Q-D) |
+| A returned unit | `ReturnExpectation` (rule on) / RETURN movement (rule off) | metrics engine, commerce projector | Returned at the agreement; back in stock at receipt (Q5, Q13b; METRICS_REGISTRY §3) |
+| Goods awaiting return balance | account 1620 vs the expectations | check `returns.goods_awaiting_return` | Σ (agreed − received − written off) × line cost |

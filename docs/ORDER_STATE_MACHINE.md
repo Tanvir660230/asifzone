@@ -107,3 +107,12 @@ recorded refund.
 sample of invalid ones (including `CANCELLED → CONFIRMED`), repeated transitions, concurrent
 cancellations, stock side effects of T6/T7/T8, the COD payment effect of T4, the refund guard of T8, the
 return-request interaction, and the late-payment-on-cancelled-order case.
+
+## 7. Returns rule (blueprint P0.4)
+
+T7 (DELIVERED / PARTIALLY_DELIVERED → RETURNED) and an approved exchange restock the units at the status change **only
+while the store's returns rule is off**. With it on (`FinanceBusiness.returnsReceiptRuleEffectiveAt` reached), T7, a
+reconciled partial delivery, an item return and an exchange agree the units back as Goods awaiting return and they go into
+stock only through Receive; RETURNED stays a closed status, so a returned order's agreement can't be withdrawn — units
+that never come back are written off after 30 days. The exchange replacement ships first (Q13 = C). The order's primary
+action is "Receive return" while units are awaited. Details: [RETURNS_RECEIPT_RULE.md](RETURNS_RECEIPT_RULE.md).

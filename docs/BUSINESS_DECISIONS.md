@@ -432,3 +432,37 @@ decisions make sure two installations never see, use or disturb each other's dat
 | ID | Decision | Why | Enforcement |
 |---|---|---|---|
 | D-AA3 | **Booking a parcel with Steadfast ships the order.** Single and bulk booking move the order to SHIPPED (through PACKED when it hadn't been packed, so the timeline keeps every step); the customer's "on the way" SMS follows the SMS settings as for any SHIPPED order. Supersedes the pickup trigger in DR-10, which Steadfast can't provide (it reports no pickup). Orders already sitting in PACKED are not moved by this change. | 124 live orders sat in "Packed" while "Shipped" stayed at 0 — nothing ever moved them on. | `apps/api/src/modules/courier/courier.service.ts` (`shipOnBooking`); `modules/courier/courier-ship-on-booking.integration.test.ts` |
+
+## ERP blueprint decisions (owner, 27 Oct 2026)
+
+Answers to the Business-First Master Blueprint (tab 8 of the blueprint doc). One ERP for every store: a row that names a
+store describes that store's configuration or lifecycle state (cost policy, whether costing or books have started), never
+a separate implementation. Implemented on `feat/erp-core`; the commit is given where it landed.
+
+| Q | Decision | Rule | Where |
+|---|---|---|---|
+| Q1 | A — book cost when costing is live, catalog cost otherwise | A missing cost is never 0: "cost missing", no margin. Ledger and posted results untouched. | `domain/finance/cost-resolver.ts` (P0.1) |
+| Q2 | A — book net profit in Finance; Analytics is a "sales estimate" | Partner shares, settlements and closed periods unchanged. | profit ladder (P2.4), analytics labels |
+| Q3 | A — labelled automatic estimates + publish guard | Every estimate labelled; a store on KNOWN_ONLY is unchanged. | `costPolicy` AUTO_ESTIMATE (P0.2) |
+| Q4 | A — keep moving average | No FIFO. | costing |
+| Q5 | A — stock rises only after physical receipt | No RETURN movement before a receipt. | [RETURNS_RECEIPT_RULE.md](RETURNS_RECEIPT_RULE.md) (P0.4) |
+| Q6 | A — never release a pending COD order automatically | Pending COD over 48 h is a Home item. | Home queue (P1.2) |
+| Q7 | A / A — quick Received goods every day, formal PO owner-only; duplicate warning | Same supplier, ±3 days, ≥ 70 % item overlap, total ±1 %; warning only. | P0.3, P1.4 |
+| Q8 | A — keep the finance-only roles; fix their visibility | No new permission granted to make a page visible. | navigation (P0.6) |
+| Q9 | A — one Home, one Money overview | Home = actions and alerts; Money overview = book figures. | P1.2 |
+| Q10 | A — Production under Stock, only where production exists | | P1.8 (with Q-G) |
+| Q11 | A — no second courier or refund API for six months | | not on the roadmap |
+| Q12 | A — read-only audit of branches and worktrees | No branch or worktree changed without approval. | blueprint tab 10 |
+| Q13 | C — ship the replacement first, receive the original later | Original Awaiting return until received. | P0.4 |
+| Q13b | B — Goods awaiting return account | Cost to 1620 at approval, to inventory at receipt. | P0.4 |
+| Q14 | B — owner-funded purchase is "owed back" or "capital", chosen per purchase | Owed back is a liability reduced by a linked repayment. | P1.4 |
+| Q15 | A — stock corrections on their own ladder line | Presentation only; net unchanged. | P2.4 |
+| Q16 | A — month-end needs every day of non-archived campaigns with spend this or last month | Confirmed zero ≠ missing. | P0.7 |
+| Q-A | 1620 "Goods awaiting return", asset under 1600, key `asset.goods_awaiting_return` | Provisioned when the store turns the returns rule on. | P0.4 |
+| Q-B | Damaged at receipt: written off, no approval. Never arrived: only after 30 days, owner approval at or above ৳1,000 (`countLossApprovalThreshold`). Home follow-up at 14 days. | Periods are settings (`returnLossDays`, `returnFollowUpDays`). | P0.4 |
+| Q-C | A customer who keeps an exchanged original: written off as a loss, no automatic charge | S7 with reason "customer kept the item". | P0.4 |
+| Q-D | AUTO_ESTIMATE source order: book average → approved recipe → last posted purchase → catalog | | P0.2 |
+| Q-E | Spend day = spend > 0; explicit campaign Archive and confirmed-zero marker; imported zero rows stay unconfirmed | | P0.7 |
+| Q-F | Quick Received goods without costing; "update catalog cost" on by default; repayment subledger | Every repayment says which purchase or expense it repays. | P1.4 |
+| Q-G | Production shown with permission **and** store production capability | Capability from data; never hides existing records. | P1.8 |
+| Q-H | Deferred — Nasihamart's books start date | Until its six evidence items are reviewed. | open |

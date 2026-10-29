@@ -388,3 +388,17 @@ carry because the purchase is already in the books (the owner's capital). `POST 
 - The change is booked Dr/Cr inventory against **opening balance equity (3900)** through `inventory.valued`
   (`counterKey: equity.opening_balance`): a go-live value put right, not a sale — no order line is re-costed and profit
   doesn't move. The next sale takes the corrected average.
+
+## 13. Received goods modes and Production (blueprint P1.4, P1.8)
+
+- **Two modes, one flow (Q7 = A, Q-F).** With inventory costing live, Received goods records the receipt into the
+  valuation and books (full mode). Before costing is live it runs in **simple mode**: the stock rises (RESTOCK) and, unless
+  unticked, the catalog cost is updated from what was paid; the money is a pending record on the entry, nothing is booked.
+  Both modes run the duplicate-purchase warning (P0.3) and appear on Stock › Purchases.
+- **Owner's own money (Q14 = B).** A purchase paid from the owner's pocket is either *owed back* (a liability with one
+  line per purchase or expense; Money › Owner & partners › Repay owner pays chosen lines and links the repayment) or
+  *capital*.
+- **Production** is one page, Stock › Production (`/admin/manufacturing/home`): what can still be made, what needs you,
+  recent fills and, below, production runs in progress, producers and planned vs final (the former Overview — its old URL
+  redirects). Shown only to admins with permission on stores with production capability (Q-G).
+- **Bubble rolls** stay under Stock › More › Stock check (owner).
