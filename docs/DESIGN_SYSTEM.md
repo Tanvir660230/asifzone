@@ -177,4 +177,7 @@ what is missing, linking to the fix. Permission: hidden in navigation; reached b
 
 **Phone.** Bottom bar Home, Orders, Inbox, Stock, More; lists become cards; quick sheets full screen with a large Save;
 tables over four columns get a column picker, never a horizontal page scroll; touch targets at least 44 px. Every page
-works at 375 px.
+works at 375 px. Two ways to reach 44 px without redesigning a dense row: an isolated inline text action (a row's
+"Count", a name link) takes `tap-target` (globals.css: an invisible 44 × 44 px hit area on touch screens, nothing moves);
+icon buttons that sit next to each other (Edit / Delete, Move up / down, drag and expand) grow for real on touch —
+`[@media(pointer:coarse)]:p-…` — so their hit areas never overlap. Never put `tap-target` on neighbouring controls.

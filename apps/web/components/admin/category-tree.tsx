@@ -238,7 +238,7 @@ function CategoryNode({
           type="button"
           // Hover-revealed only once there's room for a mouse-driven row (sm+); a touch device below
           // that has no hover at all, so the handle needs to just be visible to be reachable.
-          className="cursor-grab touch-none rounded p-1 text-ink-300 opacity-100 transition-opacity duration-150 ease-smooth active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
+          className="cursor-grab touch-none rounded p-1 text-ink-300 [@media(pointer:coarse)]:p-3.5 opacity-100 transition-opacity duration-150 ease-smooth active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
           aria-label={`Drag to reorder ${category.name}`}
           {...attributes}
           {...listeners}
@@ -250,7 +250,7 @@ function CategoryNode({
           type="button"
           onClick={() => hasChildren && onToggleExpanded(category.id)}
           className={cn(
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-400 transition-transform duration-200 ease-smooth",
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-400 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 transition-transform duration-200 ease-smooth",
             hasChildren ? "hover:bg-ink-100 hover:text-ink-700" : "invisible",
             isOpen && "rotate-90",
           )}

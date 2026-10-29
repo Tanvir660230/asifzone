@@ -167,10 +167,10 @@ export default function AdminRedirectsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-3">
-                      <button onClick={() => setEditing(r)} className="text-ink-500 hover:text-ink-900" aria-label="Edit">
+                      <button onClick={() => setEditing(r)} className="rounded-full text-ink-500 hover:text-ink-900 [@media(pointer:coarse)]:p-3.5" aria-label="Edit">
                         <Pencil size={16} />
                       </button>
-                      <button onClick={() => handleDelete(r)} className="text-ink-500 hover:text-danger-600" aria-label="Delete">
+                      <button onClick={() => handleDelete(r)} className="rounded-full text-ink-500 hover:text-danger-600 [@media(pointer:coarse)]:p-3.5" aria-label="Delete">
                         <Trash2 size={16} />
                       </button>
                     </div>

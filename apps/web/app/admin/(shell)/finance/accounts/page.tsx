@@ -122,7 +122,7 @@ export default function FinanceAccountsPage() {
               {list.map((a) => (
                 <TableRow key={a.id} data-testid="money-account-row">
                   <TableCell>
-                    <Link className="font-medium text-ink-900 hover:underline" href={`/admin/finance/accounts/${a.id}`}>
+                    <Link className="tap-target font-medium text-ink-900 hover:underline" href={`/admin/finance/accounts/${a.id}`}>
                       {a.name}
                     </Link>
                     {a.provider && <span className="ml-2 text-xs text-ink-500">{a.provider}</span>}

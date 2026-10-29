@@ -195,7 +195,7 @@ export default function StockCheckPage() {
                             <TableCell align="right">
                               {one ? (
                                 <CountCell count={one.count} onCount={canRecord ? () => setCounting({ variantId: one.variantId, label: g.product, stock: one.stock, unit: "pcs" }) : undefined} />
-                              ) : g.counted !== null ? <CountValue counted={g.counted} diff={g.countDiff ?? 0} /> : <button type="button" className="whitespace-nowrap text-xs font-medium text-accent hover:underline" onClick={() => setOpen((s) => new Set(s).add(g.productId))} hidden={isOpen}>Count by size</button>}
+                              ) : g.counted !== null ? <CountValue counted={g.counted} diff={g.countDiff ?? 0} /> : <button type="button" className="tap-target whitespace-nowrap text-xs font-medium text-accent hover:underline" onClick={() => setOpen((s) => new Set(s).add(g.productId))} hidden={isOpen}>Count by size</button>}
                             </TableCell>
                           </TableRow>
                           {isOpen && g.variants.map((v) => (
@@ -296,7 +296,7 @@ function CountCell({ count, onCount }: { count: StockCountResult; onCount?: () =
   return (
     <span className="inline-flex flex-col items-end gap-1">
       {count && <CountValue counted={count.counted} diff={count.difference} />}
-      {onCount && <button type="button" onClick={onCount} className="text-xs font-medium text-accent hover:underline">{count ? "Count again" : "Count"}</button>}
+      {onCount && <button type="button" onClick={onCount} className="tap-target text-xs font-medium text-accent hover:underline">{count ? "Count again" : "Count"}</button>}
     </span>
   );
 }
