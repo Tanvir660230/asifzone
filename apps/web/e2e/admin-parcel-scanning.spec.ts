@@ -65,9 +65,13 @@ async function placeOrders(page: Page, count: number): Promise<string[]> {
   return ids;
 }
 
-/** Booked with the courier, as a real booking leaves them (test database only — scripts/e2e/mark-booked.ts). */
+/** Booked with the courier, as a real booking leaves them (test database only — scripts/e2e/mark-booked.ts). On a
+ * developer machine the script runs against apps/api/.env.test (with-test-db refuses without it, so it never touches the dev
+ * database); on GitHub's hosted CI runner there is no .env.test — the job's own DATABASE_URL is its throwaway database. */
 function markBooked(ids: string[]): Record<string, string> {
-  const out = execSync(`npx tsx scripts/with-test-db.ts npx tsx scripts/e2e/mark-booked.ts ${ids.join(" ")}`, { cwd: apiDir, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+  const script = `npx tsx scripts/e2e/mark-booked.ts ${ids.join(" ")}`;
+  const ciThrowaway = process.env.GITHUB_ACTIONS === "true" && process.env.RUNNER_ENVIRONMENT === "github-hosted";
+  const out = execSync(ciThrowaway ? script : `npx tsx scripts/with-test-db.ts ${script}`, { cwd: apiDir, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
   return JSON.parse(out.trim().split("\n").reverse().find((l) => l.startsWith("{"))!);
 }
 

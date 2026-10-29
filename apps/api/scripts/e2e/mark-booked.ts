@@ -13,7 +13,10 @@ import { changeOrderStatus } from "../../src/modules/orders/order.service";
 
 async function main() {
   const db = new URL(process.env.DATABASE_URL ?? "").pathname.slice(1);
-  if (db !== "clothing_brand_test") throw new Error(`mark-booked refuses database "${db}" — run it through scripts/with-test-db.ts`);
+  // CI's e2e job runs on GitHub's hosted runner against its own throwaway database (named clothing_brand) — never the
+  // self-hosted VPS runner, which reports RUNNER_ENVIRONMENT=self-hosted.
+  const ciThrowaway = process.env.GITHUB_ACTIONS === "true" && process.env.RUNNER_ENVIRONMENT === "github-hosted";
+  if (db !== "clothing_brand_test" && !ciThrowaway) throw new Error(`mark-booked refuses database "${db}" — run it through scripts/with-test-db.ts`);
   const out: Record<string, string> = {};
   for (const id of process.argv.slice(2)) {
     const order = await prisma.order.findUniqueOrThrow({ where: { id } });
