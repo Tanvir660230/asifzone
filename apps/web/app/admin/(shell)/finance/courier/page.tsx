@@ -32,6 +32,43 @@ import { PermissionState } from "@/components/admin/permission-state";
 
 /** Owner's books §3.6: the courier's side of the books on one page — what the books expect from Steadfast next to its own
  * balance, payouts to bring in and post, and the parcels that need a look (unpaid, stuck, status mismatch, partial). */
+/** Blueprint P1.2 (tab 2 §3): the owner can snooze Home's "Unpaid by Steadfast" reminder until a date while chasing it. */
+function UnpaidReminder() {
+  const queryClient = useQueryClient();
+  const business = useQuery({ queryKey: financeApi.businessKeys.settings(), queryFn: financeApi.getBusiness });
+  const today = new Date().toLocaleDateString("en-CA");
+  const [until, setUntil] = useState("");
+  const save = useMutation({
+    mutationFn: (value: string | null) => financeApi.updateBusiness({ courierUnpaidSnoozedUntil: value, reason: value ? "Owner snoozed the unpaid-by-Steadfast reminder" : "Owner turned the unpaid-by-Steadfast reminder back on" }),
+    onSuccess: (_d, value) => {
+      toast.success(value ? "Reminder snoozed" : "Reminder back on Home");
+      setUntil("");
+      void queryClient.invalidateQueries({ queryKey: ["finance"] });
+    },
+    onError: (e) => toast.error(getErrorMessage(e, "Couldn't change the reminder")),
+  });
+  if (!business.data) return null;
+  const snoozed = business.data.courierUnpaidSnoozedUntil && business.data.courierUnpaidSnoozedUntil.slice(0, 10) >= today ? business.data.courierUnpaidSnoozedUntil.slice(0, 10) : null;
+  return (
+    <Card className="flex flex-wrap items-end justify-between gap-3 p-4" data-testid="unpaid-reminder">
+      <p className="min-w-0 max-w-prose text-sm text-fg-muted">
+        <span className="block font-medium text-fg">Home reminder: {snoozed ? `snoozed until ${formatBookDate(snoozed)}` : "on"}</span>
+        Parcels delivered and not yet paid out by Steadfast show on Home until they are. Snooze it while you chase them.
+      </p>
+      {snoozed ? (
+        <Button size="sm" variant="outline" loading={save.isPending} onClick={() => save.mutate(null)}>Show again</Button>
+      ) : (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field htmlFor="unpaid-snooze" label="Snooze until" className="w-40">
+            <Input id="unpaid-snooze" type="date" min={today} value={until} onChange={(e) => setUntil(e.target.value)} />
+          </Field>
+          <Button size="sm" variant="outline" disabled={!until} loading={save.isPending} onClick={() => save.mutate(until)}>Snooze</Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function CourierCheckPage() {
   const { can, ready } = useCapabilities();
   const queryClient = useQueryClient();
@@ -61,6 +98,7 @@ export default function CourierCheckPage() {
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader title="Steadfast check" description="What Steadfast should hold for you, next to what it says it holds — and every parcel that needs a look." />
+      {can("finance.configure") && <UnpaidReminder />}
       {rec.isLoading && <Skeleton className="h-40 w-full" />}
       {rec.isError && <Alert variant="danger" title="The courier check couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => rec.refetch()}>Retry</Button>}>{getErrorMessage(rec.error, "")}</Alert>}
       {d && (

@@ -29,9 +29,11 @@ export const financeBusinessUpdateSchema = z
      * returns agreed from now on. Today or later — never backdated. */
     returnsReceiptRuleEffectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD").nullable().optional(),
     returnLossDays: z.number().int().min(1).max(365).optional(),
+    /** Blueprint P1.2: hide the "Unpaid by Steadfast" reminder until this business date (inclusive); null shows it again. */
+    courierUnpaidSnoozedUntil: businessDate.nullable().optional(),
     reason: optionalText(500),
   })
-  .refine((v) => v.name !== undefined || v.fiscalYearStartMonth !== undefined || v.openingDate !== undefined || v.inventoryGainAlertThreshold !== undefined || v.countLossApprovalThreshold !== undefined || v.returnFollowUpDays !== undefined || v.returnsReceiptRuleEffectiveDate !== undefined || v.returnLossDays !== undefined, "Nothing to change");
+  .refine((v) => v.name !== undefined || v.fiscalYearStartMonth !== undefined || v.openingDate !== undefined || v.inventoryGainAlertThreshold !== undefined || v.countLossApprovalThreshold !== undefined || v.returnFollowUpDays !== undefined || v.returnsReceiptRuleEffectiveDate !== undefined || v.returnLossDays !== undefined || v.courierUnpaidSnoozedUntil !== undefined, "Nothing to change");
 
 export const ledgerAccountCreateSchema = z.object({
   code: z.string().trim().regex(/^[0-9A-Z][0-9A-Z.-]{0,15}$/, "Codes use digits, capitals, '.' and '-' (max 16)"),

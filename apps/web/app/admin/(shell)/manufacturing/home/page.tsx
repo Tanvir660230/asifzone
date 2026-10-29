@@ -17,6 +17,7 @@ import { getProductionHome, stockKeys } from "@/lib/api/stock";
 import { formatBookDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PermissionState } from "@/components/admin/permission-state";
+import { ProductionOverview } from "@/components/admin/manufacturing/production-overview";
 
 const num = (n: number) => n.toLocaleString("en-US");
 
@@ -140,6 +141,8 @@ export default function ProductionHomePage() {
           {!d.costingActive && <Alert variant="info" className="lg:col-span-2">Stock costing hasn&apos;t gone live, so Bought and Filled open once it does.</Alert>}
         </div>
       )}
+      {/* Blueprint P1.8: the former Overview (runs in progress, producers, planned vs final) lives here now. */}
+      <ProductionOverview />
     </div>
   );
 }

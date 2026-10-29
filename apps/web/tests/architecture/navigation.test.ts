@@ -153,7 +153,7 @@ describe("navigation manifest — derivation", () => {
     expect(navNode("finance")?.label).toBe("Money");
     const owner = access("OWNER");
     expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Accounts & cash", "Expenses", "Bills to pay", "Payments & refunds", "Courier & gateway", "Loans", "Prepaid costs", "Bank reconciliation"]);
-    expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Month-end", "Needs attention", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
+    expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Month-end", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
     expect(navChildren("analytics", owner).map((c) => c.node.label)).toEqual(["Profit", "Product costs & price planner", "Store analytics", "Purchasing reports", "AI assistant"]);
     expect(resolveNavNode("/admin/finance/my-cash")?.parent).toBe("finance.money");
     expect(deprecatedRedirect("/admin/finance/refills")).toBe("/admin/stock?open=filled");
@@ -223,12 +223,12 @@ describe("navigation manifest — derivation", () => {
 
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(11);
-    expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
+    expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/orders/ready", "/admin/return-requests"]);
     // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels, Stock check (admin
     // audit phase 3: where every piece went, moved from Finance) and Production, whose own pages are its tabs; a lone module
     // still shows none (Customers).
     expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/stock", "/admin/stock/purchases", "/admin/finance/suppliers", "/admin/manufacturing/home", "/admin/inventory", "/admin/finance/purchase-orders"]);
-    expect(sectionTabsFor("/admin/manufacturing/boms", access("OWNER")).map((t) => t.href)).toEqual(["/admin/manufacturing/home", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
+    expect(sectionTabsFor("/admin/manufacturing/boms", access("OWNER")).map((t) => t.href)).toEqual(["/admin/manufacturing/home", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
     expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
 

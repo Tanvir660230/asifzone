@@ -9,7 +9,7 @@ import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { financeTransaction } from "./finance-tx";
 import { getFinanceContext } from "./finance-context";
 import { approveCostEstimate, projectOrder, syncCommerce } from "./commerce-accounting.service";
-import { setCostPolicy } from "./chart.service";
+import { setCostPolicy, updateBusinessSettings } from "./chart.service";
 import { adjustVariantStock } from "../../modules/inventory/inventory.service";
 import { PERMISSIONS } from "@clothing-brand/shared";
 import type { FinanceActor } from "./finance-audit";
@@ -249,6 +249,16 @@ describe("the courier's side of the books", () => {
     const alert = (await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid");
     expect(alert).toMatchObject({ severity: "warning", count: rec.unsettled.length, href: "/admin/finance/courier" });
     expect(alert!.amount).toBe(rec.unsettled.reduce((s: number, u: { total: number }) => s + u.total, 0));
+    // Blueprint P1.2: the owner snoozes it until a date — hidden through that day, back after; null shows it again.
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const ctx = await getFinanceContext();
+    const actor = { type: "ADMIN" as const, adminId: admin, label: "owner", permissions: ["finance.configure"] };
+    await updateBusinessSettings({ courierUnpaidSnoozedUntil: tomorrow }, actor);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid")).toBeUndefined();
+    await updateBusinessSettings({ courierUnpaidSnoozedUntil: "2026-01-02" }, actor);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid")).toBeTruthy();
+    await updateBusinessSettings({ courierUnpaidSnoozedUntil: null }, actor);
+    expect((await prisma.financeBusiness.findUniqueOrThrow({ where: { id: ctx.business.id } })).courierUnpaidSnoozedUntil).toBeNull();
   });
 
   it("shows what the books expect from Steadfast next to its own balance, and the parcels that need a look", async () => {

@@ -140,7 +140,7 @@ export function paymentLinkBlocker(order: OrderGuardFacts, amountDue: number): s
  * GET /api/orders/stats counts each preset through the same `where` builder, so a queue's badge always equals what the
  * filter shows.
  */
-export const ORDER_QUEUE_IDS = ["needsAction", "followUpDue", "codPendingStale", "unpaid", "cod", "courierIssue", "cancelledButPaid", "refundDue", "cancelledReturned"] as const;
+export const ORDER_QUEUE_IDS = ["needsAction", "readyToShip", "followUpDue", "codPendingStale", "unpaid", "cod", "courierIssue", "cancelledButPaid", "refundDue", "cancelledReturned"] as const;
 /** Owner decision Q6 (blueprint P1.2): a COD order still PENDING this long is a Home item. Nothing is released automatically. */
 export const COD_PENDING_ALERT_HOURS = 48;
 export type OrderQueueId = (typeof ORDER_QUEUE_IDS)[number];
@@ -152,6 +152,8 @@ export type OrderQueueFilter = Pick<
 
 export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter>> = {
   needsAction: { needsAction: "true" },
+  // Blueprint P1.5: packed and waiting for the courier (booking a parcel ships it — P0.5).
+  readyToShip: { statusIn: ["PACKED"] },
   followUpDue: { followUpDue: "true" },
   codPendingStale: { codPendingStale: "true" },
   unpaid: { paymentStatus: "UNPAID" },

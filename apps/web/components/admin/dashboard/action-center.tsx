@@ -240,8 +240,8 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
     ...(financeAlertList
       ? financeRows
       : [
-          { key: "finance-critical", label: "Finance problems", hint: "Postings that failed, checks that differ or cash forecast below zero", count: financeAlerts?.critical ?? 0, href: "/admin/finance/attention", severity: "critical" as const, icon: BookOpen },
-          { key: "finance-todo", label: "Finance to-dos", hint: "Approvals, bills and costs due, months to close", count: financeAlerts?.warning ?? 0, href: "/admin/finance/attention", severity: "warning" as const, icon: BookOpen },
+          { key: "finance-critical", label: "Finance problems", hint: "Postings that failed, checks that differ or cash forecast below zero", count: financeAlerts?.critical ?? 0, href: "/admin/finance/month-end", severity: "critical" as const, icon: BookOpen },
+          { key: "finance-todo", label: "Finance to-dos", hint: "Approvals, bills and costs due, months to close", count: financeAlerts?.warning ?? 0, href: "/admin/finance/month-end", severity: "warning" as const, icon: BookOpen },
         ]),
     {
       key: "feedback",
@@ -258,7 +258,7 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
   const urgent = items.filter((i) => i.severity === "critical").length;
 
   return (
-    <Card className="overflow-hidden">
+    <Card id="work-queue" className="scroll-mt-20 overflow-hidden" data-testid="work-queue">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle px-5 py-4 sm:px-6">
         <div className="flex items-center gap-2.5">
           <h2 className="font-display text-lg tracking-tight text-ink-900">Needs your attention</h2>
@@ -307,7 +307,7 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
             const Icon = item.icon;
             return (
               // An odd last item spans both columns so the grid never ends on an empty tinted cell.
-              <li key={item.key} className="bg-surface md:[&:last-child:nth-child(odd)]:col-span-2">
+              <li key={item.key} className="bg-surface md:[&:last-child:nth-child(odd)]:col-span-2" data-testid={`action-${item.key}`}>
                 <Link
                   href={item.href}
                   className="group relative flex h-full items-center gap-3.5 px-5 py-3.5 transition-colors duration-150 ease-smooth hover:bg-ink-50/70 focus-visible:bg-ink-50 focus-visible:outline-none sm:px-6"

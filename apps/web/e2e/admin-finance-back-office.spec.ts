@@ -38,15 +38,16 @@ test.beforeAll(async ({ browser }) => {
   owner = await login(browser, OWNER);
 });
 
-test("needs attention: every alert links to its fix; Month-end has its own page covering every step", async () => {
+// Blueprint P1.1 / P1.2 / P1.6: the old Needs attention page forwards to Home, where every finance alert is a queue item.
+test("needs attention: every alert is on Home and links to its fix; Month-end has its own page covering every step", async () => {
   await owner.goto("/admin/finance/attention");
-  await expect(owner.getByRole("heading", { name: "Needs attention" })).toBeVisible(NAV);
-  await expect(owner.getByTestId("alert-counts").or(owner.getByTestId("alerts-empty"))).toBeVisible(NAV);
+  await expect(owner).toHaveURL(/\/admin\/dashboard\?queue=finance/, NAV);
+  await expect(owner.getByTestId("work-queue")).toBeVisible(NAV);
   const { body } = await api(owner, "GET", "/alerts");
   for (const a of body.alerts as Array<{ key: string; href: string }>) {
-    await expect(owner.getByTestId(`alert-${a.key}`).getByRole("link")).toHaveAttribute("href", a.href);
+    await expect(owner.getByTestId(`action-finance-${a.key}`).getByRole("link")).toHaveAttribute("href", a.href);
   }
-  await owner.getByRole("link", { name: "Month-end close" }).click();
+  await owner.goto("/admin/finance/month-end");
   await expect(owner).toHaveURL(/\/admin\/finance\/month-end/, NAV);
   await expect(owner.getByTestId("month-label")).toBeVisible(NAV);
   for (const key of ["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "payouts", "ads", "checks"]) {

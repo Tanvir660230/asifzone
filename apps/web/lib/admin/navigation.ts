@@ -171,6 +171,8 @@ export const NAV_NODES: readonly NavNode[] = [
     commands: [{ id: "create.order", kind: "create", label: "New order", hint: "Manual / phone order", route: "/admin/orders/new", capability: "orders.manage" }],
   },
   { id: "orders.all", label: "All orders", title: term("order"), kind: "page", parent: "orders", domain: "operate", route: "/admin/orders", capability: "orders.view", order: 0 },
+  // Blueprint P1.5 / tab 2 §2: a saved view of All orders (the list's `view` param is active / trash, so it is the queue).
+  { id: "orders.ready", label: "Ready to ship", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/ready", capability: "orders.view", order: 0.5, keywords: ["packed", "to ship", "courier pickup"] },
   {
     id: "orders.returns",
     // blueprint tab 2 §2: customers' requests and parcels on their way back, as two tabs of one page
@@ -280,8 +282,8 @@ export const NAV_NODES: readonly NavNode[] = [
   // Production is one sidebar entry; its pages are tabs on it (the stock page covers day-to-day attar filling).
   { id: "inventory.production", storeCapability: "production", label: "Production", kind: "page", parent: "inventory", domain: "stock", index: "/admin/manufacturing/home", capability: "manufacturing.view", order: 3, keywords: ["manufacturing", "production"] },
   // Production home (docs/STOCK_HUB.md §9): bought, filled, recipes, price & profit — and what the materials can still make.
-  { id: "inventory.production-home", label: "Home", title: "Production", breadcrumb: "Home", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/home", capability: "manufacturing.view", order: -1, keywords: ["production", "can still make", "fill", "owed", "bottles", "low materials"] },
-  { id: "inventory.production-overview", label: "Overview", title: "Production overview", breadcrumb: "Overview", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing", capability: "manufacturing.view", order: 0, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
+  // Blueprint P1.8: one Production page — Home absorbed the Overview; its old URL redirects here.
+  { id: "inventory.production-home", label: "Home", title: "Production", breadcrumb: "Home", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/home", capability: "manufacturing.view", order: -1, deprecatedRoutes: ["/admin/manufacturing"], keywords: ["production", "can still make", "fill", "owed", "bottles", "low materials", "manufacturing", "wip", "work in progress", "producer performance", "yield"] },
   { id: "inventory.production-orders", label: "Production runs", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
   { id: "inventory.production-order-detail", label: "Production run", kind: "detail", parent: "inventory", domain: "stock", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
   { id: "inventory.boms", label: "Recipes", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 2, keywords: ["bom", "bill of materials", "recipe", "materials per unit"] },
@@ -419,6 +421,8 @@ export const NAV_NODES: readonly NavNode[] = [
     route: "/admin/finance/attention",
     capability: "finance.view",
     order: 0,
+    // Blueprint P1.1 / P1.6: every alert is on Home, the close on Books › Month-end — the old page only forwards.
+    visibility: "hidden",
     description: "Problems in the books that need you, and the month-end close checklist.",
     keywords: ["alerts", "to do", "overdue", "month end", "close the month", "checklist", "period close"],
   },

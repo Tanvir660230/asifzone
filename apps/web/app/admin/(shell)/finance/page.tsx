@@ -96,7 +96,7 @@ function FinanceMap() {
       {top.length > 0 && (
         <p className="mt-6 flex items-center gap-2 text-sm text-fg-muted">
           <BellRing className="h-4 w-4 text-ink-400" aria-hidden />
-          Problems in the books and the month-end close live in <Link href="/admin/finance/attention" className="text-accent hover:underline">Needs attention</Link>.
+          Problems in the books are on <Link href="/admin/dashboard?queue=finance#work-queue" className="text-accent underline-offset-2 hover:underline">Home</Link>; closing the month is on <Link href="/admin/finance/month-end" className="text-accent underline-offset-2 hover:underline">Month-end</Link>.
         </p>
       )}
     </section>

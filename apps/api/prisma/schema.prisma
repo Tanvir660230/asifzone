@@ -3390,6 +3390,8 @@ model FinanceBusiness {
   returnsReceiptRuleEffectiveAt DateTime?
   /// Owner decision Q-B: a unit agreed back may be written off as never returned only this many days after the approval.
   returnLossDays              Int                       @default(30)
+  /// Blueprint P1.2 (tab 2 §3): the owner may snooze the "Unpaid by Steadfast" reminder until this business date (inclusive).
+  courierUnpaidSnoozedUntil   DateTime?                 @db.Date
   /// What the last night's run did, for the settings page.
   autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())
