@@ -53,7 +53,7 @@ describe("booking ships in one transaction", () => {
     expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: { in: ["PACKED", "SHIPPED"] } } })).toBe(0);
 
     failShipped.on = false;
-    expect(await syncPendingCourierStatuses()).toBeGreaterThanOrEqual(1);
+    expect((await syncPendingCourierStatuses()).repaired).toBeGreaterThanOrEqual(1);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("SHIPPED");
     // already shipped (a stale status read): nothing moves, and it isn't counted as a repair
     expect(await shipOnBooking(order.id, "PACKED")).toBe(false);
