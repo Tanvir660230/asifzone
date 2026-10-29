@@ -146,21 +146,29 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  deploy:
+  # Deploy — one job per store, each behind its own GitHub Environment with a required reviewer (blueprint tab 13
+  # G-2 / DA-2): a push to main deploys nothing until the owner approves that store's job, and approving one store never
+  # deploys another. The job is held by GitHub before it reaches the VPS runner, so no step (fetch, backup, migrate)
+  # runs unapproved. Always approve the newest run.
+  #
+  # Runs directly on the VPS via a self-hosted runner (vps-asifzone, /opt/actions-runner) — Hostinger's DDoS protection
+  # drops connections from GitHub's hosted-runner IP ranges. Only these push-to-main-gated jobs use the label; `test`
+  # stays on a hosted runner so PRs (including from forks) never execute on it.
+  #
+  # All stores are installations of this one codebase on the same VPS (/opt/asifzone, /opt/nasihamart, /opt/tahafi), each
+  # with its own docker/.env kept on the server — the source of truth for its settings. Each job does exactly the manual
+  # deploy: fast-forward the install's checkout to this commit, then docker/deploy.sh (backup, migrate, switch, readiness
+  # gate). It never writes docker/.env.
+  #
+  # Separate concurrency groups: one shared group keeps only one waiting job and cancels the older one, which would drop
+  # a store's deploy. Builds still run one at a time on the VPS through flock (two at once ran it out of memory).
+  deploy-asifzone:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    # Runs directly on the VPS via a self-hosted runner (vps-asifzone, /opt/actions-runner) — Hostinger's DDoS
-    # protection drops connections from GitHub's hosted-runner IP ranges. Only this push-to-main-gated job uses the
-    # label; `test` stays on a hosted runner so PRs (including from forks) never execute on it.
-    #
-    # All stores are installations of this one codebase on the same VPS (/opt/asifzone, /opt/nasihamart, /opt/tahafi), each with
-    # its own docker/.env kept on the server — the source of truth for its settings since the VPS move. The job does
-    # exactly the manual deploy: fast-forward the install's checkout to this commit, then docker/deploy.sh (backup,
-    # migrate, switch, readiness gate). It never writes docker/.env: rebuilding it from GitHub secrets would overwrite
-    # the live settings with older or empty values.
     runs-on: [self-hosted, vps]
+    environment: production-asifzone
     concurrency:
-      group: deploy
+      group: deploy-asifzone
       cancel-in-progress: false
     steps:
       - name: Deploy Asif Zone
@@ -168,26 +176,44 @@ jobs:
         run: |
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
-          bash docker/deploy.sh
+          flock /tmp/store-deploy.lock bash docker/deploy.sh
         env:
           DEPLOY_SHA: ${{ github.sha }}
 
+  deploy-nasihamart:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: [self-hosted, vps]
+    environment: production-nasihamart
+    concurrency:
+      group: deploy-nasihamart
+      cancel-in-progress: false
+    steps:
       - name: Deploy Nasihamart
         working-directory: /opt/nasihamart
         run: |
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
-          bash docker/deploy.sh
+          flock /tmp/store-deploy.lock bash docker/deploy.sh
         env:
           DEPLOY_SHA: ${{ github.sha }}
 
-      # The third installation (docs/installations/tahafi.md). Skipped until its first deployment has created /opt/tahafi.
+  # The third installation (docs/installations/tahafi.md). Skipped until its first deployment has created /opt/tahafi.
+  deploy-tahafi:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: [self-hosted, vps]
+    environment: production-tahafi
+    concurrency:
+      group: deploy-tahafi
+      cancel-in-progress: false
+    steps:
       - name: Deploy Tahafi
         run: |
           if [ ! -d /opt/tahafi ]; then echo "Tahafi is not installed on this server yet — skipping"; exit 0; fi
           cd /opt/tahafi
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
-          bash docker/deploy.sh
+          flock /tmp/store-deploy.lock bash docker/deploy.sh
         env:
           DEPLOY_SHA: ${{ github.sha }}
