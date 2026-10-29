@@ -47,7 +47,7 @@ interface ActionCenterProps {
   /** Stock work waiting on a person — only for roles that read stock. */
   stockWaiting?: { countLossesToApprove: number; fillFailures: number };
   /** Parcels cancelled after shipping still out with the courier (P1.5). */
-  parcelsToReceive?: { total: number; overdue: number; followUpDays: number };
+  parcelsToReceive?: { total: number; overdue: number; followUpDays: number; toInspect: number };
   loading: boolean;
 }
 
@@ -117,13 +117,24 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       icon: Banknote,
     },
     {
-      // Owner decision Q-B: past the store's follow-up days (14 by default) a parcel still out is a follow-up
+      // Parcels on their way back (Orders › Coming back). Owner decision Q-B: past the store's returnNotBackDays
+      // (Settings › Dispatch, 14 by default) one not back yet is a follow-up — Orders › Return overdue.
       key: "parcels-to-receive",
-      label: parcelsToReceive?.overdue ? `Parcels out over ${parcelsToReceive.followUpDays} days` : "Parcels to receive",
-      hint: "Cancelled after shipping — receive each parcel on its order when it is back",
+      label: parcelsToReceive?.overdue ? `Parcels not back after ${parcelsToReceive.followUpDays} days` : "Parcels to receive",
+      hint: "Cancelled or returned — receive each parcel on its order when it is back",
       count: parcelsToReceive?.overdue || parcelsToReceive?.total || 0,
-      href: "/admin/return-requests?tab=parcels",
+      href: parcelsToReceive?.overdue ? "/admin/orders?queue=returnOverdue" : "/admin/orders?queue=comingBack",
       severity: parcelsToReceive?.overdue ? "warning" : "info",
+      icon: PackageX,
+    },
+    {
+      // Back in hand, not yet inspected: its units become stock only at the inspection (owner decision M2 / D-OO1).
+      key: "parcels-to-inspect",
+      label: "Parcels to inspect",
+      hint: "Back at the shop — inspect each one on its order to put the good units back in stock",
+      count: parcelsToReceive?.toInspect ?? 0,
+      href: "/admin/orders?queue=inspectionPending",
+      severity: "info",
       icon: PackageX,
     },
     {

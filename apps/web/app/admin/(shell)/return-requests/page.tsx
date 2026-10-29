@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, RotateCcw, X } from "lucide-react";
@@ -19,11 +20,8 @@ import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
-import { ParcelsToReceive } from "@/components/admin/orders/parcels-to-receive";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
-import { useUrlState } from "@/hooks/use-url-state";
-import { urlParam } from "@/lib/url-state";
 import { approvalStatusBadgeVariant, formatPrice, formatStoreDate, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
@@ -54,8 +52,6 @@ function approvalEffects(r: ReturnRequest): string[] {
   ];
 }
 
-const TAB_URL = { tab: urlParam.enum(["requests", "parcels"], "requests") };
-
 export default function AdminReturnRequestsPage() {
   const queryClient = useQueryClient();
   const perms = useOrderPermissions();
@@ -67,10 +63,11 @@ export default function AdminReturnRequestsPage() {
   const [compensation, setCompensation] = useState<ReturnCompensation | undefined>(undefined);
   const [exchangeReady, setExchangeReady] = useState(false);
 
-  // Blueprint P1.5: two tabs — customers' requests, and parcels cancelled after shipping that are on their way back
-  // (?tab=parcels, linked from Home).
-  const [{ tab }, setUrl] = useUrlState(TAB_URL, { history: "push" });
-  const switchTab = (t: "requests" | "parcels") => setUrl({ tab: t });
+  // Parcels on their way back are Orders › Coming back (Order Operations); the old ?tab=parcels link opens it.
+  const router = useRouter();
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "parcels") router.replace("/admin/orders?queue=comingBack");
+  }, [router]);
   // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link).
   useEffect(() => {
     const s = new URLSearchParams(window.location.search).get("status");
@@ -157,11 +154,8 @@ export default function AdminReturnRequestsPage() {
 
   return (
     <div>
-      <PageHeader title="Returns & refused parcels" description="Customers' returns and exchanges to review, and parcels cancelled after shipping that are on their way back." />
+      <PageHeader title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
       <ModuleTabs />
-      <SegmentedControl aria-label="Show" className="mb-4" value={tab} onChange={switchTab} options={[{ value: "requests" as const, label: "Requests" }, { value: "parcels" as const, label: "Parcels to receive" }]} />
-      {tab === "parcels" ? <ParcelsToReceive /> : (
-      <>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl
@@ -320,8 +314,6 @@ export default function AdminReturnRequestsPage() {
           </div>
         )}
       </Modal>
-      </>
-      )}
     </div>
   );
 }

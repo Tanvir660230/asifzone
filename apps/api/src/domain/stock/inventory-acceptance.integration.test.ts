@@ -10,7 +10,7 @@ vi.mock("../../providers/courier/steadfast", () => ({
   getSteadfastStatusByConsignmentId: vi.fn(async () => courier.status),
 }));
 import request from "supertest";
-import { PERMISSIONS } from "@clothing-brand/shared";
+import { ORDER_QUEUE_FILTERS, PERMISSIONS } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { signAccessToken } from "../../lib/jwt";
@@ -25,7 +25,8 @@ import { approveCutover, draftCutover, postCutover } from "../finance/inventory-
 import { processFinancialEvent } from "../finance/events.service";
 import { runReconciliation } from "../finance/reconciliation.service";
 import { handleSteadfastWebhook } from "../../modules/courier/courier.service";
-import { listParcelsToReceive, receiveReturnedParcel, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
+import { listOrders, receiveReturnedParcel, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
+import { updateSettings } from "../../modules/settings/settings.service";
 import { recordCounts } from "./count.service";
 import { stockHub } from "./stock-hub.service";
 
@@ -51,6 +52,9 @@ async function postPending() {
     for (const e of waiting) await processFinancialEvent(e.id);
   }
 }
+const inParcelQueue = async (q: "comingBack" | "returnOverdue" | "inspectionPending", order: { id: string; orderNumber: string }) =>
+  (await listOrders({ ...ORDER_QUEUE_FILTERS[q], search: order.orderNumber, page: 1, pageSize: 25 } as never)).items.some((o) => o.id === order.id);
+
 async function ship(orderId: string, consignment?: string) {
   if (consignment) await prisma.order.update({ where: { id: orderId }, data: { courierConsignmentId: consignment } });
   for (const s of ["CONFIRMED", "PROCESSING", "PACKED", "SHIPPED"] as const) await updateOrderStatus(orderId, { status: s }, owner);
@@ -167,21 +171,22 @@ describe("inventory acceptance", () => {
     await ship(shipped.id);
     await updateOrderStatus(shipped.id, { status: "CANCELLED", note: "refused at the door" }, owner);
     expect(await stockOf(v)).toBe(4);
-    // blueprint P1.5: the parcel still out is listed to receive; the one cancelled while packed never is
-    const waiting = (await listParcelsToReceive()).parcels;
-    expect(waiting.find((x) => x.orderId === shipped.id)).toMatchObject({ units: 1, overdue: false, daysOut: 0 });
-    expect(waiting.find((x) => x.orderId === packed.id)).toBeUndefined();
-    // 15 days later it is a follow-up (owner decision Q-B: 14 days, the store's setting)
-    expect((await listParcelsToReceive(new Date(Date.now() + 15 * 86_400_000))).parcels.find((x) => x.orderId === shipped.id)?.overdue).toBe(true);
+    // blueprint P1.5 on Order Operations' queues: the parcel still out is coming back (sent without a Steadfast booking
+    // here); the one cancelled while packed never is
+    expect(await inParcelQueue("comingBack", shipped)).toBe(true);
+    expect(await inParcelQueue("comingBack", packed)).toBe(false);
+    expect(await inParcelQueue("returnOverdue", shipped)).toBe(false);
+    // 15 days later it is a follow-up (owner decision Q-B: the store's returnNotBackDays, 14 by default)
+    await prisma.order.update({ where: { id: shipped.id }, data: { statusChangedAt: new Date(Date.now() - 15 * 86_400_000) } });
+    expect(await inParcelQueue("returnOverdue", shipped)).toBe(true);
     // a store that gives parcels 20 days isn't chased at 15
-    await updateBusinessSettings({ returnFollowUpDays: 20, reason: "slower courier" }, OWNER);
-    const later = await listParcelsToReceive(new Date(Date.now() + 15 * 86_400_000));
-    expect(later.followUpDays).toBe(20);
-    expect(later.parcels.find((x) => x.orderId === shipped.id)?.overdue).toBe(false);
-    await updateBusinessSettings({ returnFollowUpDays: 14, reason: "back to the default" }, OWNER);
+    await updateSettings({ returnNotBackDays: 20 });
+    expect(await inParcelQueue("returnOverdue", shipped)).toBe(false);
+    await updateSettings({ returnNotBackDays: 14 });
     await receiveReturnedParcel(shipped.id, owner, { note: "parcel back from the courier" });
     expect(await stockOf(v)).toBe(5);
-    expect((await listParcelsToReceive()).parcels.find((x) => x.orderId === shipped.id)).toBeUndefined();
+    expect(await inParcelQueue("comingBack", shipped)).toBe(false);
+    expect(await inParcelQueue("inspectionPending", shipped)).toBe(false);
     await assertInventoryInvariants(v);
   });
 

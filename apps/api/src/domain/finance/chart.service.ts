@@ -28,11 +28,11 @@ export async function getBusinessSettings() {
     openingBalancesStatus: batch?.status ?? null,
     postedJournals: posted,
     openingDateLocked: batch?.status === "POSTED" || posted > 0,
-    ...(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true, inventoryCostingActivatedAt: true, inventoryGainAlertThreshold: true, countLossApprovalThreshold: true, returnFollowUpDays: true, courierUnpaidSnoozedUntil: true } })),
+    ...(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true, inventoryCostingActivatedAt: true, inventoryGainAlertThreshold: true, countLossApprovalThreshold: true, courierUnpaidSnoozedUntil: true } })),
   };
 }
 
-export async function updateBusinessSettings(input: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; countLossApprovalThreshold?: number; returnFollowUpDays?: number; courierUnpaidSnoozedUntil?: string | null; reason?: string | null }, actor: FinanceActor) {
+export async function updateBusinessSettings(input: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; countLossApprovalThreshold?: number; courierUnpaidSnoozedUntil?: string | null; reason?: string | null }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   return inTransaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "FinanceBusiness" WHERE id = ${business.id} FOR UPDATE`;
@@ -61,7 +61,6 @@ export async function updateBusinessSettings(input: { name?: string; fiscalYearS
     }
     if (input.inventoryGainAlertThreshold !== undefined) data.inventoryGainAlertThreshold = input.inventoryGainAlertThreshold;
     if (input.countLossApprovalThreshold !== undefined) data.countLossApprovalThreshold = input.countLossApprovalThreshold;
-    if (input.returnFollowUpDays !== undefined) data.returnFollowUpDays = input.returnFollowUpDays;
     if (input.courierUnpaidSnoozedUntil !== undefined) data.courierUnpaidSnoozedUntil = input.courierUnpaidSnoozedUntil === null ? null : dateColumn(input.courierUnpaidSnoozedUntil);
     if (!Object.keys(data).length) return before;
     const after = await tx.financeBusiness.update({ where: { id: business.id }, data });

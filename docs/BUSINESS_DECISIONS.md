@@ -466,7 +466,7 @@ a separate implementation. Implemented on `feat/erp-core`; the commit is given w
 | Q15 | A — stock corrections on their own ladder line | Presentation only; net unchanged. | P2.4 |
 | Q16 | A — month-end needs every day of non-archived campaigns with spend this or last month | Confirmed zero ≠ missing. | P0.7 |
 | Q-A | 1620 "Goods awaiting return", asset under 1600, key `asset.goods_awaiting_return` | Comes with Q13b. | not built yet |
-| Q-B | Damaged at receipt: written off, no approval. Never arrived: only after 30 days, owner approval at or above ৳1,000 (`countLossApprovalThreshold`). Home follow-up at 14 days. | Periods are settings (`returnLossDays`, `returnFollowUpDays`). | follow-up and write-off: Order Operations (D-OO1, `returnNotBackDays`) |
+| Q-B | Damaged at receipt: written off, no approval. Never arrived: only after 30 days, owner approval at or above ৳1,000 (`countLossApprovalThreshold`). Home follow-up at 14 days. | The follow-up period is one store setting, `returnNotBackDays` (Settings › Dispatch; the ERP core’s `returnFollowUpDays` was folded into it). The 30-day write-off wait comes with Q13b. | follow-up: Orders › Coming back / Return overdue and Home (one queue, D-OO1); write-off: on receipt (D-OO1) |
 | Q-C | A customer who keeps an exchanged original: written off as a loss, no automatic charge | S7 with reason "customer kept the item". | with Q13b |
 | Q-D | AUTO_ESTIMATE source order: book average → approved recipe → last posted purchase → catalog | | P0.2 |
 | Q-E | Spend day = spend > 0; explicit campaign Archive and confirmed-zero marker; imported zero rows stay unconfirmed | | P0.7 |

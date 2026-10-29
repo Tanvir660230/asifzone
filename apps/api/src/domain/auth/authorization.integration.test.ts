@@ -563,8 +563,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +8: parcel scanning — batches, scans, void, confirm, cancel, current, summary (Order Operations Phase 4)
     // +2: the daily courier check — latest run, run now (Order Operations Phase 5)
     // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
-    // +1: parcels to receive (blueprint P1.5)
-    expect(routes).toHaveLength(777);
+    expect(routes).toHaveLength(776);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

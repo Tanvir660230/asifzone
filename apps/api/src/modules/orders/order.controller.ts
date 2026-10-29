@@ -175,11 +175,6 @@ export const stats = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await orderService.getOrderStats());
 });
 
-/** GET /api/orders/parcels-to-receive — cancelled-after-shipping parcels still out with the courier (P1.5). */
-export const parcelsToReceive = asyncHandler(async (_req: Request, res: Response) => {
-  res.json(await orderService.listParcelsToReceive());
-});
-
 export const exportCsv = asyncHandler(async (req: Request, res: Response) => {
   const csv = await orderService.exportOrdersCsv(req.query as never);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");

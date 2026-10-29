@@ -23,13 +23,11 @@ export const financeBusinessUpdateSchema = z
     inventoryGainAlertThreshold: financeAmountSchema.optional(),
     /** A count loss by staff at or above this amount (at the average cost) waits for the owner, major units. */
     countLossApprovalThreshold: financeAmountSchema.optional(),
-    /** Owner decision Q-B: days a parcel or return may be out before it is a Home follow-up. */
-    returnFollowUpDays: z.number().int().min(1).max(365).optional(),
     /** Blueprint P1.2: hide the "Unpaid by Steadfast" reminder until this business date (inclusive); null shows it again. */
     courierUnpaidSnoozedUntil: businessDate.nullable().optional(),
     reason: optionalText(500),
   })
-  .refine((v) => v.name !== undefined || v.fiscalYearStartMonth !== undefined || v.openingDate !== undefined || v.inventoryGainAlertThreshold !== undefined || v.countLossApprovalThreshold !== undefined || v.returnFollowUpDays !== undefined || v.courierUnpaidSnoozedUntil !== undefined, "Nothing to change");
+  .refine((v) => v.name !== undefined || v.fiscalYearStartMonth !== undefined || v.openingDate !== undefined || v.inventoryGainAlertThreshold !== undefined || v.countLossApprovalThreshold !== undefined || v.courierUnpaidSnoozedUntil !== undefined, "Nothing to change");
 
 export const ledgerAccountCreateSchema = z.object({
   code: z.string().trim().regex(/^[0-9A-Z][0-9A-Z.-]{0,15}$/, "Codes use digits, capitals, '.' and '-' (max 16)"),

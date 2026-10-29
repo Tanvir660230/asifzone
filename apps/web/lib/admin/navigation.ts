@@ -175,16 +175,14 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "orders.ready", label: "Ready to ship", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/ready", capability: "orders.view", order: 0.5, keywords: ["packed", "to ship", "to book", "courier pickup"] },
   {
     id: "orders.returns",
-    // blueprint tab 2 §2: customers' requests and parcels on their way back, as two tabs of one page
-    label: "Returns & refused parcels",
-    shortLabel: "Returns",
+    label: term("returnRequest"),
     kind: "page",
     parent: "orders",
     domain: "operate",
     route: "/admin/return-requests",
     capability: "orders.view",
     order: 1,
-    keywords: ["exchange", "refund", "returns", "return requests", "refused parcel", "receive parcel"],
+    keywords: ["exchange", "refund", "returns"],
   },
   // Order Operations phase 4: scan parcels out to the courier and back in (physical handover / receipt only).
   { id: "orders.dispatch", label: "Dispatch scan", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/dispatch", capability: "parcels.scan", order: 1.5, keywords: ["scan", "barcode", "handover", "courier", "pickup"] },

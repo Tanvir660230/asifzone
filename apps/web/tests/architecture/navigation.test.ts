@@ -196,7 +196,7 @@ describe("navigation manifest — derivation", () => {
     expect(breadcrumbsFor("/admin/orders").map((c) => c.label)).toEqual(["Orders"]);
     expect(breadcrumbsFor("/admin/orders/abc")).toEqual([{ label: "Orders", href: "/admin/orders" }, { label: "Order" }]);
     expect(breadcrumbsFor("/admin/catalog/sku").map((c) => c.label)).toEqual(["Products", "Catalog setup", "SKUs"]);
-    expect(documentTitleFor("/admin/return-requests")).toBe("Returns & refused parcels · Store Console");
+    expect(documentTitleFor("/admin/return-requests")).toBe("Return requests · Store Console");
     expect(documentTitleFor("/admin/unknown")).toBe("Store Console");
   });
 

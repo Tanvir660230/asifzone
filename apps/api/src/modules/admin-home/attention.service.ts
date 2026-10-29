@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { can, type AdminIdentity } from "../../domain/auth/authorization";
-import { getOrderStats, listParcelsToReceive } from "../orders/order.service";
+import { getOrderStats, parcelReturnSummary } from "../orders/order.service";
 import { getPaymentsOverview } from "../payments/payments-overview.service";
 import { countUnreadNotifications } from "../notifications/notification.service";
 import { countOpenConversations } from "../inbox/inbox.service";
@@ -24,9 +24,10 @@ export async function adminAttention(identity: AdminIdentity) {
     can(identity, "ops.read") ? countOpenErrors() : null,
     can(identity, "purchasing.read") ? countPossibleDuplicatePurchases() : null,
     can(identity, "inventory.read") ? stockWaiting() : null,
-    can(identity, "orders.read") ? listParcelsToReceive() : null,
+    can(identity, "orders.read") ? parcelReturnSummary() : null,
   ]);
-  const parcelsToReceive = parcels ? { total: parcels.parcels.length, overdue: parcels.overdue, followUpDays: parcels.followUpDays } : null;
+  // Parcels on their way back (#96's queues): coming back, past the store's returnNotBackDays, and in hand to inspect.
+  const parcelsToReceive = parcels ? { total: parcels.comingBack, overdue: parcels.returnOverdue, followUpDays: parcels.returnNotBackDays, toInspect: parcels.inspectionPending } : null;
   return { orders, payments, pendingReviews, unreadFeedback, unreadNotifications, openErrors, possibleDuplicatePurchases, stock, parcelsToReceive };
 }
 

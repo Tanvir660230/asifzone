@@ -2678,6 +2678,7 @@ model StoreSetting {
   /// Courier automation (Order Operations phase 5, plan M8): a parcel out longer than this (from handover, or booking for
   /// an unscanned one) is "stuck in transit"; a return the courier reported this long ago that hasn't arrived is overdue.
   stuckInTransitDays           Int      @default(6)
+  /// Owner decision Q-B: the store's one follow-up deadline for parcels coming back (FinanceBusiness.returnFollowUpDays was folded in).
   returnNotBackDays            Int      @default(14)
   updatedAt                    DateTime @updatedAt
 }
@@ -3513,8 +3514,6 @@ model FinanceBusiness {
   /// Smart stock page: a count loss by someone without inventory.approve worth at least this (at the average cost) waits for
   /// the owner (StockCountApproval) instead of moving the stock.
   countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
-  /// Owner decision Q-B: a parcel or return still out after this many days is a Home follow-up.
-  returnFollowUpDays          Int                       @default(14)
   /// Blueprint P1.2 (tab 2 §3): the owner may snooze the "Unpaid by Steadfast" reminder until this business date (inclusive).
   courierUnpaidSnoozedUntil   DateTime?                 @db.Date
   /// What the last night's run did, for the settings page.
