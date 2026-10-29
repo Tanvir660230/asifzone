@@ -164,7 +164,7 @@ saved views, date range right) → body (table, record or form). Lists full widt
 | Quick sheet (Received goods, Fill, Count) | Drawer on desktop, full screen on phone; one task; preview before Save | `Drawer` |
 | Confirm dialog | Title = action + object; body lists the consequences the server will apply; destructive button right | `Modal` / confirm |
 | Status change | Only legal next states; reason inline when required; toast with Undo when reversible | shared state machine |
-| Queue item (Home) | Severity bar, title, one-line why, count or amount, next action link; it clears only when resolved | `ActionCenter` rows (`data-testid="action-<key>"`) |
+| Queue item (Home) | Severity bar, title, one-line why, count or amount, next action link; it clears only when resolved | `QueueItem` (`components/admin/queue-item.tsx`, `data-testid="action-<key>"`) |
 | Money | `Money` / `CostAmount`; estimates carry the estimate token and label | `--data-estimate-*`, `--data-missing-*` |
 
 **Words.** Sentence case; verbs on buttons ("Receive return", not "Submit"); the owner's nouns (bottles, parcel, bill,
