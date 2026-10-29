@@ -14,6 +14,8 @@ export interface OrderGuardFacts {
   deletedAt: string | Date | null;
   courierConsignmentId: string | null;
   paymentMethod: string;
+  /** Finished — in Order history (admin order detail only; the API decides). */
+  inHistory?: boolean;
 }
 
 export const RESTORE_BEFORE_CHANGES = "Restore this order before making changes";
@@ -35,6 +37,7 @@ export function priceAdjustmentBlocker(order: OrderGuardFacts, paidAmount: numbe
 export function customerDetailsEditBlocker(order: OrderGuardFacts): string | null {
   if (order.deletedAt) return RESTORE_BEFORE_CHANGES;
   if (order.courierConsignmentId) return "Cannot change name/address after a courier has been booked — unlink the booking first";
+  if (order.inHistory) return "This order is finished and in Order history — its customer details stay as they were";
   return null;
 }
 
@@ -140,17 +143,53 @@ export function paymentLinkBlocker(order: OrderGuardFacts, amountDue: number): s
  * GET /api/orders/stats counts each preset through the same `where` builder, so a queue's badge always equals what the
  * filter shows.
  */
-export const ORDER_QUEUE_IDS = ["needsAction", "followUpDue", "unpaid", "cod", "courierIssue", "cancelledButPaid", "refundDue", "cancelledReturned"] as const;
+export const ORDER_QUEUE_IDS = [
+  "needsAction",
+  "callNow",
+  "callLater",
+  "confirmEscalated",
+  "handoverPending",
+  "comingBack",
+  "inspectionPending",
+  "scanDiscrepancy",
+  "stuckInTransit",
+  "returnOverdue",
+  "followUpDue",
+  "readyToBook",
+  "unpaid",
+  "cod",
+  "courierIssue",
+  "cancelledButPaid",
+  "refundDue",
+  "cancelledReturned",
+] as const;
 export type OrderQueueId = (typeof ORDER_QUEUE_IDS)[number];
 
 export type OrderQueueFilter = Pick<
   OrderListQuery,
-  "needsAction" | "followUpDue" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
+  "needsAction" | "confirmQueue" | "parcelQueue" | "followUpDue" | "courierBooked" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
 >;
+
+/** Confirmed with the customer and not yet with a courier: the day's "Book" step (Order Operations plan, phase 2). */
+export const READY_TO_BOOK_STATUSES: readonly OrderStatus[] = ["CONFIRMED", "PROCESSING", "PACKED"];
 
 export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter>> = {
   needsAction: { needsAction: "true" },
+  // Customer confirmation (phase 3): who to call now, callbacks set for later, and what an owner/manager must decide.
+  callNow: { confirmQueue: "callNow" },
+  callLater: { confirmQueue: "callLater" },
+  confirmEscalated: { confirmQueue: "escalated" },
+  // Parcel operations (phase 4): what hasn't been handed over, what is coming back, what waits for inspection, and what
+  // came back unexpectedly.
+  handoverPending: { parcelQueue: "handoverPending" },
+  comingBack: { parcelQueue: "comingBack" },
+  inspectionPending: { parcelQueue: "inspectionPending" },
+  scanDiscrepancy: { parcelQueue: "scanDiscrepancy" },
+  // Courier automation (phase 5): out too long, and returns the courier reported that haven't arrived.
+  stuckInTransit: { parcelQueue: "stuckInTransit" },
+  returnOverdue: { parcelQueue: "returnOverdue" },
   followUpDue: { followUpDue: "true" },
+  readyToBook: { statusIn: [...READY_TO_BOOK_STATUSES], courierBooked: "false" },
   unpaid: { paymentStatus: "UNPAID" },
   cod: { paymentMethod: "COD" },
   courierIssue: { courierIssue: "true" },

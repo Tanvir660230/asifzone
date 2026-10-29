@@ -15,6 +15,8 @@ import {
   recordPaymentSchema,
   reclassifyPaymentSchema,
   bulkOrderIdsSchema,
+  confirmationDecisionSchema,
+  recordConfirmationAttemptSchema,
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
   bulkDeliveryScoreCheckSchema,
@@ -31,6 +33,7 @@ import { requireAdmin, requirePermission } from "../../middlewares/require-admin
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { orderCreateRateLimit, orderTrackRateLimit, retryPaymentRateLimit } from "../../middlewares/rate-limit";
 import * as orderController from "./order.controller";
+import * as confirmationController from "./confirmation.controller";
 import * as adjustments from "./order-adjustments.controller";
 
 export const orderRouter = Router();
@@ -54,6 +57,8 @@ orderRouter.get("/", requireAdmin, requirePermission("orders.read"), validate(or
 orderRouter.post("/admin", requireAdmin, requirePermission("orders.manage"), validate(adminCreateOrderSchema), orderController.createManual);
 // Must come before "/:id" — otherwise Express would match "stats"/"export" as an :id param.
 orderRouter.get("/stats", requireAdmin, requirePermission("orders.read"), orderController.stats);
+// Customer confirmation (Order Operations phase 3): claim the next order to call — before "/:id" like the others.
+orderRouter.post("/confirmation/next", requireAdmin, requirePermission("orders.manage"), confirmationController.next);
 orderRouter.get("/export/csv", requireAdmin, requirePermission("orders.export"), validate(orderListQuerySchema, "query"), orderController.exportCsv);
 orderRouter.post("/bulk/status", requireAdmin, requirePermission("orders.manage"), validate(bulkOrderStatusSchema), orderController.bulkStatus);
 orderRouter.post("/bulk/delete", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkDelete);
@@ -93,6 +98,11 @@ orderRouter.get("/:id/courier-note", requireAdmin, requirePermission("orders.rea
 orderRouter.patch("/:id/details", requireAdmin, requirePermission("orders.manage"), validate(updateOrderDetailsSchema), orderController.updateDetails);
 orderRouter.post("/:id/hold", requireAdmin, requirePermission("orders.manage"), validate(holdOrderSchema), orderController.hold);
 orderRouter.post("/:id/hold/clear", requireAdmin, requirePermission("orders.manage"), orderController.clearHold);
+orderRouter.get("/:id/confirmation", requireAdmin, requirePermission("orders.read"), confirmationController.state);
+orderRouter.post("/:id/confirmation-attempts", requireAdmin, requirePermission("orders.manage"), validate(recordConfirmationAttemptSchema), confirmationController.recordAttempt);
+orderRouter.post("/:id/confirmation/release", requireAdmin, requirePermission("orders.manage"), confirmationController.release);
+// assign: orders.manage; one more try / phone fixed on an escalated order: orders.escalations, checked in the service.
+orderRouter.patch("/:id/confirmation", requireAdmin, requirePermission("orders.manage"), validate(confirmationDecisionSchema), confirmationController.decide);
 orderRouter.patch("/:id/price", requireAdmin, requirePermission("orders.adjust_price"), validate(adjustOrderPriceSchema), orderController.adjustPrice);
 orderRouter.patch(
   "/:id/reconcile-partial-delivery",
@@ -102,7 +112,9 @@ orderRouter.patch(
   orderController.reconcilePartialDelivery,
 );
 orderRouter.get("/:id/fill-status", requireAdmin, requirePermission("orders.read"), orderController.fillStatus);
-orderRouter.post("/:id/receive-return", requireAdmin, requirePermission("orders.manage"), validate(receiveReturnedParcelSchema), orderController.receiveReturnedParcel);
+// Receiving a parcel back is the inspection that makes returned or refused units stock again (owner decision D-OO1) — the
+// returns permission, not the general order one (least privilege: a role that edits orders need not restock goods).
+orderRouter.post("/:id/receive-return", requireAdmin, requirePermission("returns.manage"), validate(receiveReturnedParcelSchema), orderController.receiveReturnedParcel);
 orderRouter.post("/:id/refunds", requireAdmin, requirePermission("refunds.manage"), validate(recordRefundSchema), orderController.createRefund);
 orderRouter.get("/:id/refunds", requireAdmin, requirePermission("orders.read"), orderController.listRefunds);
 orderRouter.post("/:id/refunds/:refundId/complete", requireAdmin, requirePermission("refunds.manage"), validate(completeRefundSchema), orderController.completeRefundRequest);

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronDown, ExternalLink, FileText, MoreHorizontal, Printer, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, ArrowRight, ChevronDown, ExternalLink, FileText, MoreHorizontal, Printer, RotateCcw, Trash2 } from "lucide-react";
 import { primaryOrderAction, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { BackLink } from "@/components/ui/back-link";
@@ -86,6 +86,11 @@ export function DetailHeader({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-500">
             <span>Placed {formatStoreDateTime(order.createdAt)}</span>
             <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
+            {order.inHistory && (
+              <Link href="/admin/orders/history" data-testid="order-in-history" className="inline-flex items-center gap-1 text-fg-muted underline-offset-2 hover:text-fg hover:underline">
+                <Archive size={13} aria-hidden="true" /> Finished · in Order history
+              </Link>
+            )}
             {order.exchangeOf && (
               <span>
                 Replacement for{" "}

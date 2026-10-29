@@ -51,7 +51,7 @@ precondition on refund records. **Audit event** — the event name written into 
 | T4 | pre-shipment or `SHIPPED` | `DELIVERED` | — | COD: `UNPAID → PAID` (cash collected at the door, D1) | — | — | `order.delivered` | customer SMS; loyalty points (idempotent per order) |
 | T5 | pre-shipment or `SHIPPED` | `PARTIALLY_DELIVERED` | — (settled by the *reconcile* command, §4) | — (amount collected unknown; admin records it) | — | — | `order.partially_delivered` | — |
 | T6 | pre-shipment or `SHIPPED` | `CANCELLED` | release | — | if `PAID`: refund is owed (see notify) | — | `order.cancelled` | customer SMS; admin alert *cancelled but paid* when `PAID`; courier-loss ledger row when a consignment was booked |
-| T7 | `DELIVERED` or `PARTIALLY_DELIVERED` | `RETURNED` | return | — | if `PAID`: refund is owed (see notify) | request (if any) approved in the same transaction | `order.returned` | admin alert *returned — refund may be owed* when `PAID` |
+| T7 | `DELIVERED` or `PARTIALLY_DELIVERED` | `RETURNED` | return recorded (`returnedQuantity`), **no stock** — the units come back when the parcel is received (D-OO1) | — | if `PAID`: refund is owed (see notify) | request (if any) approved in the same transaction | `order.returned` | admin alert *returned — refund may be owed* when `PAID` |
 | T8 | `DELIVERED`, `PARTIALLY_DELIVERED`, `CANCELLED`, `RETURNED` | `REFUNDED` | — (never; stock is decided by T6/T7) | must already be `REFUNDED` | requires a completed `Refund` (recorded via *Record refund*) | — | `order.refunded` | — |
 | T0 | any | same status | — | — | — | — | note only (if given) | — |
 
@@ -67,7 +67,8 @@ recorded refund.
 - **`REFUNDED` carries no stock effect** (T8). In the old code `REFUNDED` restocked if the previous status
   wasn't `CANCELLED`/`REFUNDED`, so `RETURNED → REFUNDED` restocked a second time. Refund is a *payment*
   fact: the money side lives in `Refund` rows and `paymentStatus`; the goods side is decided by T6/T7.
-- **`RETURNED` restocks** (T7) whether it comes from an approved return request or the admin picker.
+- **`RETURNED` records the return** (T7) whether it comes from an approved return request or the admin picker; it moves no
+  stock. The units become stock only through `receiveReturnedParcel` once the parcel is in hand (D-OO1, 2026-10-29).
   Before, only the return-request path restocked, so the same status meant two different stock states.
 - **COD becomes `PAID` on delivery** (T4, D1): the courier collects the cash at the door. Since Phase 4 this effect
   records a `COD` payment of the balance due in the payment ledger, and the status is derived from it

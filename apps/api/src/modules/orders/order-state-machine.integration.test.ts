@@ -225,14 +225,18 @@ describe("order state machine", () => {
   });
 
   describe("returns", () => {
-    it("RETURNED restocks once — a later REFUNDED and moving to Trash restock nothing more", async () => {
+    it("RETURNED records the return; receiving the parcel restocks once — a later REFUNDED and moving to Trash restock nothing more", async () => {
       const { variants } = await createStockedProduct({ stocks: [10] });
       const v = variants[0]!;
       const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
       await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
       await updateOrderStatus(order.id, { status: "RETURNED" }, admin);
+      expect(await stockOf(v.id)).toBe(7); // owner decision M2: nothing is sellable until the parcel is back
+      let line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
+      expect([line.returnedQuantity, line.restockedQuantity]).toEqual([3, 0]);
+      await receiveReturnedParcel(order.id, admin, {});
       expect(await stockOf(v.id)).toBe(10);
-      const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
+      line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
       expect([line.returnedQuantity, line.restockedQuantity]).toEqual([3, 3]);
 
       await refundOrderPayment(order.id, { amount: Number(order.total) }, admin);
@@ -242,7 +246,7 @@ describe("order state machine", () => {
       await assertInventoryInvariants(v.id);
     });
 
-    it("approving a return request moves the order to RETURNED and restocks in one transaction", async () => {
+    it("approving a return request moves the order to RETURNED; the stock waits for the parcel", async () => {
       const { variants } = await createStockedProduct({ stocks: [10] });
       const v = variants[0]!;
       const order = await placeOrder([{ variantId: v.id, quantity: 2 }]);
@@ -251,6 +255,8 @@ describe("order state machine", () => {
 
       await reviewReturnRequest(request.id, { status: "APPROVED" }, admin);
       expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("RETURNED");
+      expect(await stockOf(v.id)).toBe(8);
+      await receiveReturnedParcel(order.id, admin, {});
       expect(await stockOf(v.id)).toBe(10);
       await assertInventoryInvariants(v.id);
     });
@@ -268,7 +274,7 @@ describe("order state machine", () => {
       expect(await stockOf(v.id)).toBe(10);
     });
 
-    it("partial delivery: reconciling some units, then RETURNED, restocks each unit once", async () => {
+    it("partial delivery: reconciling some units, then RETURNED, then receiving the parcel restocks each unit once", async () => {
       const { variants } = await createStockedProduct({ stocks: [10] });
       const v = variants[0]!;
       const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
@@ -276,10 +282,12 @@ describe("order state machine", () => {
       await updateOrderStatus(order.id, { status: "PARTIALLY_DELIVERED" }, admin);
       const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
       await reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 1 }] }, admin);
-      expect(await stockOf(v.id)).toBe(8);
+      expect(await stockOf(v.id)).toBe(7);
 
       await updateOrderStatus(order.id, { status: "RETURNED" }, admin);
-      expect(await stockOf(v.id)).toBe(10); // the remaining 2, not 3 more
+      expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: line.id } })).returnedQuantity).toBe(3); // the remaining 2, not 3 more
+      await receiveReturnedParcel(order.id, admin, {});
+      expect(await stockOf(v.id)).toBe(10);
       await assertInventoryInvariants(v.id);
     });
   });
@@ -330,7 +338,7 @@ describe("order state machine", () => {
       expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: line!.id } })).restockedQuantity).toBe(0);
     });
 
-    it("a partial delivery reconciled with a damaged unit: it comes back, is written off, and the return record says so", async () => {
+    it("a partial delivery's damaged unit is judged at receipt: refused at reconciliation, written off when the parcel arrives", async () => {
       const { variants } = await createStockedProduct({ stocks: [10] });
       const v = variants[0]!;
       const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
@@ -338,33 +346,39 @@ describe("order state machine", () => {
       await updateOrderStatus(order.id, { status: "PARTIALLY_DELIVERED" }, admin);
       const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
       await expectRefused(reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 1, damaged: 2 }] }, admin));
-      await reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 2, damaged: 1 }] }, admin);
-      expect(await stockOf(v.id)).toBe(8); // 7 + 2 back − 1 damaged
+      await expectRefused(reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 2, damaged: 1 }] }, admin));
+      await reconcilePartialDelivery(order.id, { items: [{ orderItemId: line.id, returnedQuantity: 2 }] }, admin);
+      expect(await stockOf(v.id)).toBe(7);
       const rr = await prisma.returnRequest.findFirstOrThrow({ where: { orderId: order.id } });
-      expect(rr.lines).toMatchObject([{ orderItemId: line.id, quantity: 2, restocked: 1, writtenOff: 1 }]);
-      expect(await prisma.stockMovement.count({ where: { variantId: v.id, reason: "DAMAGED", orderId: null } })).toBe(1);
+      expect(rr.lines).toMatchObject([{ orderItemId: line.id, quantity: 2, restocked: 0, writtenOff: 0 }]);
+      await receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line.id, quantity: 2, damaged: 1 }] });
+      expect(await stockOf(v.id)).toBe(8); // 7 + 2 back − 1 damaged
+      expect(await prisma.stockMovement.count({ where: { sourceType: "OrderParcelReceipt", sourceId: order.id, reason: "DAMAGED" } })).toBe(1);
       await assertInventoryInvariants(v.id);
     });
 
-    it("approving a customer return with a damaged unit returns the order and writes that unit off", async () => {
+    it("a customer return's damaged unit is written off at receipt, not at approval", async () => {
       const { variants } = await createStockedProduct({ stocks: [10] });
       const v = variants[0]!;
       const order = await placeOrder([{ variantId: v.id, quantity: 2 }]);
       await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
       const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
       const request = await prisma.returnRequest.create({ data: { orderId: order.id, customerId: order.customerId!, reason: "Torn" } });
-      await expectRefused(reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 3 }] }, admin));
+      await expectRefused(reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }] }, admin));
       expect((await prisma.returnRequest.findUniqueOrThrow({ where: { id: request.id } })).status).toBe("PENDING");
 
-      await reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }] }, admin);
+      await reviewReturnRequest(request.id, { status: "APPROVED" }, admin);
       expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("RETURNED");
+      expect(await stockOf(v.id)).toBe(8);
+      await expectRefused(receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line.id, quantity: 3, damaged: 1 }] }));
+      await receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line.id, quantity: 2, damaged: 1 }] });
       expect(await stockOf(v.id)).toBe(9);
       const out = await prisma.stockMovement.findMany({ where: { sourceType: "OrderParcelReceipt", sourceId: order.id } });
       expect(out.map((m) => [m.reason, m.change])).toEqual([["DAMAGED", -1]]);
       await assertInventoryInvariants(v.id);
     });
 
-    it("a customer return's damaged units are capped at what THIS approval brought back, repeated lines added up", async () => {
+    it("damaged units at receipt are capped at what is still waiting to come back", async () => {
       const { variants } = await createStockedProduct({ stocks: [10] });
       const v = variants[0]!;
       const order = await placeOrder([{ variantId: v.id, quantity: 3 }]);
@@ -372,11 +386,14 @@ describe("order state machine", () => {
       const line = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
       // 2 of 3 already came back through an item return; the customer return brings back the last one.
       await recordItemReturn(order.id, { items: [{ orderItemId: line.id, quantity: 2, restock: true }], reason: "size", compensation: "NONE" }, admin, `dmg-cap-${order.id}`);
+      expect(await stockOf(v.id)).toBe(7);
+      await receiveReturnedParcel(order.id, admin, {});
       expect(await stockOf(v.id)).toBe(9);
       const request = await prisma.returnRequest.create({ data: { orderId: order.id, customerId: order.customerId!, reason: "Torn" } });
-      await expectRefused(reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }, { orderItemId: line.id, quantity: 1 }] }, admin));
+      await reviewReturnRequest(request.id, { status: "APPROVED" }, admin);
       expect(await stockOf(v.id)).toBe(9);
-      await reviewReturnRequest(request.id, { status: "APPROVED", damaged: [{ orderItemId: line.id, quantity: 1 }] }, admin);
+      await expectRefused(receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line.id, quantity: 2, damaged: 2 }] }));
+      await receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: line.id, quantity: 1, damaged: 1 }] });
       expect(await stockOf(v.id)).toBe(9); // the last unit came back and was written off; the 2 earlier ones stay
       await assertInventoryInvariants(v.id);
     });

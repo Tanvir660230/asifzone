@@ -96,13 +96,15 @@ test.describe("orders workspace", () => {
     expect(orderNumber).toMatch(/^ORD-/);
     const detail = page.getByTestId("order-detail");
 
-    // ── ORD-07 follow-up hold on a pending order, then clear ──
-    const followUp = page.getByTestId("order-follow-up");
-    await followUp.getByRole("button", { name: "+1h" }).click();
-    await expect(followUp.getByText(/Call back at/)).toBeVisible();
-    await expect(followUp.getByText("1 call attempt so far")).toBeVisible();
-    await followUp.getByRole("button", { name: "Clear reminder" }).click();
-    await expect(followUp.getByText(/Couldn't confirm on the call/)).toBeVisible();
+    // ── ORD-07 confirmation call (phase 3 call panel): a callback on a pending order, then clear it ──
+    const followUp = page.getByTestId("order-call-panel");
+    await followUp.getByRole("group", { name: "What happened on the call?" }).getByRole("button", { name: "Call back later" }).click();
+    await followUp.getByRole("button", { name: "+1 h" }).click();
+    await followUp.getByRole("button", { name: "Save call" }).click();
+    await expect(followUp.getByTestId("call-callback")).toContainText("Next call");
+    await expect(followUp.getByText(/^1 call/)).toBeVisible();
+    await followUp.getByRole("button", { name: "Clear callback" }).click();
+    await expect(followUp.getByTestId("call-callback")).toHaveCount(0);
 
     // ── ORD-08 price adjustment (before any payment) ──
     const items = page.getByTestId("order-items");

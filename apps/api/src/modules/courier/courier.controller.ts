@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { env } from "../../config/env";
 import { constantTimeEqual } from "../../lib/token-hash";
-import { handleSteadfastWebhook } from "./courier.service";
+import { handleSteadfastWebhook, recordWebhookRejection } from "./courier.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
 
@@ -21,6 +21,8 @@ export const webhook = asyncHandler(async (req: Request, res: Response) => {
   const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
   const expected = env.steadfast.webhookToken;
   if (!expected || !(constantTimeEqual(queryToken, expected) || constantTimeEqual(bearer, expected))) {
+    // Counted for the courier health report — the reason only; never the token, a header or the body.
+    await recordWebhookRejection(!expected ? "not_configured" : queryToken || bearer ? "bad_token" : "missing_token");
     return res.status(401).json({ error: "Invalid webhook token" });
   }
 

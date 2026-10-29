@@ -22,20 +22,19 @@ import type { OrderDetailCommands } from "./use-order-detail-commands";
 
 const LOSS_REASON = { CANCELLED_POST_BOOKING: "Cancelled after booking", PARTIAL_RETURN: "Partial return" } as const;
 
-/** Declare which units of a partially delivered order came back; the server restocks them and logs the courier loss. */
+/** Declare which units of a partially delivered order the customer sent back; the server records the return (what the
+ * order charges) and logs the courier loss. The units go back into stock only when the parcel is received (owner decision M2). */
 function PartialDelivery({ order, detail, canManage }: { order: Order; detail: OrderDetailCommands; canManage: boolean }) {
   const [returned, setReturned] = useState<Record<string, number>>({});
-  const [damaged, setDamaged] = useState<Record<string, number>>({});
   useEffect(() => {
     setReturned({});
-    setDamaged({});
   }, [order.id]);
 
   if (order.partialDeliveryReconciledAt) {
     const units = order.items.reduce((sum, i) => sum + i.returnedQuantity, 0);
     return (
       <Alert variant="success" title="Partial delivery reconciled">
-        {formatStoreDateTime(order.partialDeliveryReconciledAt)} — {units > 0 ? `${units} unit(s) restocked.` : "the customer kept the full shipment."}
+        {formatStoreDateTime(order.partialDeliveryReconciledAt)} — {units > 0 ? `${units} unit(s) recorded as returned.` : "the customer kept the full shipment."}
       </Alert>
     );
   }
@@ -43,7 +42,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
     <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="partial-delivery">
       <p className="flex items-start gap-2 text-sm text-warning-800">
         <PackageX size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        The courier reported a partial delivery. Enter how many units of each item came back and how many of those are damaged — good units are restocked, damaged ones written off. Leave 0 for anything the customer kept.
+        The courier reported a partial delivery. Enter how many units of each item the customer sent back; leave 0 for anything they kept. The units go back into stock when you receive the parcel — check for damage then.
       </p>
       <ul className="space-y-2">
         {order.items.map((item) => (
@@ -64,25 +63,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
                   disabled={!canManage}
                   aria-label={`Units of ${item.productNameSnapshot} returned`}
                   value={returned[item.id] ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(item.quantity, Math.round(Number(e.target.value) || 0)));
-                    setReturned({ ...returned, [item.id]: v });
-                    if ((damaged[item.id] ?? 0) > v) setDamaged({ ...damaged, [item.id]: v });
-                  }}
-                />
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-ink-500">
-                Damaged
-                <Input
-                  type="number"
-                  min={0}
-                  max={returned[item.id] ?? 0}
-                  step={1}
-                  className="w-20"
-                  disabled={!canManage || !(returned[item.id] ?? 0)}
-                  aria-label={`Returned units of ${item.productNameSnapshot} that are damaged`}
-                  value={damaged[item.id] ?? 0}
-                  onChange={(e) => setDamaged({ ...damaged, [item.id]: Math.max(0, Math.min(returned[item.id] ?? 0, Math.round(Number(e.target.value) || 0))) })}
+                  onChange={(e) => setReturned({ ...returned, [item.id]: Math.max(0, Math.min(item.quantity, Math.round(Number(e.target.value) || 0))) })}
                 />
               </label>
             </div>
@@ -96,11 +77,11 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
             loading={detail.reconcile.isPending}
             onClick={() =>
               detail.reconcile.mutate({
-                items: order.items.map((i) => ({ orderItemId: i.id, returnedQuantity: returned[i.id] ?? 0, damaged: Math.min(damaged[i.id] ?? 0, returned[i.id] ?? 0) })),
+                items: order.items.map((i) => ({ orderItemId: i.id, returnedQuantity: returned[i.id] ?? 0 })),
               })
             }
           >
-            Restock returned units & reconcile
+            Record what came back
           </Button>
         </div>
       )}
@@ -110,10 +91,14 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
 
 type ParcelLine = { back: number; damaged: number; lost: boolean };
 
-/** A cancelled order whose units are still out: it was cancelled after it shipped, so the parcel is on its way back. Its
- * units go back into stock only when someone has it in hand (inventory recovery F-d) — never on the courier's word. Staff
- * say per item how many came back and how many of those are damaged; anything that didn't come back either stays
- * outstanding or is marked lost by the courier. Only the good units become sellable stock. */
+/** Order statuses whose recorded customer return can be waiting to come back (the server's RETURN_RECEIPT_STATUSES). */
+const RETURN_RECEIPT_STATUSES: Order["status"][] = ["DELIVERED", "PARTIALLY_DELIVERED", "RETURNED", "REFUNDED"];
+
+/** A parcel on its way back: a cancelled order whose units are still out (cancelled after it shipped), or a customer return
+ * already recorded — approved, reconciled, or the order marked Returned — whose units aren't back yet. Its units go back
+ * into stock only when someone has it in hand (inventory recovery F-d, owner decision M2) — never on the courier's word or
+ * at the decision. Staff say per item how many came back and how many of those are damaged; anything that didn't come back
+ * either stays outstanding or is marked lost by the courier. Only the good units become sellable stock. */
 function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: OrderDetailCommands; canManage: boolean }) {
   const [lines, setLines] = useState<Record<string, ParcelLine>>({});
   const [damageNote, setDamageNote] = useState("");
@@ -122,7 +107,10 @@ function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: 
     setDamageNote("");
   }, [order.id]);
 
-  const out = order.items.map((i) => ({ item: i, units: i.quantity - i.restockedQuantity })).filter((l) => l.units > 0);
+  const customerReturn = order.status !== "CANCELLED";
+  const out = order.items
+    .map((i) => ({ item: i, units: (customerReturn ? i.returnedQuantity : i.quantity) - i.restockedQuantity }))
+    .filter((l) => l.units > 0);
   if (!out.length) return null;
   const total = out.reduce((s, l) => s + l.units, 0);
   const lineOf = (id: string, units: number): ParcelLine => lines[id] ?? { back: units, damaged: 0, lost: false };
@@ -164,8 +152,8 @@ function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: 
     <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="parcel-coming-back">
       <p className="flex items-start gap-2 text-sm text-warning-800">
         <PackageX size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        Cancelled after it shipped — the parcel is coming back. {total} unit(s) go back into stock when you have it in hand. Check each item: damaged
-        units are written off instead of restocked.
+        {customerReturn ? "A recorded return is on its way back." : "Cancelled after it shipped — the parcel is coming back."} {total} unit(s) go back into stock
+        when you have it in hand. Check each item: damaged units are written off instead of restocked.
       </p>
       <ul className="space-y-2">
         {out.map(({ item, units }) => {
@@ -176,7 +164,7 @@ function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: 
             <li key={item.id} className="space-y-2.5 rounded-lg border border-line-subtle bg-surface p-2.5 text-sm" data-testid="parcel-line">
               <div className="min-w-0">
                 <p className="truncate font-medium text-ink-900">{item.productNameSnapshot}</p>
-                <p className="text-xs text-ink-500">{[variant, `${units} out with the courier`].filter(Boolean).join(" · ")}</p>
+                <p className="text-xs text-ink-500">{[variant, customerReturn ? `${units} on the way back` : `${units} out with the courier`].filter(Boolean).join(" · ")}</p>
               </div>
               {canManage && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-600">
@@ -317,7 +305,9 @@ export function DeliverySection({
         {(booked || open) && <CourierNotePanel order={order} detail={detail} canEdit={perms.manage && !deleted} />}
 
         {order.status === "PARTIALLY_DELIVERED" && <PartialDelivery order={order} detail={detail} canManage={perms.manage && !deleted} />}
-        {order.status === "CANCELLED" && !deleted && <ParcelComingBack order={order} detail={detail} canManage={perms.manage} />}
+        {(order.status === "CANCELLED" || RETURN_RECEIPT_STATUSES.includes(order.status)) && !deleted && (
+          <ParcelComingBack order={order} detail={detail} canManage={perms.returns} />
+        )}
 
         {order.courierLosses && order.courierLosses.length > 0 && (
           <div>

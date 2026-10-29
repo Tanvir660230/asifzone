@@ -122,13 +122,15 @@ function csvToStatusArray(value: unknown) {
 }
 
 export const orderListQuerySchema = paginationQuerySchema.extend({
+  // The Orders list offers 25/50/100/200 rows a page (Order Operations plan M10); other lists keep the common cap of 100.
+  pageSize: z.coerce.number().int().min(1).max(200).default(20),
   status: orderStatusEnum.optional(),
   // Comma-separated alternative to `status` for quick filters that mean "one of several statuses"
   // (e.g. Cancelled/Returned) — kept as a separate param so every existing single-status caller is unaffected.
   statusIn: z.preprocess(csvToStatusArray, z.array(orderStatusEnum).optional()),
   paymentStatus: paymentStatusEnum.optional(),
   paymentMethod: paymentMethodEnum.optional(),
-  search: z.string().min(1).max(200).optional(),
+  search: z.string().trim().min(1).max(200).optional(),
   // "true" = only soft-deleted orders (the admin restore view); omitted/"false" = normal listing.
   deleted: z.enum(["true", "false"]).optional(),
   // "true"/"false" filters on whether courierConsignmentId is set — lets an admin isolate orders
@@ -151,6 +153,13 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   refundDue: z.enum(["true"]).optional(),
   // "true" = only booked orders the courier has put on hold or whose last status sync failed.
   courierIssue: z.enum(["true"]).optional(),
+  // Customer confirmation queues (Order Operations phase 3): Call now / Call later / Escalated.
+  confirmQueue: z.enum(["callNow", "callLater", "escalated"]).optional(),
+  // Parcel-operations queues (Order Operations phase 4): Handover pending / Coming back / Inspection / Discrepancy.
+  parcelQueue: z.enum(["handoverPending", "comingBack", "inspectionPending", "scanDiscrepancy", "stuckInTransit", "returnOverdue"]).optional(),
+  // "active" = the daily work list (finished orders left out); "history" = only finished orders — Order history. A
+  // finished order is closed for good with nothing left to settle, reconcile, receive, inspect or refund (order-history.ts).
+  scope: z.enum(["active", "history"]).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   // Daily-pulse drill-down (docs/METRICS_REGISTRY.md §4.5): the orders that reached a step on a business date — e.g. every
@@ -159,7 +168,8 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   opsDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional(),
   // Powers the sortable column headers on the admin orders table — restricted to plain scalar
   // columns Prisma can order by directly (no relations/joins).
-  sortBy: z.enum(["orderNumber", "customerName", "paymentStatus", "total", "status", "createdAt"]).optional(),
+  // statusChangedAt = "latest activity": the list's default order (Order Operations phase 2).
+  sortBy: z.enum(["orderNumber", "customerName", "paymentStatus", "total", "status", "createdAt", "statusChangedAt"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
 

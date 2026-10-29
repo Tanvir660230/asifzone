@@ -15,6 +15,8 @@ const LABEL: Record<string, string> = {
   "catalog.purge": "Permanently delete products and categories",
   "promotions.purge": "Permanently delete coupons",
   "orders.delete": "Trash, restore and permanently delete orders",
+  "orders.escalations": "Decide on escalated confirmation calls (one more try, phone fixed)",
+  "parcels.scan": "Scan parcels out to the courier and back in",
   "ai.use": "Use the AI assistant",
   "ai.execute": "Confirm changes the assistant proposes",
   "ops.repair": "Run repairs in System health",

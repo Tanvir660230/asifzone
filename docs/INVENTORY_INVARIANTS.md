@@ -12,8 +12,11 @@ the only application code allowed to change `ProductVariant.stock` or write `Sto
   transaction as its movement row, never separately.
 - **`OrderItem.restockedQuantity`** (Phase 1) records, per order line, how many units have been put back
   into stock by any path (cancellation, return, partial-delivery reconciliation, exchange, trash).
-  It is what makes restocking idempotent. **`OrderItem.returnedQuantity`** counts the subset that came back
-  from the customer (returns, partial delivery, exchange) — used for "units sold".
+  It is what makes restocking idempotent. **`OrderItem.returnedQuantity`** counts the units the customer returned
+  (returns, partial delivery, exchange) — the decision, used for "units sold" and the payment position. Since D-OO1
+  (2026-10-29) a return decision moves no stock (`recordReturnDecision`); its units are restocked only when the parcel is
+  received (`releaseOrderLines(…, "receive")`, capped at `returnedQuantity − restockedQuantity`), so between the two a
+  line can have `returnedQuantity > restockedQuantity`.
 
 ## 2. Movement reasons
 

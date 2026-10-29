@@ -3,8 +3,9 @@ import type { OrderStatus } from "./schemas/order";
 /** The order state machine (docs/ORDER_STATE_MACHINE.md). Pure data + lookups: the API enforces it inside
  * one transaction (order.service.ts applyOrderTransition) and the admin UI reads it to offer only legal moves. */
 
-/** What happens to the order's stock. `release` puts back every unit not already put back (a cancellation);
- * `return` does the same and counts the units as returned by the customer. Both are idempotent per order line. */
+/** What happens to the order's stock. `release` puts back every unit not already put back (a cancellation). `return`
+ * records the customer's return (OrderItem.returnedQuantity) and moves NO stock: the units come back only when the parcel
+ * is received and inspected (order.service receiveReturnedParcel), owner decision M2. Both are idempotent per order line. */
 export type OrderStockEffect = "none" | "release" | "return";
 
 /** Customer SMS touchpoint fired after commit (only those an admin can toggle in SMS settings). */
@@ -179,7 +180,9 @@ export function describeOrderTransitionConsequences(
   if (rule.id === "T6" && rule.stock === "none") {
     out.push({ tone: "info", text: "The parcel is already with the courier — its units go back into stock when you mark it received on the order." });
   }
-  if (rule.stock === "return") out.push({ tone: "warning", text: "Every unit not already restocked goes back to inventory as a customer return." });
+  if (rule.stock === "return") {
+    out.push({ tone: "info", text: "The units are recorded as returned. They go back into stock only when you receive the parcel and inspect it on the order." });
+  }
   if (rule.codCollected && ctx.paymentMethod === "COD" && !moneyHeld) {
     out.push({ tone: "info", text: "Cash on delivery is recorded as collected — the balance due is added to the payment ledger." });
   }

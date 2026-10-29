@@ -145,6 +145,10 @@ export const env = {
     get accessToken() { return integrationSetting("TIKTOK_ACCESS_TOKEN"); },
     get testEventCode() { return integrationSetting("TIKTOK_TEST_EVENT_CODE"); },
   },
+  // Order Operations Phase 0 (modules/courier/courier-sync-policy.ts): how far the courier-status poll may slow down once the
+  // Steadfast webhook has been measured healthy — 0 (default) keeps full-pace polling whatever the webhook does; 1 allows
+  // half pace after a healthy 48 h; 2 a quarter after a healthy week. Polling never stops. Raised by hand after the gate.
+  courierPollMaxLevel: Math.max(0, Math.min(2, Number.parseInt(process.env.COURIER_POLL_MAX_LEVEL ?? "0", 10) || 0)),
   // Optional — without an API key, "Book with Steadfast" returns a clear "not configured" error
   // instead of faking a booking. webhookToken is a shared secret of our own choosing (not issued
   // by Steadfast) since their delivery-status webhook carries no signature — it must be pasted

@@ -13,6 +13,9 @@ import type {
   ReconcilePartialDeliveryInput,
   ReceiveReturnedParcelInput,
   OrderQueueId,
+  ConfirmationDecisionInput,
+  ConfirmationOutcome,
+  OrderConfirmationState,
 } from "@clothing-brand/shared";
 import { apiDownload, apiFetch, type FetchSignal } from "../api-client";
 
@@ -41,12 +44,18 @@ export interface AdminOrderListParams {
   refundDue?: "true";
   // "true" = only booked orders on courier hold or with a failed status sync.
   courierIssue?: "true";
+  /** Customer confirmation queues (Order Operations phase 3). */
+  confirmQueue?: "callNow" | "callLater" | "escalated";
+  /** Parcel-operations queues (phase 4). */
+  parcelQueue?: "handoverPending" | "comingBack" | "inspectionPending" | "scanDiscrepancy" | "stuckInTransit" | "returnOverdue";
+  /** "active": the daily work list — finished orders left out. "history": only finished orders (Order history). */
+  scope?: "active" | "history";
   dateFrom?: string;
   dateTo?: string;
   /** Daily-pulse drill-down: orders that reached this step on `opsDate` (both needed). */
   opsEvent?: OrderOpsEvent;
   opsDate?: string;
-  sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt";
+  sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt" | "statusChangedAt";
   sortDir?: "asc" | "desc";
 }
 
@@ -57,7 +66,10 @@ export interface OrderStats {
   needsAttention: number;
   followUpDue: number;
   cancelledButPaidCount: number;
+  /** Orders on the daily work list, per status (finished orders are in historyStatusCounts). */
   statusCounts: Record<OrderStatus, number>;
+  /** Finished orders — Order history — per status. */
+  historyStatusCounts: Record<OrderStatus, number>;
   /** One count per quick filter, computed by the same where-builder the list uses (ORDER_QUEUE_FILTERS). */
   queueCounts: Record<OrderQueueId, number>;
   /** Return/exchange requests waiting for a decision. */
@@ -89,6 +101,9 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
   if (params.refundDue) query.set("refundDue", params.refundDue);
   if (params.courierIssue) query.set("courierIssue", params.courierIssue);
+  if (params.confirmQueue) query.set("confirmQueue", params.confirmQueue);
+  if (params.parcelQueue) query.set("parcelQueue", params.parcelQueue);
+  if (params.scope) query.set("scope", params.scope);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
   if (params.opsEvent && params.opsDate) {
@@ -264,4 +279,26 @@ export interface OrderCourierNote {
 
 export function getOrderCourierNote(id: string) {
   return apiFetch<OrderCourierNote>(`/api/orders/${id}/courier-note`);
+}
+
+/** Customer confirmation calls (Order Operations phase 3). */
+export function getConfirmation(id: string) {
+  return apiFetch<OrderConfirmationState>(`/api/orders/${id}/confirmation`);
+}
+
+export function recordConfirmationAttempt(id: string, input: { outcome: ConfirmationOutcome; note?: string; callbackAt?: string }) {
+  return apiFetch<OrderConfirmationState>(`/api/orders/${id}/confirmation-attempts`, { method: "POST", body: input });
+}
+
+export function decideConfirmation(id: string, input: ConfirmationDecisionInput) {
+  return apiFetch<OrderConfirmationState>(`/api/orders/${id}/confirmation`, { method: "PATCH", body: input });
+}
+
+export function releaseConfirmation(id: string) {
+  return apiFetch<OrderConfirmationState>(`/api/orders/${id}/confirmation/release`, { method: "POST" });
+}
+
+/** Claim the next order to call (null: nobody is waiting). */
+export function takeNextConfirmation() {
+  return apiFetch<{ next: { orderId: string; orderNumber: string } | null }>("/api/orders/confirmation/next", { method: "POST" });
 }

@@ -2,10 +2,12 @@ import { createObservedWorker } from "../lib/observability/jobs";
 import { createQueue, queueConnection } from "../lib/queue";
 import { logger } from "../lib/observability/logger";
 import { purgeOldSiteHealthData } from "../modules/ops/web-vitals.service";
+import { purgeOldCourierHealthData } from "../modules/courier/courier-health.service";
 
 const QUEUE_NAME = "site-health-retention";
 
-/** Daily: drops speed samples older than 30 days and error groups not seen for 90 days (modules/ops/web-vitals.service.ts).
+/** Daily: drops speed samples older than 30 days and error groups not seen for 90 days (modules/ops/web-vitals.service.ts),
+ * refused courier-webhook calls older than 30 days and courier status-change sources older than 90 (courier-health.service.ts).
  * Same BullMQ repeatable-job pattern as storage-trash-cron.ts. */
 export async function startSiteHealthRetentionCron() {
   const queue = createQueue(QUEUE_NAME);
@@ -15,6 +17,8 @@ export async function startSiteHealthRetentionCron() {
     async () => {
       const { samples, errors } = await purgeOldSiteHealthData();
       if (samples + errors > 0) logger.info(`[site-health-retention] removed ${samples} speed sample(s), ${errors} old error group(s)`);
+      const courier = await purgeOldCourierHealthData();
+      if (courier.rejections + courier.changes > 0) logger.info(`[site-health-retention] removed ${courier.rejections} refused webhook call(s), ${courier.changes} old courier status change(s)`);
     },
     { connection: queueConnection },
   );

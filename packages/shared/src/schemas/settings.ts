@@ -98,6 +98,16 @@ export const updateSettingsSchema = z.object({
   returnConditions: nullableString(200),
   handlingDaysMin: optionalNullableDays(60),
   handlingDaysMax: optionalNullableDays(60),
+  // Customer confirmation calls (Order Operations phase 3).
+  confirmationMaxUnreached: z.coerce.number().int().min(1, "At least 1").max(10, "At most 10").optional(),
+  confirmationEscalateHours: z.coerce.number().int().min(12, "At least 12 hours").max(336, "At most 14 days").optional(),
+  confirmationRetryMinutes: z.coerce.number().int().min(15, "At least 15 minutes").max(720, "At most 12 hours").optional(),
+  confirmationNextDayHour: z.coerce.number().int().min(6, "From 6").max(21, "Until 21").optional(),
+  // When the customer's "shipped" SMS goes (Order Operations phase 4, plan M4): at booking, or at the dispatch scan.
+  shippedSmsTrigger: z.enum(["BOOKING", "HANDOVER"]).optional(),
+  // Courier automation (phase 5, plan M8): days before a parcel counts as stuck in transit / a return as overdue.
+  stuckInTransitDays: z.coerce.number().int().min(2, "At least 2 days").max(30, "At most 30 days").optional(),
+  returnNotBackDays: z.coerce.number().int().min(3, "At least 3 days").max(60, "At most 60 days").optional(),
 }).refine((s) => s.handlingDaysMin == null || s.handlingDaysMax == null || s.handlingDaysMin <= s.handlingDaysMax, {
   message: "The handling time's minimum can't be more than its maximum",
   path: ["handlingDaysMax"],

@@ -91,7 +91,7 @@ export function ReturnsSection({ order, perms }: { order: Order; perms: OrderPer
                 {r.lines.map((l) => (
                   <li key={l.orderItemId}>
                     {l.productName} {[l.size, l.color].filter(Boolean).join(" / ")} ×{l.quantity}
-                    {l.writtenOff > 0 ? ` (${l.restocked} restocked, ${l.writtenOff} written off)` : " (restocked)"} · {formatPrice(l.value)}
+                    {l.writtenOff > 0 ? ` (${l.restocked} restocked, ${l.writtenOff} written off)` : l.restocked > 0 ? " (restocked)" : " (stock on receipt)"} · {formatPrice(l.value)}
                   </li>
                 ))}
               </ul>

@@ -1,8 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ORDER_QUEUE_FILTERS, type BdDivision, type OrderQueueId, type OrderStatus, type PaymentMethod, type PaymentStatus } from "@clothing-brand/shared";
+import {
+  LIST_DEFAULT_PAGE_SIZE,
+  LIST_PAGE_SIZES,
+  ORDER_QUEUE_FILTERS,
+  type BdDivision,
+  type ListDensity,
+  type ListPreferences,
+  type OrderQueueId,
+  type OrderStatus,
+  type PaymentMethod,
+  type PaymentStatus,
+} from "@clothing-brand/shared";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useListPreferences } from "@/hooks/use-list-preferences";
 import { useUrlState } from "@/hooks/use-url-state";
 import type { AdminOrderListParams, OrderOpsEvent } from "@/lib/api/admin-orders";
 import { activeFilterChips, clearFiltersPatch, filterSchema, type FilterValues } from "@/lib/admin/filters";
@@ -20,8 +32,20 @@ export interface FilterChip {
   onRemove: () => void;
 }
 
-const SORT_COLUMNS = ["orderNumber", "customerName", "paymentStatus", "total", "status", "createdAt"] as const satisfies readonly SortColumn[];
-const PAGE_SIZES = [10, 20, 50] as const;
+const SORT_COLUMNS = ["orderNumber", "customerName", "paymentStatus", "total", "status", "createdAt", "statusChangedAt"] as const satisfies readonly SortColumn[];
+
+/** Columns an admin may hide (Order, Customer, Status and the actions always show). */
+export const ORDER_OPTIONAL_COLUMNS = [
+  { id: "product", label: "Product" },
+  { id: "payment", label: "Payment" },
+  { id: "total", label: "Total" },
+  { id: "courier", label: "Courier" },
+  { id: "placed", label: "Placed" },
+] as const;
+export type OrderOptionalColumn = (typeof ORDER_OPTIONAL_COLUMNS)[number]["id"];
+
+/** The key the Orders list's saved views and display preferences are stored under. */
+export const ORDERS_LIST_KEY = "orders";
 
 /**
  * The Orders list's URL (the admin URL-state grammar, lib/url-state.ts): `q` search, `view` active/trash, `sort`
@@ -50,7 +74,10 @@ const ORDERS_URL_SCHEMA = {
   view: urlParam.enum(["active", "trash"], "active"),
   sort: urlParam.sort(SORT_COLUMNS),
   page: urlParam.page(),
-  size: urlParam.size(PAGE_SIZES, 20),
+  // 0 = not in the link: the admin's stored page size applies (then the default 50). Old 10/20 links round up to 25.
+  size: urlParam.size(LIST_PAGE_SIZES, 0, { roundUp: true }),
+  // The order open in the drawer — a refresh or a shared link reopens it.
+  open: urlParam.string(),
   ...(filterSchema(ORDER_FILTERS) as OrderFilterFields),
 };
 const ALIASES = ORDER_FILTER_URL_ALIASES as UrlAliases<typeof ORDERS_URL_SCHEMA>;
@@ -65,13 +92,15 @@ const MORE_KEYS = ["f.payment", "f.method", "f.courier", "f.delivery", "f.divisi
  * badge. Choosing a view, status, queue, filter, sort or page adds a history entry (Back undoes it); typing in search
  * replaces the current one, so Back isn't a keystroke-by-keystroke undo.
  */
-export function useOrdersListState() {
+export function useOrdersListState({ mode = "work" }: { mode?: "work" | "history" } = {}) {
+  const history = mode === "history";
   const [url, push] = useUrlState(ORDERS_URL_SCHEMA, { aliases: ALIASES, history: "push" });
   const [, replace] = useUrlState(ORDERS_URL_SCHEMA, { aliases: ALIASES });
 
-  const view = url.view as OrdersView;
+  // Order history has no Trash view and no work queues — only finished orders, searched and filtered.
+  const view = history ? "active" : (url.view as OrdersView);
   const statuses = url["f.status"] as OrderStatus[];
-  const queue = (url["f.queue"] as OrderQueueId | "") || null;
+  const queue = history ? null : (url["f.queue"] as OrderQueueId | "") || null;
   const more = {
     paymentStatus: url["f.payment"] as PaymentStatus | "",
     paymentMethod: url["f.method"] as PaymentMethod | "",
@@ -84,10 +113,21 @@ export function useOrdersListState() {
     opsEvent: url["f.ops"] as OrderOpsEvent | "",
     opsDate: url["f.opsDay"] as string,
   };
-  const sortBy = url.sort?.column;
+  // With no column chosen, the main list shows the latest activity first: an order placed days ago and confirmed or
+  // booked today is back at the top. A queue keeps its own (newest-placed-first) order.
+  const sortBy: SortColumn | undefined = url.sort?.column ?? (queue ? undefined : "statusChangedAt");
   const sortDir = url.sort?.dir ?? "desc";
+  /** What the "Order by" switch shows: latest activity, date placed, or a column header's sort. */
+  const orderBy: "activity" | "placed" | "column" = (sortBy ?? "createdAt") === "statusChangedAt" ? "activity" : (sortBy ?? "createdAt") === "createdAt" && sortDir === "desc" ? "placed" : "column";
   const page = url.page;
-  const pageSize = url.size;
+  // A link's own size wins; otherwise this admin's stored choice; otherwise 50 (plan M10).
+  const display = useListPreferences(ORDERS_LIST_KEY);
+  const pageSize = url.size || display.prefs.pageSize || LIST_DEFAULT_PAGE_SIZE;
+  const density: ListDensity = display.prefs.density ?? "standard";
+  const hiddenColumns = useMemo(
+    () => new Set((display.prefs.hiddenColumns ?? []).filter((c): c is OrderOptionalColumn => ORDER_OPTIONAL_COLUMNS.some((o) => o.id === c))),
+    [display.prefs.hiddenColumns],
+  );
 
   // The search box types into local state; the URL gets the debounced value. Back/Forward (or a cleared search) moves
   // the URL underneath the box, so it follows.
@@ -136,6 +176,10 @@ export function useOrdersListState() {
       ...(more.opsEvent && more.opsDate ? { opsEvent: more.opsEvent, opsDate: more.opsDate } : {}),
       sortBy,
       sortDir: sortBy ? sortDir : undefined,
+      // The daily work list leaves finished orders out (they are in Order history). A search still finds every order — a
+      // scanned tracking code or a customer's phone must land on the order wherever it is — and so does a daily-pulse
+      // drill-down, which lists exactly what the pulse counted.
+      scope: history ? "history" : view === "active" && !queue && !url.q && !(more.opsEvent && more.opsDate) ? "active" : undefined,
     };
     // The queue preset wins over an overlapping manual filter (e.g. "Unpaid" over a payment-status pick).
     return queue ? { ...base, ...(ORDER_QUEUE_FILTERS[queue] as AdminOrderListParams) } : base;
@@ -198,10 +242,32 @@ export function useOrdersListState() {
     sortBy,
     sortDir,
     toggleSort,
+    orderBy,
+    setOrderBy: (v: "activity" | "placed") =>
+      push({ sort: v === "placed" ? { column: "createdAt", dir: "desc" } : queue ? { column: "statusChangedAt", dir: "desc" } : null }),
     page,
     setPage: (p: number) => set({ page: p }),
+    /** Move to another page without a history entry — used when the current page emptied under the admin. */
+    replacePage: (p: number) => replace({ page: p }),
     pageSize,
-    setPageSize: (n: number) => set({ size: n }),
+    setPageSize: (n: number) => {
+      display.update({ pageSize: n as ListPreferences["pageSize"] });
+      set({ size: n });
+    },
+    /** Wait for this before loading rows when the link has no size, so the list doesn't load at 50 and then again. */
+    pageSizeReady: Boolean(url.size) || display.ready,
+    density,
+    setDensity: (d: ListDensity) => display.update({ density: d }),
+    hiddenColumns,
+    toggleColumn: (id: OrderOptionalColumn) => {
+      const next = new Set(hiddenColumns);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      display.update({ hiddenColumns: [...next] });
+    },
+    openOrderId: url.open || null,
+    /** Opening an order adds a history entry (Back closes it); stepping to a neighbour and closing replace it. */
+    openOrder: (id: string | null, { step = false }: { step?: boolean } = {}) => (id && !step && !url.open ? push({ open: id }) : replace({ open: id ?? "" })),
     filterParams,
     chips,
     hasFilters,

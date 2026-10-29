@@ -551,7 +551,12 @@ describe("the role matrix — every admin route, every identity", () => {
     // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill; +1: the activity
     // +5: 2-step sign-in (admin audit phase 2) — own setup / enable / disable, an owner's reset, an owner's sign-out-everywhere
     // +1: the owner's stock value correction (docs/STOCK_HUB.md §12)
-    expect(routes).toHaveLength(752);
+    // +1: courier health — is the Steadfast webhook proven, and the poll's pace (Order Operations Phase 0, ops.read)
+    // +2: list display preferences GET/PUT, the caller's own (Order Operations Phase 2)
+    // +5: customer confirmation — state, record a call, take next, release, decide (Order Operations Phase 3)
+    // +8: parcel scanning — batches, scans, void, confirm, cancel, current, summary (Order Operations Phase 4)
+    // +2: the daily courier check — latest run, run now (Order Operations Phase 5)
+    expect(routes).toHaveLength(770);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

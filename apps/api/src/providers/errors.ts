@@ -64,6 +64,15 @@ export class CourierOutcomeUnknownError extends AppError {
   }
 }
 
+/** The courier answered HTTP 429: stop calling it for now. `retryAfterMs` is its Retry-After when it sent one. A sweep that
+ * meets this stops and leaves the rest due for its next run; it is never recorded against the parcel as a sync failure. */
+export class CourierRateLimitedError extends AppError {
+  constructor(readonly retryAfterMs: number | null) {
+    super(429, "Steadfast is limiting requests right now — try again in a minute", { code: "COURIER_RATE_LIMITED" });
+    this.name = "CourierRateLimitedError";
+  }
+}
+
 /** A capability was used while its provider is explicitly disabled (`SMS_PROVIDER=none`, `COURIER_PROVIDER=none`, a
  * gateway missing from `PAYMENT_GATEWAYS`, …). Never retryable, never a fake success: the caller sees a clear 400. */
 export class ProviderNotConfiguredError extends AppError {

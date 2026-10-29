@@ -153,6 +153,8 @@ const SECTIONS = {
   identity: ["legalName", "legalJurisdiction", "addressLine", "addressCity", "addressRegion", "addressPostalCode", "addressCountry", "supportHours"],
   contactOptions: ["whatsappLabel", "whatsappMessage", "callEnabled", "callLabel", "liveChatEnabled", "liveChatLabel", "tawkPropertyId", "tawkWidgetId"],
   policy: ["returnWindowDays", "returnConditions", "handlingDaysMin", "handlingDaysMax"],
+  confirmation: ["confirmationMaxUnreached", "confirmationEscalateHours", "confirmationRetryMinutes", "confirmationNextDayHour"],
+  dispatch: ["shippedSmsTrigger", "stuckInTransitDays", "returnNotBackDays"],
   taxRewards: ["courierReturnFeeDhaka", "courierReturnFeeOutsideDhaka", "rewardPointsPerCurrency", "taxEnabled", "defaultTaxRate", "shippingTaxable"],
   payments: ["codEnabled", "onlinePaymentEnabled", "epsPaymentEnabled"],
 } as const satisfies Record<string, ReadonlyArray<keyof UpdateSettingsInput>>;
@@ -237,6 +239,13 @@ export default function SettingsPage() {
       returnConditions: s.returnConditions,
       handlingDaysMin: s.handlingDaysMin,
       handlingDaysMax: s.handlingDaysMax,
+      confirmationMaxUnreached: s.confirmationMaxUnreached ?? 4,
+      confirmationEscalateHours: s.confirmationEscalateHours ?? 72,
+      confirmationRetryMinutes: s.confirmationRetryMinutes ?? 120,
+      confirmationNextDayHour: s.confirmationNextDayHour ?? 10,
+      shippedSmsTrigger: s.shippedSmsTrigger ?? "BOOKING",
+      stuckInTransitDays: s.stuckInTransitDays ?? 6,
+      returnNotBackDays: s.returnNotBackDays ?? 14,
     });
   }, [data, reset]);
 
@@ -596,6 +605,63 @@ export default function SettingsPage() {
             “Cash on Delivery available” follows the Cash on Delivery switch under Payment methods; delivery times follow your delivery zones.
           </p>
           {sectionSave("policy")}
+        </FormSection>
+
+        <FormSection
+          title="Confirmation calls"
+          description="How unconfirmed orders are followed up. An order is never cancelled automatically — when the tries run out, or an order stays unconfirmed too long, it goes to Escalated calls for an owner or manager to decide."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="confirmationMaxUnreached">Unanswered calls before escalating</Label>
+              <Input id="confirmationMaxUnreached" type="number" min={1} max={10} step={1} {...register("confirmationMaxUnreached", { valueAsNumber: true })} />
+              {errors.confirmationMaxUnreached && <p className="mt-1 text-xs text-danger-600">{errors.confirmationMaxUnreached.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="confirmationEscalateHours">Escalate an unconfirmed order after (hours)</Label>
+              <Input id="confirmationEscalateHours" type="number" min={12} max={336} step={1} {...register("confirmationEscalateHours", { valueAsNumber: true })} />
+              {errors.confirmationEscalateHours && <p className="mt-1 text-xs text-danger-600">{errors.confirmationEscalateHours.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="confirmationRetryMinutes">Retry after the 1st and 2nd unanswered call (minutes)</Label>
+              <Input id="confirmationRetryMinutes" type="number" min={15} max={720} step={5} {...register("confirmationRetryMinutes", { valueAsNumber: true })} />
+              {errors.confirmationRetryMinutes && <p className="mt-1 text-xs text-danger-600">{errors.confirmationRetryMinutes.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="confirmationNextDayHour">Later retries: next day at (hour, store time)</Label>
+              <Input id="confirmationNextDayHour" type="number" min={6} max={21} step={1} {...register("confirmationNextDayHour", { valueAsNumber: true })} />
+              {errors.confirmationNextDayHour && <p className="mt-1 text-xs text-danger-600">{errors.confirmationNextDayHour.message}</p>}
+            </div>
+          </div>
+          {sectionSave("confirmation")}
+        </FormSection>
+
+        <FormSection
+          title="Dispatch"
+          description="Booking a courier and the rider taking the parcel are separate steps — the Dispatch scan records the handover. Choose when customers get the “shipped” message."
+        >
+          <div className="max-w-sm">
+            <Label htmlFor="shippedSmsTrigger">Send the “shipped” SMS</Label>
+            <Select id="shippedSmsTrigger" {...register("shippedSmsTrigger")}>
+              <option value="BOOKING">When the courier is booked (current)</option>
+              <option value="HANDOVER">When the parcel is scanned out to the courier</option>
+            </Select>
+            <p className="mt-1 text-xs text-ink-400">Switch to the scan only once every parcel is scanned at handover — an unscanned parcel would send no message.</p>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="stuckInTransitDays">Stuck in transit after (days)</Label>
+              <Input id="stuckInTransitDays" type="number" min={2} max={30} step={1} {...register("stuckInTransitDays", { valueAsNumber: true })} />
+              {errors.stuckInTransitDays && <p className="mt-1 text-xs text-danger-600">{errors.stuckInTransitDays.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="returnNotBackDays">Return overdue after (days)</Label>
+              <Input id="returnNotBackDays" type="number" min={3} max={60} step={1} {...register("returnNotBackDays", { valueAsNumber: true })} />
+              {errors.returnNotBackDays && <p className="mt-1 text-xs text-danger-600">{errors.returnNotBackDays.message}</p>}
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-ink-400">A daily courier check lists these for a person to follow up — it never changes an order, stock or money.</p>
+          {sectionSave("dispatch")}
         </FormSection>
 
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">

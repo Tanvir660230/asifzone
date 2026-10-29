@@ -18,7 +18,7 @@ import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { generateOrderNumber } from "../../lib/order-number";
 import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.service";
-import { notifyStockMoved, recordSale, releaseOrderLines, writeOffParcelUnits } from "../inventory/inventory.service";
+import { notifyStockMoved, recordReturnDecision, recordSale } from "../inventory/inventory.service";
 import { fillMoved, fillToOrderFloors, withFillToOrder } from "../../domain/stock/fill-capacity.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
@@ -71,7 +71,7 @@ export async function createReturnRequest(customerId: string, input: CreateRetur
   if (input.type === "EXCHANGE") {
     const item = order.items.find((i) => i.id === input.orderItemId);
     if (!item) throw AppError.badRequest("Select an item from this order to exchange");
-    if (item.restockedQuantity > 0) throw AppError.conflict("This item has already been returned or exchanged");
+    if (item.restockedQuantity > 0 || item.returnedQuantity > 0) throw AppError.conflict("This item has already been returned or exchanged");
 
     const requestedVariant = await prisma.productVariant.findUnique({ where: { id: input.requestedVariantId } });
     if (!requestedVariant) throw AppError.badRequest("The selected item is no longer available");
@@ -149,8 +149,8 @@ async function getReturnRequestById(id: string) {
   return request;
 }
 
-/** Approving a RETURN moves the order to RETURNED through the order state machine (which also restocks the
- * outstanding units, idempotently) in the SAME transaction as the request's own PENDING → APPROVED claim: if the
+/** Approving a RETURN moves the order to RETURNED through the order state machine (which records the outstanding units
+ * as returned, idempotently — they go back into stock when the parcel is received) in the SAME transaction as the request's own PENDING → APPROVED claim: if the
  * order can't be returned (e.g. it isn't delivered), nothing changes and the request stays PENDING. There's no
  * refund-API integration, so money is handled separately via Record refund. Approving an EXCHANGE takes a
  * different path entirely (createExchangeOrder below): the original order's status is untouched (the sale
@@ -158,6 +158,10 @@ async function getReturnRequestById(id: string) {
 export async function reviewReturnRequest(id: string, input: ReviewReturnRequestInput, adminId: string) {
   const request = await getReturnRequestById(id);
   if (request.status !== "PENDING") throw AppError.conflict("This return request has already been reviewed");
+  // Owner decision M2: approving decides the return; the condition of what comes back is judged at receipt.
+  if (input.damaged?.length) {
+    throw new AppError(400, "Record damaged units when the parcel is received back, not at approval", { code: "DAMAGE_AT_RECEIPT" });
+  }
 
   let moved: string[] = [];
   const outcome = await prisma.$transaction(async (tx) => {
@@ -175,14 +179,8 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
       moved = (await createExchangeOrder(tx, request, adminId, input.compensation)).moved;
       return null;
     }
-    const before = input.damaged?.length ? await restockedByLine(tx, request.orderId) : null;
+    // The RETURNED transition records the return (T7); its units go back into stock when the parcel is received.
     const outcome = await applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
-    if (before && input.damaged) {
-      const damage = await writeOffDamagedReturn(tx, request.orderId, before, input.damaged, adminId);
-      moved = damage.moved;
-      // A variant all of whose returned units were written off is not back in stock: no "back in stock" message for it.
-      outcome.replenished = outcome.replenished.filter((v) => !damage.allDamaged.has(v));
-    }
     // Staff may settle the return as store credit right away (everything still owed back on the order); otherwise it
     // stays in the refund-due queue for a refund, as before.
     if (input.compensation === "STORE_CREDIT") {
@@ -209,41 +207,6 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
   return prisma.returnRequest.findUnique({ where: { id }, include: adminInclude });
 }
 
-async function restockedByLine(tx: Prisma.TransactionClient, orderId: string) {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, restockedQuantity: true } });
-  return new Map(items.map((i) => [i.id, i.restockedQuantity]));
-}
-
-/** An approved return's unsellable units: the RETURNED transition just put them back, so they leave again at the line's own
- * cost (writeOffParcelUnits — shrinkage, outside the order). Never more than THIS approval brought back per line (`before`:
- * each line's restocked count before the transition); repeated lines are added up first. */
-async function writeOffDamagedReturn(
-  tx: Prisma.TransactionClient,
-  orderId: string,
-  before: Map<string, number>,
-  damaged: Array<{ orderItemId: string; quantity: number }>,
-  adminId: string,
-) {
-  const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { orderNumber: true, items: { select: { id: true, variantId: true, restockedQuantity: true, unitCostSnapshot: true } } } });
-  const byId = new Map(order.items.map((i) => [i.id, i]));
-  const wanted = new Map<string, number>();
-  for (const d of damaged) wanted.set(d.orderItemId, (wanted.get(d.orderItemId) ?? 0) + d.quantity);
-  const units: Array<{ variantId: string; quantity: number; unitCostMinor: number | null; reason: "DAMAGED" }> = [];
-  const good = new Set<string>();
-  const touched = new Set<string>();
-  for (const item of order.items) {
-    const back = item.restockedQuantity - (before.get(item.id) ?? item.restockedQuantity);
-    const d = wanted.get(item.id) ?? 0;
-    if (d > back) throw AppError.badRequest(`Only ${back} unit(s) of this item came back with this return`);
-    if (back > d) good.add(item.variantId);
-    if (back > 0) touched.add(item.variantId);
-    if (d) units.push({ variantId: item.variantId, quantity: d, unitCostMinor: item.unitCostSnapshot, reason: "DAMAGED" });
-  }
-  for (const id of wanted.keys()) if (!byId.has(id)) throw AppError.badRequest("That item isn't on this order");
-  await writeOffParcelUnits(tx, { id: orderId, orderNumber: order.orderNumber }, units, { adminId, note: "customer return" });
-  return { moved: units.map((u) => u.variantId), allDamaged: new Set([...touched].filter((v) => !good.has(v))) };
-}
-
 /** Creates the replacement shipment for an approved EXCHANGE request, inside the approval's transaction.
  *
  * D6 — priced by the canonical pricing service at the CURRENT effective selling price (list → variant → live flash sale,
@@ -253,8 +216,8 @@ async function writeOffDamagedReturn(
  *   • replacement costs less  → the difference is owed back: a REQUESTED Refund on the original order (payment ledger),
  *                                completed by an admin once paid out;
  *   • equal                   → a free exchange.
- * Then: takes the replacement out of stock (re-checked — it may have sold out since the request), puts the original
- * item back (a RETURN on the original order's line, so it can never be restocked twice), and opens the companion Order
+ * Then: takes the replacement out of stock (re-checked — it may have sold out since the request), records the original
+ * item as returned (it goes back into stock when its parcel is received, and can never be returned twice), and opens the companion Order
  * at CONFIRMED with its own pricing/tax snapshot. */
 /** THE price of an exchange (D6) — shared by the approval below and the read-only preview, so what staff see before
  * approving is exactly what approval does. Refuses (like approval) when the item was already returned/exchanged or the
@@ -266,9 +229,9 @@ async function priceExchange(db: Prisma.TransactionClient | typeof prisma, reque
 
   const originalItem = originalOrder.items.find((i) => i.id === request.orderItemId);
   if (!originalItem) throw AppError.badRequest("The original item on this order could not be found");
-  // Phase 9 (D-1): a replacement ships only in exchange for units that actually come back. A line already restocked (an
-  // earlier exchange of the same item, a return, a partial-delivery reconciliation) can't be exchanged again.
-  if (originalItem.restockedQuantity > 0) {
+  // Phase 9 (D-1): a replacement ships only in exchange for units that actually come back. A line already returned or
+  // restocked (an earlier exchange of the same item, a return, a partial-delivery reconciliation) can't be exchanged again.
+  if (originalItem.restockedQuantity > 0 || originalItem.returnedQuantity > 0) {
     throw AppError.conflict("This item has already been returned or exchanged — it can't be exchanged again");
   }
   if (!request.requestedVariantId) throw AppError.badRequest("No replacement size/color was recorded for this exchange");
@@ -448,14 +411,11 @@ async function createExchangeOrder(
     }
     throw err;
   }
-  const { released } = await releaseOrderLines(tx, originalOrder.id, "return", {
-    adminId,
-    note: "Stock restored — exchange approved",
-    lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
-  });
-  // The release is a conditional update: if a concurrent return/exchange took these units first, nothing was released —
+  // The original item is recorded as returned; it goes back into stock when its parcel is received (owner decision M2).
+  // The decision is a conditional update: if a concurrent return/exchange took these units first, nothing was recorded —
   // then the whole approval (replacement order, its stock, any refund) rolls back instead of shipping a second item.
-  const returnedUnits = released.filter((r) => r.orderItemId === originalItem.id).reduce((n, r) => n + r.quantity, 0);
+  const decided = await recordReturnDecision(tx, originalOrder.id, [{ orderItemId: originalItem.id, quantity: originalItem.quantity }]);
+  const returnedUnits = decided.filter((r) => r.orderItemId === originalItem.id).reduce((n, r) => n + r.quantity, 0);
   if (returnedUnits !== originalItem.quantity) {
     throw AppError.conflict("This item has already been returned or exchanged — it can't be exchanged again");
   }
@@ -494,5 +454,5 @@ async function createExchangeOrder(
   });
 
   // For notifyStockMoved after commit: the replacement (and its materials) left, the original came back.
-  return { exchangeOrder, moved: [...fillMoved(fill), ...released.map((r) => r.variantId)] };
+  return { exchangeOrder, moved: fillMoved(fill) };
 }

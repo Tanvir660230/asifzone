@@ -15,7 +15,7 @@ import { CustomerSection } from "@/components/admin/orders/detail/customer-secti
 import { ItemsSection } from "@/components/admin/orders/detail/items-section";
 import { PaymentsSection } from "@/components/admin/orders/detail/payments-section";
 import { DeliverySection } from "@/components/admin/orders/detail/delivery-section";
-import { FollowUpSection } from "@/components/admin/orders/detail/follow-up-section";
+import { CallPanel } from "@/components/admin/orders/detail/call-panel";
 import { ActivityTimeline } from "@/components/admin/orders/detail/activity-timeline";
 import { AttentionPanel, NotesSection, ReturnsSection } from "@/components/admin/orders/detail/notes-returns";
 import { ChangesSection } from "@/components/admin/orders/detail/changes-section";
@@ -84,7 +84,8 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
     items: <ItemsSection order={order} detail={detail} perms={perms} />,
     payments: <PaymentsSection order={order} detail={detail} perms={perms} confirm={commands.confirm} />,
     delivery: <DeliverySection order={order} commands={commands} detail={detail} perms={perms} />,
-    followUp: <FollowUpSection order={order} detail={detail} perms={perms} />,
+    // Order Operations phase 3: the confirmation call panel (outcomes, retries, escalation, call history).
+    followUp: <CallPanel order={order} perms={perms} commands={commands} />,
     timeline: <ActivityTimeline order={order} />,
     notes: <NotesSection order={order} detail={detail} perms={perms} />,
     returns: <ReturnsSection order={order} perms={perms} />,

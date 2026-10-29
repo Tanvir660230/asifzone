@@ -1,4 +1,4 @@
-import type { CreateSavedViewInput, SavedViewRow } from "@clothing-brand/shared";
+import type { CreateSavedViewInput, ListPreferences, SavedViewRow } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 import type { OrderStats } from "./admin-orders";
 import type { PaymentsOverview } from "./payments-admin";
@@ -29,4 +29,13 @@ export function createSavedView(input: CreateSavedViewInput) {
 
 export function deleteSavedView(id: string) {
   return apiFetch<void>(`/api/v1/admin/views/${id}`, { method: "DELETE" });
+}
+
+/** This admin's display preferences for one list (density, page size, hidden columns); `{}` = defaults. */
+export function getListPreferences(listKey: string) {
+  return apiFetch<ListPreferences>(`/api/v1/admin/list-preferences/${encodeURIComponent(listKey)}`);
+}
+
+export function updateListPreferences(listKey: string, patch: ListPreferences) {
+  return apiFetch<ListPreferences>(`/api/v1/admin/list-preferences/${encodeURIComponent(listKey)}`, { method: "PUT", body: patch });
 }

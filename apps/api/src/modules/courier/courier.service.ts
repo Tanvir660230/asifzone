@@ -9,10 +9,13 @@ import { codToCollectFor, settleCourierCollected } from "../../domain/payments/p
 import { buildCourierNotes, effectiveCourierNote } from "./courier-note";
 import { parseSteadfastWebhook } from "./steadfast-webhook";
 import { getCurrency } from "../../domain/config/commerce-settings";
+import { getSettings } from "../settings/settings.service";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
-import { CourierOutcomeUnknownError } from "../../providers/errors";
+import { CourierOutcomeUnknownError, CourierRateLimitedError } from "../../providers/errors";
+import { currentPollLevel, OPEN_PARCEL_WHERE, TERMINAL_COURIER_STATUSES } from "./courier-health.service";
+import { basePollIntervalMs, pollIntervalMs } from "./courier-sync-policy";
 import { syncOrderShipmentsSafely } from "../../domain/shipments/shipment-sync";
 import { fillForBookedOrder, planAutoFill, type AutoFillPlan } from "../../domain/stock/auto-fill.service";
 
@@ -20,23 +23,18 @@ import { fillForBookedOrder, planAutoFill, type AutoFillPlan } from "../../domai
 // anything further for this consignment) even though it still needs an admin to reconcile which
 // items came back — see reconcilePartialDelivery in order.service.ts.
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
-const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "cancelled"];
 
-// Booking a Steadfast consignment only means a courier *record* now exists — the box still has to
-// actually be packed and handed over, which in practice happens after the admin prints the label
-// (apps/web/app/admin/(shell)/orders/print-labels). Advancing straight to SHIPPED at booking time
-// used to fire the SHIPPED customer SMS before the parcel had physically left the building, which
-// is worse than just being an inaccurate status. So booking only nudges pre-fulfillment orders up
-// to PACKED; SHIPPED stays a deliberate, manual admin action once the parcel is actually handed
-// off. Orders already at PACKED or later are left alone — booking never rewinds or re-nudges
-// anything an admin has already progressed by hand.
+// Owner decision D-AA3 (2026-10-25): a booked order becomes SHIPPED at booking, through PACKED when it hadn't been packed
+// yet (shipOnBooking, below) — so the SHIPPED SMS goes out at booking. A booking still only proves a courier RECORD exists,
+// not that the parcel left: physical handover is a separate fact (Order Operations plan, Phase 4 dispatch scan). Orders
+// already at SHIPPED or later are left alone — booking never rewinds or re-nudges anything an admin progressed by hand.
 const PRE_PACKED_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING"];
 
-// Steadfast's status_by_cid API never reports a distinct "picked up / in transit" state — it only
-// ever returns in_review/pending/hold until the parcel resolves to delivered/partial_delivered/
-// cancelled. Used below to word a "cancelled" report correctly: if our own status hasn't been
-// manually advanced past PACKED yet, Steadfast most likely voided the booking before ever picking
-// it up; if it has, this is a genuine "shipped, then returned" case.
+// Steadfast's status_by_cid API never reports a distinct "picked up / in transit" state — it only ever returns
+// in_review/pending/hold (or an *_approval_pending / unknown state) until the parcel resolves to delivered/
+// partial_delivered/cancelled. Used below to word a "cancelled" report: an order still before SHIPPED was voided before
+// pickup. Since D-AA3 every booked order is SHIPPED, so for those the courier's word can't tell "returned to us" from
+// "never picked up" — the parcel is counted back only when it is received on the order (receiveReturnedParcel).
 const PRE_SHIP_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"];
 
 // An order in one of these has already been voided, fulfilled, or restocked — booking a real
@@ -90,36 +88,55 @@ function hasUsableAddress(order: {
   ].every((f) => f.trim().length > 0);
 }
 
+/** How a courier status reached us: the Steadfast webhook, the scheduled poll, or an admin's look (opening the order,
+ * Sync now, bulk sync). The webhook-health coverage check compares them (courier-health.service.ts). */
+type CourierStatusSource = "WEBHOOK" | "POLL" | "ON_DEMAND";
+
+type BookedOrder = { id: string; orderNumber: string; status: OrderStatus; courierBookedAt: Date | null; createdAt: Date };
+
+/** When the poll should next look at a parcel just verified outside the sweep: the full-pace (level 0) interval for its age. */
+function nextPollAfterCheck(order: Pick<BookedOrder, "courierBookedAt" | "createdAt">, now: Date): Date {
+  return new Date(now.getTime() + basePollIntervalMs(now.getTime() - (order.courierBookedAt ?? order.createdAt).getTime()));
+}
+
 /** Records the raw Steadfast status and, if it maps onto one of our own order statuses and the
  * order isn't already in a terminal state, drives it through the normal updateOrderStatus path
  * (order.service.ts) so the status-history timeline and delivery-points award stay authoritative —
  * a courier update is just another way an order's status changes, not a side channel. Then the order's shipment leg
  * follows (docs/COURIER_COSTS.md) — never failing the courier update it follows. */
-async function applyCourierStatus(order: { id: string; orderNumber: string; status: OrderStatus }, status: string) {
-  await applyCourierStatusToOrder(order, status);
+async function applyCourierStatus(order: BookedOrder, status: string, source: CourierStatusSource, nextPollAt?: Date) {
+  await applyCourierStatusToOrder(order, status, source, nextPollAt ?? nextPollAfterCheck(order, new Date()));
   await syncOrderShipmentsSafely(order.id);
 }
 
-async function applyCourierStatusToOrder(order: { id: string; orderNumber: string; status: OrderStatus }, status: string) {
+async function applyCourierStatusToOrder(order: BookedOrder, status: string, source: CourierStatusSource, nextPollAt: Date) {
+  const before = await prisma.order.findUnique({ where: { id: order.id }, select: { courierStatus: true, courierConsignmentId: true } });
+  // Conditional on the status read: when a webhook and a poll report the same change at once, only one records it.
+  const moved =
+    before && before.courierStatus !== status
+      ? (await prisma.order.updateMany({ where: { id: order.id, courierStatus: before.courierStatus }, data: { courierStatus: status } })).count === 1
+      : false;
   await prisma.order.update({
     where: { id: order.id },
-    data: { courierStatus: status, courierStatusSyncedAt: new Date(), courierSyncError: null },
+    data: { courierStatus: status, courierStatusSyncedAt: new Date(), courierSyncError: null, courierNextPollAt: nextPollAt },
   });
+  if (moved && before?.courierConsignmentId) {
+    await prisma.courierStatusChange
+      .create({ data: { consignmentId: before.courierConsignmentId, orderId: order.id, fromStatus: before.courierStatus, toStatus: status, source } })
+      .catch((err) => captureError(err, { msg: "[courier] could not record a status change:" }));
+  }
 
   const mapped = mapSteadfastStatusToOrderStatus(status);
   // Only moves the order state machine allows (docs/ORDER_STATE_MACHINE.md) — e.g. a late "cancelled" report for an
   // order already DELIVERED/RETURNED just updates courierStatus above; it never rewinds or reopens the order.
   if (!mapped || mapped === order.status || TERMINAL_ORDER_STATUSES.includes(order.status) || !canTransitionOrder(order.status, mapped)) return;
 
-  // Steadfast reports both "we voided this before pickup" and "delivery failed and the parcel came
-  // back to you" as the same "cancelled" delivery_status — but by the time this fires the order has
-  // almost always already been auto-bumped to SHIPPED (bookOrderWithSteadfast does that at booking
-  // time, since Steadfast has no separate "in transit" signal). A plain "Steadfast delivery status:
-  // cancelled" note would then read as if the order was voided, when really the parcel shipped and
-  // bounced back — spell that out explicitly so the audit trail isn't misleading.
+  // Steadfast reports both "we voided this before pickup" and "delivery failed, the parcel is coming back" as the same
+  // "cancelled" — and since D-AA3 the order is SHIPPED from booking, so a SHIPPED order may never have been picked up. The
+  // note says only what is known: the courier cancelled it, and any parcel must be received back before it counts as stock.
   const note =
     status === "cancelled" && !PRE_SHIP_ORDER_STATUSES.includes(order.status)
-      ? "Steadfast could not deliver this parcel — it was returned to origin after already shipping"
+      ? "Steadfast cancelled this consignment — if the parcel left, receive it back on the order before its units count as stock"
       : `Steadfast delivery status: ${status}`;
 
   // quietNoop: a duplicate / concurrent webhook for a status already applied leaves no second timeline entry, and only
@@ -170,7 +187,10 @@ async function shipOnBooking(orderId: string, status: OrderStatus) {
     await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast" });
     status = "PACKED";
   }
-  if (status === "PACKED") await updateOrderStatus(orderId, { status: "SHIPPED", note: "Booked with Steadfast — handed to the courier" });
+  // Plan M4: the "shipped" SMS goes at booking (today's default) or, once the owner switches shippedSmsTrigger to
+  // HANDOVER after the pilot, at the dispatch scan — the order status means the same either way.
+  const deferShippedSms = (await getSettings()).shippedSmsTrigger === "HANDOVER";
+  if (status === "PACKED") await updateOrderStatus(orderId, { status: "SHIPPED", note: "Booked with Steadfast" }, undefined, { deferShippedSms });
 }
 
 /** The auto-fill plan (docs/STOCK_HUB.md §7) must never stop a booking: if it can't be read, nothing is filled. */
@@ -387,9 +407,10 @@ export async function refreshSteadfastStatus(orderId: string) {
 
   try {
     const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId);
-    await applyCourierStatus(order, status);
+    await applyCourierStatus(order, status, "ON_DEMAND");
   } catch (err) {
-    await recordCourierSyncError(orderId, syncErrorMessage(err));
+    // A rate limit says nothing about this parcel: no sync error is pinned on it.
+    if (!(err instanceof CourierRateLimitedError)) await recordCourierSyncError(orderId, syncErrorMessage(err));
     throw err;
   }
   return getOrderById(orderId);
@@ -400,25 +421,45 @@ export interface BulkCourierSyncResult {
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
 }
 
+/** Bulk Sync and Check score stop this long into a request — well inside nginx's 60 s proxy timeout — and report the rest
+ * as not checked, instead of the whole request turning into a 504 with nothing saved to show for it. */
+const BULK_COURIER_BUDGET_MS = 40_000;
+
 /** Admin-triggered bulk "Sync courier status" for a set of already-booked orders — the selection-
  * based counterpart to bookOrdersWithSteadfastBulk. Unlike syncPendingCourierStatuses (the cron
  * sweep), this always re-checks every order passed in, including terminal ones, since an admin who
- * explicitly selected them wants a fresh answer right now. */
-export async function bulkSyncCourierStatuses(orderIds: string[]): Promise<BulkCourierSyncResult> {
+ * explicitly selected them wants a fresh answer right now — within the request budget; a 429 from Steadfast stops it. */
+export async function bulkSyncCourierStatuses(orderIds: string[], opts: { budgetMs?: number } = {}): Promise<BulkCourierSyncResult> {
   const orders = await prisma.order.findMany({ where: { id: { in: orderIds } } });
+  const budgetMs = opts.budgetMs ?? BULK_COURIER_BUDGET_MS;
+  const startedAt = Date.now();
 
   const synced: BulkCourierSyncResult["synced"] = [];
   const failed: BulkCourierSyncResult["failed"] = [];
+  let rateLimited = false;
   for (const order of orders) {
     if (!order.courierConsignmentId) {
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not booked with a courier" });
       continue;
     }
+    if (rateLimited) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not checked — Steadfast is limiting requests; try again in a minute" });
+      continue;
+    }
+    if (Date.now() - startedAt > budgetMs) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not checked yet — run Sync again for these" });
+      continue;
+    }
     try {
       const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId);
-      await applyCourierStatus(order, status);
+      await applyCourierStatus(order, status, "ON_DEMAND");
       synced.push({ orderId: order.id, orderNumber: order.orderNumber, courierStatus: status });
     } catch (err) {
+      if (err instanceof CourierRateLimitedError) {
+        rateLimited = true;
+        failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not checked — Steadfast is limiting requests; try again in a minute" });
+        continue;
+      }
       const reason = syncErrorMessage(err);
       await recordCourierSyncError(order.id, reason);
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
@@ -443,7 +484,7 @@ export interface BulkDeliveryScoreResult {
  * row at checkout time; the cached result is still stored on the Customer row so it's shared across
  * every one of that customer's orders, not just the ones selected here. */
 const BULK_FRAUD_CHECK_SPACING_MS = 1000;
-const BULK_FRAUD_CHECK_BUDGET_MS = 40000;
+const BULK_FRAUD_CHECK_BUDGET_MS = BULK_COURIER_BUDGET_MS;
 
 export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkDeliveryScoreResult> {
   const orders = await prisma.order.findMany({ where: { id: { in: orderIds } } });
@@ -558,6 +599,19 @@ export async function unlinkCourierBooking(orderId: string) {
   return getOrderById(orderId);
 }
 
+/** Above this many refused calls in an hour, more are not stored (a flood can't fill the table); the report still shows it. */
+const MAX_REJECTIONS_PER_HOUR = 500;
+
+/** A webhook call refused at the token check — when and why, nothing else. Never throws (the 401 is answered regardless). */
+export async function recordWebhookRejection(reason: "not_configured" | "missing_token" | "bad_token") {
+  try {
+    const recent = await prisma.courierWebhookRejection.count({ where: { receivedAt: { gte: new Date(Date.now() - 3_600_000) } } });
+    if (recent < MAX_REJECTIONS_PER_HOUR) await prisma.courierWebhookRejection.create({ data: { reason } });
+  } catch (err) {
+    captureError(err, { msg: "[steadfast-webhook] could not record a refused call:" });
+  }
+}
+
 /** Webhook payloads from Steadfast carry no signature — rather than trusting the posted status
  * directly, this re-fetches the status from Steadfast's own API using only the consignment_id out
  * of the payload, mirroring the SSLCommerz IPN handler's "verify server-to-server, never trust the
@@ -571,19 +625,22 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
   if (idempotencyKey && (await prisma.courierWebhookEvent.findUnique({ where: { idempotencyKey }, select: { id: true } }))) return "DUPLICATE";
 
   let orderId: string | null = null;
+  let verifiedStatus: string | null = null;
   let outcome = "NO_CONSIGNMENT";
   try {
     if (!event.consignmentId) return outcome;
     const order = await prisma.order.findFirst({
       where: { courierConsignmentId: event.consignmentId },
-      select: { id: true, orderNumber: true, status: true, courierCollectedAmount: true },
+      select: { id: true, orderNumber: true, status: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true },
     });
     outcome = "NO_ORDER";
     if (!order) return outcome;
     orderId = order.id;
 
     const status = await getProviders().courier.statusByConsignment(event.consignmentId);
-    await applyCourierStatus(order, status);
+    // Kept beside the body's own claim (event.status): the health report counts how often the two disagree.
+    verifiedStatus = status;
+    await applyCourierStatus(order, status, "WEBHOOK");
     // What the rider collected on a partial delivery (PAYMENT_LEDGER §5b) — the body's cod_amount is accepted only when
     // Steadfast's own status API also says partial_delivered, so a mistyped or replayed body can't put money on an order.
     if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null) {
@@ -603,6 +660,7 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
           consignmentId: event.consignmentId,
           orderId,
           status: event.status,
+          verifiedStatus,
           codAmount: event.codAmount,
           deliveryCharge: event.deliveryCharge,
           trackingMessage: event.trackingMessage,
@@ -631,35 +689,76 @@ async function recordCourierCollected(order: { id: string; courierCollectedAmoun
   await settleCourierCollected(order.id);
 }
 
-/** Called every 15 minutes by jobs/courier-status-cron.ts — catches deliveries whose webhook was
- * never configured in the Steadfast merchant panel, or whose delivery got dropped in transit.
- * Returns how many orders changed status. */
-export async function syncPendingCourierStatuses(): Promise<number> {
-  const pending = await prisma.order.findMany({
-    where: {
-      courierConsignmentId: { not: null },
-      deletedAt: null,
-      OR: [{ courierStatus: null }, { courierStatus: { notIn: TERMINAL_COURIER_STATUSES } }],
-    },
-    select: { id: true, orderNumber: true, status: true, courierConsignmentId: true, courierStatus: true, courierSyncError: true },
-  });
+/** One sweep's limits: at most this many parcels, for at most this long (the cron fires every 15 minutes). */
+export const COURIER_SWEEP_MAX_PER_RUN = 150;
+export const COURIER_SWEEP_BUDGET_MS = 8 * 60_000;
 
+export interface CourierSweepResult {
+  /** Parcels whose status was asked for this run. */
+  checked: number;
+  /** …of which the courier status changed. */
+  changed: number;
+  /** Parcels due when the run started (more than `checked` = the rest wait for the next run, oldest-due first). */
+  due: number;
+  /** Steadfast answered 429: the run stopped there. */
+  rateLimited: boolean;
+  /** The poll level used (courier-sync-policy.ts): 0 = full pace. */
+  level: number;
+}
+
+/** Called every 15 minutes by jobs/courier-status-cron.ts — the backstop behind the webhook: re-checks every booked parcel
+ * that is due (courierNextPollAt NULL or past), oldest-due first, at most COURIER_SWEEP_MAX_PER_RUN per run and within
+ * COURIER_SWEEP_BUDGET_MS. Each check schedules the parcel's next one from its age and the poll level, so old, quiet
+ * parcels stop crowding out fresh ones; a check that fails is rescheduled too, so a broken consignment can't block the
+ * head of the queue. A 429 stops the run and leaves the rest due. `orderIds` limits the sweep (tests, targeted re-runs). */
+export async function syncPendingCourierStatuses(
+  opts: { now?: Date; maxPerRun?: number; budgetMs?: number; orderIds?: string[] } = {},
+): Promise<CourierSweepResult> {
+  const now = opts.now ?? new Date();
+  const level = await currentPollLevel(now);
+  const where = {
+    ...OPEN_PARCEL_WHERE,
+    ...(opts.orderIds ? { id: { in: opts.orderIds } } : {}),
+    AND: [{ OR: [{ courierNextPollAt: null }, { courierNextPollAt: { lte: now } }] }],
+  };
+  const [due, batch] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      select: { id: true, orderNumber: true, status: true, courierConsignmentId: true, courierStatus: true, courierBookedAt: true, createdAt: true },
+      orderBy: [{ courierNextPollAt: { sort: "asc", nulls: "first" } }, { courierBookedAt: "asc" }],
+      take: opts.maxPerRun ?? COURIER_SWEEP_MAX_PER_RUN,
+    }),
+  ]);
+
+  const budgetMs = opts.budgetMs ?? COURIER_SWEEP_BUDGET_MS;
+  const startedAt = Date.now();
+  let checked = 0;
   let changed = 0;
-  for (const order of pending) {
+  let rateLimited = false;
+  for (const order of batch) {
+    if (Date.now() - startedAt > budgetMs) break;
+    const nextPollAt = new Date(Date.now() + pollIntervalMs(now.getTime() - (order.courierBookedAt ?? order.createdAt).getTime(), level));
     try {
       const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId!);
+      checked++;
       if (status !== order.courierStatus) {
-        await applyCourierStatus(order, status);
+        await applyCourierStatus(order, status, "POLL", nextPollAt);
         changed++;
-      } else if (order.courierSyncError) {
-        // A previous poll failed but this one recovered without the status itself having changed —
-        // still need to clear the stale error and stamp a fresh sync time.
-        await prisma.order.update({ where: { id: order.id }, data: { courierStatusSyncedAt: new Date(), courierSyncError: null } });
+      } else {
+        // Unchanged (or recovered from an earlier failed check): a fresh sync time, no error, and the next check scheduled.
+        await prisma.order.update({ where: { id: order.id }, data: { courierStatusSyncedAt: new Date(), courierSyncError: null, courierNextPollAt: nextPollAt } });
       }
     } catch (err) {
+      if (err instanceof CourierRateLimitedError) {
+        rateLimited = true;
+        logger.warn("[courier-status-cron] Steadfast is rate-limiting — stopping this run; the rest stay due", { detail: String(err.retryAfterMs ?? "") });
+        break;
+      }
+      checked++;
       captureError(err, { msg: `[courier-status-cron] failed to refresh order ${order.id}:` });
-      await recordCourierSyncError(order.id, syncErrorMessage(err));
+      await prisma.order.update({ where: { id: order.id }, data: { courierSyncError: syncErrorMessage(err), courierNextPollAt: nextPollAt } });
     }
   }
-  return changed;
+  return { checked, changed, due, rateLimited, level };
 }

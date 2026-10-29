@@ -37,6 +37,8 @@ export const orderKeys = {
   /** Order changes (docs/ORDER_ADJUSTMENTS.md §3), payment links (§11) and item returns (§8) of one order. */
   modifications: (id: string) => ["admin-order", id, "modifications"] as const,
   paymentLinks: (id: string) => ["admin-order", id, "payment-links"] as const,
+  /** Confirmation calls of one order (Order Operations phase 3). */
+  confirmation: (id: string) => ["admin-order", id, "confirmation"] as const,
 };
 
 /** Warm an order's detail before it's opened (Blueprint V2 §Z): row hover/focus, and the drawer's neighbours. Fresh
@@ -79,6 +81,8 @@ export function useOrderPermissions() {
      * run (instead of silently disappearing, which read as "bulk booking doesn't exist"). */
     courierNotConnected: holdsCourierPermission && providersLoaded && !courierConfigured,
     returns: can("returns.manage"),
+    /** Decide on an escalated confirmation (one more try, phone fixed) — owner and manager (phase 3). */
+    escalations: can("orders.escalations"),
   };
 }
 export type OrderPermissions = ReturnType<typeof useOrderPermissions>;
