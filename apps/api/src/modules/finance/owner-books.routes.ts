@@ -111,7 +111,7 @@ ownerBooksRouter.get("/owner-home", requirePermission("finance.read"), validate(
 ownerBooksRouter.get("/money-map", requirePermission("finance.read"), validate(moneyMapQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await custody.moneyMap(req.query as never, viewerOf(req)))));
 ownerBooksRouter.put("/financial-accounts/:id/custodian", requirePermission("finance.configure"), validate(custodianUpdateSchema), asyncHandler(async (req, res) => res.json(await custody.setCustodian(id(req), req.body, await actorOf(req)))));
 // Owner decision Q-F: what is owed back to the owner, line by line, and "Repay owner" (owner-only, like his money in/out).
-ownerBooksRouter.get("/equity/owner/advances", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await ownerAdvances.listOwnerAdvances())));
+ownerBooksRouter.get("/equity/owner/advances", requirePermission("finance.sensitive"), asyncHandler(async (_req, res) => res.json(await ownerAdvances.listOwnerAdvances())));
 ownerBooksRouter.post("/equity/owner/repay", requirePermission("finance.sensitive"), validate(ownerRepaySchema), asyncHandler(async (req, res) => {
   const r = await ownerAdvances.repayOwner(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);

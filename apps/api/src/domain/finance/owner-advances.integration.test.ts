@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import bcrypt from "bcryptjs";
 import request from "supertest";
 import { PERMISSIONS } from "@clothing-brand/shared";
 import { app } from "../../app";
@@ -14,8 +15,10 @@ import { repayOwner } from "./owner-advances.service";
 const CSRF = "vitest-csrf";
 let admin = "";
 let OWNER: FinanceActor;
-const api = () => {
-  const cookie = [`access_token=${signAccessToken({ adminId: admin, role: "OWNER" })}`, `csrf_token=${CSRF}`];
+const madeAdmins: string[] = [];
+type Role = "OWNER" | "MANAGER" | "FINANCE_ADMIN" | "ACCOUNTANT" | "FINANCE_VIEWER";
+const api = (as: { adminId: string; role: Role } = { adminId: admin, role: "OWNER" }) => {
+  const cookie = [`access_token=${signAccessToken(as)}`, `csrf_token=${CSRF}`];
   const auth = (r: request.Test) => r.set("Cookie", cookie).set("X-CSRF-Token", CSRF);
   return {
     get: (url: string) => auth(request(app).get(`/api/v1/finance${url}`)),
@@ -67,6 +70,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await purgeFinanceTables();
+  await prisma.auditLog.deleteMany({ where: { adminId: { in: madeAdmins } } });
+  await prisma.adminUser.deleteMany({ where: { id: { in: madeAdmins } } });
 });
 
 describe("owed back to the owner, line by line (Q-F)", () => {
@@ -127,5 +132,75 @@ describe("owed back to the owner, line by line (Q-F)", () => {
     const movements = await prisma.treasuryMovement.count();
     await expect(repayOwner({ fromFinancialAccountId: fa.bank, lines: [{ advanceId: "c000000000000000000000000", amount: 1 }] }, OWNER, key("unknown"))).rejects.toMatchObject({ statusCode: 404, details: { code: "OWNER_ADVANCE_NOT_FOUND" } });
     expect(await prisma.treasuryMovement.count()).toBe(movements);
+  });
+});
+
+describe("who may see and repay it, and what a repayment may be", () => {
+  it("only the owner: every other role with finance access is refused both the lines and the repayment", async () => {
+    const ink = await line("Printer ink");
+    const movements = await prisma.treasuryMovement.count();
+    for (const role of ["MANAGER", "FINANCE_ADMIN", "ACCOUNTANT", "FINANCE_VIEWER"] as const) {
+      const a = await prisma.adminUser.create({ data: { name: `ADV ${role}`, email: `adv-${role.toLowerCase()}-${RUN}@example.com`, passwordHash: await bcrypt.hash("x", 4), role } });
+      madeAdmins.push(a.id);
+      const as = { adminId: a.id, role };
+      expect((await api(as).get("/equity/owner/advances")).status, `${role} list`).toBe(403);
+      expect((await api(as).post("/equity/owner/repay", { fromFinancialAccountId: fa.bank, lines: [{ advanceId: ink.id, amount: 1 }] }, key(role))).status, `${role} repay`).toBe(403);
+    }
+    expect(await prisma.treasuryMovement.count()).toBe(movements);
+  });
+
+  it("amounts must be positive with at most two decimals, each line once, and a key is required", async () => {
+    const ink = await line("Printer ink");
+    const movements = await prisma.treasuryMovement.count();
+    const bad = [
+      [{ advanceId: ink.id, amount: 0 }],
+      [{ advanceId: ink.id, amount: -5 }],
+      [{ advanceId: ink.id, amount: 1.234 }],
+      [{ advanceId: ink.id, amount: 1 }, { advanceId: ink.id, amount: 1 }],
+      [],
+    ];
+    for (const lines of bad) expect((await api().post("/equity/owner/repay", { fromFinancialAccountId: fa.bank, lines }, key("bad"))).status, JSON.stringify(lines)).toBe(400);
+    const noKey = await api().post("/equity/owner/repay", { fromFinancialAccountId: fa.bank, lines: [{ advanceId: ink.id, amount: 1 }] });
+    expect(noKey.status).toBe(400);
+    expect(noKey.body.details?.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+    expect(await prisma.treasuryMovement.count()).toBe(movements);
+    expect(await line("Printer ink")).toMatchObject({ outstanding: 500 });
+  });
+
+  it("a key reused for a different repayment is refused, not replayed", async () => {
+    const ink = await line("Printer ink");
+    const k = key("reuse");
+    expect((await api().post("/equity/owner/repay", { fromFinancialAccountId: fa.bank, date: "2026-09-21", lines: [{ advanceId: ink.id, amount: 100 }] }, k)).status).toBe(201);
+    const other = await api().post("/equity/owner/repay", { fromFinancialAccountId: fa.bank, date: "2026-09-21", lines: [{ advanceId: ink.id, amount: 150 }] }, k);
+    expect(other.status).toBe(409);
+    expect(other.body.details?.code).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(await line("Printer ink")).toMatchObject({ repaid: 400, outstanding: 400 });
+  });
+
+  it("two repayments at once can't spend the same line twice", async () => {
+    expect((await ownerPaid("Courier bags", 600)).status).toBe(201);
+    const bags = await line("Courier bags");
+    const body = { fromFinancialAccountId: fa.bank, date: "2026-09-22", lines: [{ advanceId: bags.id, amount: 600 }] };
+    const results = await Promise.all([api().post("/equity/owner/repay", body, key("race-a")), api().post("/equity/owner/repay", body, key("race-b"))]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(results.find((r) => r.status === 409)!.body.details?.code).toBe("REPAY_MORE_THAN_OWED");
+    expect(await line("Courier bags")).toMatchObject({ repaid: 600, outstanding: 0 });
+    expect(await prisma.ownerAdvanceAllocation.count({ where: { advanceId: bags.id } })).toBe(1);
+  });
+
+  it("the repayment posts Dr owed to the owner / Cr the paying account, and the totals keep explaining the ledger", async () => {
+    expect((await ownerPaid("Shop sign", 700)).status).toBe(201);
+    const sign = await line("Shop sign");
+    const r = await api().post("/equity/owner/repay", { fromFinancialAccountId: fa.bank, date: "2026-09-23", lines: [{ advanceId: sign.id, amount: 250 }] }, key("post"));
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const business = await prisma.financeBusiness.findFirstOrThrow({ select: { id: true } });
+    const owed = await prisma.accountMapping.findUniqueOrThrow({ where: { businessId_key: { businessId: business.id, key: "liability.owner_reimbursable" } } });
+    const bankLedger = (await prisma.financialAccount.findUniqueOrThrow({ where: { id: fa.bank } })).ledgerAccountId;
+    const lines = (await api().get(`/journals/${r.body.movement.journalEntryId}`)).body.lines as Array<{ accountId: string; debit: number; credit: number }>;
+    expect(lines.map((l) => [l.accountId, l.debit, l.credit]).sort()).toEqual([[owed.accountId, 250, 0], [bankLedger, 0, 250]].sort());
+    const a = await advances();
+    expect(a.outstanding).toBe(a.lines.reduce((s, l) => s + l.outstanding, 0));
+    expect(a).toMatchObject({ unlinked: 0 });
+    expect(a.ledgerBalance).toBe(a.outstanding);
   });
 });
