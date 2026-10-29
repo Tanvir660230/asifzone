@@ -351,9 +351,11 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   // Blueprint P2.5: every published product's one-page order form for ads (/lp/<slug>)
   { id: "marketing.landing-pages", label: "Landing pages", kind: "page", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages", capability: "promotions.manage", order: -0.5, keywords: ["lp", "landing page", "ad link", "facebook ad", "order form"] },
-  { id: "marketing.flash-sales", label: term("flashSale"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/flash-sales", capability: "promotions.manage", order: 0 },
-  { id: "marketing.coupons", label: term("coupon"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/coupons", capability: "promotions.manage", order: 1, keywords: ["discount code"] },
-  { id: "marketing.bundles", label: term("bundle"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/bundles", capability: "promotions.manage", order: 2 },
+  // Blueprint tab 2 §2: one Discounts entry, its three pages as tabs (URLs kept).
+  { id: "marketing.discounts", label: "Discounts", kind: "page", parent: "marketing", domain: "grow", index: "/admin/flash-sales", capability: "promotions.manage", order: 0, keywords: ["discount", "offer", "sale", "promo"] },
+  { id: "marketing.flash-sales", label: term("flashSale"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/flash-sales", capability: "promotions.manage", order: 0 },
+  { id: "marketing.coupons", label: term("coupon"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/coupons", capability: "promotions.manage", order: 1, keywords: ["discount code"] },
+  { id: "marketing.bundles", label: term("bundle"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/bundles", capability: "promotions.manage", order: 2 },
   { id: "marketing.campaigns", label: "SMS campaigns", kind: "page", parent: "marketing", domain: "grow", route: "/admin/campaigns", capability: "promotions.manage", order: 3, keywords: ["sms"] },
 
   {
