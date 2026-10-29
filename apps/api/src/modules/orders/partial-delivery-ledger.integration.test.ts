@@ -37,7 +37,7 @@ describe("partial delivery — the order charges what the customer kept", () => 
     await reconcilePartialDelivery(order.id, { items: [{ orderItemId: itemId, returnedQuantity: 1 }] }, admin);
     expect(await getOrderPaymentSummary(order.id)).toMatchObject({ amountDue: 1060, codToCollect: 0, refundDue: 0 });
     const rr = await prisma.returnRequest.findFirstOrThrow({ where: { orderId: order.id } });
-    expect(rr.lines).toMatchObject([{ orderItemId: itemId, quantity: 1, restocked: 1, writtenOff: 0, value: 1000 }]);
+    expect(rr.lines).toMatchObject([{ orderItemId: itemId, quantity: 1, restocked: 0, writtenOff: 0, value: 1000 }]);
 
     await recordManualPayment(order.id, { amount: 1060, kind: "COD_COLLECTED" }, admin);
     expect(await getOrderPaymentSummary(order.id)).toMatchObject({ status: "PAID", amountDue: 0, overpaid: 0, refundDue: 0 });
@@ -50,8 +50,9 @@ describe("partial delivery — the order charges what the customer kept", () => 
     const after = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { statusHistory: true, items: true } });
     expect(after.status).toBe("RETURNED");
     expect(after.statusHistory.some((h) => h.status === "RETURNED" && h.note?.includes("kept nothing"))).toBe(true);
-    // Stock came back once (reconciliation), not twice (the Returned move).
-    expect(after.items[0]!.restockedQuantity).toBe(2);
+    // The return is counted once (reconciliation), not twice (the Returned move).
+    expect(after.items[0]!.returnedQuantity).toBe(2);
+    expect(after.items[0]!.restockedQuantity).toBe(0); // the stock waits for the parcel (owner decision M2)
     expect(await getOrderPaymentSummary(order.id)).toMatchObject({ amountDue: 0, codToCollect: 0, refundDue: 0 });
   });
 

@@ -249,21 +249,22 @@ export interface ReleasedLine {
   quantity: number;
 }
 
-/** Puts an order's units back into stock — `release` for a cancellation or trash (`CANCELLATION`), `return` when
- * the customer sent them back (`RETURN`, also counted in `returnedQuantity`). Never releases more than
- * `quantity - restockedQuantity` for a line, so calling it again for the same order puts nothing back.
- * `lines` limits it to specific order lines/quantities (partial delivery, exchange); omitted = everything
- * still outstanding. Returns what was actually released plus the variants that came back into stock. */
+/** Puts an order's units back into stock — `release` for a cancellation or trash (`CANCELLATION`), `receive` when a
+ * customer return is physically back and inspected (`RETURN`). `release` never puts back more than
+ * `quantity - restockedQuantity` for a line; `receive` never more than `returnedQuantity - restockedQuantity` — the units a
+ * return decision (recordReturnDecision) has already counted — so a return can't become stock before it was decided, and
+ * calling either again for the same order puts nothing back. `lines` limits it to specific order lines/quantities;
+ * omitted = everything still outstanding. Returns what was actually released plus the variants that came back into stock. */
 export async function releaseOrderLines(
   tx: Tx,
   orderId: string,
-  kind: "release" | "return",
+  kind: "release" | "receive",
   opts: Actor & { lines?: Array<{ orderItemId: string; quantity: number }> } = {},
 ): Promise<{ released: ReleasedLine[]; replenished: string[] }> {
   // Variant id order — the lock order every stock writer uses.
   const items = await tx.orderItem.findMany({
     where: { orderId },
-    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true },
+    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true },
     orderBy: [{ variantId: "asc" }, { id: "asc" }],
   });
   const requested = opts.lines ? new Map(opts.lines.map((l) => [l.orderItemId, l.quantity])) : null;
@@ -271,19 +272,18 @@ export async function releaseOrderLines(
   const replenished: string[] = [];
 
   for (const item of items) {
-    const outstanding = item.quantity - item.restockedQuantity;
+    const ceiling = kind === "receive" ? item.returnedQuantity : item.quantity;
+    const outstanding = ceiling - item.restockedQuantity;
     const wanted = requested ? (requested.get(item.id) ?? 0) : outstanding;
     const amount = Math.min(wanted, outstanding);
     if (amount <= 0) continue;
 
     // Conditional on the line still having that many units outstanding — a concurrent release of the same line
-    // (even outside an order-row lock) matches zero rows here instead of double-counting.
+    // (even outside an order-row lock) matches zero rows here instead of double-counting. returnedQuantity only grows, so
+    // the ceiling read above can only be lower than the current one.
     const claimed = await tx.orderItem.updateMany({
-      where: { id: item.id, restockedQuantity: { lte: item.quantity - amount } },
-      data: {
-        restockedQuantity: { increment: amount },
-        ...(kind === "return" ? { returnedQuantity: { increment: amount } } : {}),
-      },
+      where: { id: item.id, restockedQuantity: { lte: ceiling - amount } },
+      data: { restockedQuantity: { increment: amount } },
     });
     if (claimed.count === 0) continue;
 
@@ -291,13 +291,55 @@ export async function releaseOrderLines(
     // to go, but the line is still marked released so no later path retries it.
     const after = await applyDelta(tx, item.variantId, amount, false);
     if (after === null) continue;
-    const mv = await tx.stockMovement.create({ data: movement(item.variantId, amount, kind === "return" ? "RETURN" : "CANCELLATION", opts, orderId) });
+    const mv = await tx.stockMovement.create({ data: movement(item.variantId, amount, kind === "receive" ? "RETURN" : "CANCELLATION", opts, orderId) });
     // The units come back at the cost they left at — this line's own snapshot, never today's average.
     await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: item.unitCostSnapshot }, ledger: "ORDER" }]);
     released.push({ orderItemId: item.id, variantId: item.variantId, quantity: amount });
     if (after - amount <= 0 && after > 0) replenished.push(item.variantId);
   }
   return { released, replenished };
+}
+
+/** A customer return decided — approved, reconciled, recorded, or the order marked Returned — while the units are still with
+ * the customer or the courier: counts them in `returnedQuantity` (what the payment position and the sales figures read) and
+ * moves NO stock. They become stock only when the parcel is received and inspected (releaseOrderLines `receive`), owner
+ * decision M2. A line can't be decided past its units still with the customer (`quantity − max(returned, restocked)`); the
+ * update is conditional on the value read, so two concurrent decisions on one line can't both count the same units.
+ * `lines` omitted = every unit still with the customer. Returns what was decided. */
+export async function recordReturnDecision(
+  tx: Tx,
+  orderId: string,
+  lines?: Array<{ orderItemId: string; quantity: number }>,
+): Promise<ReleasedLine[]> {
+  const items = await tx.orderItem.findMany({
+    where: { orderId },
+    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, returnedQuantity: true },
+    orderBy: [{ variantId: "asc" }, { id: "asc" }],
+  });
+  const requested = lines ? new Map(lines.map((l) => [l.orderItemId, l.quantity])) : null;
+  const decided: ReleasedLine[] = [];
+  for (const item of items) {
+    const withCustomer = item.quantity - Math.max(item.returnedQuantity, item.restockedQuantity);
+    const amount = Math.min(requested ? (requested.get(item.id) ?? 0) : withCustomer, withCustomer);
+    if (amount <= 0) continue;
+    const claimed = await tx.orderItem.updateMany({
+      where: { id: item.id, returnedQuantity: item.returnedQuantity },
+      data: { returnedQuantity: { increment: amount } },
+    });
+    if (claimed.count === 0) continue;
+    decided.push({ orderItemId: item.id, variantId: item.variantId, quantity: amount });
+  }
+  // A second return on an order whose earlier parcel was already received and inspected: the receipt facts on the order
+  // (Order Operations phase 4) described that earlier parcel. Clear them so this one is expected back — it shows under
+  // Coming back, a scan of it is accepted, and the order isn't finished until it is in hand and inspected. The earlier
+  // receipt stays on the timeline and in its scan batch.
+  if (decided.length) {
+    await tx.order.updateMany({
+      where: { id: orderId, returnInspectedAt: { not: null } },
+      data: { receivedBackAt: null, receivedBackByAdminId: null, receivedBackBatchId: null, returnInspectedAt: null },
+    });
+  }
+  return decided;
 }
 
 /** Units an order modification removes before shipment (docs/ORDER_ADJUSTMENTS.md §14): the order's line rows shrink or
@@ -323,7 +365,7 @@ export async function releaseModifiedUnits(
   return replenished;
 }
 
-/** Returned units that came back unsellable (damaged): after `releaseOrderLines(…, "return")` put them back, they are taken
+/** Returned units that came back unsellable (damaged): after `releaseOrderLines(…, "receive")` put them back, they are taken
  * straight out again as DAMAGED — so the ledger shows both what came back and what could not be resold. The write-off is
  * not attributed to the order (orderId null, the order number is in the note): INV-3 keeps an order's own movements equal
  * to −(quantity − restocked) per variant. */

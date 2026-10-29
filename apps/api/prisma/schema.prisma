@@ -309,6 +309,9 @@ model AdminUser {
   /// Wrong codes in a row; 5 locks the 2nd step for 15 minutes (on top of the per-IP login limit).
   totpFailures           Int                   @default(0)
   totpLockedUntil        DateTime?
+  /// Display preferences per list (density, page size, hidden columns), keyed by list key — e.g. { "orders": {...} }.
+  /// Shape: listPreferencesSchema in @clothing-brand/shared. Null = every list at its defaults.
+  listPreferences        Json?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   refreshTokens          RefreshToken[]
@@ -317,6 +320,13 @@ model AdminUser {
   reviewedReturnRequests ReturnRequest[]
   sentInvites            AdminInvite[]
   deletedOrders          Order[]               @relation("OrderDeletedBy")
+  confirmationAssigned   Order[]               @relation("OrderConfirmationAssignee")
+  confirmationClaims     Order[]               @relation("OrderConfirmationClaimedBy")
+  confirmationAttempts   OrderConfirmationAttempt[] @relation("OrderConfirmationAttemptBy")
+  handedOverOrders       Order[]               @relation("OrderHandedOverBy")
+  receivedBackOrders     Order[]               @relation("OrderReceivedBackBy")
+  parcelScanBatches      ParcelScanBatch[]     @relation("ParcelScanBatchCreatedBy")
+  parcelScanEvents       ParcelScanEvent[]     @relation("ParcelScanEventBy")
   stockMovements         StockMovement[]
   refundsRequested       Refund[]              @relation("RefundRequestedBy")
   refundsCompleted       Refund[]              @relation("RefundCompletedBy")
@@ -1300,6 +1310,9 @@ model Order {
   /// settleCourierCollected (docs/PAYMENT_LEDGER.md §5b).
   courierCollectedAmount  Decimal?  @db.Decimal(10, 2)
   courierCollectedAt      DateTime?
+  /// Order Operations Phase 0: when the courier-status poll should next re-check this parcel (NULL = due now). Set from the
+  /// parcel's age and the poll level (modules/courier/courier-sync-policy.ts); a webhook that verified the status pushes it on.
+  courierNextPollAt       DateTime?
 
   // ── Pricing snapshot (Phase 2, docs/PRICING_INVARIANTS.md §8). Immutable historical facts written once at order
   // creation by the canonical pricing pipeline; never recomputed from current products, promotions or settings.
@@ -1361,17 +1374,148 @@ model Order {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /// When the order last moved to a new status (placed, confirmed, booked → Packed, shipped, …). Set by the database
+  /// trigger "Order_status_changed_at" on every status change, whatever code path made it — never written by the app.
+  /// The Orders list's default order, so an order confirmed or booked today comes back to the top even if it was
+  /// placed days ago. A courier poll or an edit that doesn't move the status leaves it alone (unlike updatedAt).
+  statusChangedAt DateTime @default(now())
+
+  /// Customer confirmation calls (Order Operations phase 3, modules/orders/confirmation.service.ts). The order stays
+  /// PENDING until a call confirms or a person cancels; each call is an OrderConfirmationAttempt.
+  confirmationAttempts         OrderConfirmationAttempt[]
+  /// Unanswered calls (no answer / off / busy) since the phone was last changed — toward the retry limit.
+  confirmationUnreached        Int        @default(0)
+  /// Tries granted past the limit by an owner/manager's "one more try".
+  confirmationExtraAttempts    Int        @default(0)
+  /// The operator these calls are assigned to (shown to them first).
+  confirmationAssigneeId       String?
+  confirmationAssignee         AdminUser? @relation("OrderConfirmationAssignee", fields: [confirmationAssigneeId], references: [id], onDelete: SetNull)
+  /// "Take next call": who is on this call, since when — a claim lapses after 15 minutes.
+  confirmationClaimedById      String?
+  confirmationClaimedBy        AdminUser? @relation("OrderConfirmationClaimedBy", fields: [confirmationClaimedById], references: [id], onDelete: SetNull)
+  confirmationClaimedAt        DateTime?
+  /// In the Escalated queue since, and why (UNREACHED_LIMIT / WRONG_NUMBER). Age-based escalation is a query rule.
+  confirmationEscalatedAt      DateTime?
+  confirmationEscalationReason String?
+  /// An owner/manager's "one more try" holds off the age rule until this time.
+  confirmationReprieveUntil    DateTime?
+
+  /// Parcel scanning (Order Operations phase 4, modules/parcel-scans). Physical facts only — no stock, money or status:
+  /// handed to the courier (dispatch scan), physically back with us (return scan or a manual "received"), and inspected
+  /// (the existing receive step, the only one that restocks). Booking (courierBookedAt) is a separate, earlier fact.
+  handedOverAt                 DateTime?
+  handedOverByAdminId          String?
+  handedOverBy                 AdminUser? @relation("OrderHandedOverBy", fields: [handedOverByAdminId], references: [id], onDelete: SetNull)
+  handedOverBatchId            String?
+  receivedBackAt               DateTime?
+  receivedBackByAdminId        String?
+  receivedBackBy               AdminUser? @relation("OrderReceivedBackBy", fields: [receivedBackByAdminId], references: [id], onDelete: SetNull)
+  receivedBackBatchId          String?
+  /// Set when inspection has dealt with every unit that came back (nothing left waiting).
+  returnInspectedAt            DateTime?
+  /// The "shipped" SMS was held at booking (shippedSmsTrigger = HANDOVER) and goes out at the handover scan.
+  shippedSmsDeferred           Boolean    @default(false)
+  parcelScanEvents             ParcelScanEvent[]
 
   @@index([status])
   @@index([customerId])
   @@index([createdAt, status])
+  @@index([statusChangedAt])
+  @@index([confirmationEscalatedAt])
+  @@index([handedOverAt])
+  @@index([receivedBackAt])
   @@index([sessionId])
   @@index([customerEmail])
   @@index([customerPhone])
   @@index([deletedAt])
   @@index([courierConsignmentId])
+  @@index([courierNextPollAt])
+  /// The Orders search's exact match on a scanned/pasted label barcode.
+  @@index([trackingNumber])
   @@index([followUpAt])
   @@index([updatedAt])
+}
+
+/// One customer-confirmation call and its outcome (Order Operations phase 3). Append-only: a database trigger refuses
+/// UPDATE, and DELETE while the order exists (a permanently deleted order takes its calls with it).
+model OrderConfirmationAttempt {
+  id         String     @id @default(cuid())
+  orderId    String
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  adminId    String?
+  admin      AdminUser? @relation("OrderConfirmationAttemptBy", fields: [adminId], references: [id], onDelete: SetNull)
+  /// CONFIRMED | NO_ANSWER | SWITCHED_OFF | BUSY | CALLBACK_REQUESTED | WILL_CONFIRM_LATER | WRONG_NUMBER | DECLINED | OTHER
+  outcome    String
+  note       String?
+  callbackAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+/// A dispatch or return scanning session (Order Operations phase 4). Scans collect in an OPEN batch; confirming it writes
+/// the handover / receipt on every accepted order in one transaction.
+model ParcelScanBatch {
+  id                 String            @id @default(cuid())
+  /// DISPATCH | RETURN
+  kind               String
+  /// OPEN | CONFIRMED | CANCELLED
+  status             String            @default("OPEN")
+  note               String?
+  createdByAdminId   String?
+  createdBy          AdminUser?        @relation("ParcelScanBatchCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  confirmedByAdminId String?
+  createdAt          DateTime          @default(now())
+  confirmedAt        DateTime?
+  events             ParcelScanEvent[]
+
+  @@index([kind, status, createdAt])
+}
+
+/// One scan and what it resolved to. clientScanId is generated on the device, so a retried scan is recorded once.
+model ParcelScanEvent {
+  id           String          @id @default(cuid())
+  batchId      String
+  batch        ParcelScanBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  kind         String
+  clientScanId String          @unique
+  code         String
+  orderId      String?
+  order        Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  /// ACCEPTED | DUPLICATE | ALREADY_PROCESSED | INVALID | INELIGIBLE
+  result       String
+  message      String
+  /// RETURN: accepted although the courier hasn't reported the parcel coming back.
+  discrepancy  Boolean         @default(false)
+  adminId      String?
+  admin        AdminUser?      @relation("ParcelScanEventBy", fields: [adminId], references: [id], onDelete: SetNull)
+  /// Removed from its batch before confirming (or the batch was cancelled).
+  voidedAt     DateTime?
+  createdAt    DateTime        @default(now())
+
+  @@index([batchId, createdAt])
+  @@index([orderId, kind])
+}
+
+/// The daily courier check (Order Operations phase 5, jobs/courier-automation-cron.ts): one row per store day — a rerun
+/// updates it. Read-only towards orders, stock and money: it counts the alert queues and runs the payout evidence sync
+/// (courier cost facts only); a person acts on what it surfaces.
+model CourierAutomationRun {
+  id              String    @id @default(cuid())
+  /// Store-local business date (YYYY-MM-DD).
+  day             String    @unique
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
+  /// RUNNING | OK | PARTIAL | FAILED
+  outcome         String    @default("RUNNING")
+  stuckInTransit  Int       @default(0)
+  returnOverdue   Int       @default(0)
+  handoverPending Int       @default(0)
+  payoutsChecked  Int       @default(0)
+  payoutProblems  Int       @default(0)
+  message         String?
+  /// Set when the day's alert went to the admin bell (once a day).
+  notifiedAt      DateTime?
 }
 
 /// Append-only timeline of status transitions for an order — powers the admin timeline view.
@@ -1521,6 +1665,8 @@ model CourierWebhookEvent {
   codAmount        Decimal? @db.Decimal(10, 2)
   deliveryCharge   Decimal? @db.Decimal(10, 2)
   trackingMessage  String?
+  /// What Steadfast's status API answered when this event was verified — `status` is only the body's claim.
+  verifiedStatus   String?
   payload          Json
   /// What we did with it: APPLIED, DUPLICATE, NO_ORDER, NO_CONSIGNMENT, FAILED.
   outcome          String
@@ -1529,6 +1675,32 @@ model CourierWebhookEvent {
   @@index([consignmentId])
   @@index([orderId])
   @@index([receivedAt])
+}
+
+/// Order Operations Phase 0: a Steadfast webhook call refused at the token check (not_configured | missing_token |
+/// bad_token) — when and why only, never the token, a header or the body. Counted by the courier health report; kept 30 days.
+model CourierWebhookRejection {
+  id         String   @id @default(cuid())
+  provider   String   @default("STEADFAST")
+  reason     String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+/// Order Operations Phase 0: a change of a parcel's courier status and how it reached us — WEBHOOK, or POLL / ON_DEMAND when
+/// the webhook did not bring it first. The health report's coverage check reads it; kept 90 days.
+model CourierStatusChange {
+  id            String   @id @default(cuid())
+  consignmentId String
+  orderId       String?
+  fromStatus    String?
+  toStatus      String
+  source        String
+  observedAt    DateTime @default(now())
+
+  @@index([observedAt])
+  @@index([consignmentId])
 }
 
 /// The settlement record for one PaymentSession — created only once the gateway has given a
@@ -2495,6 +2667,18 @@ model StoreSetting {
   /// Storefront Studio → Site design, as published: theme choices, announcement bar, header and footer
   /// (packages/shared storefront-design.ts). Written only by the Studio's publish.
   storefrontDesign             Json?
+  /// Customer confirmation calls (Order Operations phase 3): unanswered calls before escalation, hours an order may stay
+  /// unconfirmed, minutes to the 1st/2nd retry, store-local hour of the next-day retry. Defaults = the plan's.
+  confirmationMaxUnreached     Int      @default(4)
+  confirmationEscalateHours    Int      @default(72)
+  confirmationRetryMinutes     Int      @default(120)
+  confirmationNextDayHour      Int      @default(10)
+  /// When the customer's "shipped" SMS goes: BOOKING (today) or HANDOVER (at the dispatch scan — after the pilot, plan M4).
+  shippedSmsTrigger            String   @default("BOOKING")
+  /// Courier automation (Order Operations phase 5, plan M8): a parcel out longer than this (from handover, or booking for
+  /// an unscanned one) is "stuck in transit"; a return the courier reported this long ago that hasn't arrived is overdue.
+  stuckInTransitDays           Int      @default(6)
+  returnNotBackDays            Int      @default(14)
   updatedAt                    DateTime @updatedAt
 }
 

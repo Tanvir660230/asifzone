@@ -29,6 +29,8 @@ export const CAPABILITIES = {
   "orders.adjustPrice": { permission: "orders.adjust_price" },
   "orders.export": { permission: "orders.export" },
   "orders.trash": { permission: "orders.delete" },
+  "orders.escalations": { permission: "orders.escalations" },
+  "parcels.scan": { permission: "parcels.scan" },
   "payments.view": { permission: "payments.read" },
   "payments.record": { permission: "payments.record" },
   "refunds.manage": { permission: "refunds.manage" },

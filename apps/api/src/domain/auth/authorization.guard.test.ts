@@ -118,7 +118,7 @@ const PUBLIC_ROUTES = [
 ];
 
 /** Self-service admin routes: own session and own notifications — no permission, by design. */
-const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "DELETE /api/auth/sessions/:id", "POST /api/auth/sessions/revoke-others", "POST /api/auth/logout-all", "POST /api/auth/2fa/setup", "POST /api/auth/2fa/enable", "POST /api/auth/2fa/disable", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention", "GET /api/v1/admin/views", "POST /api/v1/admin/views", "DELETE /api/v1/admin/views/:id"]; // attention: each section re-checks the caller's permissions; views: the caller's own (DR-18)
+const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "DELETE /api/auth/sessions/:id", "POST /api/auth/sessions/revoke-others", "POST /api/auth/logout-all", "POST /api/auth/2fa/setup", "POST /api/auth/2fa/enable", "POST /api/auth/2fa/disable", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention", "GET /api/v1/admin/views", "POST /api/v1/admin/views", "DELETE /api/v1/admin/views/:id", "GET /api/v1/admin/list-preferences/:list", "PUT /api/v1/admin/list-preferences/:list"]; // attention: each section re-checks the caller's permissions; views: the caller's own (DR-18)
 
 describe("requirePermission on its own (defence in depth, independent of route order)", () => {
   const run = (admin: unknown) => {
@@ -229,9 +229,13 @@ describe("authorization — architecture guards", () => {
       .filter((f) => /adminUser\.(update|updateMany|delete|deleteMany|create|upsert)\(/.test(code(f)))
       .map((f) => relative(API, f).replace(/\\/g, "/"));
     // two-step.service.ts writes only an admin's own 2-step sign-in columns (admin audit phase 2) — never role or active.
-    expect(writers.sort()).toEqual(["modules/auth/auth.service.ts", "modules/auth/two-step.service.ts"]);
+    // list-preferences.service.ts writes only the admin's own list display preferences (Order Operations phase 2).
+    expect(writers.sort()).toEqual(["modules/admin-home/list-preferences.service.ts", "modules/auth/auth.service.ts", "modules/auth/two-step.service.ts"]);
     expect(code(join(API, "modules", "auth", "auth.service.ts"))).toMatch(/assertKeepsAnActiveOwner\(tx, adminId/);
     const twoStep = code(join(API, "modules", "auth", "two-step.service.ts"));
     expect(twoStep).not.toMatch(/\b(role|isActive|passwordHash|email)\s*:/);
+    const listPrefs = code(join(API, "modules", "admin-home", "list-preferences.service.ts"));
+    expect(listPrefs).not.toMatch(/\b(role|isActive|passwordHash|email|totp\w*)\s*:/);
+    expect(listPrefs).toMatch(/data: \{ listPreferences:/);
   });
 });

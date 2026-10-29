@@ -172,7 +172,7 @@ describe("inventory acceptance", () => {
     await assertInventoryInvariants(v);
   });
 
-  it("T-7 / T-8: partly delivered order of 2, 1 came back → +1 RETURN once; reconciling three times still +1", async () => {
+  it("T-7 / T-8: partly delivered order of 2, 1 came back → +1 RETURN once, at receipt; reconciling and receiving three times still +1", async () => {
     const p = await createStockedProduct({ stocks: [5], basePrice: 900 });
     const v = p.variants[0]!.id;
     const order = await placeOrder([{ variantId: v, quantity: 2 }], { customerPhone: "01712000090" });
@@ -181,6 +181,8 @@ describe("inventory acceptance", () => {
     const line = (await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } })).id;
     await reconcilePartialDelivery(order.id, { items: [{ orderItemId: line, returnedQuantity: 1 }] }, owner);
     for (let i = 0; i < 2; i++) await reconcilePartialDelivery(order.id, { items: [{ orderItemId: line, returnedQuantity: 1 }] }, owner).catch(() => undefined);
+    expect(await stockOf(v)).toBe(3); // owner decision M2: the refused unit is sellable only once its parcel is received
+    for (let i = 0; i < 3; i++) await receiveReturnedParcel(order.id, owner, {}).catch(() => undefined);
     expect(await stockOf(v)).toBe(4);
     expect((await movements(v, "RETURN")).map((m) => m.change)).toEqual([1]);
     expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: line } })).restockedQuantity).toBe(1);

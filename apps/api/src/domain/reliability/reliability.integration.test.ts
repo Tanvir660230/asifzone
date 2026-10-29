@@ -8,13 +8,13 @@ import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, stockOf, trackOrder } from "../../test-fixtures";
 import { LiveProviderBlockedError, liveProvidersEnabled, networkGuardInstalled } from "../../lib/provider-guard";
 import { sendSms } from "../../providers/sms/bulksmsbd";
-import { updateOrderStatus } from "../../modules/orders/order.service";
+import { receiveReturnedParcel, updateOrderStatus } from "../../modules/orders/order.service";
 import { createOrder } from "../../modules/orders/order.service";
 import { reviewReturnRequest, createReturnRequest } from "../../modules/return-requests/return-request.service";
 import { bookOrderWithSteadfast, bookOrdersWithSteadfastBulk, COURIER_BOOKING_LEASE_MS, handleSteadfastWebhook } from "../../modules/courier/courier.service";
 import { adjustRewardPoints, loyaltyDrift } from "../../modules/customers/customer.service";
 import { recordRefund } from "../payments/payment-ledger.service";
-import { releaseOrderLines } from "../../modules/inventory/inventory.service";
+import { recordReturnDecision } from "../../modules/inventory/inventory.service";
 import { cleanupOutbox } from "../outbox/processor";
 import { checkout } from "../../test-fixtures";
 
@@ -133,10 +133,14 @@ describe("exchange fulfilment (D-1)", () => {
       const [exchange] = await Promise.allSettled([reviewReturnRequest(req.id, { status: "APPROVED" }, admin), updateOrderStatus(order.id, { status: "RETURNED" }, admin)]);
       const row = await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } });
       if (row.exchangeOrderId) trackOrder(row.exchangeOrderId);
-      const returnedUnits = (await prisma.stockMovement.aggregate({ where: { orderId: order.id, variantId: line.variantId, reason: "RETURN" }, _sum: { change: true } }))._sum.change ?? 0;
+      // Invariant: the line's unit is returned exactly once, and a replacement exists only if the exchange won that unit.
+      const returnedUnits = (await prisma.orderItem.findUniqueOrThrow({ where: { id: line.id } })).returnedQuantity;
       const replacement = row.exchangeOrderId !== null;
-      // Invariant: the line's unit came back exactly once, and a replacement exists only if the exchange won that unit.
       expect(returnedUnits).toBe(1);
+      // Its parcel, received, restocks it once (owner decision M2: never at the decision).
+      await receiveReturnedParcel(order.id, admin, {});
+      const restocked = (await prisma.stockMovement.aggregate({ where: { orderId: order.id, variantId: line.variantId, reason: "RETURN" }, _sum: { change: true } }))._sum.change ?? 0;
+      expect(restocked).toBe(1);
       expect(replacement).toBe(exchange.status === "fulfilled");
       outcomes.push(returnedUnits === 1 ? "ok" : `returned ${returnedUnits}`);
     }
@@ -162,7 +166,7 @@ describe("exchange fulfilment (D-1)", () => {
           await new Promise((r) => setTimeout(r, 20));
         }
         // …while another path returns the same line and commits first.
-        await releaseOrderLines(tx, order.id, "return", { adminId: admin, note: "concurrent return", lines: [{ orderItemId: line.id, quantity: line.quantity }] });
+        await recordReturnDecision(tx, order.id, [{ orderItemId: line.id, quantity: line.quantity }]);
       },
       { timeout: 15_000 },
     );
@@ -172,8 +176,9 @@ describe("exchange fulfilment (D-1)", () => {
     expect(row.exchangeOrderId).toBeNull();
     expect(row.status).toBe("PENDING"); // the whole approval rolled back
     expect(await stockOf(variants[1]!.id)).toBe(replacementStock);
-    const returnedUnits = (await prisma.stockMovement.aggregate({ where: { orderId: order.id, variantId: line.variantId, reason: "RETURN" }, _sum: { change: true } }))._sum.change ?? 0;
-    expect(returnedUnits).toBe(1);
+    // The other path's return is counted once; nothing went back into stock yet (it waits for the parcel — owner decision M2).
+    expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: line.id } })).returnedQuantity).toBe(1);
+    expect(await prisma.stockMovement.count({ where: { orderId: order.id, variantId: line.variantId, reason: "RETURN" } })).toBe(0);
   });
 });
 

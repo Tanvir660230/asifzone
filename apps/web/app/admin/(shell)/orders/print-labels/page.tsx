@@ -24,6 +24,7 @@ import { LabelCaptureHost } from "@/components/orders/label-capture-host";
 import { PrintLabelPreview } from "@/components/orders/print-label-preview";
 import { PrintLabelOptions, type PrintOptions, type CaptureState, type FitReport } from "@/components/orders/print-label-options";
 import { loadStoredPrintPrefs, saveStoredPrintPrefs } from "@/lib/label-print-prefs";
+import { ordersListHref } from "@/lib/admin/orders-return";
 
 function buildFilename(orderCount: number): string {
   const now = new Date();
@@ -34,8 +35,11 @@ function buildFilename(orderCount: number): string {
 
 export default function PrintLabelsPage() {
   const [ids, setIds] = useState<string[] | null>(null);
+  // Back to the Orders list as it was left (page, filters, sort), not page 1 of everything.
+  const [backHref, setBackHref] = useState("/admin/orders");
 
   useEffect(() => {
+    setBackHref(ordersListHref());
     const raw = sessionStorage.getItem(adminOrdersApi.PRINT_LABEL_ORDER_IDS_KEY);
     try {
       const parsed = raw ? JSON.parse(raw) : [];
@@ -317,7 +321,7 @@ export default function PrintLabelsPage() {
         </div>
         <p className="text-ink-500">No orders selected for printing.</p>
         <Link
-          href="/admin/orders"
+          href={backHref}
           className="inline-flex items-center gap-1 text-sm font-medium text-brass-600 hover:underline"
         >
           <ArrowLeft size={14} /> Back to Orders
@@ -334,7 +338,9 @@ export default function PrintLabelsPage() {
       <div className="sticky top-14 z-10 border-b border-ink-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-4 sm:px-10">
           <Link
-            href="/admin/orders"
+            href={backHref}
+            aria-label="Back to Orders"
+            data-testid="print-labels-back"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-500 transition hover:bg-ink-100 hover:text-ink-900"
           >
             <ArrowLeft size={18} />

@@ -173,6 +173,10 @@ export const NAV_NODES: readonly NavNode[] = [
     order: 1,
     keywords: ["exchange", "refund", "returns"],
   },
+  // Order Operations phase 4: scan parcels out to the courier and back in (physical handover / receipt only).
+  { id: "orders.dispatch", label: "Dispatch scan", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/dispatch", capability: "parcels.scan", order: 1.5, keywords: ["scan", "barcode", "handover", "courier", "pickup"] },
+  { id: "orders.returns-in", label: "Returns in", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/returns-in", capability: "parcels.scan", order: 1.6, keywords: ["scan", "barcode", "return", "received", "parcel back"] },
+  { id: "orders.history", label: "Order history", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/history", capability: "orders.view", order: 1.7, keywords: ["history", "archive", "completed", "finished", "delivered", "cancelled", "old orders", "past orders"] },
   { id: "orders.new", label: "New order", kind: "create", parent: "orders", domain: "operate", route: "/admin/orders/new", capability: "orders.manage", order: 2, visibility: "hidden" },
   { id: "orders.print-labels", label: "Print labels", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/print-labels", capability: "orders.view", order: 3, visibility: "hidden" },
   { id: "orders.detail", label: term("order", 1), kind: "detail", parent: "orders", domain: "operate", route: "/admin/orders/[id]", capability: "orders.view", order: 4, visibility: "hidden" },

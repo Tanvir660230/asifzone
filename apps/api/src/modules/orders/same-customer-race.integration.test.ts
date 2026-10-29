@@ -44,7 +44,8 @@ describe("one customer's checkout racing their own store-credit return", () => {
         ...Array.from({ length: 4 }, () => order(1)),
       ]);
       for (const r of results) if (r.status === "rejected") failures.push(String((r.reason as Error)?.message ?? r.reason).slice(0, 160));
-      expected += results.slice(0, 4).filter((r) => r.status === "fulfilled").length - results.slice(4).filter((r) => r.status === "fulfilled").length;
+      // A recorded return changes no stock until its parcel is received (owner decision M2); only the new orders take stock.
+      expected -= results.slice(4).filter((r) => r.status === "fulfilled").length;
     }
     expect(failures).toEqual([]);
     expect((await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } })).stock).toBe(expected);

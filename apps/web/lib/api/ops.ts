@@ -32,6 +32,26 @@ export function getReliabilityReport() {
   return apiFetch<ReliabilityReport>("/api/v1/ops/reliability");
 }
 
+/** Order Operations Phase 0: is the Steadfast webhook proven healthy, and at what pace does the courier-status poll run
+ * (GET /api/v1/ops/courier-health, ops.read). Counts and reasons only — never a token or a request body. */
+export interface CourierHealthReport {
+  generatedAt: string;
+  webhook: {
+    last48h: {
+      state: "HEALTHY" | "NOT_PROVEN" | "DEGRADED";
+      checks: Array<{ id: string; ok: boolean; detail: string }>;
+      stats: { lastValidEventAt: string | null; rejections: number; openParcels: number; overdueParcels: number };
+    };
+    lastWeek: { state: "HEALTHY" | "NOT_PROVEN" | "DEGRADED" };
+    lastRejection: { reason: string; at: string } | null;
+  };
+  polling: { level: number; maxLevel: number; openParcels: number; overdueParcels: number };
+}
+
+export function getCourierHealth() {
+  return apiFetch<CourierHealthReport>("/api/v1/ops/courier-health");
+}
+
 /** Site health: one kind of production failure, grouped (GET /api/v1/ops/errors, ops.read). */
 export interface ErrorGroupRow {
   id: string;

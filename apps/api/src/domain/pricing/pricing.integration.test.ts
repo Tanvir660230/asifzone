@@ -17,7 +17,7 @@ import {
   stockOf,
   trackOrder,
 } from "../../test-fixtures";
-import { adjustOrderPrice, createOrder, deriveOrderPricing, updateOrderStatus } from "../../modules/orders/order.service";
+import { adjustOrderPrice, createOrder, deriveOrderPricing, receiveReturnedParcel, updateOrderStatus } from "../../modules/orders/order.service";
 import { refundOrderPayment, settlePaymentSession } from "../../modules/payments/payment.service";
 import { reviewReturnRequest } from "../../modules/return-requests/return-request.service";
 import { pricingConfigDrift } from "./pricing-config";
@@ -266,6 +266,8 @@ describe("flash-sale stock limit (D4)", () => {
     await updateOrderStatus(b.id, { status: "DELIVERED" }, admin);
     expect(await flashOf()).toBeNull();
     await updateOrderStatus(b.id, { status: "RETURNED" }, admin);
+    expect(await flashOf()).toBeNull(); // returned, but the goods aren't back yet
+    await receiveReturnedParcel(b.id, admin, {});
     expect((await flashOf())?.remaining).toBe(2);
   });
 
@@ -349,7 +351,9 @@ describe("flash-sale quota lifecycle (D4, PRICING_INVARIANTS §4)", () => {
     expect(await flashOf()).toBeNull(); // a completed sale keeps consuming the quota
     await refundOrderPayment(order.id, { amount: 100 }, admin); // money back, goods not back
     expect(await flashOf()).toBeNull();
-    await updateOrderStatus(order.id, { status: "RETURNED" }, admin); // goods back in stock
+    await updateOrderStatus(order.id, { status: "RETURNED" }, admin); // the return decided — goods still on their way
+    expect(await flashOf()).toBeNull();
+    await receiveReturnedParcel(order.id, admin, {}); // goods back in stock
     expect((await flashOf())?.remaining).toBe(1);
     const kept = await prisma.orderItem.findMany({ where: { orderId: order.id } });
     expect(kept.map((i) => [Number(i.priceSnapshot), i.flashSaleItemId !== null, i.returnedQuantity])).toEqual([[800, true, 1]]);

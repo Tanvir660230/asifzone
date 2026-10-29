@@ -33,10 +33,12 @@ export const PERMISSIONS = [
   "orders.adjust_price",
   "orders.export",
   "orders.delete", // delete / restore / permanent
+  "orders.escalations", // decide on an escalated confirmation: one more try, phone fixed (Order Operations phase 3; OWNER + MANAGER)
   "payments.read",
   "payments.record", // manual payment
   "refunds.manage", // record / complete refunds
-  "returns.manage", // review returns & exchanges
+  "parcels.scan", // dispatch and return scanning — physical handover / receipt only, never stock (Order Operations phase 4)
+  "returns.manage", // review returns & exchanges; receive a parcel back and inspect it (the step that restocks — D-OO1)
   "courier.manage",
   // courier cost reconciliation (docs/COURIER_COSTS.md): shipment charges and what customers paid the rider
   "courier_costs.read",
@@ -103,6 +105,8 @@ export const OWNER_ONLY_PERMISSIONS = [
   "ai.use",
   "ai.execute",
   "orders.delete",
+  // Phase 3 confirmation: STAFF makes the calls; an escalated order (unreachable, wrong number, too old) is decided above.
+  "orders.escalations",
   "storefront.configure",
   "settings.manage",
   "ops.repair",

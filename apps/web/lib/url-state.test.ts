@@ -38,6 +38,14 @@ describe("URL-state grammar", () => {
     expect(nextSearch(schema, new URLSearchParams("size=50&page=2"), { size: 20 }).toString()).toBe("");
   });
 
+  it("rounds an old link's page size up to an offered one when asked", () => {
+    const sized = { size: urlParam.size([25, 50, 100, 200], 50, { roundUp: true }) };
+    const sizeOf = (q: string) => parseUrlState(sized, new URLSearchParams(q)).size;
+    expect([sizeOf("size=10"), sizeOf("size=20"), sizeOf("size=25"), sizeOf("size=60"), sizeOf("size=500"), sizeOf(""), sizeOf("size=abc")]).toEqual([25, 25, 25, 100, 200, 50, 50]);
+    // Without roundUp an unknown size still falls back to the default.
+    expect(parseUrlState(schema, new URLSearchParams("size=30")).size).toBe(20);
+  });
+
   it("leaves the Product Builder's step alone unless asked", () => {
     expect(nextSearch(schema, new URLSearchParams("step=media"), { q: "x" }).get("step")).toBe("media");
   });

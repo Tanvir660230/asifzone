@@ -22,7 +22,7 @@ import { AppError } from "../../lib/app-error";
 import { signCustomerAccessToken } from "../../lib/customer-jwt";
 import { CUSTOMER_ACCESS_COOKIE } from "../../lib/cookies";
 import { asOwner, assertInventoryInvariants, checkout, cleanupFixtures, createStockedProduct, ownerId, RUN, stockOf, trackOrder } from "../../test-fixtures";
-import { createOrder, updateOrderStatus } from "./order.service";
+import { createOrder, receiveReturnedParcel, updateOrderStatus } from "./order.service";
 import { applyOrderModification, previewOrderModification } from "./order-modification.service";
 import { cancelOwnOrder, previewItemReturn, recordItemReturn } from "./order-adjustments.service";
 import { initiatePendingPayment, markPaymentSessionFailed, settlePaymentSession } from "../payments/payment.service";
@@ -480,7 +480,7 @@ describe("item-level return on a delivered order (§8, §11)", () => {
       {
         items: [
           { orderItemId: lineB.id, quantity: 1, restock: true },
-          { orderItemId: lineC.id, quantity: 1, restock: false },
+          { orderItemId: lineC.id, quantity: 1, restock: true },
         ],
         reason: "Didn't fit",
         note: null,
@@ -491,6 +491,10 @@ describe("item-level return on a delivered order (§8, §11)", () => {
     );
     expect(Number(req.compensationAmount)).toBe(1350 + 800);
     expect(await balanceOf(c.id)).toBe(2150);
+    // The credit is given now; the stock waits for the parcel (owner decision M2). C's damage is judged at receipt.
+    expect(await stockOf(b.variants[0]!.id)).toBe(4);
+    expect(await stockOf(cc.variants[0]!.id)).toBe(4);
+    await receiveReturnedParcel(order.id, admin, { lines: [{ orderItemId: lineB.id, quantity: 1 }, { orderItemId: lineC.id, quantity: 1, damaged: 1 }] });
     expect(await stockOf(b.variants[0]!.id)).toBe(5);
     expect(await stockOf(cc.variants[0]!.id)).toBe(4);
     await assertInventoryInvariants(b.variants[0]!.id);
@@ -515,6 +519,8 @@ describe("item-level return on a delivered order (§8, §11)", () => {
     const line = (await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } })).id;
     await recordItemReturn(order.id, { items: [{ orderItemId: line, quantity: 2, restock: true }], reason: "All back", note: null, compensation: "STORE_CREDIT" }, admin);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("RETURNED");
+    expect(await stockOf(variants[0]!.id)).toBe(3);
+    await receiveReturnedParcel(order.id, admin, {});
     expect(await stockOf(variants[0]!.id)).toBe(5);
   });
 });
@@ -577,11 +583,13 @@ describe("size exchange (§9)", () => {
     return { c, variants, order, request };
   }
 
-  it("same price: free exchange, M restocked, L taken", async () => {
+  it("same price: free exchange, L taken now, M restocked when it comes back", async () => {
     const { c, variants, request } = await deliveredWith(1500, 1500);
     await reviewReturnRequest(request.id, { status: "APPROVED", adminNote: null }, admin);
-    expect(await stockOf(variants[0]!.id)).toBe(5);
+    expect(await stockOf(variants[0]!.id)).toBe(4);
     expect(await stockOf(variants[1]!.id)).toBe(4);
+    await receiveReturnedParcel(request.orderId, admin, {});
+    expect(await stockOf(variants[0]!.id)).toBe(5);
     expect(await balanceOf(c.id)).toBe(0);
     const rr = await prisma.returnRequest.findUniqueOrThrow({ where: { id: request.id } });
     trackOrder(rr.exchangeOrderId!);

@@ -5,7 +5,7 @@ import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { cacheDel, cacheDelByPrefix } from "../../config/redis";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, trackOrder } from "../../test-fixtures";
-import { updateOrderStatus } from "../../modules/orders/order.service";
+import { receiveReturnedParcel, updateOrderStatus } from "../../modules/orders/order.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { reviewReturnRequest } from "../../modules/return-requests/return-request.service";
 import { completeRefund, recordRefund } from "../payments/payment-ledger.service";
@@ -71,6 +71,9 @@ beforeAll(async () => {
   ids.exchangedOriginal = original.id;
   ids.replacement = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } })).exchangeOrderId!;
   trackOrder(ids.replacement);
+  // Physical-return metrics (returns, units returned, returned cost) count from the parcel's receipt (owner decision M2).
+  await receiveReturnedParcel(ids.returned, admin, {});
+  await receiveReturnedParcel(ids.exchangedOriginal, admin, {});
 
   facts = await loadOrderFacts(Object.values(ids), "BDT");
 });

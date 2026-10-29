@@ -24,7 +24,7 @@ import {
   Trash2,
   Truck,
 } from "lucide-react";
-import { allowedNextOrderStatuses, courierBookingBlocker, type AdminOrderListItem, type OrderListItemSummary } from "@clothing-brand/shared";
+import { allowedNextOrderStatuses, courierBookingBlocker, type AdminOrderListItem, type ListDensity, type OrderListItemSummary } from "@clothing-brand/shared";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -39,7 +39,7 @@ import { useOrderRisk } from "./use-order-risk";
 import type { OrderRisk } from "@/lib/api/admin-analytics";
 import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
-import type { SortColumn } from "./use-orders-list-state";
+import type { OrderOptionalColumn, SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
 import { useShortcut } from "@/hooks/use-shortcut";
 
@@ -59,7 +59,23 @@ export interface OrdersListProps {
   commands: OrderCommands;
   perms: OrderPermissions;
   empty: ReactNode;
+  /** Row height (plan M10) — the table's cell padding; the phone cards keep one size. */
+  density?: ListDensity;
+  /** Optional columns this admin has hidden. */
+  hiddenColumns?: ReadonlySet<OrderOptionalColumn>;
+  /** Order history: no selection, no status moves, no booking — open, print and invoice only. Corrections happen on the
+   * order itself, through the workflows that keep their own trail (refunds, returns, payments). */
+  readOnly?: boolean;
 }
+
+/** Cell padding per density: compact fits about twice the rows of comfortable on one screen. */
+const DENSITY_PAD: Record<ListDensity, string> = {
+  compact: "px-3 py-1",
+  standard: "px-3 py-2.5",
+  comfortable: "px-3 py-3.5",
+};
+/** Every column the table can draw: checkbox, order, product, customer, payment, total, status, courier, placed, actions. */
+const ALL_COLUMNS = 10;
 
 function SortableHeader({ column, label, props, align, className }: { column: SortColumn; label: string; props: OrdersListProps; align?: "right"; className?: string }) {
   const active = props.sortBy === column;
@@ -86,7 +102,7 @@ function SortableHeader({ column, label, props, align, className }: { column: So
 }
 
 /** First line item at a glance; links to the live storefront product (opens a new tab). */
-function ProductCell({ summary }: { summary: OrderListItemSummary }) {
+function ProductCell({ summary, compact = false }: { summary: OrderListItemSummary; compact?: boolean }) {
   if (!summary.firstItem) return <span className="text-xs text-ink-400">—</span>;
   const { name, size, color, imageUrl, productSlug } = summary.firstItem;
   const extra = summary.totalItems - 1;
@@ -94,7 +110,9 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
   const subtitle = extra > 0 ? `${variant ? `${variant} · ` : ""}+${extra} more item${extra > 1 ? "s" : ""}` : variant;
   const content = (
     <>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50">
+      <span
+        className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50", compact ? "h-6 w-6" : "h-9 w-9")}
+      >
         {imageUrl ? (
           <Thumbnail src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
@@ -103,7 +121,7 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
       </span>
       <span className="min-w-0">
         <span className="block max-w-[180px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline">{name}</span>
-        {subtitle && <span className="block max-w-[180px] truncate text-xs text-ink-400">{subtitle}</span>}
+        {subtitle && !compact && <span className="block max-w-[180px] truncate text-xs text-ink-400">{subtitle}</span>}
       </span>
     </>
   );
@@ -195,7 +213,7 @@ function StatusPicker({ order, commands, canManage, canCancel }: { order: AdminO
 
 function rowActions(
   order: AdminOrderListItem,
-  { commands, perms, onOpen, navigate }: Pick<OrdersListProps, "commands" | "perms" | "onOpen"> & { navigate: (href: string) => void },
+  { commands, perms, onOpen, navigate, readOnly }: Pick<OrdersListProps, "commands" | "perms" | "onOpen" | "readOnly"> & { navigate: (href: string) => void },
 ): DropdownMenuItem[] {
   const view: DropdownMenuItem = { label: "Quick view", icon: Eye, onClick: () => onOpen(order.id) };
   const page: DropdownMenuItem = { label: "Open full page", icon: ExternalLink, onClick: () => navigate(`/admin/orders/${order.id}`) };
@@ -213,6 +231,7 @@ function rowActions(
   const items: DropdownMenuItem[] = [view, page];
   items.push({ label: "Print label", icon: Printer, onClick: () => commands.printLabels([order.id]) });
   items.push({ label: "Invoice", icon: FileText, onClick: () => window.open(`/admin/orders/${order.id}/invoice`, "_blank") });
+  if (readOnly) return items;
   if (perms.courier) {
     if (!courierBookingBlocker(order)) items.push({ label: `Book with ${COURIER_PROVIDER_LABEL}`, icon: Truck, onClick: () => commands.bookCourier(order) });
     else if (order.courierConsignmentId) items.push({ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.syncCourier(order) });
@@ -226,7 +245,7 @@ function rowActions(
   return items;
 }
 
-function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<OrdersListProps, "commands" | "perms" | "onOpen">) {
+function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<OrdersListProps, "commands" | "perms" | "onOpen" | "readOnly">) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const router = useRouter();
@@ -244,6 +263,18 @@ function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<
         label={`Actions for ${order.orderNumber}`}
       />
     </>
+  );
+}
+
+/** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
+function MovedLine({ order }: { order: AdminOrderListItem }) {
+  const moved = order.statusChangedAt;
+  // Same transaction as the order itself (a phone order confirmed on creation) = no separate move to show.
+  if (!moved || new Date(moved).getTime() - new Date(order.createdAt).getTime() < 1_000) return null;
+  return (
+    <span className="mt-0.5 block text-xs text-fg-subtle" data-testid="order-moved">
+      {orderStatusShortLabel(order.status)} {formatStoreDate(moved)} · {formatStoreTime(moved)}
+    </span>
   );
 }
 
@@ -294,7 +325,12 @@ function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListI
 
 /** ≥xl: the data table. Below xl: cards — a compressed table on a touch tablet reads worse than fewer, larger cards. */
 export function OrdersList(props: OrdersListProps) {
-  const { items, isLoading, selected, onToggle, onToggleAll, onOpen, commands, perms, empty } = props;
+  const { items, isLoading, selected, onToggle, onToggleAll, onOpen, commands, empty, density = "standard", hiddenColumns, readOnly = false } = props;
+  // Read-only (Order history): nothing that changes an order is offered — no status picker, booking or confirm.
+  const perms = readOnly ? { ...props.perms, manage: false, cancel: false, courier: false, courierNotConnected: false, trash: false } : props.perms;
+  const pad = DENSITY_PAD[density];
+  const shows = (column: OrderOptionalColumn) => !hiddenColumns?.has(column);
+  const columnCount = ALL_COLUMNS - (hiddenColumns?.size ?? 0) - (readOnly ? 1 : 0);
   // A row the pointer rests on (120 ms — not one it sweeps across) or that takes keyboard focus has its detail fetched,
   // so Quick view opens already filled in.
   const queryClient = useQueryClient();
@@ -328,15 +364,17 @@ export function OrdersList(props: OrdersListProps) {
   useShortcut("list.next", () => setActiveIndex((i) => Math.min(i + 1, items.length - 1)), keys);
   useShortcut("list.prev", () => setActiveIndex((i) => Math.max(i - 1, 0)), keys);
   useShortcut("list.open", () => active && onOpen(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
-  useShortcut("list.select", () => active && onToggle(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
+  useShortcut("list.select", () => active && onToggle(active.id), { enabled: keys.enabled && onTable && Boolean(active) && !readOnly });
 
   return (
     <>
-      <TableContainer className="mt-4 hidden xl:block">
+      {/* Long pages (up to 200 rows) scroll inside the frame, so the column titles stay in view. */}
+      <TableContainer className="mt-4 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
           tabIndex={0}
+          data-density={density}
           className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
           onFocus={(e) => {
             setFocused(true);
@@ -347,27 +385,29 @@ export function OrdersList(props: OrdersListProps) {
             setOnTable(false);
           }}
         >
-          <TableHead>
+          <TableHead className="sticky top-0 z-raised">
             <tr>
-              <TableHeaderCell className="w-10 px-3 py-2.5">
-                <Checkbox checked={allSelected} onChange={onToggleAll} aria-label="Select all orders on this page" />
-              </TableHeaderCell>
+              {!readOnly && (
+                <TableHeaderCell className="w-10 px-3 py-2.5">
+                  <Checkbox checked={allSelected} onChange={onToggleAll} aria-label="Select all orders on this page" />
+                </TableHeaderCell>
+              )}
               <SortableHeader column="orderNumber" label="Order" props={props} />
-              <TableHeaderCell className="px-3 py-2.5">Product</TableHeaderCell>
+              {shows("product") && <TableHeaderCell className="px-3 py-2.5">Product</TableHeaderCell>}
               <SortableHeader column="customerName" label="Customer" props={props} />
-              <SortableHeader column="paymentStatus" label="Payment" props={props} />
-              <SortableHeader column="total" label="Total" props={props} align="right" />
+              {shows("payment") && <SortableHeader column="paymentStatus" label="Payment" props={props} />}
+              {shows("total") && <SortableHeader column="total" label="Total" props={props} align="right" />}
               <SortableHeader column="status" label="Status" props={props} />
-              <TableHeaderCell className="px-3 py-2.5">Courier</TableHeaderCell>
-              <SortableHeader column="createdAt" label="Placed" props={props} className="hidden 2xl:table-cell" />
+              {shows("courier") && <TableHeaderCell className="px-3 py-2.5">Courier</TableHeaderCell>}
+              {shows("placed") && <SortableHeader column="createdAt" label="Placed" props={props} className="hidden 2xl:table-cell" />}
               <TableHeaderCell align="right" className="px-3 py-2.5">
                 <span className="sr-only">Actions</span>
               </TableHeaderCell>
             </tr>
           </TableHead>
           <tbody>
-            {isLoading && <TableSkeleton rows={6} cols={10} />}
-            {!isLoading && items.length === 0 && <TableMessageRow colSpan={10}>{empty}</TableMessageRow>}
+            {isLoading && <TableSkeleton rows={6} cols={columnCount} />}
+            {!isLoading && items.length === 0 && <TableMessageRow colSpan={columnCount}>{empty}</TableMessageRow>}
             {items.map((order, index) => (
               <TableRow
                 key={order.id}
@@ -377,10 +417,12 @@ export function OrdersList(props: OrdersListProps) {
                 data-active={index === activeIndex || undefined}
                 {...warm(order.id)}
               >
-                <TableCell className="px-3 py-2.5">
-                  <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
-                </TableCell>
-                <TableCell className="whitespace-nowrap px-3 py-2.5">
+                {!readOnly && (
+                  <TableCell className={pad}>
+                    <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
+                  </TableCell>
+                )}
+                <TableCell className={cn("whitespace-nowrap", pad)}>
                   <span className="flex items-center gap-1.5">
                     <button type="button" onClick={() => onOpen(order.id)} className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline">
                       {order.orderNumber}
@@ -388,34 +430,48 @@ export function OrdersList(props: OrdersListProps) {
                     <AttentionMarker order={order} />
                   </span>
                   {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. */}
-                  <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
-                    {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
-                  </span>
+                  {shows("placed") && density !== "compact" && (
+                    <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
+                      {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
+                    </span>
+                  )}
+                  {/* Sorted by latest activity, an order placed days ago can sit at the top — say when it last moved. */}
+                  {density !== "compact" && <MovedLine order={order} />}
                 </TableCell>
-                <TableCell className="px-3 py-2.5">
-                  <ProductCell summary={order.itemsSummary} />
-                </TableCell>
-                <TableCell className="px-3 py-2.5">
+                {shows("product") && (
+                  <TableCell className={pad}>
+                    <ProductCell summary={order.itemsSummary} compact={density === "compact"} />
+                  </TableCell>
+                )}
+                <TableCell className={pad}>
                   <CustomerCell order={order} commands={commands} perms={perms} risk={risk[order.id]} />
                 </TableCell>
-                <TableCell className="px-3 py-2.5">
-                  <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
-                </TableCell>
-                <TableCell align="right" className="px-3 py-2.5 font-medium text-ink-900">
-                  {formatPrice(order.total)}
-                </TableCell>
-                <TableCell className="px-3 py-2.5">
+                {shows("payment") && (
+                  <TableCell className={pad}>
+                    <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
+                  </TableCell>
+                )}
+                {shows("total") && (
+                  <TableCell align="right" className={cn("font-medium text-ink-900", pad)}>
+                    {formatPrice(order.total)}
+                  </TableCell>
+                )}
+                <TableCell className={pad}>
                   <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
                 </TableCell>
-                <TableCell className="px-3 py-2.5">
-                  <CourierCell order={order} />
-                </TableCell>
-                <TableCell className="hidden whitespace-nowrap px-3 py-2.5 text-ink-500 2xl:table-cell">
-                  <span className="block">{formatStoreDate(order.createdAt)}</span>
-                  <span className="block text-xs text-ink-400">{formatStoreTime(order.createdAt)}</span>
-                </TableCell>
-                <TableCell align="right" className="px-3 py-2.5">
-                  <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} />
+                {shows("courier") && (
+                  <TableCell className={pad}>
+                    <CourierCell order={order} />
+                  </TableCell>
+                )}
+                {shows("placed") && (
+                  <TableCell className={cn("hidden whitespace-nowrap text-ink-500 2xl:table-cell", pad)}>
+                    <span className="block">{formatStoreDate(order.createdAt)}</span>
+                    <span className="block text-xs text-ink-400">{formatStoreTime(order.createdAt)}</span>
+                  </TableCell>
+                )}
+                <TableCell align="right" className={pad}>
+                  <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} readOnly={readOnly} />
                 </TableCell>
               </TableRow>
             ))}
@@ -425,11 +481,15 @@ export function OrdersList(props: OrdersListProps) {
 
       <div className="mt-3 xl:hidden" aria-busy={props.isFetching || undefined}>
         {!isLoading && items.length > 0 && (
-          <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-[13px] text-fg-muted">
-            <Checkbox checked={allSelected} onChange={onToggleAll} />
-            Select all on this page
-            <span className="ml-auto tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</span>
-          </label>
+          readOnly ? (
+            <p className="mb-1.5 flex min-h-[40px] items-center px-1 text-[13px] tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</p>
+          ) : (
+            <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-[13px] text-fg-muted">
+              <Checkbox checked={allSelected} onChange={onToggleAll} />
+              Select all on this page
+              <span className="ml-auto tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</span>
+            </label>
+          )
         )}
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3">
           {isLoading &&
@@ -455,9 +515,11 @@ export function OrdersList(props: OrdersListProps) {
                     the order; the checkbox beside it selects for a bulk action. */}
                 <div className="flex items-start gap-1">
                   {/* 44px hit area around the 16px box: selecting cards for a bulk action is a thumb job. */}
-                  <label className="-my-2.5 -ml-2.5 flex h-11 w-10 shrink-0 cursor-pointer items-center justify-center">
-                    <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
-                  </label>
+                  {!readOnly && (
+                    <label className="-my-2.5 -ml-2.5 flex h-11 w-10 shrink-0 cursor-pointer items-center justify-center">
+                      <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
+                    </label>
+                  )}
                   <button type="button" onClick={() => onOpen(order.id)} className="min-w-0 flex-1 text-left">
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="truncate text-[15px] font-semibold text-fg">{order.customerName}</span>
@@ -513,7 +575,7 @@ export function OrdersList(props: OrdersListProps) {
                       <Truck size={13} /> Book courier
                     </Button>
                   ) : null}
-                  <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} />
+                  <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} readOnly={readOnly} />
                 </div>
               </article>
             );

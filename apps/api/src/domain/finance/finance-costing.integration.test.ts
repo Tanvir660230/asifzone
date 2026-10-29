@@ -257,6 +257,9 @@ describe("contention and rollback", () => {
       ...first.map((o, i) => recordItemReturn(o.id, { items: [{ orderItemId: lines[i]!.id, quantity: 1, restock: true }], reason: "size", compensation: "STORE_CREDIT" }, admin, `p4b-race-${o.id}`)),
       ...Array.from({ length: 4 }, () => own(1)),
     ]);
+    expect(await stockOf(R)).toBe(40 - 8 - 4); // the 4 returns wait for their parcels (owner decision M2)
+    expect(await stateOf(R)).toMatchObject({ valuedQty: 28, value: 2_800, deficitQty: 0 });
+    for (const o of first) await receiveReturnedParcel(o.id, admin, {});
     expect(await stockOf(R)).toBe(40 - 8 + 4 - 4);
     expect(await stateOf(R)).toMatchObject({ valuedQty: 32, value: 3_200, deficitQty: 0 });
     const r = await runReconciliation({ checks: ["inventory.quantity_vs_valuation", "inventory.order_cost_links"] }, SYSTEM);
@@ -332,10 +335,12 @@ describe("units coming back keep the cost they left at", () => {
     await projectOrder(o.id);
     const [line] = await lineOf(o.id);
     await recordItemReturn(o.id, { items: [{ orderItemId: line!.id, quantity: 1, restock: true }], reason: "size", compensation: "STORE_CREDIT" }, admin, `p4b-ret1-${o.id}`);
-    await recordItemReturn(o.id, { items: [{ orderItemId: line!.id, quantity: 1, restock: false }], reason: "torn", compensation: "STORE_CREDIT" }, admin, `p4b-ret2-${o.id}`);
+    await recordItemReturn(o.id, { items: [{ orderItemId: line!.id, quantity: 1, restock: true }], reason: "torn", compensation: "STORE_CREDIT" }, admin, `p4b-ret2-${o.id}`);
+    // Both come back; one is torn — written off at receipt (owner decision M2).
+    await receiveReturnedParcel(o.id, admin, { lines: [{ orderItemId: line!.id, quantity: 2, damaged: 1 }] });
     const entries = await entriesOf(D);
     const returns = entries.filter((e) => e.note?.startsWith("RETURN"));
-    expect(returns.map((e) => e.unitCostMinor)).toEqual([10_000, 10_000]);
+    expect(returns.map((e) => [e.unitCostMinor, e.qtyChange])).toEqual([[10_000, 2]]); // one parcel, both units, at the line's cost
     const damaged = entries.filter((e) => e.note?.startsWith("DAMAGED"));
     expect(damaged.map((e) => [e.unitCostMinor, e.qtyChange])).toEqual([[10_000, -1]]);
     const cancel = entries.find((e) => e.note?.startsWith("CANCELLATION"))!;
@@ -409,6 +414,7 @@ describe("order modification and exchange", () => {
     await reviewReturnRequest(req.id, { status: "APPROVED" }, admin);
     const replacementId = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } })).exchangeOrderId!;
     trackOrder(replacementId);
+    await receiveReturnedParcel(original.id, admin, {}); // the original goes back into stock when it arrives
     const [rl] = await lineOf(replacementId);
     expect(rl).toMatchObject({ variantId: pool.G!.id, unitCostSnapshot: 20_000, unitCostSource: "INVENTORY" });
     expect((await prisma.inventoryValuationEntry.findUniqueOrThrow({ where: { stockMovementId: rl!.costMovementId! } })).unitCostMinor).toBe(20_000);

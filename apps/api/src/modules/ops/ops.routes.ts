@@ -8,6 +8,7 @@ import { validate } from "../../middlewares/validate";
 import { recordAudit } from "../../lib/audit";
 import { getErrorGroup, listErrorGroups, resolveErrorGroup } from "./errors.service";
 import { summarizeVitals } from "./web-vitals.service";
+import { courierHealthReport } from "../courier/courier-health.service";
 
 /** Phase 9: GET /api/v1/ops/reliability — what is stuck, failed or inconsistent (read-only). */
 export const opsRouter = Router();
@@ -35,6 +36,15 @@ opsRouter.get(
   "/capabilities", requirePermission("ops.read"),
   asyncHandler(async (_req, res) => {
     res.json({ capabilities: capabilities() });
+  }),
+);
+
+/** Order Operations Phase 0: GET /api/v1/ops/courier-health — is the Steadfast webhook proven healthy (each check, last 48 h
+ * and the week), refused calls (reason and time only), and the courier-status poll's pace. Read-only. ops.read. */
+opsRouter.get(
+  "/courier-health", requirePermission("ops.read"),
+  asyncHandler(async (_req, res) => {
+    res.json(await courierHealthReport());
   }),
 );
 

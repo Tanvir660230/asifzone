@@ -27,6 +27,10 @@ export const attentionKeys = {
 };
 
 /** Saved list views (DR-18), per list. */
+export const listPreferenceKeys = {
+  list: (listKey: string) => ["list-preferences", listKey] as const,
+};
+
 export const savedViewKeys = {
   list: (listKey: string) => ["saved-views", listKey] as const,
 };

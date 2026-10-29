@@ -21,7 +21,7 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { issueStoreCreditFromOrder, lockedPosition, projectedPosition, requestRefund } from "../../domain/payments/payment-ledger.service";
-import { notifyReplenished, notifyStockMoved, releaseOrderLines, writeOffReturnedUnits } from "../inventory/inventory.service";
+import { recordReturnDecision } from "../inventory/inventory.service";
 import { closeOpenPaymentRequests } from "../payments/payment-requests";
 import { loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
 import { cancelAwaitingModifications } from "./order-modification.service";
@@ -104,8 +104,10 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
   }
   const currency = await getCurrency();
   const m = (v: unknown) => fromMajor(String(v ?? 0), currency);
-  let replenished: string[] = [];
-  let moved: string[] = [];
+  // Owner decision M2: whether a unit can be sold again is judged when the parcel is received, never at the decision.
+  if (input.items.some((i) => i.restock === false)) {
+    throw new AppError(400, "Record damaged units when the parcel is received back, not with the return", { code: "DAMAGE_AT_RECEIPT" });
+  }
   let transition: OrderTransitionOutcome | null = null;
   try {
     const request = await prisma.$transaction(async (tx) => {
@@ -118,26 +120,14 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
       if (!order.customerId) throw new AppError(409, "This order isn't linked to a customer — link it before recording a return", { code: "RETURN_NOT_ALLOWED" });
       const customerId = order.customerId;
 
-      const byId = new Map(order.items.map((i) => [i.id, i]));
-      const lines = valueItemReturn(order, input, currency);
-
-      // Stock: every returned unit comes back (RETURN, counted in returnedQuantity); the unsellable ones are then written off.
-      const released = await releaseOrderLines(tx, orderId, "return", {
-        adminId,
-        note: `Item return: ${input.reason}`,
-        lines: lines.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity })),
-      });
+      // The return is recorded now (counted in returnedQuantity — the payment position and sales read it); its units go back
+      // into stock, or are written off, only when the parcel is received and inspected (receiveReturnedParcel).
+      const lines = valueItemReturn(order, input, currency).map((l) => ({ ...l, restocked: 0, writtenOff: 0 }));
+      const decided = await recordReturnDecision(tx, orderId, lines.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity })));
       for (const l of lines) {
-        const got = released.released.filter((r) => r.orderItemId === l.orderItemId).reduce((n, r) => n + r.quantity, 0);
+        const got = decided.filter((d) => d.orderItemId === l.orderItemId).reduce((n, d) => n + d.quantity, 0);
         if (got !== l.quantity) throw AppError.conflict("These items were returned by another request just now — reload the order");
       }
-      replenished = released.replenished;
-      moved = released.released.map((r) => r.variantId);
-      const recordedCost = new Map((await tx.orderItem.findMany({ where: { orderId }, select: { id: true, unitCostSnapshot: true } })).map((i) => [i.id, i.unitCostSnapshot]));
-      const writeOffs = lines
-        .filter((l) => l.writtenOff > 0)
-        .map((l) => ({ variantId: byId.get(l.orderItemId)!.variantId, quantity: l.writtenOff, unitCostMinor: recordedCost.get(l.orderItemId) ?? null }));
-      await writeOffReturnedUnits(tx, order.orderNumber, writeOffs, { adminId, note: input.reason });
 
       const value = lines.reduce((n, l) => n + m(l.value).amount, 0);
       const valueMoney = { amount: value, currency };
@@ -195,16 +185,14 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
         },
       });
 
-      // Everything came back: the order is RETURNED (T7 — nothing left to restock; points fully reversed).
-      const after = await tx.orderItem.findMany({ where: { orderId }, select: { quantity: true, restockedQuantity: true } });
-      if (order.status === "DELIVERED" && after.every((i) => i.restockedQuantity >= i.quantity)) {
+      // Every unit is returned: the order is RETURNED (T7 — the return is already recorded; points fully reversed).
+      const after = await tx.orderItem.findMany({ where: { orderId }, select: { quantity: true, returnedQuantity: true } });
+      if (order.status === "DELIVERED" && after.every((i) => i.returnedQuantity >= i.quantity)) {
         transition = await applyOrderTransition(tx, orderId, { status: "RETURNED", note: "Every item has been returned" }, { adminId });
       }
       return tx.returnRequest.findUniqueOrThrow({ where: { id: request.id } });
     });
     if (transition) await runTransitionSideEffects(transition);
-    notifyReplenished(replenished);
-    notifyStockMoved(moved);
     return request;
   } catch (err) {
     if (idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -218,7 +206,7 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
 type OrderWithItems = Prisma.OrderGetPayload<{ include: { items: true } }>;
 type ValuedLine = Pick<
   OrderWithItems["items"][number],
-  "id" | "quantity" | "restockedQuantity" | "priceSnapshot" | "bundleDiscountAllocated" | "couponDiscountAllocated" | "productNameSnapshot" | "sizeSnapshot" | "colorSnapshot"
+  "id" | "quantity" | "restockedQuantity" | "returnedQuantity" | "priceSnapshot" | "bundleDiscountAllocated" | "couponDiscountAllocated" | "productNameSnapshot" | "sizeSnapshot" | "colorSnapshot"
 >;
 
 /** THE valuation of an item-level return (§8) — shared by the preview and the command, so what staff see before
@@ -240,7 +228,8 @@ export function valueItemReturn(order: Pick<OrderWithItems, "subtotal" | "discou
   for (const [orderItemId, want] of merged) {
     const item = byId.get(orderItemId);
     if (!item) throw AppError.badRequest(`Order item ${orderItemId} does not belong to this order`);
-    const outstanding = item.quantity - item.restockedQuantity;
+    // Units already decided as returned (on their way back) or already back in stock are no longer the customer's.
+    const outstanding = item.quantity - Math.max(item.restockedQuantity, item.returnedQuantity);
     if (want.quantity > outstanding) {
       throw new AppError(409, `Only ${outstanding} unit(s) of ${item.productNameSnapshot}${formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} can still be returned`, {
         code: "RETURN_EXCEEDS_OUTSTANDING",
@@ -289,10 +278,10 @@ export async function previewItemReturn(orderId: string, input: Pick<RecordItemR
       size: i.sizeSnapshot,
       color: i.colorSnapshot,
       ordered: i.quantity,
-      alreadyReturned: i.restockedQuantity,
-      returnable: i.quantity - i.restockedQuantity,
+      alreadyReturned: Math.max(i.restockedQuantity, i.returnedQuantity),
+      returnable: i.quantity - Math.max(i.restockedQuantity, i.returnedQuantity),
       returning: returning.get(i.id) ?? 0,
-      keptAfter: i.quantity - i.restockedQuantity - (returning.get(i.id) ?? 0),
+      keptAfter: i.quantity - Math.max(i.restockedQuantity, i.returnedQuantity) - (returning.get(i.id) ?? 0),
     })),
     compensation: {
       /** Max store credit this return would add to the customer's balance. */
@@ -301,7 +290,7 @@ export async function previewItemReturn(orderId: string, input: Pick<RecordItemR
       refund: toMajor(min({ amount: value, currency }, position.refundable)),
     },
     /** Every unit is back after this return: the order would move to Returned. */
-    returnsEverything: order.status === "DELIVERED" && order.items.every((i) => i.quantity - i.restockedQuantity - (returning.get(i.id) ?? 0) <= 0),
+    returnsEverything: order.status === "DELIVERED" && order.items.every((i) => i.quantity - Math.max(i.restockedQuantity, i.returnedQuantity) - (returning.get(i.id) ?? 0) <= 0),
   };
 }
 

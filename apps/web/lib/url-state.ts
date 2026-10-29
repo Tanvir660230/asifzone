@@ -64,8 +64,13 @@ export const urlParam = {
   },
   /** 1-based page number. */
   page: () => urlParam.int({ defaultValue: 1, min: 1 }),
-  /** Page size limited to the sizes the screen offers. */
-  size: (allowed: readonly number[], defaultValue: number) => field<number>(z.coerce.number().refine((n) => allowed.includes(n)), defaultValue, String),
+  /** Page size limited to the sizes the screen offers. With `roundUp`, a size the screen no longer offers (an old link's
+   * `size=10`) becomes the next offered size up — or the largest — instead of the default. */
+  size: (allowed: readonly number[], defaultValue: number, { roundUp = false }: { roundUp?: boolean } = {}) => {
+    const sorted = [...allowed].sort((a, b) => a - b);
+    const snap = (n: number) => (allowed.includes(n) || !roundUp ? n : (sorted.find((s) => s >= n) ?? sorted[sorted.length - 1]!));
+    return field<number>(z.coerce.number().int().positive().transform(snap).refine((n) => allowed.includes(n)), defaultValue, String);
+  },
   enum: <const V extends string>(values: readonly [V, ...V[]], defaultValue: V) => field<V>(z.enum(values as [V, ...V[]]), defaultValue, String),
   /** Optional single choice ("" = none). */
   optionalEnum: <const V extends string>(values: readonly [V, ...V[]]) =>

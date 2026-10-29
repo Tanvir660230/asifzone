@@ -16,6 +16,7 @@ import {
   type AdminCustomerListItem,
 } from "@clothing-brand/shared";
 import { BackLink } from "@/components/ui/back-link";
+import { ordersListHref } from "@/lib/admin/orders-return";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,6 +67,9 @@ function stockNote(trackInventory: boolean, v: ProductVariant, available: boolea
 
 export default function NewOrderPage() {
   const router = useRouter();
+  // Back to the Orders list as it was left (page, filters, sort) when this page was opened fresh.
+  const [backHref, setBackHref] = useState("/admin/orders");
+  useEffect(() => setBackHref(ordersListHref()), []);
   const perms = useOrderPermissions();
 
   // --- link to an existing customer (optional) — clearing it falls back to the same phone/email
@@ -276,7 +280,7 @@ export default function NewOrderPage() {
       <PageHeader
         title="New order"
         description="For phone, Facebook or walk-in orders — stock and pricing sync the same way a storefront checkout does."
-        action={<BackLink href="/admin/orders" label="Back to Orders" />}
+        action={<BackLink href={backHref} label="Back to Orders" />}
       />
 
       {perms.ready && !perms.manage && (

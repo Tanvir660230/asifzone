@@ -21,8 +21,9 @@ import { UnitStepper } from "./unit-stepper";
 
 /**
  * Item-level return on a delivered order (docs/ORDER_ADJUSTMENTS.md §8, §11 — "kept 1 of 3"). Staff pick exact units per
- * line and how many came back damaged; the server values them from the order's own allocated pricing (preview), and the
- * same valuation is recorded on confirm. The original order lines and total are never rewritten.
+ * line; the server values them from the order's own allocated pricing (preview), and the same valuation is recorded on
+ * confirm. The original order lines and total are never rewritten. The units go back into stock — or are written off as
+ * damaged — when the parcel is received on the order (owner decision M2), never here.
  */
 export function ItemReturnDialog({ order, open, onClose }: { order: Order; open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -31,8 +32,10 @@ export function ItemReturnDialog({ order, open, onClose }: { order: Order; open:
 
 function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const lines = order.items.filter((i) => i.quantity - i.restockedQuantity > 0);
-  const [qty, setQty] = useState<Record<string, { returning: number; damaged: number }>>({});
+  // Units already returned (on their way back or back in stock) are no longer the customer's to return.
+  const returnableOf = (i: Order["items"][number]) => i.quantity - Math.max(i.restockedQuantity, i.returnedQuantity);
+  const lines = order.items.filter((i) => returnableOf(i) > 0);
+  const [qty, setQty] = useState<Record<string, { returning: number }>>({});
   const [compensation, setCompensation] = useState<ReturnCompensation>("STORE_CREDIT");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -41,10 +44,7 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
 
   const input: ItemReturnPreviewInput = useMemo(
     () => ({
-      items: Object.entries(qty).flatMap(([orderItemId, q]) => [
-        ...(q.returning - q.damaged > 0 ? [{ orderItemId, quantity: q.returning - q.damaged, restock: true }] : []),
-        ...(q.damaged > 0 ? [{ orderItemId, quantity: q.damaged, restock: false }] : []),
-      ]),
+      items: Object.entries(qty).flatMap(([orderItemId, q]) => (q.returning > 0 ? [{ orderItemId, quantity: q.returning, restock: true }] : [])),
     }),
     [qty],
   );
@@ -84,11 +84,10 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
     },
   });
 
-  const set = (id: string, patch: Partial<{ returning: number; damaged: number }>) => {
+  const set = (id: string, patch: Partial<{ returning: number }>) => {
     setConfirming(false);
     setQty((cur) => {
-      const next = { returning: 0, damaged: 0, ...cur[id], ...patch };
-      next.damaged = Math.min(next.damaged, next.returning);
+      const next = { returning: 0, ...cur[id], ...patch };
       return { ...cur, [id]: next };
     });
   };
@@ -135,8 +134,8 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
       <div className="space-y-4" data-testid="item-return-dialog">
         <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle">
           {lines.map((item) => {
-            const q = qty[item.id] ?? { returning: 0, damaged: 0 };
-            const returnable = item.quantity - item.restockedQuantity;
+            const q = qty[item.id] ?? { returning: 0 };
+            const returnable = returnableOf(item);
             const valued = p?.lines.find((l) => l.orderItemId === item.id);
             const label = [item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(" / ");
             return (
@@ -146,21 +145,17 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
                     {item.productNameSnapshot} <span className="font-normal text-ink-500">{label}</span>
                   </p>
                   <p className="text-xs text-ink-500">
-                    Ordered {item.quantity} · already back {item.restockedQuantity} · <span className="font-medium text-ink-700">returnable {returnable}</span>
+                    Ordered {item.quantity} · already returned {item.quantity - returnable} · <span className="font-medium text-ink-700">returnable {returnable}</span>
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
                   <span className="flex items-center gap-2">
                     Returning <UnitStepper label={`Units of ${item.productNameSnapshot} ${label} returning`} value={q.returning} max={returnable} onChange={(v) => set(item.id, { returning: v })} />
                   </span>
-                  <span className={cn("flex items-center gap-2", q.returning === 0 && "opacity-50")}>
-                    of which damaged <UnitStepper label={`Damaged units of ${item.productNameSnapshot} ${label}`} value={q.damaged} max={q.returning} onChange={(v) => set(item.id, { damaged: v })} />
-                  </span>
                 </div>
                 {q.returning > 0 && (
                   <p className="text-xs text-ink-600">
-                    Customer keeps {returnable - q.returning} · back on the shelf {q.returning - q.damaged}
-                    {q.damaged > 0 && ` · written off ${q.damaged}`}
+                    Customer keeps {returnable - q.returning} · back in stock when the parcel is received
                     {valued && <span className="ml-2 font-medium text-ink-900">Paid value {formatPrice(valued.value)}</span>}
                   </p>
                 )}
@@ -186,7 +181,7 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
               [
                 { value: "STORE_CREDIT", label: "Store credit", amount: p.compensation.storeCredit, hint: "Added to the customer's Store Balance for future orders." },
                 { value: "REFUND", label: "Refund owed", amount: p.compensation.refund, hint: "Recorded as owed; you pay it out and mark it paid." },
-                { value: "NONE", label: "Nothing now", amount: 0, hint: "Only the stock and the record are updated." },
+                { value: "NONE", label: "Nothing now", amount: 0, hint: "Only the return is recorded." },
               ] as const
             ).map((o) => (
               <label key={o.value} className={cn("flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm", compensation === o.value ? "border-ink-900" : "border-line-subtle")}>

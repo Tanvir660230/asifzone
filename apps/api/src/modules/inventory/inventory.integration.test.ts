@@ -11,7 +11,7 @@ import {
   stockOf,
   trackOrder,
 } from "../../test-fixtures";
-import { deleteOrder, restoreOrder, updateOrderStatus } from "../orders/order.service";
+import { deleteOrder, receiveReturnedParcel, restoreOrder, updateOrderStatus } from "../orders/order.service";
 import { reviewReturnRequest } from "../return-requests/return-request.service";
 import { updateProduct } from "../products/product.service";
 import { adjustVariantStock, recordInitialStock } from "./inventory.service";
@@ -45,11 +45,13 @@ describe("inventory ledger reconciliation", () => {
     await updateOrderStatus(a.id, { status: "CANCELLED" }, admin);
     await check(10);
 
-    // sale → delivery → return
+    // sale → delivery → return → the parcel received (only then is it stock — owner decision M2)
     const b = await placeOrder([{ variantId: v.id, quantity: 3 }]);
     await updateOrderStatus(b.id, { status: "DELIVERED" }, admin);
     await check(7);
     await updateOrderStatus(b.id, { status: "RETURNED" }, admin);
+    await check(7);
+    await receiveReturnedParcel(b.id, admin, {});
     await check(10);
 
     // exchange: v comes back, w goes out on a new order
@@ -63,6 +65,8 @@ describe("inventory ledger reconciliation", () => {
     await reviewReturnRequest(exchange.id, { status: "APPROVED" }, admin);
     const exchangeOrderId = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: exchange.id } })).exchangeOrderId!;
     trackOrder(exchangeOrderId);
+    await check(9);
+    await receiveReturnedParcel(c.id, admin, {});
     await check(10);
     expect(await stockOf(w.id)).toBe(4);
     expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: cLine.id } })).returnedQuantity).toBe(1);

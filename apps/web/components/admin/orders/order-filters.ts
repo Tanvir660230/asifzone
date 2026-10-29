@@ -20,7 +20,17 @@ import { courierStatusLabel, orderStatusShortLabel, paymentStatusLabel } from "@
 
 export const ORDER_QUEUE_LABELS: Record<OrderQueueId, string> = {
   needsAction: "Needs action",
+  callNow: "Call now",
+  callLater: "Call later",
+  confirmEscalated: "Escalated calls",
+  handoverPending: "Handover pending",
+  comingBack: "Coming back",
+  inspectionPending: "To inspect",
+  scanDiscrepancy: "Scan discrepancy",
+  stuckInTransit: "Stuck in transit",
+  returnOverdue: "Return overdue",
   followUpDue: "Follow-up due",
+  readyToBook: "Ready to book",
   unpaid: "Unpaid",
   cod: "COD",
   courierIssue: "Courier issues",

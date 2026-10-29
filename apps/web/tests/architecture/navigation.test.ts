@@ -193,7 +193,8 @@ describe("navigation manifest — derivation", () => {
 
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(11);
-    expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
+    // Orders: the list, return requests, the two scanning stations (Order Operations phase 4) and Order history.
+    expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests", "/admin/orders/dispatch", "/admin/orders/returns-in", "/admin/orders/history"]);
     // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels, Stock check (admin
     // audit phase 3: where every piece went, moved from Finance) and Production, whose own pages are its tabs; a lone module
     // still shows none (Customers).

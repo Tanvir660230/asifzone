@@ -1,7 +1,7 @@
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { logger } from "../../lib/observability/logger";
-import { CourierOutcomeUnknownError } from "../errors";
+import { CourierOutcomeUnknownError, CourierRateLimitedError } from "../errors";
 
 export interface CreateConsignmentInput {
   invoice: string;
@@ -355,6 +355,12 @@ export async function getSteadfastStatusByConsignmentId(consignmentId: string): 
   const res = await steadfastFetch(`${env.steadfast.baseUrl}/status_by_cid/${encodeURIComponent(consignmentId)}`, {
     headers: authHeaders(),
   });
+  // Rate-limited: the caller stops its sweep (no retry loop here — the next scheduled run picks the parcel up).
+  if (res.status === 429) {
+    const retryAfterSec = Number(res.headers.get("retry-after"));
+    await res.body?.cancel();
+    throw new CourierRateLimitedError(Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : null);
+  }
 
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as SteadfastEnvelope<never> | null;

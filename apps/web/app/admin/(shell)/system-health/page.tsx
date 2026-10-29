@@ -20,6 +20,13 @@ import { cn } from "@/lib/utils";
 
 const reliabilityKey = ["ops-reliability"] as const;
 
+const POLL_PACE = ["full pace (every 15 min for new parcels)", "half pace", "quarter pace"];
+const REJECTION_REASON: Record<string, string> = {
+  not_configured: "this store has no Steadfast webhook token set",
+  missing_token: "the call carried no token",
+  bad_token: "the call carried a different token",
+};
+
 interface Check {
   key: string;
   title: string;
@@ -120,6 +127,34 @@ export default function SystemHealthPage() {
     },
     onError: (err) => toast.error(getErrorMessage(err, "Couldn't retry")),
   });
+
+  const courierHealth = useQuery({ queryKey: ["ops-courier-health"], queryFn: opsApi.getCourierHealth, refetchInterval: 60_000 });
+  const ch = courierHealth.data;
+  const courierUpdates: Check | null = ch
+    ? {
+        key: "courier-updates",
+        title: "Courier status updates",
+        what: "Steadfast tells the store about parcel changes, and the status check keeps up with every open parcel.",
+        count: ch.webhook.last48h.state === "HEALTHY" ? 0 : ch.webhook.last48h.checks.filter((c) => !c.ok).length,
+        summary: [
+          ch.webhook.last48h.state === "DEGRADED" ? "Steadfast's updates have a problem" : "Steadfast's updates aren't proven yet",
+          ch.webhook.lastRejection ? `last refused call ${timeAgo(ch.webhook.lastRejection.at)}: ${REJECTION_REASON[ch.webhook.lastRejection.reason] ?? ch.webhook.lastRejection.reason}` : null,
+          `status check at ${POLL_PACE[ch.polling.level] ?? "full pace"}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        fix: "In the Steadfast merchant panel, set the Callback URL to this store's /api/courier/steadfast/webhook address and the Auth token to the Steadfast webhook token in Settings › Integrations. Until every check passes, orders keep updating from the regular status check.",
+        items: (
+          <ItemTable
+            head={["Result", "Check (last 48 h)"]}
+            rows={ch.webhook.last48h.checks.map((c) => [
+              <span key="c" className={cn(c.ok ? "text-fg" : "font-medium text-warning-700")}>{c.ok ? "OK" : "Not yet"}</span>,
+              <span key="d" className="text-fg-muted">{c.detail}</span>,
+            ])}
+          />
+        ),
+      }
+    : null;
 
   const s = data?.sections;
   const checks: Check[] = s
@@ -279,6 +314,7 @@ export default function SystemHealthPage() {
         },
       ]
     : [];
+  if (courierUpdates && checks.length) checks.splice(checks.findIndex((c) => c.key === "courier") + 1, 0, courierUpdates);
   const attention = checks.filter((c) => c.count > 0).length;
 
   return (

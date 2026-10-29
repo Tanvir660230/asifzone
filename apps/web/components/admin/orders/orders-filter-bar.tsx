@@ -33,21 +33,22 @@ import { courierStatusLabel, formatCount, orderStatusShortLabel, paymentStatusLa
 import { cn } from "@/lib/utils";
 import { ORDER_STATUSES } from "./order-domain";
 import { type OrdersListState } from "./use-orders-list-state";
+import { OrdersDisplayMenu } from "./orders-display-menu";
 import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
 /** Queues that mean "a person has to act" — the rest (COD, cancelled/returned) are only slices of the list. */
-const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "followUpDue", "courierIssue", "cancelledButPaid", "refundDue", "unpaid"]);
+const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "callNow", "confirmEscalated", "inspectionPending", "scanDiscrepancy", "stuckInTransit", "returnOverdue", "followUpDue", "readyToBook", "courierIssue", "cancelledButPaid", "refundDue", "unpaid"]);
 
-function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
+export function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
   if (value === undefined) return null;
   return <span className={cn("tabular-nums", inverted ? "text-accent-fg/80" : "text-fg-subtle")}>{formatCount(value)}</span>;
 }
 
 /** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */
 // Focus uses the global :focus-visible outline (DESIGN_SYSTEM §5.4) — a 40% ring was too faint to see (2.6:1).
-const tabBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
-const tabOn = "bg-ink-900/[0.08] text-fg";
-const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
+export const tabBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+export const tabOn = "bg-ink-900/[0.08] text-fg";
+export const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
 /** Views (work queues): white capsules; a queue that needs a person and has work in it shows an amber dot. */
 const viewBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
@@ -97,7 +98,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
           <SearchInput
             ref={searchRef}
             wrapperClassName="min-w-0 flex-1 sm:w-72 sm:flex-none lg:w-64"
-            placeholder="Search order #, name, phone…"
+            placeholder="Search order, phone, tracking code…"
             aria-label="Search orders"
             value={state.search}
             onChange={state.setSearch}
@@ -117,7 +118,10 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
             {more.count > 0 && <span className="rounded-full bg-accent px-1.5 text-xs font-semibold leading-[18px] text-accent-fg">{more.count}</span>}
             {!active && <span className="text-xs font-semibold text-accent sm:hidden">Trash</span>}
           </Button>
-          <div className="ml-auto hidden sm:block">
+          <div className="ml-auto hidden items-center gap-2 sm:flex">
+            <div>
+              <OrdersDisplayMenu state={state} />
+            </div>
             <PageSizeSelect value={state.pageSize} onChange={state.setPageSize} />
           </div>
 

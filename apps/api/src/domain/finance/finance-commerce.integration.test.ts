@@ -7,7 +7,7 @@ import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { signAccessToken } from "../../lib/jwt";
 import { checkout, cleanupFixtures, createStockedProduct, ownerId, markOpeningPostedInTx, placeOrder, purgeFinanceTables, RUN, trackOrder } from "../../test-fixtures";
-import { createOrder, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
+import { createOrder, receiveReturnedParcel, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { reclassifyPayment, recordManualPayment, recordRefund } from "../../domain/payments/payment-ledger.service";
@@ -270,19 +270,23 @@ describe("payments, refunds, returns", () => {
     expect(await engine("realised_net_sales", o.id)).toBe(0);
   });
 
-  it("a sellable return restores inventory and reverses COGS at the recorded cost; a damaged one is written off", async () => {
+  it("a returned parcel restores inventory and reverses COGS at the recorded cost when received; a damaged unit leaves as stock shrinkage", async () => {
     const cust = await customer();
     const v = await costedVariant(350);
     const o = await orderFor(cust.id, [{ variantId: v.id, quantity: 3 }]);
     await deliver(o.id);
     const items = await prisma.orderItem.findMany({ where: { orderId: o.id } });
     await recordItemReturn(o.id, { items: [{ orderItemId: items[0]!.id, quantity: 1, restock: true }], reason: "size", compensation: "STORE_CREDIT" }, admin, `p3-ret1-${o.id}`);
-    await recordItemReturn(o.id, { items: [{ orderItemId: items[0]!.id, quantity: 1, restock: false }], reason: "torn", compensation: "STORE_CREDIT" }, admin, `p3-ret2-${o.id}`);
+    await recordItemReturn(o.id, { items: [{ orderItemId: items[0]!.id, quantity: 1, restock: true }], reason: "torn", compensation: "STORE_CREDIT" }, admin, `p3-ret2-${o.id}`);
+    // Both parcels arrive; the second is torn — written off at receipt (owner decision M2).
+    await receiveReturnedParcel(o.id, admin, { lines: [{ orderItemId: items[0]!.id, quantity: 2, damaged: 1 }] });
     await projectOrder(o.id);
     await agrees(o.id);
     expect(await engine("cogs", o.id)).toBe(350); // 3 sold − 2 returned (both came back into stock first)
-    expect(await ledger(o.id, "cogs.inventory_shrinkage", -1)).toBe(350); // the damaged one written off
-    expect(await ledger(o.id, "asset.inventory")).toBe(3 * 350 - 2 * 350 + 350); // credit − debit: down by the 2 units kept / written off
+    // The damaged unit is written off at receipt like any damaged parcel (writeOffParcelUnits): booked by inventory costing to
+    // shrinkage at the line's cost, outside the order — see finance-costing "a parcel received back". Not on the order's party.
+    expect(await ledger(o.id, "cogs.inventory_shrinkage", -1)).toBe(0);
+    expect(await ledger(o.id, "asset.inventory")).toBe(3 * 350 - 2 * 350); // credit − debit: down by the unit kept
     // Store credit given for both: a liability. The returned goods are a sales return (what the order no longer charges);
     // the credit settles what the order then owes the customer back — not a second revenue reduction.
     const credited = await prisma.customerCreditEntry.aggregate({ where: { customerId: cust.id }, _sum: { amount: true } });
@@ -310,6 +314,11 @@ describe("payments, refunds, returns", () => {
     expect(await revenue(o.id)).toBe(600);
     expect(await ledger(o.id, "revenue.returns_refunds", -1)).toBe(400);
     expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
+    expect(await ledger(o.id, "cogs.goods", -1)).toBe(500); // the refused unit is still with the courier: its cost stays out
+    await receiveReturnedParcel(o.id, admin, {});
+    await projectOrder(o.id);
+    await agrees(o.id);
+    expect(await revenue(o.id)).toBe(600); // revenue never waited for the parcel
     expect(await ledger(o.id, "cogs.goods", -1)).toBe(300); // the refused unit came back into stock
   });
 
@@ -328,6 +337,9 @@ describe("payments, refunds, returns", () => {
     const shipping = Number(o.total) - 700;
     expect(await ledger(o.id, "revenue.other_refunds", -1)).toBe(shipping);
     expect(await ledger(o.id, "asset.receivable_trade")).toBe(0);
+    await receiveReturnedParcel(o.id, admin, {});
+    await projectOrder(o.id);
+    await agrees(o.id);
     expect(await ledger(o.id, "cogs.goods", -1)).toBe(0);
   });
 

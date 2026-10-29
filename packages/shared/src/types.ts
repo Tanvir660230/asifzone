@@ -690,9 +690,13 @@ export interface Order {
   exchangeOf?: { returnRequestId: string; order: Pick<Order, "id" | "orderNumber"> } | null;
   /** Admin order detail only — the customer's cached courier delivery score (null until checked). */
   deliveryScore?: DeliveryScore | null;
+  /** Admin order detail only — finished, nothing left to do: listed in Order history, not the daily work list. */
+  inHistory?: boolean;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** When the order last moved to a new status (set by a database trigger). */
+  statusChangedAt?: string;
 }
 
 export interface CourierLossEntry {
@@ -1088,6 +1092,17 @@ export interface StoreSettings {
   returnConditions: string | null;
   handlingDaysMin: number | null;
   handlingDaysMax: number | null;
+  /** Confirmation calls (Order Operations phase 3): unanswered calls before escalation, hours before an unconfirmed order
+   * escalates, minutes to the 1st/2nd retry, store-local hour of the next-day retry. */
+  confirmationMaxUnreached?: number;
+  confirmationEscalateHours?: number;
+  confirmationRetryMinutes?: number;
+  confirmationNextDayHour?: number;
+  /** When the "shipped" SMS goes: at courier booking (default) or at the dispatch (handover) scan. */
+  shippedSmsTrigger?: "BOOKING" | "HANDOVER";
+  /** Courier automation (phase 5): days before a parcel is stuck in transit / a return overdue. */
+  stuckInTransitDays?: number;
+  returnNotBackDays?: number;
   /** Phase 12 D-4 (derived, read-only): which online gateways this deployment can actually use. Checkout offers a gateway
    * only when the store's own toggle is on AND this is true. Absent on old API responses → treated as available. */
   onlineGateways?: { SSLCOMMERZ: boolean; EPS_PG: boolean };
