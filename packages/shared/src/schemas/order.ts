@@ -288,6 +288,28 @@ export const receiveReturnedParcelSchema = z.object({
 });
 export type ReceiveReturnedParcelInput = z.infer<typeof receiveReturnedParcelSchema>;
 
+/** Blueprint P0.4 (S2–S4, S6): goods a return agreed back are at the shop. Per order line, how many came back sellable
+ * (`good`) and how many can't be sold again (`damaged`, written off at the line's cost). Never more than the line still
+ * awaits; what is left stays awaiting. */
+export const receiveAwaitingReturnSchema = z.object({
+  lines: z
+    .array(
+      z
+        .object({ orderItemId: z.string().cuid(), good: z.number().int().min(0).max(10000), damaged: z.number().int().min(0).max(10000).default(0) })
+        .refine((l) => l.good + l.damaged > 0, { message: "Nothing to receive on this line", path: ["good"] }),
+    )
+    .min(1)
+    .max(100)
+    .refine((lines) => new Set(lines.map((l) => l.orderItemId)).size === lines.length, { message: "Each item can be listed once" }),
+  note: z.string().trim().max(300).optional().nullable(),
+});
+export type ReceiveAwaitingReturnInput = z.infer<typeof receiveAwaitingReturnSchema>;
+
+/** Blueprint P0.4 (S7; owner decisions Q-B, Q-C): units agreed back that never arrived, written off — only after the
+ * store's returnLossDays, with owner approval at or above countLossApprovalThreshold. One write-off per agreed line. */
+export const writeOffUnreturnedSchema = z.object({ reason: z.string().trim().min(3).max(200) });
+export type WriteOffUnreturnedInput = z.infer<typeof writeOffUnreturnedSchema>;
+
 export const validateCouponSchema = z.object({
   code: z.string().min(1).max(64),
   subtotal: z.number().positive(),

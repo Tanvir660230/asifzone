@@ -127,7 +127,7 @@ export function formatDateShort(date: Date): string {
 
 /** Moderation-style status (return requests, reviews) → shared Badge variant. One mapping for every
  * PENDING / APPROVED / REJECTED workflow — the status registry (lib/status.ts). */
-export function approvalStatusBadgeVariant(status: "PENDING" | "APPROVED" | "REJECTED"): "warning" | "success" | "danger" {
+export function approvalStatusBadgeVariant(status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED"): "warning" | "success" | "danger" {
   return TONE_BADGE_VARIANT[statusOf("approval", status).tone] as "warning" | "success" | "danger";
 }
 

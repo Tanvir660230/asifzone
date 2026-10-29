@@ -100,7 +100,7 @@ type LedgerRows = {
 export async function returnedValueByOrder(db: Db | typeof prisma, orderIds: string[]): Promise<Map<string, Prisma.Decimal>> {
   const out = new Map<string, Prisma.Decimal>();
   if (!orderIds.length) return out;
-  const rows = await db.returnRequest.findMany({ where: { orderId: { in: orderIds }, type: "RETURN", status: "APPROVED" }, select: { orderId: true, lines: true } });
+  const rows = await db.returnRequest.findMany({ where: { orderId: { in: orderIds }, type: "RETURN", status: { in: ["APPROVED", "COMPLETED"] } }, select: { orderId: true, lines: true } });
   for (const r of rows) {
     if (!Array.isArray(r.lines)) continue;
     const value = (r.lines as Array<{ value?: number }>).reduce((acc, l) => acc.add(new Prisma.Decimal(l.value ?? 0)), new Prisma.Decimal(0));

@@ -172,8 +172,35 @@ export interface ParcelToReceive {
   orderId: string; orderNumber: string; customerName: string; customerPhone: string; trackingNumber: string | null; courierStatus: string | null;
   cancelledAt: string | null; units: number; value: number; daysOut: number | null; overdue: boolean;
 }
+/** Blueprint P0.4: one order line a return agreed back that is not at the shop yet (Goods awaiting return). */
+export interface AwaitingReturnLine {
+  expectationId: string; orderId: string; orderItemId: string; orderNumber: string; customerName: string; customerPhone: string; trackingNumber: string | null;
+  source: "ORDER_RETURNED" | "PARTIAL_DELIVERY" | "EXCHANGE" | "ITEM_RETURN"; returnRequestId: string | null;
+  productName: string; sku: string; size: string; color: string; units: number; value: number; agreedAt: string; daysOut: number;
+  /** Out past the store's follow-up days (Q-B, 14 by default). */
+  overdue: boolean;
+  /** Past the store's write-off wait (Q-B, 30 days by default): may be written off as never returned. */
+  canWriteOff: boolean;
+}
+export interface AwaitingReturns { ruleActive: boolean; effectiveAt: string | null; followUpDays: number; lossDays: number; lines: AwaitingReturnLine[]; overdue: number }
 export function listParcelsToReceive() {
-  return apiFetch<{ followUpDays: number; parcels: ParcelToReceive[]; overdue: number }>("/api/orders/parcels-to-receive");
+  return apiFetch<{ followUpDays: number; parcels: ParcelToReceive[]; overdue: number; awaiting: AwaitingReturns }>("/api/orders/parcels-to-receive");
+}
+
+/** Blueprint P0.4: whether agreed returns wait for their goods (set by the owner from a date). */
+export interface ReturnsRule { active: boolean; effectiveAt: string | null; followUpDays: number; lossDays: number }
+export const returnsRuleKey = ["orders", "returns-rule"] as const;
+export function getReturnsRule() {
+  return apiFetch<ReturnsRule>("/api/orders/returns-rule");
+}
+export function receiveAwaitingReturn(id: string, input: { lines: Array<{ orderItemId: string; good: number; damaged: number }>; note?: string | null }) {
+  return apiFetch<{ order: { id: string } }>(`/api/orders/${id}/receive-awaiting-return`, { method: "POST", body: input });
+}
+export function writeOffUnreturned(expectationId: string, reason: string) {
+  return apiFetch(`/api/return-requests/expectations/${expectationId}/write-off`, { method: "POST", body: { reason } });
+}
+export function withdrawReturn(returnRequestId: string, reason: string) {
+  return apiFetch(`/api/return-requests/${returnRequestId}/withdraw`, { method: "POST", body: { reason } });
 }
 
 export function receiveReturnedParcel(id: string, input: ReceiveReturnedParcelInput) {

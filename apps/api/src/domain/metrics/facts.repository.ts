@@ -11,11 +11,13 @@
  */
 import { fromMajor, type BusinessRange, type InventoryVariantFact, type LineFact, type OrderFact } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { RETURN_REQUEST_AGREED_STATUSES } from "@clothing-brand/shared";
 import { resolveVariantCosts } from "../finance/cost-resolver";
 
 const DELIVERED_STATUSES = ["DELIVERED", "PARTIALLY_DELIVERED"] as const;
-/** Approved item returns (item-level returns, reconciled partial deliveries) — the ledger's `returned`. */
-const ITEM_RETURN = { type: "RETURN", status: "APPROVED" } as const;
+/** Approved item returns (item-level returns, reconciled partial deliveries) — the ledger's `returned`. COMPLETED (blueprint
+ * P0.4: every unit it expected back received or written off) still stands. */
+const ITEM_RETURN = { type: "RETURN" as const, status: { in: [...RETURN_REQUEST_AGREED_STATUSES] } };
 const BATCH = 500;
 
 function minor(v: { toString(): string } | number | null | undefined, currency: string): number {
@@ -29,7 +31,7 @@ function minorOrNull(v: { toString(): string } | number | null | undefined, curr
 export async function candidateOrderIds(range: Pick<BusinessRange, "startUtc" | "endUtc" | "preset">): Promise<string[] | null> {
   if (range.preset === "lifetime") return null;
   const window = { gte: range.startUtc, lt: range.endUtc };
-  const [placed, delivered, cancelled, paid, refunded, returned, itemReturned] = await Promise.all([
+  const [placed, delivered, cancelled, paid, refunded, returned, itemReturned, agreedBack] = await Promise.all([
     prisma.order.findMany({ where: { createdAt: window }, select: { id: true } }),
     prisma.orderStatusHistory.findMany({ where: { status: { in: [...DELIVERED_STATUSES] }, createdAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.orderStatusHistory.findMany({ where: { status: "CANCELLED", createdAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
@@ -37,10 +39,11 @@ export async function candidateOrderIds(range: Pick<BusinessRange, "startUtc" | 
     prisma.refund.findMany({ where: { completedAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.stockMovement.findMany({ where: { reason: "RETURN", createdAt: window, orderId: { not: null } }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.returnRequest.findMany({ where: { ...ITEM_RETURN, OR: [{ reviewedAt: window }, { reviewedAt: null, createdAt: window }] }, select: { orderId: true }, distinct: ["orderId"] }),
+    prisma.returnExpectation.findMany({ where: { approvedAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
   ]);
   const ids = new Set<string>();
   for (const r of placed) ids.add(r.id);
-  for (const r of [...delivered, ...cancelled, ...paid, ...refunded, ...returned, ...itemReturned]) if (r.orderId) ids.add(r.orderId);
+  for (const r of [...delivered, ...cancelled, ...paid, ...refunded, ...returned, ...itemReturned, ...agreedBack]) if (r.orderId) ids.add(r.orderId);
   return [...ids];
 }
 
@@ -109,24 +112,40 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
   if (!rows.length) return [];
   const orderIds = rows.map((r) => r.id);
 
-  const [returnMovements, exchangeRequests, replacementRefs, variants, itemReturns] = await Promise.all([
+  const [returnMovements, exchangeRequests, replacementRefs, variants, itemReturns, agreedReturns] = await Promise.all([
+    // A receipt of an agreed return (blueprint P0.4) is not a return of its own: the return counted when it was agreed.
     batched(orderIds, (chunk) =>
-      prisma.stockMovement.findMany({ where: { reason: "RETURN", orderId: { in: chunk } }, select: { id: true, orderId: true, variantId: true, change: true, createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+      prisma.stockMovement.findMany({
+        where: { reason: "RETURN", orderId: { in: chunk }, OR: [{ sourceType: null }, { sourceType: { not: "ReturnExpectation" } }] },
+        select: { id: true, orderId: true, variantId: true, change: true, createdAt: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
     ),
     batched(orderIds, (chunk) =>
       prisma.returnRequest.findMany({
-        where: { orderId: { in: chunk }, type: "EXCHANGE", status: "APPROVED", orderItemId: { not: null } },
+        where: { orderId: { in: chunk }, type: "EXCHANGE", status: { in: [...RETURN_REQUEST_AGREED_STATUSES] }, orderItemId: { not: null } },
         select: { orderId: true, orderItemId: true, reviewedAt: true, updatedAt: true },
       }),
     ),
-    batched(orderIds, (chunk) => prisma.returnRequest.findMany({ where: { exchangeOrderId: { in: chunk } }, select: { exchangeOrderId: true } })),
+    batched(orderIds, (chunk) => prisma.returnRequest.findMany({ where: { exchangeOrderId: { in: chunk } }, select: { exchangeOrderId: true, _count: { select: { returnExpectations: true } } } })),
     loadVariantProducts([...new Set(rows.flatMap((r) => r.items.filter((i) => !i.productIdSnapshot).map((i) => i.variantId)))]),
     batched(orderIds, (chunk) =>
       prisma.returnRequest.findMany({ where: { ...ITEM_RETURN, orderId: { in: chunk } }, select: { id: true, orderId: true, lines: true, reviewedAt: true, createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
     ),
+    // Blueprint P0.4: returns agreed under the receipt rule, dated at the agreement (an exchange original too — its cost leaves
+    // COGS, but it stays out of the sales-return metrics, P5-3); a withdrawn one never happened.
+    batched(orderIds, (chunk) =>
+      prisma.returnExpectation.findMany({
+        where: { orderId: { in: chunk }, status: { not: "WITHDRAWN" } },
+        select: { id: true, orderId: true, orderItemId: true, variantId: true, quantity: true, approvedAt: true, sourceType: true },
+        orderBy: [{ approvedAt: "asc" }, { id: "asc" }],
+      }),
+    ),
   ]);
 
   const movementsBy = groupBy(returnMovements, (m) => m.orderId!);
+  const agreedBy = groupBy(agreedReturns, (e) => e.orderId);
+  const replacementsUnderRule = new Set(replacementRefs.filter((r) => r._count.returnExpectations > 0).map((r) => r.exchangeOrderId!));
   // Valued returns only (a partial-delivery return reconciled before values were recorded has `lines` null until the
   // backfill values it — the payment ledger doesn't count it either).
   const itemReturnsBy = groupBy(itemReturns.filter((r) => Array.isArray(r.lines)), (r) => r.orderId);
@@ -191,7 +210,11 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
       .filter((p) => p.purpose === "RETURN_CHARGE" && p.status === "SUCCEEDED")
       .map((p) => ({ id: p.id, amount: minor(p.amount, currency), provider: p.provider, settledAt: p.settledAt })),
     refunds: o.refunds.map((r) => ({ id: r.id, amount: minor(r.amount, currency), status: r.status, completedAt: r.completedAt })),
-    returnMovements: (movementsBy.get(o.id) ?? []).map((m) => ({ id: m.id, variantId: m.variantId, units: m.change, at: m.createdAt })),
+    returnMovements: [
+      ...(movementsBy.get(o.id) ?? []).map((m) => ({ id: m.id, variantId: m.variantId, units: m.change, at: m.createdAt })),
+      ...(agreedBy.get(o.id) ?? []).map((e) => ({ variantId: e.variantId, units: e.quantity, at: e.approvedAt, orderItemId: e.orderItemId, expectationId: e.id, ...(e.sourceType === "EXCHANGE" ? { exchange: true } : {}) })),
+    ],
+    replacementCostAt: replacementsUnderRule.has(o.id) ? (o.statusHistory.find((h) => h.status !== "CANCELLED")?.createdAt ?? null) : null,
     itemReturns: (itemReturnsBy.get(o.id) ?? []).map((r) => ({ id: r.id, at: r.reviewedAt ?? r.createdAt, value: returnValue(r.lines) })).filter((r) => r.value > 0),
     exchangedLines: (exchangesBy.get(o.id) ?? []).map((e) => ({ orderItemId: e.orderItemId!, approvedAt: e.reviewedAt ?? e.updatedAt })),
   }));
@@ -213,7 +236,7 @@ export async function loadPositionFacts(currency: string): Promise<OrderFact[]> 
   // What came back (item returns, reconciled partial deliveries) is no longer charged — the same `returned` the ledger
   // nets out of the order total (returnedValueByOrder), read for every order in one query.
   const returned = new Map<string, number>();
-  for (const r of await prisma.returnRequest.findMany({ where: { type: "RETURN", status: "APPROVED" }, select: { orderId: true, lines: true } })) {
+  for (const r of await prisma.returnRequest.findMany({ where: { type: "RETURN", status: { in: [...RETURN_REQUEST_AGREED_STATUSES] } }, select: { orderId: true, lines: true } })) {
     if (!Array.isArray(r.lines)) continue;
     const value = (r.lines as Array<{ value?: number }>).reduce((n, l) => n + minor(l.value ?? 0, currency), 0);
     returned.set(r.orderId, (returned.get(r.orderId) ?? 0) + value);

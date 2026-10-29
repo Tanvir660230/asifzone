@@ -18,6 +18,7 @@ import {
 } from "../courier/courier.service";
 import { can } from "../../domain/auth/authorization";
 import { orderFillStatus } from "../../domain/stock/fill-status.service";
+import { listAwaitingReturns, receiveAwaitingReturn as receiveAwaiting } from "../returns/goods-awaiting-return.service";
 
 /** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
 export function idempotencyKeyOf(req: Request): string | null {
@@ -177,7 +178,18 @@ export const stats = asyncHandler(async (_req: Request, res: Response) => {
 
 /** GET /api/orders/parcels-to-receive — cancelled-after-shipping parcels still out with the courier (P1.5). */
 export const parcelsToReceive = asyncHandler(async (_req: Request, res: Response) => {
-  res.json(await orderService.listParcelsToReceive());
+  const [parcels, awaiting] = await Promise.all([orderService.listParcelsToReceive(), listAwaitingReturns()]);
+  res.json({ ...parcels, awaiting });
+});
+
+export const returnsRule = asyncHandler(async (_req: Request, res: Response) => {
+  const { ruleActive, effectiveAt, followUpDays, lossDays } = await listAwaitingReturns();
+  res.json({ active: ruleActive, effectiveAt, followUpDays, lossDays });
+});
+
+/** Blueprint P0.4: goods a return agreed back are at the shop (good / damaged per line). */
+export const receiveAwaitingReturn = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await receiveAwaiting(req.params.id!, req.admin!.adminId, req.body) });
 });
 
 export const exportCsv = asyncHandler(async (req: Request, res: Response) => {

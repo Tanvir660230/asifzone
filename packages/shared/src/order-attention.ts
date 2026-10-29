@@ -28,12 +28,14 @@ export type PrimaryOrderAction =
   | { kind: "transition"; to: OrderStatus; label: string }
   | { kind: "book_courier"; label: string }
   | { kind: "reconcile"; label: string }
+  /** Blueprint P0.4: units a return agreed back are on their way — receive them when they arrive. */
+  | { kind: "receive_return"; label: string }
   | { kind: "record_refund"; label: string };
 
 const TRANSITION_LABEL: Partial<Record<OrderStatus, string>> = { CONFIRMED: "Confirm order", PACKED: "Mark packed", SHIPPED: "Mark shipped" };
 
 export function primaryOrderAction(
-  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment">,
+  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment"> & { items?: ReadonlyArray<{ awaitingReturnQuantity?: number }> },
   opts: { courierAvailable: boolean },
 ): PrimaryOrderAction | null {
   const move = (to: OrderStatus): PrimaryOrderAction | null =>
@@ -54,6 +56,7 @@ export function primaryOrderAction(
       if (!order.partialDeliveryReconciledAt) action = { kind: "reconcile", label: "Reconcile returned units" };
       break;
   }
+  if (!action && (order.items ?? []).some((i) => (i.awaitingReturnQuantity ?? 0) > 0)) action = { kind: "receive_return", label: "Receive return" };
   if (!action && (order.payment?.refundDue ?? 0) > 0) action = { kind: "record_refund", label: "Record refund" };
   return action;
 }

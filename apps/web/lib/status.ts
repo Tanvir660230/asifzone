@@ -81,10 +81,12 @@ const PRODUCT: Record<ProductStatus, StatusEntry> = {
 };
 
 /** Moderation-style workflows (return requests, reviews). */
-const APPROVAL: Record<"PENDING" | "APPROVED" | "REJECTED", StatusEntry> = {
+const APPROVAL: Record<"PENDING" | "APPROVED" | "REJECTED" | "COMPLETED", StatusEntry> = {
   PENDING: { label: "Pending", tone: "warning" },
   APPROVED: { label: "Approved", tone: "success" },
   REJECTED: { label: "Rejected", tone: "danger" },
+  // a return whose goods all came back or were written off (blueprint P0.4)
+  COMPLETED: { label: "Completed", tone: "success" },
 };
 
 export const STATUS_REGISTRY = { order: ORDER, payment: PAYMENT, courier: COURIER, product: PRODUCT, approval: APPROVAL } as const;

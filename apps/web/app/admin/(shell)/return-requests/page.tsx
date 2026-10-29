@@ -27,12 +27,14 @@ import { useUrlState } from "@/hooks/use-url-state";
 import { urlParam } from "@/lib/url-state";
 import { approvalStatusBadgeVariant, formatPrice, formatStoreDate, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
+import { useReturnsRule } from "@/components/admin/returns/use-returns-rule";
 
 const PAGE_SIZE = 20;
 type StatusFilter = ReturnRequestStatus | "ALL";
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: "PENDING", label: "To review" },
   { value: "APPROVED", label: "Approved" },
+  { value: "COMPLETED", label: "Completed" },
   { value: "REJECTED", label: "Rejected" },
   { value: "ALL", label: "All" },
 ];
@@ -45,10 +47,13 @@ interface Review {
 /** What approving does — performed by the server in one transaction (return-request.service reviewReturnRequest): a
  * return moves the order to RETURNED through the order state machine (restock, refund-due alert when paid); an exchange
  * restocks the original item, takes the requested variant and creates a replacement order priced by the D6 rule. */
-function approvalEffects(r: ReturnRequest, damagedUnits = 0): string[] {
+function approvalEffects(r: ReturnRequest, damagedUnits = 0, awaitGoods = false): string[] {
   if (r.type === "EXCHANGE") return [];
   return [
-    damagedUnits > 0
+    // Blueprint P0.4: with the returns rule on, nothing goes back into stock until the goods are received.
+    awaitGoods
+      ? "The order moves to Returned — its units wait to come back and go into stock when you receive them (record any damage then)."
+      : damagedUnits > 0
       ? `The order moves to Returned — good units go back into stock; ${damagedUnits} damaged unit(s) are written off.`
       : "The order moves to Returned — its units go back into stock as a customer return.",
     "Loyalty points earned on the order are reversed.",
@@ -61,6 +66,7 @@ const TAB_URL = { tab: urlParam.enum(["requests", "parcels"], "requests") };
 export default function AdminReturnRequestsPage() {
   const queryClient = useQueryClient();
   const perms = useOrderPermissions();
+  const { awaitGoods } = useReturnsRule();
   const [status, setStatus] = useState<StatusFilter>("PENDING");
   const [page, setPage] = useState(1);
   const [review, setReview] = useState<Review | null>(null);
@@ -93,7 +99,7 @@ export default function AdminReturnRequestsPage() {
         status: decision,
         adminNote,
         ...(decision === "APPROVED" && compensation ? { compensation } : {}),
-        ...(decision === "APPROVED" && review?.request.type === "RETURN"
+        ...(decision === "APPROVED" && review?.request.type === "RETURN" && !awaitGoods
           ? { damaged: Object.entries(damaged).filter(([, n]) => n > 0).map(([orderItemId, quantity]) => ({ orderItemId, quantity })) }
           : {}),
       }),
@@ -301,12 +307,12 @@ export default function AdminReturnRequestsPage() {
               <div className="rounded-xl border border-line-subtle bg-surface-muted p-3.5">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">What happens</p>
                 <ul className="list-disc space-y-1 pl-4 text-sm text-ink-700">
-                  {approvalEffects(review.request, Object.values(damaged).reduce((n, v) => n + v, 0)).map((t) => (
+                  {approvalEffects(review.request, Object.values(damaged).reduce((n, v) => n + v, 0), awaitGoods).map((t) => (
                     <li key={t}>{t}</li>
                   ))}
                 </ul>
               </div>
-              {(review.request.order?.items ?? []).some((i) => i.quantity - i.restockedQuantity > 0) && (
+              {!awaitGoods && (review.request.order?.items ?? []).some((i) => i.quantity - i.restockedQuantity > 0) && (
                 <div className="space-y-2 rounded-xl border border-line-subtle p-3" data-testid="return-damaged">
                   <p className="text-sm text-ink-700">
                     Any items damaged?

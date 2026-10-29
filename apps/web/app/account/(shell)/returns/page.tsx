@@ -73,13 +73,13 @@ export default function AccountReturnsPage() {
                   {request.reason}
                   {request.note && <span className="block text-fg-muted">{request.note}</span>}
                 </dd>
-                {request.status === "APPROVED" && request.type === "RETURN" && request.order && (
+                {(request.status === "APPROVED" || request.status === "COMPLETED") && request.type === "RETURN" && request.order && (
                   <>
                     <dt className="text-fg-muted">Refund</dt>
                     <dd className="text-fg">{orderStatusLabel(request.order.status)}</dd>
                   </>
                 )}
-                {request.status === "APPROVED" && request.type === "EXCHANGE" && (
+                {(request.status === "APPROVED" || request.status === "COMPLETED") && request.type === "EXCHANGE" && (
                   <>
                     <dt className="text-fg-muted">Replacement</dt>
                     <dd className="text-fg">

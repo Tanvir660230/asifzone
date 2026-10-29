@@ -87,10 +87,15 @@ export interface OrderFact {
    * a sales return whether or not money went back. `value` is as charged (the line's net, plus exclusive VAT). Absent =
    * none. */
   itemReturns?: Array<{ id?: string; at: Date; value: number }>;
-  /** Stock-ledger RETURN rows for this order: units back from the customer (return date = `at`). */
-  returnMovements: Array<{ id?: string; variantId: string; units: number; at: Date }>;
+  /** Units back from the customer (return date = `at`): the stock ledger's RETURN rows, and — blueprint P0.4 — each return
+   * agreed under the receipt rule (`expectationId`, dated at the agreement, of one order line `orderItemId`), whose later
+   * receipt is then not a return of its own. */
+  returnMovements: Array<{ id?: string; variantId: string; units: number; at: Date; orderItemId?: string; expectationId?: string; exchange?: boolean }>;
   /** Original lines of APPROVED EXCHANGE requests (their returned units are not returns — P5-3). */
   exchangedLines: Array<{ orderItemId: string; approvedAt: Date }>;
+  /** Blueprint P0.4 (S5): an exchange replacement whose original was agreed back under the receipt rule is costed when it
+   * is delivered (the original's cost left COGS at the approval) — that instant; absent/null otherwise. */
+  replacementCostAt?: Date | null;
 }
 
 /** Cancelled now, or ever (the state machine allows CANCELLED → REFUNDED, so the current status alone isn't enough). */
@@ -301,6 +306,11 @@ export function couponDiscountOf(o: OrderFact): number {
 export interface ReturnEvent {
   /** The StockMovement (RETURN) row — present only when the facts carry ids. */
   movementId?: string;
+  /** Blueprint P0.4: the agreed return (Goods awaiting return) this is, instead of a stock movement. */
+  expectationId?: string;
+  /** An exchange original agreed back under the receipt rule (S5): its cost leaves COGS, but it is not a sales return —
+   * units, value and margin metrics leave it out (P5-3), COGS counts it. */
+  exchange?: true;
   variantId: string;
   units: number;
   at: Date;
@@ -343,10 +353,12 @@ export function returnEvents(o: OrderFact): ReturnEvent[] {
   const events: ReturnEvent[] = [];
   const movements = [...o.returnMovements].sort((a, b) => a.at.getTime() - b.at.getTime());
   for (const mv of movements) {
-    const info = byVariant.get(mv.variantId);
+    // An agreed return names its own line: valued at that line, never consumed by an exchange (exchanges are agreed apart).
+    const own = mv.orderItemId ? o.lines.findIndex((l) => l.orderItemId === mv.orderItemId) : -1;
+    const info = own >= 0 ? lineInfo(o, own) : byVariant.get(mv.variantId);
     if (!info || info.qty === 0) continue;
     let units = mv.units;
-    const pending = exchangedByVariant.get(mv.variantId) ?? [];
+    const pending = mv.expectationId ? [] : (exchangedByVariant.get(mv.variantId) ?? []);
     for (const ex of pending) {
       // An exchange restock is written in the approval transaction, so it is at (or a hair after) approvedAt.
       if (units <= 0 || ex.units <= 0 || mv.at.getTime() < ex.approvedAt.getTime() - 60_000) continue;
@@ -357,6 +369,8 @@ export function returnEvents(o: OrderFact): ReturnEvent[] {
     if (units <= 0) continue;
     events.push({
       ...(mv.id ? { movementId: mv.id } : {}),
+      ...(mv.expectationId ? { expectationId: mv.expectationId } : {}),
+      ...(mv.exchange ? { exchange: true as const } : {}),
       variantId: mv.variantId,
       units,
       at: mv.at,
@@ -367,6 +381,13 @@ export function returnEvents(o: OrderFact): ReturnEvent[] {
     });
   }
   return events;
+}
+
+/** One line's net value (as charged), its VAT-exclusive part and cost — `returnEvents` for an agreed return of that line. */
+function lineInfo(o: OrderFact, i: number) {
+  const l = o.lines[i]!;
+  const net = lineGross(l) - lineDiscounts(o)[i]!;
+  return { net, netExVat: net - lineMerchandiseVat(o)[i]!, qty: l.quantity, cost: l.unitCostSnapshot === null ? null : l.quantity * l.unitCostSnapshot, line: l };
 }
 
 /** Variant/stock rows for inventory metrics (read-only; InventoryService stays the only writer). */

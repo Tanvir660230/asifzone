@@ -145,7 +145,7 @@ export default function AccountOrderDetailPage() {
   const { order } = data;
   const latestReturnRequest = order.returnRequests?.[0];
   const canRequestNew =
-    order.status === "DELIVERED" && !order.returnRequests?.some((r) => r.status === "PENDING" || r.status === "APPROVED");
+    order.status === "DELIVERED" && !order.returnRequests?.some((r) => r.status === "PENDING" || r.status === "APPROVED" || r.status === "COMPLETED");
   // Exchange needs to know the product's other sizes/colors — an item whose product/variant was
   // since deleted (no `live` info) has nowhere to source that list from.
   const itemsEligibleForExchange = order.items.filter((item) => item.live);
@@ -371,7 +371,7 @@ export default function AccountOrderDetailPage() {
                   </p>
                 )}
                 <p className="mt-0.5 text-ink-500">Reason: {latestReturnRequest.reason}</p>
-                {latestReturnRequest.status === "APPROVED" && latestReturnRequest.compensation === "STORE_CREDIT" && Number(latestReturnRequest.compensationAmount ?? 0) > 0 ? (
+                {(latestReturnRequest.status === "APPROVED" || latestReturnRequest.status === "COMPLETED") && latestReturnRequest.compensation === "STORE_CREDIT" && Number(latestReturnRequest.compensationAmount ?? 0) > 0 ? (
                   <p className="mt-1 font-medium text-success-700" data-testid="return-outcome">
                     {formatPrice(Number(latestReturnRequest.compensationAmount))} was added to your{" "}
                     <Link href="/account/store-balance" className="underline underline-offset-2">
@@ -379,19 +379,19 @@ export default function AccountOrderDetailPage() {
                     </Link>
                     .
                   </p>
-                ) : latestReturnRequest.status === "APPROVED" && latestReturnRequest.compensation === "REFUND" && Number(latestReturnRequest.compensationAmount ?? 0) > 0 ? (
+                ) : (latestReturnRequest.status === "APPROVED" || latestReturnRequest.status === "COMPLETED") && latestReturnRequest.compensation === "REFUND" && Number(latestReturnRequest.compensationAmount ?? 0) > 0 ? (
                   <p className="mt-1 font-medium text-ink-800" data-testid="return-outcome">
                     A refund of {formatPrice(Number(latestReturnRequest.compensationAmount))} is on its way to you.
                   </p>
                 ) : (
-                  latestReturnRequest.status === "APPROVED" &&
+                  (latestReturnRequest.status === "APPROVED" || latestReturnRequest.status === "COMPLETED") &&
                   latestReturnRequest.type === "RETURN" && (
                     <p className="mt-0.5 text-ink-500">
                       Refund status follows the order status above — currently <span className="font-medium">{orderStatusLabel(order.status)}</span>.
                     </p>
                   )
                 )}
-                {latestReturnRequest.status === "APPROVED" && latestReturnRequest.type === "EXCHANGE" && (
+                {(latestReturnRequest.status === "APPROVED" || latestReturnRequest.status === "COMPLETED") && latestReturnRequest.type === "EXCHANGE" && (
                   <p className="mt-0.5 text-ink-500">
                     {latestReturnRequest.exchangeOrder ? (
                       <>

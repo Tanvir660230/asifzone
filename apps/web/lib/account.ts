@@ -113,6 +113,7 @@ export const RETURN_STATUS_LABEL: Record<string, string> = {
   PENDING: "Under review",
   APPROVED: "Approved",
   REJECTED: "Not approved",
+  COMPLETED: "Completed",
 };
 
 export function firstName(name: string): string {

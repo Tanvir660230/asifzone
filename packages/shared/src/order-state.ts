@@ -81,6 +81,8 @@ function rule(from: OrderStatus, to: OrderStatus): OrderTransitionRule | null {
       releasesCouponUsage: isPreShipment(from),
     };
   }
+  // T7's stock effect: the units come back — at once, or, with the store's returns rule in force (blueprint P0.4), as goods
+  // awaiting return that go into stock only when received (order.service applyOrderTransition).
   if ((from === "DELIVERED" || from === "PARTIALLY_DELIVERED") && to === "RETURNED") {
     return { ...NONE, id: "T7", event: "order.returned", stock: "return", alertIfPaid: "order.returned_refund_due", reversesPoints: true };
   }

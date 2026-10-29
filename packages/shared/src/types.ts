@@ -347,6 +347,10 @@ export interface OrderItem {
   returnedQuantity: number;
   /** Units of this line already put back into stock (cancellation, return, trash, ...). */
   restockedQuantity: number;
+  /** Blueprint P0.4: units a return agreed back that are not at the shop yet (Goods awaiting return). */
+  awaitingReturnQuantity?: number;
+  /** Blueprint P0.4: units agreed back that never arrived, written off. */
+  returnLostQuantity?: number;
   live?: OrderItemLiveInfo | null;
 }
 
@@ -369,14 +373,15 @@ export interface ReturnRequest {
   /** What the customer got back for this request, and how much. */
   compensation?: "STORE_CREDIT" | "REFUND" | "NONE" | null;
   compensationAmount?: string | number | null;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  /** COMPLETED (blueprint P0.4): approved, and every unit it expected back was received or written off. */
+  status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
   adminNote: string | null;
   reviewedAt: string | null;
   createdAt: string;
   updatedAt: string;
   /** `items`: the order's lines, so approving a return can mark units that came back damaged. */
   order?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt"> & {
-    items?: Array<Pick<OrderItem, "id" | "productNameSnapshot" | "sizeSnapshot" | "colorSnapshot" | "quantity" | "restockedQuantity">>;
+    items?: Array<Pick<OrderItem, "id" | "productNameSnapshot" | "sizeSnapshot" | "colorSnapshot" | "quantity" | "restockedQuantity" | "awaitingReturnQuantity" | "returnLostQuantity">>;
   };
   customer?: { name: string; email: string | null };
   exchangeOrder?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt"> | null;

@@ -377,10 +377,13 @@ export interface BusinessSettings {
   inventoryCostingActivatedAt: string | null;
   /** Owner alert for a stock gain booked as income (5210) at or above this value, major units (a decimal string). */
   inventoryGainAlertThreshold: string;
+  /** Blueprint P0.4: from when agreed returns wait as goods awaiting return (null = off), and the write-off wait in days. */
+  returnsReceiptRuleEffectiveAt?: string | null;
+  returnLossDays?: number;
 }
 export const businessKeys = { settings: () => ["finance", "business"] as const };
 export const getBusiness = () => apiFetch<BusinessSettings>(`${BASE}/business`);
-export const updateBusiness = (body: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; reason?: string | null }) =>
+export const updateBusiness = (body: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; returnsReceiptRuleEffectiveDate?: string | null; returnLossDays?: number; reason?: string | null }) =>
   apiFetch<BusinessSettings>(`${BASE}/business`, { method: "PATCH", body });
 
 // ── opening balances (docs/FINANCE_PHASE_1.md §8): the books start from what the business holds and owes on the opening date

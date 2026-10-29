@@ -21,7 +21,8 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { issueStoreCreditFromOrder, lockedPosition, projectedPosition, requestRefund } from "../../domain/payments/payment-ledger.service";
-import { notifyReplenished, notifyStockMoved, releaseOrderLines, writeOffReturnedUnits } from "../inventory/inventory.service";
+import { expectOrderLineReturns, notifyReplenished, notifyStockMoved, receiveExpectedUnits, releaseOrderLines, writeOffReturnedUnits } from "../inventory/inventory.service";
+import { completeSettledRequestsInTx, returnsRuleActive } from "../returns/goods-awaiting-return.service";
 import { closeOpenPaymentRequests } from "../payments/payment-requests";
 import { loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
 import { cancelAwaitingModifications } from "./order-modification.service";
@@ -107,6 +108,13 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
   let replenished: string[] = [];
   let moved: string[] = [];
   let transition: OrderTransitionOutcome | null = null;
+  // Blueprint P0.4 (R5, S12): with the returns rule in force the return is agreed first (Goods awaiting return); goods in
+  // hand are received in the same step, otherwise later through Receive — and only then is their condition recorded.
+  const awaitGoods = await returnsRuleActive();
+  const inHand = input.goodsInHand !== false;
+  if (awaitGoods && !inHand && input.items.some((i) => i.restock === false)) {
+    throw new AppError(400, "Record damaged items when the return is received back", { code: "DAMAGE_AT_RECEIPT" });
+  }
   try {
     const request = await prisma.$transaction(async (tx) => {
       await lockedPosition(tx, orderId);
@@ -119,15 +127,24 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
       const customerId = order.customerId;
 
       const byId = new Map(order.items.map((i) => [i.id, i]));
-      const lines = valueItemReturn(order, input, currency);
+      const valued = valueItemReturn(order, input, currency);
+      // Not in hand under the rule: nothing is back yet (restocked / written off at the receipt).
+      const lines = awaitGoods && !inHand ? valued.map((l) => ({ ...l, restocked: 0, writtenOff: 0 })) : valued;
+      const expected = awaitGoods
+        ? await expectOrderLineReturns(tx, orderId, { source: "ITEM_RETURN", adminId, note: `Item return: ${input.reason}`, lines: lines.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity })) })
+        : [];
+      for (const l of awaitGoods ? lines : []) {
+        const got = expected.filter((e) => e.orderItemId === l.orderItemId).reduce((n, e) => n + e.quantity, 0);
+        if (got !== l.quantity) throw AppError.conflict("These items were returned by another request just now — reload the order");
+      }
 
       // Stock: every returned unit comes back (RETURN, counted in returnedQuantity); the unsellable ones are then written off.
-      const released = await releaseOrderLines(tx, orderId, "return", {
+      const released = awaitGoods ? { released: [], replenished: [] } : await releaseOrderLines(tx, orderId, "return", {
         adminId,
         note: `Item return: ${input.reason}`,
         lines: lines.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity })),
       });
-      for (const l of lines) {
+      for (const l of awaitGoods ? [] : lines) {
         const got = released.released.filter((r) => r.orderItemId === l.orderItemId).reduce((n, r) => n + r.quantity, 0);
         if (got !== l.quantity) throw AppError.conflict("These items were returned by another request just now — reload the order");
       }
@@ -137,7 +154,7 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
       const writeOffs = lines
         .filter((l) => l.writtenOff > 0)
         .map((l) => ({ variantId: byId.get(l.orderItemId)!.variantId, quantity: l.writtenOff, unitCostMinor: recordedCost.get(l.orderItemId) ?? null }));
-      await writeOffReturnedUnits(tx, order.orderNumber, writeOffs, { adminId, note: input.reason });
+      if (!awaitGoods) await writeOffReturnedUnits(tx, order.orderNumber, writeOffs, { adminId, note: input.reason });
 
       const value = lines.reduce((n, l) => n + m(l.value).amount, 0);
       const valueMoney = { amount: value, currency };
@@ -156,6 +173,22 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
           idempotencyKey: idempotencyKey ?? null,
         },
       });
+      if (expected.length) {
+        await tx.returnExpectation.updateMany({ where: { id: { in: expected.map((e) => e.expectationId) } }, data: { returnRequestId: request.id } });
+        // S12: in hand — received now, in the same transaction (S1 and S2 both posted from it).
+        if (inHand) {
+          const parts = expected.map((e) => {
+            const l = lines.find((x) => x.orderItemId === e.orderItemId)!;
+            const damaged = Math.min(l.writtenOff, e.quantity);
+            return { expectationId: e.expectationId, orderItemId: e.orderItemId, variantId: e.variantId, good: e.quantity - damaged, damaged, unitCostMinor: recordedCost.get(e.orderItemId) ?? null };
+          });
+          for (const p of parts) await tx.returnExpectation.update({ where: { id: p.expectationId }, data: { receivedGood: p.good, receivedDamaged: p.damaged, status: "CLOSED", closedAt: new Date() } });
+          const stock = await receiveExpectedUnits(tx, { id: orderId, orderNumber: order.orderNumber }, parts, { adminId, note: `Item return: ${input.reason}` });
+          replenished = stock.replenished;
+          moved = stock.moved;
+          await completeSettledRequestsInTx(tx, [request.id]);
+        }
+      }
 
       // What the customer gets back — never more than the order still owes back after the returned value is netted out.
       const { position } = await lockedPosition(tx, orderId);
@@ -196,8 +229,8 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
       });
 
       // Everything came back: the order is RETURNED (T7 — nothing left to restock; points fully reversed).
-      const after = await tx.orderItem.findMany({ where: { orderId }, select: { quantity: true, restockedQuantity: true } });
-      if (order.status === "DELIVERED" && after.every((i) => i.restockedQuantity >= i.quantity)) {
+      const after = await tx.orderItem.findMany({ where: { orderId }, select: { quantity: true, restockedQuantity: true, awaitingReturnQuantity: true, returnLostQuantity: true } });
+      if (order.status === "DELIVERED" && after.every((i) => i.restockedQuantity + i.awaitingReturnQuantity + i.returnLostQuantity >= i.quantity)) {
         transition = await applyOrderTransition(tx, orderId, { status: "RETURNED", note: "Every item has been returned" }, { adminId });
       }
       return tx.returnRequest.findUniqueOrThrow({ where: { id: request.id } });
@@ -219,7 +252,12 @@ type OrderWithItems = Prisma.OrderGetPayload<{ include: { items: true } }>;
 type ValuedLine = Pick<
   OrderWithItems["items"][number],
   "id" | "quantity" | "restockedQuantity" | "priceSnapshot" | "bundleDiscountAllocated" | "couponDiscountAllocated" | "productNameSnapshot" | "sizeSnapshot" | "colorSnapshot"
->;
+> & Partial<Pick<OrderWithItems["items"][number], "awaitingReturnQuantity" | "returnLostQuantity">>;
+
+/** Units of a line still with the customer: not back in stock, not agreed back (awaiting return), not written off as never
+ * returned (blueprint P0.4). */
+export const stillOut = (i: Pick<ValuedLine, "quantity" | "restockedQuantity" | "awaitingReturnQuantity" | "returnLostQuantity">) =>
+  i.quantity - i.restockedQuantity - (i.awaitingReturnQuantity ?? 0) - (i.returnLostQuantity ?? 0);
 
 /** THE valuation of an item-level return (§8) — shared by the preview and the command, so what staff see before
  * confirming is exactly what is recorded. Per line: the snapshot price × quantity net of its allocated bundle/coupon
@@ -240,7 +278,7 @@ export function valueItemReturn(order: Pick<OrderWithItems, "subtotal" | "discou
   for (const [orderItemId, want] of merged) {
     const item = byId.get(orderItemId);
     if (!item) throw AppError.badRequest(`Order item ${orderItemId} does not belong to this order`);
-    const outstanding = item.quantity - item.restockedQuantity;
+    const outstanding = stillOut(item);
     if (want.quantity > outstanding) {
       throw new AppError(409, `Only ${outstanding} unit(s) of ${item.productNameSnapshot}${formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} can still be returned`, {
         code: "RETURN_EXCEEDS_OUTSTANDING",
@@ -289,10 +327,10 @@ export async function previewItemReturn(orderId: string, input: Pick<RecordItemR
       size: i.sizeSnapshot,
       color: i.colorSnapshot,
       ordered: i.quantity,
-      alreadyReturned: i.restockedQuantity,
-      returnable: i.quantity - i.restockedQuantity,
+      alreadyReturned: i.quantity - stillOut(i),
+      returnable: stillOut(i),
       returning: returning.get(i.id) ?? 0,
-      keptAfter: i.quantity - i.restockedQuantity - (returning.get(i.id) ?? 0),
+      keptAfter: stillOut(i) - (returning.get(i.id) ?? 0),
     })),
     compensation: {
       /** Max store credit this return would add to the customer's balance. */
@@ -301,7 +339,7 @@ export async function previewItemReturn(orderId: string, input: Pick<RecordItemR
       refund: toMajor(min({ amount: value, currency }, position.refundable)),
     },
     /** Every unit is back after this return: the order would move to Returned. */
-    returnsEverything: order.status === "DELIVERED" && order.items.every((i) => i.quantity - i.restockedQuantity - (returning.get(i.id) ?? 0) <= 0),
+    returnsEverything: order.status === "DELIVERED" && order.items.every((i) => stillOut(i) - (returning.get(i.id) ?? 0) <= 0),
   };
 }
 

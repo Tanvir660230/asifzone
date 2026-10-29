@@ -50,6 +50,8 @@ export const ACCOUNT_MAPPING_KEYS = [
   "revenue.returns_refunds",
   "cogs.goods",
   "cogs.inventory_shrinkage",
+  // Blueprint P0.4 (owner decision Q-A): the cost of returned goods agreed back but not on the shelf yet
+  "asset.goods_awaiting_return",
   // Phase 3 (docs/FINANCE_PHASE_3.md §3) — commerce accounting
   "liability.store_credit_reserved",
   "liability.refunds_payable",
@@ -168,6 +170,10 @@ export const LOAN_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.loans
 /** Every key payroll posts to by default (each pay component can name its own accounts). */
 export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.salaries_payable", "expense.salaries", "liability.payroll_deductions", "expense.employer_contributions"];
 
+/** Every key the returns rule (blueprint P0.4, tab 11) posts to: goods awaiting return, against cost of goods sold at the
+ * agreement, inventory at receipt and shrinkage for damaged or never-returned units. */
+export const RETURNS_MAPPING_KEYS: readonly AccountMappingKey[] = ["asset.goods_awaiting_return", "asset.inventory", "cogs.goods", "cogs.inventory_shrinkage"];
+
 /** Every key the owner's-books features post to (docs/FINANCE_OWNER_BOOKS.md): cash counts, courier and gateway charge
  * estimates, ad spend, prepaid costs, packaging used and landed costs. */
 export const OWNER_BOOKS_MAPPING_KEYS: readonly AccountMappingKey[] = [
@@ -218,6 +224,10 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1540", name: "Courier claims receivable", type: "ASSET", parent: "1500", mapping: "asset.courier_claims" },
   { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
   { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
+  // Blueprint P0.4 (owner decision Q-A): a returned item's cost leaves COGS when the return is agreed and waits here until
+  // the parcel is received (then inventory) or written off as never returned (shrinkage). Provisioned only when the owner
+  // turns the returns rule on (returns-accounting.service.ts).
+  { code: "1620", name: "Goods awaiting return", type: "ASSET", parent: "1600", mapping: "asset.goods_awaiting_return" },
   { code: "1630", name: "Work in progress (production)", type: "ASSET", parent: "1600", mapping: "asset.wip" },
   // Contra to 1610: the estimated cost of goods sold outside the website (courier-panel parcels), which left the shelf but
   // not the site's stock yet. A later stock decrease (a count, a loss) comes off it first, so those units are costed once.

@@ -182,13 +182,14 @@ export function usePrimaryOrderAction(order: Order, perms: OrderPermissions, com
   const primary = deleted ? null : primaryOrderAction(order, { courierAvailable: perms.courierConfigured });
   const show =
     primary !== null &&
-    (primary.kind === "transition" ? perms.manage : primary.kind === "book_courier" ? perms.courier : primary.kind === "record_refund" ? perms.refunds : perms.manage);
+    (primary.kind === "transition" ? perms.manage : primary.kind === "book_courier" ? perms.courier : primary.kind === "record_refund" ? perms.refunds : primary.kind === "receive_return" ? perms.returns : perms.manage);
   const goTo = (testId: string) => document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   function run() {
     if (!primary) return;
     if (primary.kind === "transition") commands.requestStatusChange([order], primary.to);
     else if (primary.kind === "book_courier") void commands.bookCourier(order);
     else if (primary.kind === "reconcile") goTo("partial-delivery");
+    else if (primary.kind === "receive_return") goTo("awaiting-return");
     else goTo("order-payments");
   }
   return { primary, show, run };
