@@ -91,10 +91,7 @@ export function ReturnsSection({ order, perms }: { order: Order; perms: OrderPer
                 {r.lines.map((l) => (
                   <li key={l.orderItemId}>
                     {l.productName} {[l.size, l.color].filter(Boolean).join(" / ")} ×{l.quantity}
-                    {/* Blueprint P0.4: agreed back while the goods are still out — received (or written off) later */}
-                    {l.restocked + l.writtenOff < l.quantity
-                      ? r.status === "COMPLETED" ? " (received)" : " (to come back)"
-                      : l.writtenOff > 0 ? ` (${l.restocked} restocked, ${l.writtenOff} written off)` : " (restocked)"} · {formatPrice(l.value)}
+                    {l.writtenOff > 0 ? ` (${l.restocked} restocked, ${l.writtenOff} written off)` : " (restocked)"} · {formatPrice(l.value)}
                   </li>
                 ))}
               </ul>
