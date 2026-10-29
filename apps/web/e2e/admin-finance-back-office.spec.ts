@@ -125,7 +125,16 @@ test("owner & partners: a working partner gets their own accounts and a monthly 
 });
 
 test("owed back to the owner: an expense he paid to be repaid is a line; Repay owner pays it and says what for (Q-F)", async () => {
-  test.skip(!(await api(owner, "GET", "/business")).body?.business?.openingDate, "the books haven't started on this database");
+  // an owner-paid expense needs the books started: as the treasury spec does, an opening date and opening balances if not set yet
+  const business = await api(owner, "GET", "/business");
+  expect(business.status).toBe(200);
+  if (!business.body.business.openingDate) expect((await api(owner, "PATCH", "/business", { openingDate: "2026-07-01" })).status).toBe(200);
+  if (business.body.openingBalancesStatus !== "POSTED") {
+    const chart = (await api(owner, "GET", "/accounts")).body.accounts as Array<{ id: string; code: string }>;
+    const petty = await api(owner, "POST", "/financial-accounts", { kind: "CASH", name: `Petty cash ${RUN}` });
+    await api(owner, "PUT", "/opening-balances/lines", { lines: [{ category: "CASH", financialAccountId: petty.body.id, side: "DEBIT", amount: 1000 }, { category: "CAPITAL", accountId: chart.find((x) => x.code === "3100")!.id, side: "CREDIT", amount: 1000 }] });
+    expect((await api(owner, "POST", "/opening-balances/post")).status).toBe(200);
+  }
   const account = async (body: object) => {
     const r = await api(owner, "POST", "/financial-accounts", body);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
