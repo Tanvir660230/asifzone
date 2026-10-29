@@ -186,13 +186,14 @@ function NewAnswer({ onClose }: { onClose: () => void }) {
   const hint = staleHint(answer);
   return (
     <form
+      aria-labelledby="new-answer-heading"
       className="space-y-3 rounded-2xl border border-line bg-surface p-4 shadow-xs sm:p-5"
       onSubmit={(e) => {
         e.preventDefault();
         if (title.trim() && answer.trim()) create.mutate();
       }}
     >
-      <p className="text-[15px] font-semibold text-fg">New answer</p>
+      <p id="new-answer-heading" className="text-[15px] font-semibold text-fg">New answer</p>
       <div className="space-y-1.5">
         <label htmlFor="new-title" className="text-[12px] font-medium text-fg-muted">
           The question
