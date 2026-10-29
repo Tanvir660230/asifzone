@@ -103,7 +103,7 @@ function MonthRow({ m }: { m: SharePeriod }) {
       {open && (
         <div className="mt-3 space-y-3 text-sm">
           {m.accountingStatus !== "CLOSED" && m.status !== "POSTED" && (
-            <p className="text-fg-muted">Close {monthLabel(m.period)} in the books first — then nothing more can change its profit. <Link className="font-medium text-fg underline underline-offset-2" href={`/admin/finance/attention?view=month-end&month=${m.period}`}>Month-end checklist</Link></p>
+            <p className="text-fg-muted">Close {monthLabel(m.period)} in the books first — then nothing more can change its profit. <Link className="font-medium text-fg underline underline-offset-2" href={`/admin/finance/month-end?month=${m.period}`}>Month-end checklist</Link></p>
           )}
           {blockers.length > 0 && (
             <Alert variant="warning" title="Finish these before sharing">

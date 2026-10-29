@@ -16,7 +16,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { Corrections, MonthlySharing, StatementModal } from "@/components/admin/finance/partner-sharing";
@@ -27,6 +26,8 @@ import type { Partner, PartnerActivityItem, PartnerRole, PartnerShares, PaymentM
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, partnerPaymentScope, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
+import { OwedToOwner } from "@/components/admin/finance/owed-to-owner";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 const METHODS: Array<{ value: PaymentMethod; label: string }> = [
@@ -58,7 +59,7 @@ export default function EquityPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Handshake} title="Owner & partners aren't available to your role" description="What the owner and partners put in, take out and earn is visible only to the owner." />
+        <PermissionState icon={Handshake} page="Owner & partners" />
       </div>
     );
   }
@@ -92,6 +93,7 @@ export default function EquityPage() {
               {can("finance.configure") && <Button size="sm" onClick={() => setEditing("owner")} data-testid="add-owner"><Crown className="h-4 w-4" /> Add the owner</Button>}
             </Card>
           )}
+          <OwedToOwner canRepay={can("finance.sensitive")} />
 
           {others.map((p) => <PartnerSection key={p.id} partner={p} shares={shareOf(p.id)} canAct={can("finance.transact")} onEdit={() => setEditing(p)} />)}
           {others.length === 0 && owner && (

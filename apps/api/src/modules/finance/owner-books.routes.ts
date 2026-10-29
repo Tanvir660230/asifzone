@@ -14,6 +14,8 @@ import {
   gatewayFeeRateSchema,
   adCampaignCreateSchema,
   adCampaignListQuerySchema,
+  adCampaignArchiveSchema,
+  adConfirmZeroSchema,
   adCampaignUpdateSchema,
   adSpendDaySchema,
   adPeriodSpendSchema,
@@ -40,6 +42,8 @@ import {
   financeAutopilotSchema,
   ownerHomeQuerySchema,
   stockPurchaseSchema,
+  ownerRepaySchema,
+  purchaseDuplicateCheckSchema,
   stockPurchaseListQuerySchema,
   stockPurchaseFinishSchema,
   stockCountsSchema,
@@ -64,6 +68,7 @@ import { idempotencyKeyOf } from "../orders/order.controller";
 import { actorOf } from "./finance.routes";
 import type { FinanceViewer } from "../../domain/finance/finance-values";
 import * as custody from "../../domain/finance/custody.service";
+import * as ownerAdvances from "../../domain/finance/owner-advances.service";
 import * as rateCards from "../../domain/finance/rate-cards.service";
 import * as courierPayouts from "../../domain/finance/courier-payouts.service";
 import * as ads from "../../domain/finance/ads.service";
@@ -105,6 +110,12 @@ const viewerOf = (req: Request): FinanceViewer => ({ sensitive: req.admin!.permi
 ownerBooksRouter.get("/owner-home", requirePermission("finance.read"), validate(ownerHomeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ownerHome(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/money-map", requirePermission("finance.read"), validate(moneyMapQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await custody.moneyMap(req.query as never, viewerOf(req)))));
 ownerBooksRouter.put("/financial-accounts/:id/custodian", requirePermission("finance.configure"), validate(custodianUpdateSchema), asyncHandler(async (req, res) => res.json(await custody.setCustodian(id(req), req.body, await actorOf(req)))));
+// Owner decision Q-F: what is owed back to the owner, line by line, and "Repay owner" (owner-only, like his money in/out).
+ownerBooksRouter.get("/equity/owner/advances", requirePermission("finance.sensitive"), asyncHandler(async (_req, res) => res.json(await ownerAdvances.listOwnerAdvances())));
+ownerBooksRouter.post("/equity/owner/repay", requirePermission("finance.sensitive"), validate(ownerRepaySchema), asyncHandler(async (req, res) => {
+  const r = await ownerAdvances.repayOwner(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
 ownerBooksRouter.get("/custody/me", requirePermission("finance.custody"), asyncHandler(async (req, res) => res.json(await custody.myCustody(await actorOf(req)))));
 ownerBooksRouter.post("/custody/handovers", requirePermission("finance.custody"), validate(handoverCreateSchema), asyncHandler(async (req, res) => {
   const r = await custody.requestHandover(req.body, await actorOf(req), idempotencyKeyOf(req));
@@ -149,6 +160,9 @@ ownerBooksRouter.put("/ads/campaigns/:id/spend", requirePermission("finance.tran
   await ads.recordDaySpend(id(req), req.body, await actorOf(req));
   res.json({ ok: true });
 }));
+// Blueprint P0.7 (Q-E): archive takes a campaign out of the month-end check; a confirmed zero needs finance.post + a reason.
+ownerBooksRouter.post("/ads/campaigns/:id/archive", requirePermission("finance.transact"), validate(adCampaignArchiveSchema), asyncHandler(async (req, res) => res.json(await ads.setCampaignArchived(id(req), req.body, await actorOf(req)))));
+ownerBooksRouter.post("/ads/campaigns/:id/confirm-zero", requirePermission("finance.post"), validate(adConfirmZeroSchema), asyncHandler(async (req, res) => res.json(await ads.confirmZeroSpendDays(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.put("/ads/campaigns/:id/period-spend", requirePermission("finance.transact"), validate(adPeriodSpendSchema), asyncHandler(async (req, res) => res.json(await ads.recordPeriodSpend(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.post("/ads/import-meta", requirePermission("finance.transact"), validate(metaSpendImportSchema), asyncHandler(async (req, res) => res.json(await ads.importMetaSpend(req.body, await actorOf(req)))));
 
@@ -229,6 +243,8 @@ ownerBooksRouter.post("/center/rolls/:id/finish", requirePermission("finance.tra
 const canSeeCost = (req: Request) => req.admin!.permissions.includes("costing.read");
 ownerBooksRouter.get("/stock/purchases", requirePermission("purchasing.read"), validate(stockPurchaseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await stockPurchases.listPurchases(req.query as never, { canSeeCost: canSeeCost(req) }))));
 ownerBooksRouter.get("/stock/purchases/:id", requirePermission("purchasing.read"), asyncHandler(async (req, res) => res.json(await stockPurchases.getPurchase(id(req), { canSeeCost: canSeeCost(req) }))));
+// Blueprint P0.3: the duplicate-purchase warning, asked before saving (a warning only — the save is never refused).
+ownerBooksRouter.post("/stock/purchases/duplicate-check", requirePermission("purchasing.receive"), validate(purchaseDuplicateCheckSchema), asyncHandler(async (req, res) => res.json(await stockPurchases.checkPurchaseDuplicates(req.body))));
 ownerBooksRouter.post("/stock/purchases", requirePermission("purchasing.receive"), validate(stockPurchaseSchema), asyncHandler(async (req, res) => {
   const r = await stockPurchases.recordPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);

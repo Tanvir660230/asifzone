@@ -127,6 +127,9 @@ export interface GoodsReceipt {
   directReason: string | null;
   overReceiptReason: string | null;
   reversalReason: string | null;
+  /** Blueprint P0.3: the live receipts this one looked like when it was entered (a warning only), and the reason given. */
+  duplicateWarning?: { matches: Array<{ receiptId: string; number: string; receiptDate: string; total: number; itemOverlap: number; totalDifference: number }>; checkedAt: string } | null;
+  duplicateReason?: string | null;
   total: number;
   lines: Array<{ id: string; lineNo: number; purchaseOrderLineId: string | null; variantId: string; sku: string; name: string; qtyAccepted: number; qtyRejected: number; unitCost: number; value: number }>;
 }

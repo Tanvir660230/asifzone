@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileUp, Megaphone, Pencil, Plus, ShoppingBag, TrendingUp } from "lucide-react";
+import { Archive, ArchiveRestore, Download, FileUp, Megaphone, Pencil, Plus, ShoppingBag, TrendingUp } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -25,8 +27,36 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { AdCampaign, UnlinkedAdTag } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
+/** The month before `date` (YYYY-MM) — the month-end check looks at the month that just ended. */
+const previousMonth = (date: string) => {
+  const d = new Date(`${date.slice(0, 7)}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().slice(0, 7);
+};
+
+/** Blueprint P0.7 (Q16 = A, Q-E): a month is Final only when every campaign that spent in it (or the month before) has each
+ * day recorded — real spend, or a zero a person confirmed. This lists what is still missing for the month that ended. */
+function MissingDays({ month, canConfirm, onConfirm }: { month: string; canConfirm: boolean; onConfirm: (gap: { campaignId: string; name: string; missing: string[] }) => void }) {
+  const q = useQuery({ queryKey: financeApi.alertKeys.monthEnd(month), queryFn: () => financeApi.getMonthEnd(month) });
+  const gaps = q.data?.adGaps ?? [];
+  if (q.isLoading || q.isError || !gaps.length) return null;
+  return (
+    <Alert variant="warning" title={`${month}: ${gaps.reduce((s, g) => s + g.missing.length, 0)} campaign day(s) without spend or a confirmed zero`} className="items-start">
+      <p>The month stays Draft and can&rsquo;t be shared until each day has its spend, or someone confirms it spent nothing.</p>
+      <ul className="mt-2 space-y-1.5" data-testid="ad-gaps">
+        {gaps.map((g) => (
+          <li key={g.campaignId} className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 text-fg">{g.name} <span className="text-fg-muted">· {g.missing.length} day(s): {g.missing.slice(0, 4).map(formatBookDate).join(", ")}{g.missing.length > 4 ? "…" : ""}</span></span>
+            {canConfirm && <Button size="sm" variant="outline" onClick={() => onConfirm(g)}>Confirm no spend</Button>}
+          </li>
+        ))}
+      </ul>
+    </Alert>
+  );
+}
 
 /** Visitors arrive from Meta with the campaign's id as utm_campaign. Until a campaign carries that id, its orders can't be
  * counted (it shows 0 orders) — this card names each unclaimed id with what it brought, and links it in one step. */
@@ -83,6 +113,12 @@ export default function AdSpendPage() {
   const [editing, setEditing] = useState<AdCampaign | "new" | null>(null);
   const [spendFor, setSpendFor] = useState<AdCampaign | null>(null);
   const [importing, setImporting] = useState(false);
+  const [zeroFor, setZeroFor] = useState<{ campaignId: string; name: string; missing: string[] } | null>(null);
+  const archive = useMutation({
+    mutationFn: (c: AdCampaign) => booksApi.setCampaignArchived(c.id, { archived: !c.archivedAt }),
+    onSuccess: (r) => { toast.success(r.archivedAt ? "Archived — it no longer counts for the month-end ad check" : "Back in the month-end ad check"); refresh(); },
+    onError: (e) => toast.error(getErrorMessage(e, "The campaign couldn't be changed")),
+  });
   const settings = useQuery({ queryKey: booksApi.centerKeys.settings(), queryFn: booksApi.getCenterSettings, enabled: allowed });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
   const meta = useMutation({
@@ -96,7 +132,7 @@ export default function AdSpendPage() {
     onError: (e) => toast.error(getErrorMessage(e, "Meta's spend couldn't be read")),
   });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Megaphone} title="Ad spend isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Megaphone} page="Ad spend" /></div>;
   const d = list.data;
   return (
     <div className="space-y-6">
@@ -126,6 +162,8 @@ export default function AdSpendPage() {
         <Field htmlFor="ads-from" label="From" className="w-40"><Input id="ads-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
         <Field htmlFor="ads-to" label="To" className="w-40" error={from && to && from > to ? "Before From" : undefined}><Input id="ads-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       </div>
+
+      {allowed && <MissingDays month={previousMonth(t)} canConfirm={can("finance.post")} onConfirm={setZeroFor} />}
 
       {list.isLoading && <Skeleton className="h-40 w-full" />}
       {list.isError && <Alert variant="danger" title="Campaigns couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
@@ -158,7 +196,7 @@ export default function AdSpendPage() {
                   {d.campaigns.map((c) => (
                     <TableRow key={c.id} data-testid="campaign-row">
                       <TableCell>
-                        <span className="block font-medium text-fg">{c.name} {!c.isActive && <Badge>paused</Badge>}</span>
+                        <span className="block font-medium text-fg">{c.name} {!c.isActive && <Badge>paused</Badge>} {c.archivedAt && <Badge variant="outline">archived</Badge>}</span>
                         <span className="block text-xs text-fg-muted">
                           {c.adAccount.name} · {formatBookDate(c.startDate)}{c.endDate ? ` → ${formatBookDate(c.endDate)}` : ""}
                           {c.budgetType ? ` · ${c.budgetType === "DAILY" ? `${formatPrice(c.budget!)} a day` : `${formatPrice(c.budget!)} in all`}` : ""}
@@ -177,6 +215,9 @@ export default function AdSpendPage() {
                           <span className="flex justify-end gap-1">
                             <Button size="sm" variant="outline" onClick={() => setSpendFor(c)}>Add spend</Button>
                             <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil className="h-4 w-4" /></Button>
+                            <Button size="sm" variant="ghost" aria-label={c.archivedAt ? `Bring back ${c.name}` : `Archive ${c.name}`} title={c.archivedAt ? "Bring back" : "Archive — out of the month-end ad check"} loading={archive.isPending && archive.variables?.id === c.id} onClick={() => archive.mutate(c)}>
+                              {c.archivedAt ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                            </Button>
                           </span>
                         )}
                       </TableCell>
@@ -191,8 +232,44 @@ export default function AdSpendPage() {
       )}
       {editing && <CampaignModal campaign={editing === "new" ? null : editing} adAccounts={adAccounts} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} />}
       {spendFor && <SpendModal campaign={spendFor} defaultRate={settings.data?.defaultUsdRate ?? null} onClose={() => setSpendFor(null)} onDone={() => { setSpendFor(null); refresh(); }} />}
+      {zeroFor && <ConfirmZeroModal gap={zeroFor} onClose={() => setZeroFor(null)} onDone={() => { setZeroFor(null); refresh(); }} />}
       {importing && <CsvModal adAccounts={adAccounts} defaultRate={settings.data?.defaultUsdRate ?? null} onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />}
     </div>
+  );
+}
+
+/** Confirms zero spend for a campaign's missing days: one decision, the days listed, a reason the books keep (Q-E). */
+function ConfirmZeroModal({ gap, onClose, onDone }: { gap: { campaignId: string; name: string; missing: string[] }; onClose: () => void; onDone: () => void }) {
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set(gap.missing));
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: () => booksApi.confirmZeroSpend(gap.campaignId, { dates: [...chosen].sort(), reason: reason.trim() }),
+    onSuccess: (r) => { toast.success(`${r.confirmed.length} day(s) confirmed as no spend`); onDone(); },
+    onError: (e) => toast.error(getErrorMessage(e, "The days couldn't be confirmed")),
+  });
+  const valid = chosen.size > 0 && reason.trim().length >= 3;
+  return (
+    <Modal open onClose={onClose} title={`No spend for ${gap.name}`} description="Only for days the campaign really spent nothing. A day with spend must have its figure entered instead." widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()} data-testid="confirm-zero-save">Confirm {chosen.size} day(s)</Button></>}>
+      <div className="space-y-4">
+        <fieldset>
+          <legend className="text-sm font-medium text-fg">Days</legend>
+          <ul className="mt-2 grid max-h-56 grid-cols-2 gap-x-4 gap-y-1 overflow-auto sm:grid-cols-3">
+            {gap.missing.map((d) => (
+              <li key={d}>
+                <label className="flex min-h-9 items-center gap-2 text-sm text-fg">
+                  <Checkbox checked={chosen.has(d)} onChange={(e) => setChosen((s) => { const n = new Set(s); if (e.target.checked) n.add(d); else n.delete(d); return n; })} />
+                  {formatBookDate(d)}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+        <Field htmlFor="zero-reason" label="Why there was no spend" required hint="Kept with each day in the books' history">
+          <Textarea id="zero-reason" rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Campaign was paused / out of budget" />
+        </Field>
+      </div>
+    </Modal>
   );
 }
 

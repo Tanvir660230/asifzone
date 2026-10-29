@@ -106,3 +106,18 @@ That adds 2 routes, 539 admin routes in total. The period routes already existed
   the owner chooses one.
 - **Thresholds are fixed:** 15 minutes for events, 7 days for bills due soon and stale checks, 5 days before an unclosed
   month is mentioned.
+
+## 7. Home queue and month-end (blueprint P1.2, P0.7, P1.6)
+
+- **Every alert is on Home.** Home's work queue (`/admin/dashboard`, `ActionCenter`) lists every finance alert from
+  `GET /api/v1/finance/alerts`, each linking to its fixing page, next to the operational items (pending COD over 48 h,
+  duplicate purchases, stock waiting, parcels and returns to receive). The old Needs attention page only forwards:
+  `/admin/finance/attention?view=month-end&month=…` → Books › Month-end with its month, anything else →
+  `/admin/dashboard?queue=finance#work-queue`. It is no longer in the menu.
+- **Unpaid by Steadfast** (`courier.unpaid`) can be snoozed by the owner until a date on Money › Courier & gateway ›
+  Steadfast check (`FinanceBusiness.courierUnpaidSnoozedUntil`, inclusive; finance.configure). After the date it shows again.
+- **Month-end steps 10–11** (Q16, Q-E): *payouts* — every courier and gateway payout dated in the month is posted;
+  *ads* — every non-archived campaign with spend this or last month has every day recorded (spend, or a confirmed zero).
+  A month is **Final** only when it is CLOSED and every step is done; months closed before the rule's effective date stay Final.
+- **Returns not back** (owner decision D-OO1, Order Operations): returns and refused parcels the courier reported that
+  haven't arrived after `returnNotBackDays` are on the Orders queues and the daily courier check.

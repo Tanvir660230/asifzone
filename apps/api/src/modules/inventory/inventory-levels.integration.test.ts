@@ -45,8 +45,10 @@ describe("stock levels", () => {
   });
 
   it("states and the out-of-stock-first default order follow the shared stock rule", async () => {
-    const { variants } = await createStockedProduct({ stocks: [0, 2, 50], basePrice: 500 });
-    const result = await listStockLevels({ page: 1, pageSize: 100, sort: "attention" });
+    const { product, variants } = await createStockedProduct({ stocks: [0, 2, 50], basePrice: 500 });
+    // Narrowed to this product: a whole-store page would push its rows off page 1 once the database holds 100+ variants
+    // that sort ahead of them.
+    const result = await listStockLevels({ search: product.name, page: 1, pageSize: 100, sort: "attention" });
     const mine = result.items.filter((r) => variants.some((v) => v.id === r.variantId));
     expect(mine.map((r) => r.state)).toEqual(["OUT_OF_STOCK", "LOW_STOCK", "IN_STOCK"]);
     expect(result.counts.ALL).toBeGreaterThanOrEqual(3);

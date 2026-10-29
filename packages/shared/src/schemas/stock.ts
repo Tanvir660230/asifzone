@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { isBusinessDate } from "../finance/periods";
 import { financeAmountSchema } from "./finance-money";
+import { OWNER_FUNDING_KINDS } from "./finance-books";
 
 const businessDate = z.string().refine(isBusinessDate, "Use a valid date (YYYY-MM-DD)");
 const id = z.string().trim().min(1).max(64);
@@ -16,8 +17,10 @@ const positive = financeAmountSchema.refine((v) => v > 0, "Amount must be more t
 const quantity = z.number().int("Whole units (stock units: ml, pcs…)").min(1).max(1_000_000);
 const onceEach = (lines: Array<{ variantId: string }>) => new Set(lines.map((l) => l.variantId)).size === lines.length;
 const materialOnce = (lines: Array<{ materialVariantId: string }>) => new Set(lines.map((l) => l.materialVariantId)).size === lines.length;
-/** Who pays: a money account (cash, bank, wallet) or the owner's own money (owner-only). */
-const paidFrom = z.union([z.object({ financialAccountId: id }).strict(), z.object({ ownerPocket: z.literal(true) }).strict()]);
+/** Who pays: a money account (cash, bank, wallet) or the owner's own money (owner-only). For the owner's money, owner
+ * decision Q14 = B: `funding` says whether it is owed back to the owner (REIMBURSE) or added as capital (CAPITAL, the
+ * default when omitted — what the form did before the choice existed). */
+const paidFrom = z.union([z.object({ financialAccountId: id }).strict(), z.object({ ownerPocket: z.literal(true), funding: z.enum(OWNER_FUNDING_KINDS).optional() }).strict()]);
 
 /** Bought: what arrived, the line total paid for each item, extras spread over the items by value, and who paid. */
 export const stockPurchaseSchema = z
@@ -27,12 +30,17 @@ export const stockPurchaseSchema = z
     supplierName: z.string().trim().max(120).optional().nullable().transform((v) => (v ? v : null)).refine((v) => v === null || v.length >= 2, "At least 2 characters"),
     reference: optionalText(100),
     note: optionalText(500),
+    /** Why it was entered anyway when it looked like a purchase already recorded (blueprint P0.3) — optional. */
+    duplicateReason: optionalText(500),
     lines: z.array(z.object({ variantId: id, quantity, amount: positive })).min(1).max(100).refine(onceEach, "Each item once — add the quantities together"),
     /** Total units on the supplier's invoice or receipt, typed from the document: the lines must add up to it, so a size
      * typed into the wrong row or a missing size is caught before anything is written (inventory recovery F-c). */
     documentTotal: z.number().int().min(1).max(100_000_000),
     extras: z.array(z.object({ description: z.string().trim().min(1).max(120), amount: positive })).max(20).default([]),
     paidFrom,
+    /** Before stock costing is live (blueprint P1.4, owner decision Q-F): set each item's catalog cost from this purchase.
+     * Omitted = yes. Ignored once costing is live (the purchase is booked and the average cost moves instead). */
+    updateCatalogCost: z.boolean().optional(),
   })
   .refine((p) => [...p.lines, ...p.extras].reduce((s, x) => s + x.amount, 0) <= STOCK_PURCHASE_MAX_TOTAL, { message: "A purchase is at most 10,000,000,000 in all", path: ["lines"] })
   .superRefine((p, ctx) => {
@@ -42,6 +50,18 @@ export const stockPurchaseSchema = z
     }
   });
 export type StockPurchaseInput = z.input<typeof stockPurchaseSchema>;
+
+/** Before saving a purchase: does it look like one already entered (blueprint P0.3)? The supplier by id (formal receipt)
+ * or by name (the stock hub's form); amounts are line totals in major units. */
+export const purchaseDuplicateCheckSchema = z
+  .object({
+    supplierId: id.optional().nullable(),
+    supplierName: z.string().trim().max(120).optional().nullable(),
+    date: businessDate.optional(),
+    lines: z.array(z.object({ variantId: id, amount: z.number().min(0).max(STOCK_PURCHASE_MAX_TOTAL) })).min(1).max(200),
+  })
+  .refine((p) => Boolean(p.supplierId) || Boolean(p.supplierName), "Name the supplier");
+export type PurchaseDuplicateCheckInput = z.input<typeof purchaseDuplicateCheckSchema>;
 
 /** Finishing a purchase stuck mid-way: optionally from another account (only while nothing has been paid for it). */
 export const stockPurchaseFinishSchema = z.object({ paidFrom: paidFrom.optional() });

@@ -192,6 +192,8 @@ export const goodsReceiptCreateSchema = z
     notes: optionalText(2000),
     evidence: optionalText(500),
     directReason: optionalText(500),
+    /** Why it was entered anyway when it looked like a purchase already recorded (blueprint P0.3) — optional. */
+    duplicateReason: optionalText(500),
     lines: z.array(goodsReceiptLineSchema).min(1).max(200),
   })
   .refine((r) => Boolean(r.purchaseOrderId) || Boolean(r.supplierId), "Name the purchase order, or the supplier of a receipt without one")

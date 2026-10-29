@@ -11,6 +11,7 @@
  */
 import { fromMajor, type BusinessRange, type InventoryVariantFact, type LineFact, type OrderFact } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { resolveVariantCosts } from "../finance/cost-resolver";
 
 const DELIVERED_STATUSES = ["DELIVERED", "PARTIALLY_DELIVERED"] as const;
 /** Approved item returns (item-level returns, reconciled partial deliveries) — the ledger's `returned`. */
@@ -275,6 +276,7 @@ export async function loadInventoryFacts(currency: string): Promise<InventoryVar
       product: { select: { id: true, trackInventory: true, lowStockThreshold: true, status: true, deletedAt: true, costPrice: true } },
     },
   });
+  const costs = await resolveVariantCosts(rows, currency);
   return rows.map((v) => ({
     variantId: v.id,
     productId: v.product.id,
@@ -283,7 +285,8 @@ export async function loadInventoryFacts(currency: string): Promise<InventoryVar
     lowStockThreshold: v.product.lowStockThreshold,
     held: v.isActive && v.product.deletedAt === null,
     purchasable: v.isActive && v.product.deletedAt === null && v.product.status === "PUBLISHED",
-    currentUnitCost: minor(v.costPrice ?? v.product.costPrice, currency),
+    currentUnitCost: costs.get(v.id)!.unitCostMinor,
+    costBasis: costs.get(v.id)!.basis,
   }));
 }
 

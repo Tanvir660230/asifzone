@@ -647,7 +647,7 @@ describe("alerts and month-end close (E14)", () => {
     await runReconciliation({}, OWNER);
     const c = await monthEndChecklist({ month: "2026-09" });
     expect(c).toMatchObject({ month: "2026-09", from: "2026-09-01", to: "2026-09-30", ended: true, period: { status: "OPEN" } });
-    expect(c.steps.map((x) => x.key)).toEqual(["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "checks"]);
+    expect(c.steps.map((x) => x.key)).toEqual(["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "payouts", "ads", "checks"]);
     const step = (k: string) => c.steps.find((x) => x.key === k)!;
     expect(step("events").status).toBe("DONE");
     expect(step("depreciation").status).toBe("DONE"); // September was run

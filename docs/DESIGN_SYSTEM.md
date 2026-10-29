@@ -138,3 +138,46 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
 8. **Motion is transform and opacity only, and CSS first.** Section and card entrances use `Reveal` (`animation-timeline: view()`), never JavaScript scroll listeners; hover and press feedback are CSS transitions. Anything that moves collapses to static under `prefers-reduced-motion`.
 9. **Every storefront and account page uses one frame and one heading.** `StorefrontPage` (`.ui-page`: max-width 80rem, gutters 1rem / 1.5rem / 2rem, the same top gap below the header) and `StorefrontPageHeader` (breadcrumb or eyebrow row of fixed height, then the `<h1>` in `.ui-page-title`, an optional description and actions). Content inside may be narrower, but starts at the frame's left edge — no centred one-off columns, no page-specific title sizes. Sign-in pages and the account sit inside the same storefront shell (header, footer, bag, bottom nav). The product page is the one exception to the heading (its title is the product, `.ui-product-title`), not to the frame.
 10. **No loading screens between pages.** There are no route `loading.tsx` files: the current page stays until the next is ready, and `NavigationProgress` draws a thin line only when that takes over 0.2s. Placeholders that remain (`.ui-skeleton`, `.ui-delayed`) stay invisible for their first 0.3s, so a fast response never shows a loading state. Data a page will need is prefetched where the next step is predictable (the account prefetches every section's data when it opens).
+
+## 6. Admin patterns (blueprint P2.1, tab 6)
+
+The admin is Apple-calm and light only. These patterns sit on the tokens, recipes and primitives above — never one-off
+styles.
+
+**Principles.** One primary action per page, top right; the rest secondary or under "More". Plain business words — a
+title says what the page is for in two or three words. Every status shows its next step. Money is exact, with a source
+label when estimated. Advanced fields behind "More options", owner-only tools behind "More". Avoid KPI tiles that repeat
+another page, cards around a single table, gradients and glass in the admin, decorative icons, two buttons that do the
+same thing.
+
+**Page anatomy** — five rows, always in this order: shell (sidebar from the navigation manifest, top bar with search
+Ctrl/⌘ K, Create, bell, account) → header (`PageHeader`: title, one-line description, primary action; back link on record
+pages) → section bar (a section's pages as tabs when 2–6, an inner list when more) → filter row (search left, chips,
+saved views, date range right) → body (table, record or form). Lists full width; forms at most 720 px; record pages
+2/3 + 1/3.
+
+| Pattern | Rules | Built from |
+|---|---|---|
+| List | First column identity, then status, then 3–5 decision columns; money right-aligned; row opens the record; bulk bar on selection; cards below the breakpoint | `DataTable` |
+| Record page | Status and primary next action in the header; side column for links, totals, timeline | `PageHeader`, `Card` |
+| Form | Titled sections, required first, inline validation, sticky save bar, discard guard | `Field`, form sections |
+| Quick sheet (Received goods, Fill, Count) | Drawer on desktop, full screen on phone; one task; preview before Save | `Drawer` |
+| Confirm dialog | Title = action + object; body lists the consequences the server will apply; destructive button right | `Modal` / confirm |
+| Status change | Only legal next states; reason inline when required; toast with Undo when reversible | shared state machine |
+| Queue item (Home) | Severity bar, title, one-line why, count or amount, next action link; it clears only when resolved | `QueueItem` (`components/admin/queue-item.tsx`, `data-testid="action-<key>"`) |
+| Money | `Money` / `CostAmount`; estimates carry the estimate token and label | `--data-estimate-*`, `--data-missing-*` |
+
+**Words.** Sentence case; verbs on buttons ("Receive return", not "Submit"); the owner's nouns (bottles, parcel, bill,
+production run), not system words (GRN, BOM, settlement); one name per thing across menu, title, button and toast.
+
+**States.** Loading: a skeleton in the content's shape, previous data kept while refetching. Empty: why, and the one
+action that fills it; filtered-empty offers Clear filters. Error: a plain sentence, what to do, Retry, the server's reason
+— never a raw code. Success: a toast naming the result. Estimated or incomplete: a badge on the number and a line saying
+what is missing, linking to the fix. Permission: hidden in navigation; reached by link, `PermissionState`.
+
+**Phone.** Bottom bar Home, Orders, Inbox, Stock, More; lists become cards; quick sheets full screen with a large Save;
+tables over four columns get a column picker, never a horizontal page scroll; touch targets at least 44 px. Every page
+works at 375 px. Two ways to reach 44 px without redesigning a dense row: an isolated inline text action (a row's
+"Count", a name link) takes `tap-target` (globals.css: an invisible 44 × 44 px hit area on touch screens, nothing moves);
+icon buttons that sit next to each other (Edit / Delete, Move up / down, drag and expand) grow for real on touch —
+`[@media(pointer:coarse)]:p-…` — so their hit areas never overlap. Never put `tap-target` on neighbouring controls.

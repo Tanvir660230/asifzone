@@ -98,9 +98,9 @@ export default function AdReturnsView() {
         <Tile label="Net sales from ads" value={taka(t.netSales)} note={`${n(t.realisedOrders)} delivered or paid of ${n(t.orders)} orders`} />
         <Tile label="Real ROAS" value={roas(t.roas)} note="Delivered net sales ÷ spend" tone={t.roas === null ? undefined : t.roas >= 1 ? "good" : "bad"} />
         <Tile
-          label="Profit after ads"
+          label="Margin after ads (estimate)"
           value={t.profitAfterAds === null ? "—" : `${t.profitAfterAds < 0 ? "−" : ""}${taka(Math.abs(t.profitAfterAds))}`}
-          note="Gross margin − spend, campaigns with spend"
+          note="Sales-estimate margin − spend, campaigns with spend"
           tone={t.profitAfterAds === null ? undefined : t.profitAfterAds >= 0 ? "good" : "bad"}
         />
       </div>

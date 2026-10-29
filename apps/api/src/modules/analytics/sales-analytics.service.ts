@@ -11,7 +11,6 @@ import {
   customerStats,
   distinctOrdersBy,
   enumerateBuckets,
-  fromMajor,
   groupContributions,
   localClock,
   previousRange,
@@ -26,6 +25,7 @@ import { computeMetrics, loadFactsForRange, minorToMajor } from "../../domain/me
 import { OPERATIONAL_ORDER_WHERE, SALE_ORDER_WHERE } from "../../domain/metrics/sale-order";
 import { resolveLegacyWindow, resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
 import { loadInventoryFacts } from "../../domain/metrics/facts.repository";
+import { resolveVariantCosts } from "../../domain/finance/cost-resolver";
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -374,7 +374,7 @@ export async function getInventoryTurnover(days?: number, limit = 10) {
     const [{ orders, major }, variants] = await Promise.all([facts(range), loadInventoryFacts(currency)]);
     const cogs = groupContributions("cogs", orders, range, productIdOf);
     const valueBy = new Map<string, number>();
-    for (const v of variants) if (v.held && v.trackInventory) valueBy.set(v.productId, (valueBy.get(v.productId) ?? 0) + Math.max(0, v.stock) * v.currentUnitCost);
+    for (const v of variants) if (v.held && v.trackInventory) valueBy.set(v.productId, (valueBy.get(v.productId) ?? 0) + Math.max(0, v.stock) * (v.currentUnitCost ?? 0));
     const refs = await productRefs([...valueBy.keys()]);
     return [...valueBy.entries()]
       .filter(([id, value]) => value > 0 && refs.has(id))
@@ -397,11 +397,15 @@ export async function getDeadStockReport(days = 90, limit = 10) {
     ]);
     const demanded = groupContributions("units_ordered", orders, range, (c) => c.line?.variantId ?? null);
     const { currency } = await storeContext();
-    const toMinor = (v: { toString(): string } | null) => fromMajor(v?.toString() ?? "0", currency).amount;
-    return rows
-      .filter((v) => !demanded.has(v.id))
-      .map((v) => ({ productId: v.product.id, name: v.product.name, variantId: v.id, sku: v.sku, size: v.size, color: v.color, stock: v.stock, tiedUpValue: major(v.stock * toMinor(v.costPrice ?? v.product.costPrice)) }))
-      .sort((a, b) => b.tiedUpValue - a.tiedUpValue)
+    const idle = rows.filter((v) => !demanded.has(v.id));
+    const costs = await resolveVariantCosts(idle, currency);
+    return idle
+      .map((v) => {
+        const cost = costs.get(v.id)!;
+        // a missing cost is unknown, never 0 (blueprint P-1): the row stays, its value is null and sorts last
+        return { productId: v.product.id, name: v.product.name, variantId: v.id, sku: v.sku, size: v.size, color: v.color, stock: v.stock, tiedUpValue: cost.unitCostMinor === null ? null : major(v.stock * cost.unitCostMinor), costBasis: cost.basis };
+      })
+      .sort((a, b) => (b.tiedUpValue ?? -1) - (a.tiedUpValue ?? -1))
       .slice(0, limit);
   });
 }

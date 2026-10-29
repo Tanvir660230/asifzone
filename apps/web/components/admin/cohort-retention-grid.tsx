@@ -49,7 +49,7 @@ export function CohortRetentionGrid({ cohorts }: { cohorts: CohortRetention[] })
                     <span
                       title={`${point.activeCustomers} of ${cohort.cohortSize} customers ordered again`}
                       className="inline-flex h-8 w-14 items-center justify-center rounded-sm text-xs font-medium"
-                      style={{ backgroundColor: `rgba(17,17,17,${alpha})`, color: alpha > 0.45 ? "#fff" : "#1a1a1a" }}
+                      style={{ backgroundColor: `rgb(var(--color-ink-900) / ${alpha})`, color: alpha > 0.45 ? "rgb(var(--color-cream-50))" : "rgb(var(--color-ink-900))" }}
                     >
                       {point.retentionPct.toFixed(0)}%
                     </span>

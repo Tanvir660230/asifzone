@@ -24,6 +24,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { ExpenseImportModal, NewCategoryModal } from "@/components/admin/finance/expense-import";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const PERIOD_BADGE: Record<CommitmentPeriod["status"], { variant: "success" | "warning" | "danger" | "neutral"; label: string }> = {
   PAID: { variant: "success", label: "paid" }, AWAITING_APPROVAL: { variant: "warning", label: "awaiting approval" }, OVERDUE: { variant: "danger", label: "overdue" }, DUE: { variant: "neutral", label: "due" },
@@ -56,7 +57,7 @@ export default function ExpensesPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Receipt} title="Expenses aren't available to your role" />
+        <PermissionState icon={Receipt} page="Expenses" />
       </div>
     );
   }

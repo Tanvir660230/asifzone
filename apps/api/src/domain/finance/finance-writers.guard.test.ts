@@ -52,6 +52,8 @@ describe("financial core — architecture guards", () => {
       ["inventoryCutoverBatch", "InventoryCutoverBatch"], ["inventoryCutoverLine", "InventoryCutoverLine"],
       ["purchaseOrder", "PurchaseOrder"], ["purchaseOrderLine", "PurchaseOrderLine"], ["goodsReceipt", "GoodsReceipt"], ["goodsReceiptLine", "GoodsReceiptLine"],
       ["purchaseReturn", "PurchaseReturn"], ["purchaseReturnLine", "PurchaseReturnLine"],
+      // Owner-advance subledger (blueprint P1.4, owner decision Q-F)
+      ["ownerAdvance", "OwnerAdvance"], ["ownerAdvanceAllocation", "OwnerAdvanceAllocation"],
     ];
     const offenders = MODELS.flatMap(([m, t]) => writers(m, t).filter((f) => !f.startsWith("domain/finance/")).map((f) => `${f}: ${t}`));
     expect(offenders).toEqual([]);

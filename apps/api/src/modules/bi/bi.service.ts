@@ -233,7 +233,7 @@ async function computeAutomatedInsights(): Promise<AutomatedInsight[]> {
     });
   }
 
-  const deadStockValue = deadStock.reduce((sum, d) => sum + d.tiedUpValue, 0);
+  const deadStockValue = deadStock.reduce((sum, d) => sum + (d.tiedUpValue ?? 0), 0);
   if (deadStockValue > 0) {
     insights.push({
       id: "dead-stock",

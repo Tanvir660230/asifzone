@@ -13,7 +13,7 @@ import { createSupplier, setSupplierStatus } from "./suppliers.service";
 import { createTaxCode } from "./tax-codes.service";
 import { approveCutover, draftCutover, postCutover } from "./inventory-cutover.service";
 import { approvePurchaseOrder, cancelPurchaseOrder, closePurchaseOrder, createPurchaseOrder, submitPurchaseOrder, updatePurchaseOrder } from "./purchase-orders.service";
-import { createGoodsReceipt, postGoodsReceipt, reverseGoodsReceipt } from "./goods-receipts.service";
+import { createGoodsReceipt, deleteDraftGoodsReceipt, postGoodsReceipt, reverseGoodsReceipt } from "./goods-receipts.service";
 import { approvePurchaseReturn, createPurchaseReturn, shipPurchaseReturn } from "./purchase-returns.service";
 import type { FinanceActor } from "./finance-audit";
 
@@ -158,6 +158,13 @@ describe("goods receipts", () => {
     expect(ev.status).toBe("POSTED");
     expect(ev.journalEntry!.lines.map((l) => [Number(l.debit), Number(l.credit), l.partyType, l.partyId])).toEqual([[1046.4, 0, "Supplier", supplierId], [0, 1046.4, "Supplier", supplierId]]);
     matched(await checks(ALL_CHECKS));
+  });
+
+  it("a second delivery on the same purchase order is never flagged as a possible duplicate (P0.3)", async () => {
+    // same supplier, same day, same item, same total as the delivery just posted — but it is the order's next part
+    const again = await createGoodsReceipt({ purchaseOrderId: poId, lines: [{ purchaseOrderLineId: lineA, qtyAccepted: 8, qtyRejected: 2 }] } as never, OWNER);
+    expect(again.duplicateWarning).toBeNull();
+    await deleteDraftGoodsReceipt(again.id, OWNER);
   });
 
   it("receiving beyond the order needs an approver and a reason", async () => {

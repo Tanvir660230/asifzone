@@ -8,8 +8,10 @@
  *   3. bill           a supplier invoice matched line by line to that receipt, posted: it
  *                     clears GRNI at exactly the receipt's value (no price difference)          supplier-invoices.service
  *   4. funding        paid from the owner's own money only (owner-only: finance.sensitive, like POST /equity/owner/money):
- *                     his money comes into his "<owner> — own money" cash account as capital
- *                     first (made the first time, as the owner's history does)                  partner-profit.service ownerMoney
+ *                     his money comes into his "<owner> — own money" cash account first (made the first time, as the
+ *                     owner's history does) — as capital, or owed back to him (owner decision Q14 = B: the person
+ *                     chooses per purchase; credit liability.owner_reimbursable, as an owner-paid expense does)
+ *                                                                                            partner-profit.service ownerMoney
  *   5. payment        the bill paid from that account                                           supplier-payments.service
  *   6. extras         transport, customs… one landed cost spread over the receipt by value,
  *                     paid from the same account                                                landed-costs.service
@@ -25,10 +27,14 @@
  * unique in the database among live documents), and the entry (hub-entry.ts) records what each step made under a fenced
  * lease: a retry after a mid-way failure resumes, a replay writes nothing, a request that outlived its lease stops. An
  * entry stuck mid-way (the money moved meanwhile) is finished with POST /stock/purchases/:id/finish, from the same or —
- * while nothing has been paid yet — another account. Stock documents need costing (decision D-P1): before go-live the
- * purchase is refused with the reason.
+ * while nothing has been paid yet — another account.
+ *
+ * Before stock costing is live (blueprint P1.4, owner decisions Q7 = A and Q-F) the same form records the purchase in
+ * simple mode instead: a RESTOCK movement per line, the purchase kept on its hub entry (supplier, prices, who paid), the
+ * catalog cost set from it unless the person unticks that, and the money kept as a pending record — nothing is posted to
+ * the ledger (no receipt, bill, payment or landed cost) until the books take it over.
  */
-import { monthPeriod, goodsReceiptCreateSchema, stockPurchaseFinishSchema, stockPurchaseSchema, supplierCreateSchema, supplierInvoiceCreateSchema, type StockPurchaseFinishInput, type StockPurchaseInput } from "@clothing-brand/shared";
+import { monthPeriod, goodsReceiptCreateSchema, stockPurchaseFinishSchema, stockPurchaseSchema, supplierCreateSchema, supplierInvoiceCreateSchema, type PurchaseDuplicateCheckInput, type StockPurchaseFinishInput, type StockPurchaseInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { actorCan, type FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "../finance/finance-context";
@@ -39,9 +45,12 @@ import { createSupplierInvoice, postSupplierInvoice } from "../finance/supplier-
 import { paySupplier } from "../finance/supplier-payments.service";
 import { createLandedCost } from "../finance/landed-costs.service";
 import { ownerMoney } from "../finance/partner-profit.service";
+import { ownerOwedBack } from "../finance/owner-advances.service";
 import { createFinancialAccount } from "../finance/financial-accounts.service";
 import { moneyBalanceAt } from "../finance/ledger.service";
+import { findDuplicateReceipts, findDuplicateSimplePurchases, type DuplicateMatch } from "./duplicate-purchase";
 import { claimEntry, claimEntryById, completeEntry, findEntry, fingerprintOf, isUniqueViolation, releaseEntry, renewLease, saveSteps, unitOf, variantLabel, type Lease } from "./hub-entry";
+import { adjustVariantStockInTx, afterAdjustment, type AdjustResult } from "../../modules/inventory/inventory.service";
 
 export type { StockPurchaseInput, StockPurchaseFinishInput };
 
@@ -54,12 +63,17 @@ const NO_OVERDRAFT = new Set(["CASH", "MOBILE_WALLET"]);
 const NEEDS = ["purchasing.receive", "purchasing.approve", "ap.manage", "finance.transact"] as const;
 const KEY_PREFIX = "purchase:";
 
-type PaidFrom = { kind: "ACCOUNT" | "OWNER"; financialAccountId: string; name: string };
+type OwnerFunding = "REIMBURSE" | "CAPITAL";
+/** `funding` only for the owner's own money (Q14 = B); absent on purchases saved before the choice existed = CAPITAL. */
+type PaidFrom = { kind: "ACCOUNT" | "OWNER"; financialAccountId: string; name: string; funding?: OwnerFunding };
+/** The funding a request asks for: the owner's money is capital unless it says it is owed back. */
+const fundingOf = (p: StockPurchaseFinishInput["paidFrom"]): OwnerFunding | undefined => (p && "ownerPocket" in p ? p.funding ?? "CAPITAL" : undefined);
 interface PurchaseSteps {
   request: {
     supplierName: string;
     reference: string | null;
     note: string | null;
+    duplicateReason?: string | null;
     lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number }>;
     extras: Array<{ description: string; amount: number }>;
     paidFrom: PaidFrom;
@@ -76,8 +90,20 @@ interface PurchaseSteps {
   paymentMovementId?: string;
   paymentStatus?: string;
   landedCostId?: string | null;
+  /** Recorded before stock costing was live (P1.4 / Q-F): stock and catalog cost only, the money a pending record. */
+  mode?: "SIMPLE";
+  /** Simple mode: set each item's catalog cost from this purchase (Q-F: on unless unticked). */
+  updateCatalogCost?: boolean;
+  /** Simple mode: the catalog costs it set, before and after (major units). */
+  catalogCosts?: Array<{ variantId: string; before: number | null; after: number }>;
+  /** Simple mode: when the stock movements committed (a retry after that only completes the entry). */
+  stockedAt?: string;
+  /** Simple mode: what was paid is not in the books yet. */
+  money?: { status: "PENDING" };
+  /** Simple mode: purchases it looked like when saved (blueprint P0.3), with the person's reason in request.duplicateReason. */
+  duplicateWarning?: { matches: DuplicateMatch[]; checkedAt: string };
 }
-export type PurchaseStep = "supplier" | "receipt" | "invoice" | "funding" | "payment" | "extras";
+export type PurchaseStep = "supplier" | "receipt" | "invoice" | "funding" | "payment" | "extras" | "stock";
 
 const tag = (key: string, step: string) => `stock-purchase:${key}:${step}`;
 
@@ -92,6 +118,7 @@ export function exactLines(quantity: number, amountMinor: number): Array<{ qty: 
 /** The step an unfinished purchase waits on (null once complete). */
 export function pendingStep(s: PurchaseSteps, complete: boolean): PurchaseStep | null {
   if (complete) return null;
+  if (s.mode === "SIMPLE") return "stock";
   if (!s.supplierId) return "supplier";
   if (!s.receiptId || !s.receiptNumber) return "receipt";
   if (!s.invoiceId || !s.invoiceNumber) return "invoice";
@@ -155,7 +182,7 @@ async function ensureOwnerPocket(businessId: string, actor: FinanceActor): Promi
 }
 
 /** Who pays, from the request: an account (cash, bank or wallet) or the owner's own money (`account` null: made later). */
-async function resolvePaidFrom(businessId: string, paidFrom: StockPurchaseFinishInput["paidFrom"] & object): Promise<PaidFrom | { kind: "OWNER"; financialAccountId: null; name: string }> {
+async function resolvePaidFrom(businessId: string, paidFrom: StockPurchaseFinishInput["paidFrom"] & object): Promise<PaidFrom | { kind: "OWNER"; financialAccountId: null; name: string; funding?: OwnerFunding }> {
   if ("ownerPocket" in paidFrom) {
     const { name, account } = await findOwnerPocket(businessId);
     return account ? { kind: "OWNER", financialAccountId: account.id, name: account.name } : { kind: "OWNER", financialAccountId: null, name };
@@ -177,6 +204,23 @@ async function supplierByName(businessId: string, name: string): Promise<string 
   const held = found.find((s) => s.status === "ON_HOLD");
   if (held) throw onHold(held);
   return null;
+}
+
+/** Blueprint P0.3: the live receipts a purchase about to be saved looks like (same supplier, ±3 days, ≥ 70% items,
+ * total ±1%). Read-only; a supplier not found by name has no history, so nothing matches. Never blocks the save. */
+export async function checkPurchaseDuplicates(input: PurchaseDuplicateCheckInput) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  let supplierId = input.supplierId ?? null;
+  if (!supplierId && input.supplierName) supplierId = await supplierByName(business.id, input.supplierName).catch(() => null);
+  const supplierName = input.supplierName ?? (supplierId ? (await prisma.supplier.findUnique({ where: { id: supplierId }, select: { displayName: true } }))?.displayName ?? null : null);
+  const shape = { date: input.date ?? businessToday(business), variantIds: input.lines.map((l) => l.variantId), totalMinor: input.lines.reduce((s, l) => s + toMinor(l.amount, cur), 0) };
+  const [receipts, simple] = await Promise.all([
+    supplierId ? findDuplicateReceipts(prisma, { businessId: business.id, supplierId, shape, currency: cur }) : Promise.resolve([]),
+    // purchases recorded before costing was live (P1.4) have no receipt: matched by the supplier's name
+    supplierName ? findDuplicateSimplePurchases(prisma, { businessId: business.id, supplierName, shape, currency: cur }) : Promise.resolve([]),
+  ]);
+  return { matches: [...receipts, ...simple] };
 }
 
 async function assertSupplierUsable(id: string) {
@@ -210,25 +254,22 @@ async function assertMoneyFor(business: FinanceBusinessInfo, paidFrom: { kind: s
   }
 }
 
-async function assertCostingLive(businessId: string) {
+async function costingLive(businessId: string): Promise<boolean> {
   const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: businessId }, select: { inventoryCostingActivatedAt: true } });
-  if (!biz.inventoryCostingActivatedAt) throw financeError(409, "COSTING_NOT_ACTIVE", "Stock costing starts at go-live — purchases are recorded here once the stock has been valued");
+  return Boolean(biz.inventoryCostingActivatedAt);
 }
 
-/** Records a purchase (see the file header). Returns the documents it made; `replayed` when the key had already finished. */
-export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActor, key: string | null) {
-  if (!key) throw financeError(400, "IDEMPOTENCY_KEY_REQUIRED", "Send an Idempotency-Key header with every purchase");
-  const input = stockPurchaseSchema.parse(raw);
-  assertCan(actor, "ownerPocket" in input.paidFrom);
-  const { business } = await getFinanceContext();
-  const cur = business.baseCurrency;
-  await assertCostingLive(business.id);
-  const today = businessToday(business);
-  if (input.date && input.date > today) throw financeError(400, "PURCHASE_IN_FUTURE", "A purchase records goods already received");
+async function assertCostingLive(businessId: string) {
+  if (!(await costingLive(businessId))) throw financeError(409, "COSTING_NOT_ACTIVE", "Stock costing starts at go-live — purchases are recorded here once the stock has been valued");
+}
 
+type ParsedPurchase = ReturnType<typeof stockPurchaseSchema.parse>;
+
+/** Every line is a live, stock-tracked item with at least the smallest coin per unit. The items, by id. */
+async function checkedLines(input: ParsedPurchase, cur: string) {
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: input.lines.map((l) => l.variantId) } },
-    select: { id: true, size: true, color: true, product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, deletedAt: true } } },
+    select: { id: true, size: true, color: true, costPrice: true, product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, deletedAt: true } } },
   });
   const byId = new Map(variants.map((v) => [v.id, v]));
   for (const [i, l] of input.lines.entries()) {
@@ -237,6 +278,122 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
     if (!v.product.trackInventory) throw financeError(400, "PURCHASE_UNTRACKED", `Line ${i + 1}: ${variantLabel(v)} isn't stock-tracked`);
     if (toMinor(l.amount, cur) < l.quantity) throw financeError(400, "PURCHASE_LINE_AMOUNT", `Line ${i + 1}: the total is less than the smallest coin per unit`);
   }
+  return byId;
+}
+
+/** Splits `totalMinor` over shares proportional to `weights` (largest remainder), so the parts add up exactly. */
+export function spreadByWeight(totalMinor: number, weights: number[]): number[] {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (!totalMinor || !sum) return weights.map(() => 0);
+  const raw = weights.map((w) => (totalMinor * w) / sum);
+  const out = raw.map(Math.floor);
+  let left = totalMinor - out.reduce((s, x) => s + x, 0);
+  for (const i of raw.map((r, i) => ({ i, f: r - Math.floor(r) })).sort((a, b) => b.f - a.f || a.i - b.i).map((x) => x.i)) {
+    if (!left) break;
+    out[i]! += 1;
+    left -= 1;
+  }
+  return out;
+}
+
+/**
+ * P1.4 simple mode (owner decisions Q7 = A, Q-F; clarification report §4): a purchase recorded while stock costing is not
+ * live. In one transaction, under the entry's lease: a RESTOCK movement per line (idempotent per line by the entry as its
+ * source) and — unless unticked — each item's catalog cost set from the purchase (its line total plus its share of the
+ * extras by value, per unit, as the landed cost would spread them). The entry keeps the supplier, prices and who paid; the
+ * money is a pending record and nothing is posted. Permissions: the route's purchasing.receive, finance.sensitive for the
+ * owner's own money (as when it is booked), catalog.manage to set catalog costs (the product editor's permission).
+ */
+async function recordSimplePurchase(input: ParsedPurchase, actor: FinanceActor, key: string, business: FinanceBusinessInfo) {
+  const updateCatalogCost = input.updateCatalogCost ?? true;
+  const ownerPocket = "ownerPocket" in input.paidFrom;
+  if (ownerPocket && !actorCan(actor, "finance.sensitive")) throw financeError(403, "STOCK_PURCHASE_PERMISSION", "A purchase paid from the owner's own money is the owner's to record (finance.sensitive)");
+  if (updateCatalogCost && !actorCan(actor, "catalog.manage")) throw financeError(403, "STOCK_PURCHASE_PERMISSION", "Setting catalog costs needs catalog.manage — untick \"set catalog cost\", or ask someone who edits products");
+  const cur = business.baseCurrency;
+  const today = businessToday(business);
+  if (input.date && input.date > today) throw financeError(400, "PURCHASE_IN_FUTURE", "A purchase records goods already received");
+  const byId = await checkedLines(input, cur);
+
+  const fingerprint = fingerprintOf(input);
+  const existing = await findEntry(business.id, "PURCHASE", key);
+  if (existing && existing.fingerprint !== fingerprint) throw financeError(409, "IDEMPOTENCY_KEY_REUSED", "This Idempotency-Key was already used for a different entry");
+  if (existing?.completedAt) return outcome(existing.id, existing.steps as unknown as PurchaseSteps, true, existing);
+
+  const supplierName = input.supplierName ?? DEFAULT_SUPPLIER;
+  const date = input.date ?? today;
+  const goodsMinor = input.lines.reduce((s, l) => s + toMinor(l.amount, cur), 0);
+  const extrasMinor = input.extras.reduce((s, e) => s + toMinor(e.amount, cur), 0);
+  // read-only: an account is checked, the owner's own-money account is never made here (nothing is booked)
+  const resolved = (await resolvePaidFrom(business.id, input.paidFrom)) as PaidFrom;
+  const paidFrom: PaidFrom = resolved.kind === "OWNER" ? { ...resolved, funding: fundingOf(input.paidFrom) } : resolved;
+  const shape = { date, variantIds: input.lines.map((l) => l.variantId), totalMinor: goodsMinor };
+  const matches = await findDuplicateSimplePurchases(prisma, { businessId: business.id, supplierName, shape, currency: cur });
+  const initial: PurchaseSteps = {
+    mode: "SIMPLE",
+    request: {
+      supplierName, reference: input.reference, note: input.note, duplicateReason: input.duplicateReason ?? null,
+      lines: input.lines.map((l) => {
+        const v = byId.get(l.variantId)!;
+        return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), quantity: l.quantity, amount: l.amount };
+      }),
+      extras: input.extras, paidFrom,
+    },
+    goods: toMajorNumber(goodsMinor, cur), extras: toMajorNumber(extrasMinor, cur), total: toMajorNumber(goodsMinor + extrasMinor, cur),
+    updateCatalogCost,
+    money: { status: "PENDING" },
+    ...(matches.length ? { duplicateWarning: { matches, checkedAt: new Date().toISOString() } } : {}),
+  };
+  const { entry, done, lease } = await claimEntry({ businessId: business.id, kind: "PURCHASE", key, fingerprint, entryDate: date, steps: initial as never, actor });
+  if (done || !lease) return outcome(entry.id, entry.steps as unknown as PurchaseSteps, true, entry);
+  const steps = entry.steps as unknown as PurchaseSteps;
+  if (steps.stockedAt) return outcome(entry.id, (await completeEntry(lease, steps as never)).steps as unknown as PurchaseSteps, false, await prisma.stockHubEntry.findUniqueOrThrow({ where: { id: entry.id } }));
+
+  const adminId = actor.type === "ADMIN" ? actor.adminId : null;
+  const lines = steps.request.lines;
+  const shares = spreadByWeight(toMinor(steps.extras, cur), lines.map((l) => toMinor(l.amount, cur)));
+  const moved: AdjustResult[] = [];
+  let stocked: PurchaseSteps;
+  try {
+    stocked = await prisma.$transaction(async (tx) => {
+      // costing may have gone live since the check: then this purchase is booked instead (a retry takes that path)
+      const biz = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { inventoryCostingActivatedAt: true } });
+      if (biz.inventoryCostingActivatedAt) throw financeError(409, "COSTING_NOW_ACTIVE", "Stock costing has just gone live — save the purchase again under a new entry; it is now booked with its bill and payment");
+      const catalogCosts: NonNullable<PurchaseSteps["catalogCosts"]> = [];
+      for (const [i, l] of lines.entries()) {
+        moved.push(await adjustVariantStockInTx(tx, l.variantId, l.quantity, "RESTOCK", adminId, `${PURCHASE_REASON}: ${steps.request.supplierName}`, { source: { type: "StockHubEntry", id: entry.id } }));
+        if (!steps.updateCatalogCost) continue;
+        const after = Math.round((toMinor(l.amount, cur) + shares[i]!) / l.quantity) / 100;
+        const v = await tx.productVariant.findUniqueOrThrow({ where: { id: l.variantId }, select: { costPrice: true } });
+        await tx.productVariant.update({ where: { id: l.variantId }, data: { costPrice: after } });
+        catalogCosts.push({ variantId: l.variantId, before: v.costPrice === null ? null : Number(v.costPrice), after });
+      }
+      const next: PurchaseSteps = { ...steps, catalogCosts, stockedAt: new Date().toISOString() };
+      // fenced like every hub write: a request that lost the lease commits nothing
+      const saved = await tx.stockHubEntry.updateMany({ where: { id: lease.id, leaseToken: lease.token, completedAt: null }, data: { steps: next as never } });
+      if (!saved.count) throw financeError(409, "STOCK_ENTRY_LEASE_LOST", "This entry was taken over by a newer attempt — it finishes there; refresh to see it");
+      return next;
+    });
+  } catch (err) {
+    await releaseEntry(lease);
+    throw err;
+  }
+  for (const r of moved) afterAdjustment(r);
+  const completed = await completeEntry(lease, stocked as never);
+  return outcome(completed.id, completed.steps as unknown as PurchaseSteps, false, completed);
+}
+
+/** Records a purchase (see the file header). Returns the documents it made; `replayed` when the key had already finished. */
+export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActor, key: string | null) {
+  if (!key) throw financeError(400, "IDEMPOTENCY_KEY_REQUIRED", "Send an Idempotency-Key header with every purchase");
+  const input = stockPurchaseSchema.parse(raw);
+  const { business } = await getFinanceContext();
+  // P1.4 / Q-F: before costing is live the purchase is recorded in simple mode (stock and catalog cost, money pending)
+  if (!(await costingLive(business.id))) return recordSimplePurchase(input, actor, key, business);
+  assertCan(actor, "ownerPocket" in input.paidFrom);
+  const cur = business.baseCurrency;
+  const today = businessToday(business);
+  if (input.date && input.date > today) throw financeError(400, "PURCHASE_IN_FUTURE", "A purchase records goods already received");
+  const byId = await checkedLines(input, cur);
 
   const fingerprint = fingerprintOf(input);
   const existing = await findEntry(business.id, "PURCHASE", key);
@@ -263,12 +420,12 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
   }
 
   let paidFrom: PaidFrom;
-  if ("ownerPocket" in input.paidFrom) paidFrom = existing ? (existing.steps as unknown as PurchaseSteps).request.paidFrom : await ensureOwnerPocket(business.id, actor);
+  if ("ownerPocket" in input.paidFrom) paidFrom = existing ? (existing.steps as unknown as PurchaseSteps).request.paidFrom : { ...(await ensureOwnerPocket(business.id, actor)), funding: fundingOf(input.paidFrom) };
   else paidFrom = (await resolvePaidFrom(business.id, input.paidFrom)) as PaidFrom;
 
   const initial: PurchaseSteps = {
     request: {
-      supplierName, reference: input.reference, note: input.note,
+      supplierName, reference: input.reference, note: input.note, duplicateReason: input.duplicateReason ?? null,
       lines: input.lines.map((l) => {
         const v = byId.get(l.variantId)!;
         return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), quantity: l.quantity, amount: l.amount };
@@ -294,11 +451,16 @@ export async function finishPurchase(id: string, raw: StockPurchaseFinishInput, 
   const cur = business.baseCurrency;
   const found = await prisma.stockHubEntry.findFirst({ where: { id, businessId: business.id, kind: "PURCHASE" } });
   if (!found) throw financeError(404, "STOCK_ENTRY_NOT_FOUND", "That purchase doesn't exist");
+  if ((found.steps as unknown as PurchaseSteps).mode === "SIMPLE") {
+    throw financeError(409, "SIMPLE_PURCHASE", "This purchase was recorded before costing was live — it has no bill or payment to finish; save it again with the same entry to complete it");
+  }
   if (found.completedAt) return outcome(found.id, found.steps as unknown as PurchaseSteps, true, found);
   const s = found.steps as unknown as PurchaseSteps;
 
-  const wanted = input.paidFrom ? await resolvePaidFrom(business.id, input.paidFrom) : s.request.paidFrom;
-  const changes = wanted.kind !== s.request.paidFrom.kind || (wanted.financialAccountId !== null && wanted.financialAccountId !== s.request.paidFrom.financialAccountId);
+  const resolvedWanted = input.paidFrom ? await resolvePaidFrom(business.id, input.paidFrom) : s.request.paidFrom;
+  const wanted = input.paidFrom && resolvedWanted.kind === "OWNER" ? { ...resolvedWanted, funding: fundingOf(input.paidFrom) } : resolvedWanted;
+  const changes = wanted.kind !== s.request.paidFrom.kind || (wanted.financialAccountId !== null && wanted.financialAccountId !== s.request.paidFrom.financialAccountId)
+    || (wanted.kind === "OWNER" && (wanted.funding ?? "CAPITAL") !== (s.request.paidFrom.funding ?? "CAPITAL"));
   if (changes && moneyMoved(s)) throw financeError(409, "PAID_FROM_LOCKED", `Part of this purchase was already paid from ${s.request.paidFrom.name} — finish it from there`);
   assertCan(actor, wanted.kind === "OWNER");
   await assertCostingLive(business.id);
@@ -306,7 +468,7 @@ export async function finishPurchase(id: string, raw: StockPurchaseFinishInput, 
   else await supplierByName(business.id, s.request.supplierName);
   await assertBooksOpen(business, businessDateOf(found.entryDate), actor);
   await assertMoneyFor(business, wanted, stillToPay(s, cur));
-  const paidFrom: PaidFrom = wanted.kind === "OWNER" && wanted.financialAccountId === null ? await ensureOwnerPocket(business.id, actor) : (wanted as PaidFrom);
+  const paidFrom: PaidFrom = wanted.kind === "OWNER" && wanted.financialAccountId === null ? { ...(await ensureOwnerPocket(business.id, actor)), funding: wanted.funding } : (wanted as PaidFrom);
 
   const { entry, done, lease } = await claimEntryById(business.id, "PURCHASE", id);
   if (done || !lease) return outcome(entry.id, entry.steps as unknown as PurchaseSteps, true, entry);
@@ -366,7 +528,7 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
       steps.receiptId = await onceByStamp(
         () => prisma.goodsReceipt.findFirst({ where: { businessId: business.id, evidence: tag(key, "receipt"), status: { not: "REVERSED" } }, select: { id: true } }),
         () => createGoodsReceipt(goodsReceiptCreateSchema.parse({
-          supplierId: steps.supplierId, receiptDate: date, supplierRef: req.reference, notes: req.note, evidence: tag(key, "receipt"), directReason: PURCHASE_REASON,
+          supplierId: steps.supplierId, receiptDate: date, supplierRef: req.reference, notes: req.note, evidence: tag(key, "receipt"), directReason: PURCHASE_REASON, duplicateReason: req.duplicateReason ?? null,
           lines: req.lines.flatMap((l) => exactLines(l.quantity, toMinor(l.amount, cur)).map((x) => ({ variantId: l.variantId, qtyAccepted: x.qty, unitCost: toMajorNumber(x.unitMinor, cur) }))),
         }), actor),
       );
@@ -399,11 +561,13 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
       await save();
     }
 
-    // 4. the owner's own money comes in as capital first
+    // 4. the owner's own money comes in first: as capital, or owed back to him (Q14 = B)
     if (req.paidFrom.kind === "OWNER" && !steps.fundingMovementId) {
       await renewLease(lease);
       const what = req.lines.map((l) => `${l.quantity} ${l.unit} ${l.name}`).join(", ");
-      const { movement } = await ownerMoney({ kind: "INVEST", financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, note: `Bought ${steps.receiptNumber}: ${what}`.slice(0, 200) }, actor, tag(key, "funding"));
+      const { movement } = req.paidFrom.funding === "REIMBURSE"
+        ? await ownerOwedBack({ financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, description: `Paid by the owner (to repay): bought ${steps.receiptNumber}: ${what}`, sourceType: "StockPurchase", sourceId: lease.id }, actor, tag(key, "funding"))
+        : await ownerMoney({ kind: "INVEST", financialAccountId: req.paidFrom.financialAccountId, amount: steps.total, date, note: `Bought ${steps.receiptNumber}: ${what}`.slice(0, 200) }, actor, tag(key, "funding"));
       if (movement.status !== "POSTED") throw financeError(409, "FUNDING_NEEDS_APPROVAL", "The owner's money must post before the purchase can be paid from it — approve it, then finish the purchase");
       steps.fundingMovementId = movement.id;
       await save();
@@ -474,8 +638,15 @@ function purchaseDto(id: string, s: PurchaseSteps, e: { entryDate: Date; created
     landedCostId: s.landedCostId ?? null,
     /** False: a step failed (e.g. the money moved meanwhile) — POST /stock/purchases/:id/finish completes it. */
     complete,
-    /** The step it waits on while incomplete: supplier, receipt, invoice, funding, payment or extras. */
+    /** The step it waits on while incomplete: supplier, receipt, invoice, funding, payment or extras (stock in simple mode). */
     pendingStep: pendingStep(s, complete),
+    /** BOOKED: receipt, bill and payment in the books. SIMPLE (P1.4): recorded before costing was live — stock only. */
+    mode: s.mode === "SIMPLE" ? ("SIMPLE" as const) : ("BOOKED" as const),
+    /** Simple mode: what was paid is a pending record, not in the books yet. */
+    moneyPending: s.money?.status === "PENDING",
+    /** Simple mode: catalog costs it set (amounts only with costing.read). */
+    catalogCosts: (s.catalogCosts ?? []).map((c) => ({ variantId: c.variantId, before: c.before === null ? null : money(c.before), after: money(c.after) })),
+    duplicateMatches: s.duplicateWarning?.matches.length ?? 0,
     createdAt: e.createdAt,
   };
 }

@@ -83,15 +83,17 @@ test("an answer written once replies to the same question, typed differently, wi
   await adminLogin(page);
   await page.goto("/admin/saved-answers");
   await page.getByRole("button", { name: "New answer" }).click();
+  // Only the new-answer form: answers already saved (by other specs, or earlier runs) have their own Answer box and switch.
+  const form = page.getByRole("form", { name: "New answer" });
   const title = `Shop kothay ${RUN}?`;
   created.push(title);
-  await page.getByLabel("The question").fill(title);
-  await page.getByLabel(/Other ways customers ask it/).fill("dokan kothay\nshowroom ache?");
-  await page.getByLabel("Answer", { exact: true }).fill("Amader online shop:");
-  await page.getByRole("button", { name: "Website" }).click();
-  await expect(page.getByLabel("Answer", { exact: true })).toHaveValue("Amader online shop: {website}");
-  await page.getByRole("switch", { name: "Send automatically" }).click();
-  await page.getByRole("button", { name: "Save answer" }).click();
+  await form.getByLabel("The question").fill(title);
+  await form.getByLabel(/Other ways customers ask it/).fill("dokan kothay\nshowroom ache?");
+  await form.getByLabel("Answer", { exact: true }).fill("Amader online shop:");
+  await form.getByRole("button", { name: "Website" }).click();
+  await expect(form.getByLabel("Answer", { exact: true })).toHaveValue("Amader online shop: {website}");
+  await form.getByRole("switch", { name: "Send automatically" }).click();
+  await form.getByRole("button", { name: "Save answer" }).click();
   await expect(page.getByRole("heading", { name: /In use/ })).toBeVisible();
 
   const id = await customerAsks(request, page, waId(), `Lima ${RUN}`, "dokan ta kothay bhai?");

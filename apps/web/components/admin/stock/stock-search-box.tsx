@@ -22,7 +22,9 @@ export function quickActionOf(i: StockListItem): { action: QuickAction; label: s
  * `days`, how long that lasts). */
 export function figureOf(i: StockListItem, days = false): string {
   if (i.group === "FILL_TO_ORDER") return i.status === "NEEDS_FILL" ? `${num(i.policy?.owed ?? 0)} to fill · sells ${i.canSell === null ? "any" : num(i.canSell)}` : i.canSell === null ? "sells any" : `sells ${num(i.canSell)}`;
-  const shelf = `${num(Math.max(0, i.stock))} ${i.unit === "pcs" ? "pcs" : spacedUnit(i.unit)}`;
+  // Blueprint P1.3: the level on hand and, beside it, what is already promised to orders not yet packed
+  const free = `${num(Math.max(0, i.stock))} ${i.unit === "pcs" ? "pcs" : spacedUnit(i.unit)}`;
+  const shelf = i.reserved > 0 ? `${free} · ${num(i.reserved)} on orders` : free;
   return days && i.daysLeft !== null ? `${shelf} · ${i.daysLeft === 0 ? "none left" : `${num(i.daysLeft)} days`}` : shelf;
 }
 

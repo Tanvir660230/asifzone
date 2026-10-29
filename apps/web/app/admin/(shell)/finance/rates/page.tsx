@@ -14,7 +14,6 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -23,6 +22,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { CourierRateCard, RateCardZone } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
@@ -51,7 +51,7 @@ export default function RatesPage() {
   const removeCard = useMutation({ mutationFn: (id: string) => booksApi.deleteRateCard(id), onSuccess: () => { toast.success("Rate card removed"); refresh(); }, onError: (e) => toast.error(getErrorMessage(e, "Couldn't remove it")) });
   const removeFee = useMutation({ mutationFn: (id: string) => booksApi.deleteGatewayRate(id), onSuccess: () => { toast.success("Fee rate removed"); refresh(); }, onError: (e) => toast.error(getErrorMessage(e, "Couldn't remove it")) });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Truck} title="Rates aren't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Truck} page="Rates" /></div>;
   const cards = rates.data?.courierCards ?? [];
   const fees = rates.data?.gatewayRates ?? [];
   return (

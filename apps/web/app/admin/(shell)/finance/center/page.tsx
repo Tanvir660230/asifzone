@@ -29,6 +29,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { AwaitingExpense, EntryVerification, VerificationItem } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type View = "summary" | "check" | "allocate" | "renewals" | "sms" | "settings";
 const VIEWS: Array<{ value: View; label: string }> = [
@@ -53,7 +54,7 @@ export default function FinanceCenterPage() {
   const params = useSearchParams();
   const initial = (VIEWS.find((v) => v.value === params.get("view"))?.value ?? "summary") as View;
   const [view, setView] = useState<View>(initial);
-  if (ready && !can("finance.view")) return <div><ModuleTabs /><EmptyState icon={Scale} title="The owner's summary isn't available to your role" /></div>;
+  if (ready && !can("finance.view")) return <div><ModuleTabs /><PermissionState icon={Scale} page="the owner's summary" /></div>;
   return (
     <div className="space-y-6">
       <ModuleTabs />

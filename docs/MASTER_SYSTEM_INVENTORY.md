@@ -1236,3 +1236,9 @@ Cross-reference views of the same features:
 | Issues logged | UX 22 · Broken 6 · Incomplete 14 · Hidden 16 · Dead 11 · Perf 14 · Security 16 | §23–§29 |
 
 **Needs Verification (summary):** runtime behavior of gateways/courier with real accounts; the `ANTHROPIC_MODEL` default; per-page visibility of STAFF-forbidden buttons; mobile overlap of fixed bars; accessibility/contrast; Cloudflare/rclone setup on the VPS; whether an external error reporter is registered; remaining readers of the legacy `product-types.ts`; whether `Order.trackingNumber/carrier` are still read.
+
+## Note (27 Oct 2026)
+
+The feature lists above date from 5 Oct and are not kept up to date. Where each feature lives now — section, page and
+URL — is the blueprint's feature placement matrix (F001–F135, Business-First Master Blueprint tab 3) and the navigation
+manifest `apps/web/lib/admin/navigation.ts`, which is the source of truth for the admin menu.

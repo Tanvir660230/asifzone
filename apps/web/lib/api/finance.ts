@@ -366,7 +366,7 @@ export const listExceptions = (q: { status?: string; kind?: string; page?: numbe
 export const acknowledgeException = (id: string, note: string) => apiFetch<FinanceException>(`${BASE}/exceptions/${id}/acknowledge`, { method: "POST", body: { note } });
 export const approveEstimate = (id: string, unitCost: number, note: string) => apiFetch<{ outcomes: Record<string, string> }>(`${BASE}/exceptions/${id}/approve-estimate`, { method: "POST", body: { unitCost, note } });
 export interface BusinessSettings {
-  costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES";
+  costPolicy: CostPolicy;
   business: { id: string; name: string; baseCurrency: string; timezone: string; fiscalYearStartMonth: number; openingDate: string | null };
   brands: Array<{ id: string; key: string; name: string; isActive: boolean }>;
   /** DRAFT while the opening balances are being prepared, POSTED once the books have started; null before either. */
@@ -377,10 +377,12 @@ export interface BusinessSettings {
   inventoryCostingActivatedAt: string | null;
   /** Owner alert for a stock gain booked as income (5210) at or above this value, major units (a decimal string). */
   inventoryGainAlertThreshold: string;
+  /** Blueprint P1.2: the "Unpaid by Steadfast" reminder is hidden until this date (inclusive); null = shown. */
+  courierUnpaidSnoozedUntil?: string | null;
 }
 export const businessKeys = { settings: () => ["finance", "business"] as const };
 export const getBusiness = () => apiFetch<BusinessSettings>(`${BASE}/business`);
-export const updateBusiness = (body: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; reason?: string | null }) =>
+export const updateBusiness = (body: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; inventoryGainAlertThreshold?: number; courierUnpaidSnoozedUntil?: string | null; reason?: string | null }) =>
   apiFetch<BusinessSettings>(`${BASE}/business`, { method: "PATCH", body });
 
 // ── opening balances (docs/FINANCE_PHASE_1.md §8): the books start from what the business holds and owes on the opening date
@@ -437,7 +439,10 @@ export const listFinancialEvents = (q: { status?: FinancialEventStatus; page?: n
 export const retryFinancialEvent = (id: string) => apiFetch<{ outcome: unknown }>(`${BASE}/events/${id}/retry`, { method: "POST", body: {} });
 export const listFinanceAudit = (q: { entityType?: string; page?: number; pageSize?: number } = {}) =>
   apiFetch<{ total: number; page: number; pageSize: number; entries: FinanceAuditRow[] }>(`${BASE}/audit${qs(q)}`);
-export const setCostPolicy = (costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES", reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
+/** How a sale with no recorded cost is booked (blueprint P0.2): never, after a person approves an estimate, or at an
+ * automatic labelled estimate (book average → recipe → last purchase → catalog). */
+export type CostPolicy = "KNOWN_ONLY" | "APPROVED_ESTIMATES" | "AUTO_ESTIMATE";
+export const setCostPolicy = (costPolicy: CostPolicy, reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
 
 export const listSettlements = (q: { status?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; settlements: Settlement[] }>(`${BASE}/settlements${qs(q)}`);
 export const createSettlement = (body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ settlement: Settlement; replayed: boolean }>(`${BASE}/settlements`, { method: "POST", body, idempotencyKey });
@@ -666,6 +671,10 @@ export interface MonthEndChecklist {
   month: string; from: string; to: string; asOf: string; ended: boolean;
   period: { id: string; status: "OPEN" | "SOFT_CLOSED" | "CLOSED"; closedAt: string | null } | null;
   steps: ChecklistStep[]; open: number; ready: boolean;
+  /** Blueprint I-4: Final once CLOSED with every step done (or closed before the rule took effect); Draft otherwise. */
+  label?: "FINAL" | "DRAFT";
+  /** Step 11: in-scope campaigns and the days they still lack (spend > 0 or a confirmed zero). */
+  adGaps?: Array<{ campaignId: string; name: string; missing: string[] }>;
 }
 export const alertKeys = { all: ["finance", "alerts"] as const, monthEnd: (month: string) => ["finance", "month-end", month] as const };
 export const getFinanceAlerts = () => apiFetch<FinanceAlerts>(`${BASE}/alerts`);
@@ -733,7 +742,18 @@ export interface EquityOverview {
   asOf: string; partners: Partner[]; totals: { capital: number; current: number; total: number; agreedSharesPct: number };
   equity: { lines: Array<{ accountId: string | null; code: string; name: string; group: string | null; amount: number | null }>; total: number };
 }
-export const equityKeys = { overview: (asOf?: string) => ["finance", "equity", asOf ?? "today"] as const };
+export const equityKeys = { overview: (asOf?: string) => ["finance", "equity", asOf ?? "today"] as const, ownerAdvances: () => ["finance", "equity", "owner-advances"] as const };
+
+/** Owner decision Q-F: what is owed back to the owner, one line per purchase or expense he paid to be repaid. */
+export interface OwnerAdvanceLine {
+  id: string; date: string; description: string; sourceType: "StockPurchase" | "Expense"; sourceId: string;
+  amount: number; repaid: number; outstanding: number;
+  repayments: Array<{ movementId: string; status: string; date: string; amount: number }>;
+}
+export interface OwnerAdvances { lines: OwnerAdvanceLine[]; outstanding: number; ledgerBalance: number; unlinked: number }
+export const getOwnerAdvances = () => apiFetch<OwnerAdvances>(`${BASE}/equity/owner/advances`);
+export const repayOwner = (body: { fromFinancialAccountId: string; date?: string; lines: Array<{ advanceId: string; amount: number }>; note?: string | null }, idempotencyKey: string) =>
+  apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/equity/owner/repay`, { method: "POST", body, idempotencyKey });
 export const getEquity = (asOf?: string) => apiFetch<EquityOverview>(`${BASE}/equity${asOf ? `?asOf=${asOf}` : ""}`);
 export const savePartner = (id: string | null, body: Record<string, unknown>) => apiFetch<Partner>(id ? `${BASE}/equity/partners/${id}` : `${BASE}/equity/partners`, { method: id ? "PATCH" : "POST", body });
 

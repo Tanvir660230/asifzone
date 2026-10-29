@@ -21,6 +21,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import { listOrders } from "@/lib/api/admin-orders";
 import * as financeApi from "@/lib/api/finance";
 import { formatBookDate, formatStoreDateTime } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const statusOf = (status: string) => STATUS[status] ?? { label: status.toLowerCase(), variant: "neutral" as const };
 
@@ -60,7 +61,7 @@ export default function SalesAccountingPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Receipt} title="Finance is limited to finance roles" />
+        <PermissionState icon={Receipt} page="this finance page" />
       </div>
     );
   }

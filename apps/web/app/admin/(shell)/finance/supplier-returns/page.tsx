@@ -25,6 +25,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchaseReturn } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** Supplier returns (docs/FINANCE_PHASE_4D.md): goods sent back. Shipping one takes the units out of stock at their average
  * cost; the supplier's credit, replacement or refund follows on the invoice side. */
@@ -49,7 +50,7 @@ export default function SupplierReturnsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Undo2} title="Purchasing isn't available to your role" />
+        <PermissionState icon={Undo2} page="Purchasing" />
       </div>
     );
   }

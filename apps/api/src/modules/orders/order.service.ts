@@ -19,6 +19,7 @@ import {
   MONEY_HELD_PAYMENT_STATUSES,
   ORDER_QUEUE_FILTERS,
   ORDER_QUEUE_IDS,
+  COD_PENDING_ALERT_HOURS,
   PRICE_ADJUSTMENT_LOCKED_STATUSES,
   type OrderQueueId,
   type OrderTransitionRule,
@@ -46,6 +47,7 @@ import type {
 } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
+import { FINANCE_BUSINESS_KEY } from "../../domain/finance/finance-context";
 import { opsEventOrderIds } from "../analytics/ops-pulse.service";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
@@ -899,6 +901,8 @@ function buildOrderWhere(query: OrderListQuery, ctx: OrderWhereContext) {
     // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
     // mutually-exclusive pattern as the other quick filters).
     ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
+    // Owner decision Q6: COD orders still PENDING after 48 h — listed for a person to decide; never released automatically.
+    ...(query.codPendingStale === "true" ? { status: "PENDING" as const, paymentMethod: "COD" as const, createdAt: { lte: new Date(Date.now() - COD_PENDING_ALERT_HOURS * 3_600_000) } } : {}),
     // The refund-risk queue — CANCELLED orders still holding customer money (one shared predicate from the payment
     // ledger), surfaced via the "Cancelled but paid" admin alert (updateOrderStatus/getOrderStats).
     ...(query.cancelledButPaid === "true" ? REFUND_QUEUE_WHERE : {}),
@@ -1771,6 +1775,51 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   }
   return order;
 }
+
+/** Owner decision Q-B: a parcel still out this many days after its cancellation is a Home follow-up — the store's
+ * FinanceBusiness.returnFollowUpDays, this default until the finance home exists (read only: never created from here). */
+export const PARCEL_FOLLOW_UP_DAYS = 14;
+async function parcelFollowUpDays(): Promise<number> {
+  const biz = await prisma.financeBusiness.findUnique({ where: { key: FINANCE_BUSINESS_KEY }, select: { returnFollowUpDays: true } });
+  return biz?.returnFollowUpDays ?? PARCEL_FOLLOW_UP_DAYS;
+}
+
+/**
+ * Parcels to receive (blueprint P1.5 "Returns & refused parcels", under today's rule): orders cancelled after they shipped
+ * whose units are still out with the courier — neither received back into stock nor written off (receiveReturnedParcel
+ * closes them). A cancellation before shipping put its units back at once, so it never appears. Oldest first, with how
+ * long each has been out; read-only.
+ */
+export async function listParcelsToReceive(now: Date = new Date()) {
+  const rows = await prisma.$queryRaw<Array<{ id: string; orderNumber: string; customerName: string; customerPhone: string; trackingNumber: string | null; courierStatus: string | null; cancelledAt: Date | null; units: bigint; value: Prisma.Decimal | null }>>`
+    SELECT o.id, o."orderNumber", o."customerName", o."customerPhone", o."trackingNumber", o."courierStatus",
+           (SELECT MAX(h."createdAt") FROM "OrderStatusHistory" h WHERE h."orderId" = o.id AND h.status = 'CANCELLED') AS "cancelledAt",
+           SUM(i.quantity - i."restockedQuantity")::bigint AS units,
+           SUM((i.quantity - i."restockedQuantity") * i."priceSnapshot") AS value
+    FROM "Order" o JOIN "OrderItem" i ON i."orderId" = o.id
+    WHERE o.status = 'CANCELLED' AND o."deletedAt" IS NULL
+    GROUP BY o.id
+    HAVING SUM(i.quantity - i."restockedQuantity") > 0
+    ORDER BY "cancelledAt" ASC NULLS FIRST`;
+  const day = 86_400_000;
+  const followUpDays = await parcelFollowUpDays();
+  const parcels = rows.map((r) => {
+    const daysOut = r.cancelledAt ? Math.floor((now.getTime() - r.cancelledAt.getTime()) / day) : null;
+    return {
+      orderId: r.id, orderNumber: r.orderNumber, customerName: r.customerName, customerPhone: r.customerPhone, trackingNumber: r.trackingNumber, courierStatus: r.courierStatus,
+      cancelledAt: r.cancelledAt, units: Number(r.units), value: r.value === null ? 0 : Number(r.value),
+      daysOut, overdue: daysOut !== null && daysOut >= followUpDays,
+    };
+  });
+  return { followUpDays, parcels, overdue: parcels.filter((p) => p.overdue).length };
+}
+
+/** A parcel cancelled after it shipped is back at the shop (inventory recovery F-d): its units go back into stock now —
+ * never at the cancellation, when the parcel was still with the courier. `lines` limits it to what actually came back
+ * (omitted = everything still outstanding). Idempotent per order line (releaseOrderLines' restockedQuantity guard): a
+ * second press, or two admins at once, puts nothing more back (NOTHING_TO_RECEIVE). The timeline records who received it.
+ * Per line, `damaged` of the units that came back and `lost` units that never will are closed too, then written off
+ * (writeOffParcelUnits) — so only the good ones become sellable stock. */
 
 /** Order statuses whose customer return (OrderItem.returnedQuantity) can be waiting at the courier or the door. */
 const RETURN_RECEIPT_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "RETURNED", "REFUNDED"];

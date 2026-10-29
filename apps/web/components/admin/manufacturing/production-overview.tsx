@@ -11,8 +11,6 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
 import { MO_STATUS_BADGE, MO_STATUS_LABEL } from "@/components/admin/manufacturing/status";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -25,24 +23,21 @@ const STATUS_ORDER: ProductionOrderStatus[] = ["DRAFT", "APPROVED", "IN_PRODUCTI
 
 /** Production at a glance (docs/MANUFACTURING.md §9): what is being made and what it holds in work in progress, which orders
  * are late or ready to close, how each producer performs, and what recently closed orders really cost against the plan. */
-export default function ProductionOverviewPage() {
-  const { can, ready } = useCapabilities();
+/** Production in progress, producer performance and what closed runs really cost — the former Overview page, now part of
+ * Production home (blueprint P1.8). */
+export function ProductionOverview() {
+  const { can } = useCapabilities();
   const allowed = can("manufacturing.view");
   const q = useQuery({ queryKey: mfg.manufacturingKeys.overview(), queryFn: mfg.manufacturingOverview, enabled: allowed });
 
-  if (ready && !allowed) {
-    return (
-      <div>
-        <ModuleTabs />
-        <EmptyState icon={Factory} title="Manufacturing isn't available to your role" />
-      </div>
-    );
-  }
+  if (!allowed) return null;
   const d = q.data;
   return (
     <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Production" description="Open production, work in progress, producer performance and what closed orders really cost." action={<Link href="/admin/manufacturing/production-orders"><Button size="sm" variant="outline">All production orders</Button></Link>} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[17px] font-semibold text-fg">Production runs</h2>
+        <Link href="/admin/manufacturing/production-orders"><Button size="sm" variant="outline">All production runs</Button></Link>
+      </div>
       {q.isLoading && <Skeleton className="h-64 w-full" />}
       {q.isError && <Alert variant="danger" title="The production overview couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}
       {d && (

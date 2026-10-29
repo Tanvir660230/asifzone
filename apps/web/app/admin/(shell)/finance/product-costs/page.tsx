@@ -76,7 +76,7 @@ export default function ProductCostsPage() {
               {q.isSuccess && rows.length === 0 && <TableMessageRow colSpan={7}>{search ? "No product matches." : "No products on sale yet."}</TableMessageRow>}
               {rows.map(({ p, s }) => (
                 <TableRow key={s.variantId} data-testid="product-cost-row">
-                  <TableCell><Link href={`/admin/products/${p.productId}/edit?step=pricing`} className="font-medium text-fg hover:underline">{p.name}</Link> <span className="text-fg-muted">{s.label}</span></TableCell>
+                  <TableCell><Link href={`/admin/products/${p.productId}/edit?step=pricing`} className="tap-target font-medium text-fg hover:underline">{p.name}</Link> <span className="text-fg-muted">{s.label}</span></TableCell>
                   <TableCell align="right" className="tabular-nums">{formatPrice(s.price)}</TableCell>
                   <TableCell align="right" className={cn("tabular-nums", s.making === null && "text-warning-700")}>{s.making === null ? "unknown" : formatPrice(s.making)}</TableCell>
                   <TableCell align="right" className="tabular-nums">{formatPrice(s.selling)}</TableCell>

@@ -36,6 +36,8 @@ export interface AdminOrderListParams {
   shippingDistrict?: string;
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue.
   followUpDue?: "true";
+  // "true" = COD orders still PENDING after 48 h (owner decision Q6) — a person decides; nothing is released automatically.
+  codPendingStale?: "true";
   // "true" = the "Needs action" queue (every order a person has to act on).
   needsAction?: "true";
   // "true" = only CANCELLED orders where paymentStatus is still PAID — the refund-risk queue.
@@ -97,6 +99,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.shippingDivision) query.set("shippingDivision", params.shippingDivision);
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
   if (params.followUpDue) query.set("followUpDue", params.followUpDue);
+  if (params.codPendingStale) query.set("codPendingStale", params.codPendingStale);
   if (params.needsAction) query.set("needsAction", params.needsAction);
   if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
   if (params.refundDue) query.set("refundDue", params.refundDue);
@@ -179,6 +182,15 @@ export function adjustOrderPrice(id: string, input: AdjustOrderPriceInput) {
 
 /** A parcel cancelled after it shipped has physically come back: restocks every unit still out (or the given lines).
  * Refused when nothing is left to receive. */
+/** An order cancelled after it shipped whose units are still out with the courier (blueprint P1.5). */
+export interface ParcelToReceive {
+  orderId: string; orderNumber: string; customerName: string; customerPhone: string; trackingNumber: string | null; courierStatus: string | null;
+  cancelledAt: string | null; units: number; value: number; daysOut: number | null; overdue: boolean;
+}
+export function listParcelsToReceive() {
+  return apiFetch<{ followUpDays: number; parcels: ParcelToReceive[]; overdue: number }>("/api/orders/parcels-to-receive");
+}
+
 export function receiveReturnedParcel(id: string, input: ReceiveReturnedParcelInput) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/receive-return`, { method: "POST", body: input });
 }

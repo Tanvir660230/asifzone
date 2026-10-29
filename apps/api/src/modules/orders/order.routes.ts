@@ -59,6 +59,8 @@ orderRouter.post("/admin", requireAdmin, requirePermission("orders.manage"), val
 orderRouter.get("/stats", requireAdmin, requirePermission("orders.read"), orderController.stats);
 // Customer confirmation (Order Operations phase 3): claim the next order to call — before "/:id" like the others.
 orderRouter.post("/confirmation/next", requireAdmin, requirePermission("orders.manage"), confirmationController.next);
+// Blueprint P1.5: parcels cancelled after shipping that haven't come back yet (receive them with POST /:id/receive-return)
+orderRouter.get("/parcels-to-receive", requireAdmin, requirePermission("orders.read"), orderController.parcelsToReceive);
 orderRouter.get("/export/csv", requireAdmin, requirePermission("orders.export"), validate(orderListQuerySchema, "query"), orderController.exportCsv);
 orderRouter.post("/bulk/status", requireAdmin, requirePermission("orders.manage"), validate(bulkOrderStatusSchema), orderController.bulkStatus);
 orderRouter.post("/bulk/delete", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkDelete);

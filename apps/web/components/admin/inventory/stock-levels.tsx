@@ -167,7 +167,7 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
                         )}
                       </span>
                       <span className="min-w-0">
-                        <Link href={`/admin/products/${r.productId}/edit`} className="block max-w-[200px] truncate text-fg hover:text-accent hover:underline">
+                        <Link href={`/admin/products/${r.productId}/edit`} className="-my-2 block max-w-[200px] truncate py-2 text-fg hover:text-accent hover:underline">
                           {r.productName}
                         </Link>
                         <span className="block max-w-[200px] truncate text-xs text-fg-subtle">

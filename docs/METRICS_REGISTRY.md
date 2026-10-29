@@ -435,3 +435,14 @@ The API code `METRIC_PENDING` remains for any future pending metric.
 | Next.js build | compiled, type-checked, 12/12 pages generated; the standalone copy step fails with the known Windows symlink `EPERM` (14) |
 | Test DB (`clothing_brand_test`) | `migrate status`: 79 migrations, up to date; `migrate diff` (datasource → datamodel, read-only, no shadow DB): no drift |
 | Reconciliation (`metricsConsistency`, M-3) | all checks ok for lifetime / last 30 days / today on the test DB, and in the integration suite over its own realised, refunded and exchanged orders |
+
+## Blueprint P2.4 and labels (27 Oct 2026)
+
+- **The books profit ladder** is a Finance figure, not a metric of this registry: net sales → cost of goods → gross
+  margin → packaging, delivery, payment fees, ads → contribution → sales outside the website (less their cost), stock
+  corrections (count, shrinkage, cost adjustments — their own line, Q15), running costs → net profit. Its completeness badges name what the figures still lean
+  on (sales with no cost booked, estimates). Ladder net equals the income statement's net for every closed month.
+- **Analytics margins** (`gross_margin` and the margins built on it) are labelled **"Sales estimate (before costs)"**
+  wherever shown (Q2): they use recorded unit costs and leave out courier, gateway, ads and overheads.
+- **Returned unit** (owner decision D-OO1): returns, units returned and returned cost count from the parcel's receipt and
+  inspection — the RETURN movement — as the books do.

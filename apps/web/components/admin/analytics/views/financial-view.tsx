@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Wallet, TrendingUp, Package, Clock, Receipt, Banknote, Undo2, Truck } from "lucide-react";
@@ -86,7 +87,7 @@ export default function FinancialAnalyticsPage() {
             Array.from({ length: 6 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Gross margin (lifetime, recorded cost)" value={formatPriceWhole(overview.grossProfitLifetime)} icon={<Wallet size={18} />} tone="accent" trendPct={overview.profitGrowthPct} />
+              <StatTile label="Gross margin · sales estimate (lifetime)" value={formatPriceWhole(overview.grossProfitLifetime)} icon={<Wallet size={18} />} tone="accent" trendPct={overview.profitGrowthPct} />
               <StatTile label="Inventory value (current cost)" value={formatPriceWhole(overview.inventoryValue)} icon={<Package size={18} />} />
               <StatTile label="Refund rate" value={`${overview.refundRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
               <StatTile label="Return rate" value={`${overview.returnRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
@@ -114,7 +115,8 @@ export default function FinancialAnalyticsPage() {
       <section>
         <Card>
           <CardHeader>
-            <CardTitle>Daily net merchandise sales vs. cost vs. margin (last 30 days)</CardTitle>
+            <CardTitle>Daily sales vs. cost vs. margin — sales estimate (last 30 days)</CardTitle>
+            <p className="text-xs text-fg-muted">From each order&rsquo;s recorded cost, before delivery, packaging, ads and running costs. Book profit is in <Link href="/admin/finance/profit" className="text-accent hover:underline">Reports › Profit</Link>.</p>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {recentTrend.length === 0 ? (
@@ -126,7 +128,7 @@ export default function FinancialAnalyticsPage() {
                     <th className="pb-2 pr-4">Date</th>
                     <th className="pb-2 pr-4">Net merchandise</th>
                     <th className="pb-2 pr-4">COGS</th>
-                    <th className="pb-2">Margin</th>
+                    <th className="pb-2">Margin (estimate)</th>
                   </tr>
                 </thead>
                 <tbody>

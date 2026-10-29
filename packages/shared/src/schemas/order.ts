@@ -144,6 +144,8 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue
   // (followUpAt <= now) — the callback queue. No "false" variant; omit the param for the normal listing.
   followUpDue: z.enum(["true"]).optional(),
+  /** Owner decision Q6: Cash-on-delivery orders still PENDING after COD_PENDING_ALERT_HOURS — an operator decides each one. */
+  codPendingStale: z.enum(["true"]).optional(),
   // "true" = every order a person has to act on (the "Needs action" queue) — one predicate shared with the stats count.
   needsAction: z.enum(["true"]).optional(),
   // "true" = only CANCELLED orders still holding money (paymentStatus PAID or PARTIALLY_REFUNDED) — the refund-risk

@@ -17,7 +17,7 @@ import { term } from "./terminology";
  */
 
 export type NavKind = "module" | "page" | "report" | "settings" | "create" | "detail";
-export type NavDomain = "home" | "operate" | "grow" | "manage" | "system";
+export type NavDomain = "home" | "operate" | "stock" | "grow" | "manage" | "system";
 export type NavIconName =
   | "home"
   | "orders"
@@ -30,7 +30,12 @@ export type NavIconName =
   | "finance"
   | "analytics"
   | "settings"
-  | "administration";
+  | "administration"
+  | "books"
+  | "reports";
+/** Something a store does, read from its own data (owner decision Q-G): GET /api/v1/admin/store-capabilities. */
+export type StoreCapability = "production";
+
 /** Work-queue counts a node may show — resolved by the shell from the dashboard's attention counts. */
 export type NavBadgeSource = "orders" | "messages" | "inbox" | "reviews" | "finance";
 
@@ -63,6 +68,8 @@ export interface NavNode {
   capability?: Capability;
   /** Hidden unless this admin feature is switched on for the installation (lib/admin/features.ts). */
   featureFlag?: FeatureFlag;
+  /** Hidden unless the store's own data shows it does this (Q-G: Production only where production exists). */
+  storeCapability?: StoreCapability;
   badge?: NavBadgeSource;
   keywords?: string[];
   /** Sort order among siblings. */
@@ -91,11 +98,13 @@ export interface NavNode {
   innerList?: boolean;
 }
 
+/** The sidebar's groups (ERP UI plan, tab 21 §2): Home; Sell; Make & stock; Grow; Money; Settings in the footer. */
 export const NAV_DOMAINS: ReadonlyArray<{ id: NavDomain; label: string | null }> = [
   { id: "home", label: null },
-  { id: "operate", label: "Operate" },
+  { id: "operate", label: "Sell" },
+  { id: "stock", label: "Make & stock" },
   { id: "grow", label: "Grow" },
-  { id: "manage", label: "Manage" },
+  { id: "manage", label: "Money" },
   { id: "system", label: null }, // the sidebar footer
 ];
 
@@ -120,7 +129,7 @@ const CATALOG_SETUP: Array<[slug: string, label: string, keywords?: string[]]> =
   ["attributes", "Product fields", ["attributes", "fields", "specifications"]],
   ["size-guides", "Size guides", ["size chart"]],
   ["care-guides", "Care guides"],
-  ["materials", "Materials", ["fabric"]],
+  ["materials", "Fabrics", ["fabric", "materials"]],
   ["sku", "SKUs", ["sku pattern"]],
   ["sections", "Page sections"],
   ["spec-groups", "Spec groups", ["specifications"]],
@@ -162,16 +171,20 @@ export const NAV_NODES: readonly NavNode[] = [
     commands: [{ id: "create.order", kind: "create", label: "New order", hint: "Manual / phone order", route: "/admin/orders/new", capability: "orders.manage" }],
   },
   { id: "orders.all", label: "All orders", title: term("order"), kind: "page", parent: "orders", domain: "operate", route: "/admin/orders", capability: "orders.view", order: 0 },
+  // Blueprint P1.5 / tab 2 §2: a saved view of All orders — the Order Operations "Ready to book" queue.
+  { id: "orders.ready", label: "Ready to ship", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/ready", capability: "orders.view", order: 0.5, keywords: ["packed", "to ship", "to book", "courier pickup"] },
   {
     id: "orders.returns",
-    label: term("returnRequest"),
+    // blueprint tab 2 §2: customers' requests and parcels on their way back, as two tabs of one page
+    label: "Returns & refused parcels",
+    shortLabel: "Returns",
     kind: "page",
     parent: "orders",
     domain: "operate",
     route: "/admin/return-requests",
     capability: "orders.view",
     order: 1,
-    keywords: ["exchange", "refund", "returns"],
+    keywords: ["exchange", "refund", "returns", "return requests", "refused parcel", "receive parcel"],
   },
   // Order Operations phase 4: scan parcels out to the courier and back in (physical handover / receipt only).
   { id: "orders.dispatch", label: "Dispatch scan", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/dispatch", capability: "parcels.scan", order: 1.5, keywords: ["scan", "barcode", "handover", "courier", "pickup"] },
@@ -185,37 +198,35 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "products",
     label: term("product"),
     kind: "module",
-    domain: "operate",
+    domain: "stock",
     index: "/admin/products",
     activeFor: ["/admin/products", "/admin/categories", "/admin/attributes", "/admin/catalog"],
     icon: "products",
-    capability: "catalog.view",
     order: 20,
-    mobile: "primary",
     goKey: "p",
     keywords: ["catalog"],
     commands: [{ id: "create.product", kind: "create", label: "New product", hint: "Product Builder", route: PRODUCT_NEW_HREF, capability: "catalog.manage" }],
   },
-  { id: "products.all", label: "All products", title: term("product"), kind: "page", parent: "products", domain: "operate", route: "/admin/products", capability: "catalog.view", order: 0 },
-  { id: "products.categories", label: term("category"), kind: "page", parent: "products", domain: "operate", route: "/admin/categories", capability: "catalog.view", order: 1 },
+  { id: "products.all", label: "All products", title: term("product"), kind: "page", parent: "products", domain: "stock", route: "/admin/products", capability: "catalog.view", order: 0 },
+  { id: "products.categories", label: term("category"), kind: "page", parent: "products", domain: "stock", route: "/admin/categories", capability: "catalog.view", order: 1 },
   {
     id: "products.variant-options",
     label: term("variantOption"),
     kind: "page",
     parent: "products",
-    domain: "operate",
+    domain: "stock",
     route: "/admin/attributes",
     capability: "catalog.view",
     order: 2,
     keywords: ["size", "colour", "color", "attributes"],
   },
-  { id: "products.import", label: "Import / export", kind: "page", parent: "products", domain: "operate", route: "/admin/products/import", capability: "catalog.view", order: 3, keywords: ["csv"] },
+  { id: "products.import", label: "Import / export", kind: "page", parent: "products", domain: "stock", route: "/admin/products/import", capability: "catalog.view", order: 3, keywords: ["csv"] },
   {
     id: "products.catalog-setup",
     label: term("catalogSetup"),
     kind: "settings",
     parent: "products",
-    domain: "operate",
+    domain: "stock",
     route: "/admin/catalog",
     index: "/admin/catalog/types",
     capability: "catalog.view",
@@ -229,7 +240,7 @@ export const NAV_NODES: readonly NavNode[] = [
       label,
       kind: "settings",
       parent: "products.catalog-setup",
-      domain: "operate",
+      domain: "stock",
       route: `/admin/catalog/${slug}`,
       capability: "catalog.view",
       order: i,
@@ -242,7 +253,7 @@ export const NAV_NODES: readonly NavNode[] = [
     breadcrumb: "New product",
     kind: "create",
     parent: "products",
-    domain: "operate",
+    domain: "stock",
     route: PRODUCT_NEW_HREF,
     capability: "catalog.manage",
     order: 5,
@@ -254,7 +265,7 @@ export const NAV_NODES: readonly NavNode[] = [
     label: "Edit product",
     kind: "detail",
     parent: "products",
-    domain: "operate",
+    domain: "stock",
     route: "/admin/products/[id]/edit",
     capability: "catalog.view",
     order: 6,
@@ -264,19 +275,23 @@ export const NAV_NODES: readonly NavNode[] = [
 
   // Inventory groups stock with production (docs/MANUFACTURING.md): materials, bills of materials and production orders
   // are the stock that is made rather than bought — kept within the 12 primary modules.
-  { id: "inventory", label: term("inventory"), kind: "module", index: "/admin/stock", activeFor: ["/admin/manufacturing", "/admin/stock"], domain: "operate", icon: "inventory", capability: "inventory.view", order: 30, mobile: "primary", goKey: "i", keywords: ["stock", "production", "manufacturing"] },
+  { id: "inventory", label: "Stock", kind: "module", index: "/admin/stock", activeFor: ["/admin/manufacturing", "/admin/stock", "/admin/inventory"], domain: "stock", icon: "inventory", order: 30, mobile: "primary", goKey: "i", keywords: ["stock", "production", "manufacturing"] },
   // The stock hub (docs/STOCK_HUB.md §7): Today, then every item — first, the page the owner works from.
-  { id: "inventory.hub", label: "Stock", kind: "page", parent: "inventory", domain: "operate", route: "/admin/stock", capability: "inventory.view", order: -1, deprecatedRoutes: ["/admin/finance/refills?open=filled"], keywords: ["stock", "today", "received goods", "bought", "purchase", "reorder", "filled bottles", "refill", "attar", "count", "counted", "approve", "materials", "oil", "bottle", "caps"] },
-  { id: "inventory.stock", label: "Stock levels", kind: "page", parent: "inventory", domain: "operate", route: "/admin/inventory", capability: "inventory.view", order: 0, keywords: ["stock", "adjust", "movements", "levels", "write off"] },
+  { id: "inventory.hub", label: "Stock", kind: "page", parent: "inventory", domain: "stock", route: "/admin/stock", capability: "inventory.view", order: 0, deprecatedRoutes: ["/admin/finance/refills?open=filled"], keywords: ["stock", "today", "received goods", "bought", "purchase", "reorder", "filled bottles", "refill", "attar", "count", "counted", "approve", "materials", "oil", "bottle", "caps"] },
+  // Blueprint tab 2 §2: every purchase, both paths, in one list (the formal documents stay under More)
+  { id: "inventory.purchases", label: "Purchases", kind: "page", parent: "inventory", domain: "stock", route: "/admin/stock/purchases", capability: "purchasing.view", order: 1, description: "Everything bought, however it was entered, with possible duplicates flagged.", keywords: ["purchases", "bought", "received goods", "duplicate", "grn"] },
+  { id: "inventory.stock", label: "History & adjustments", title: "Stock history & adjustments", kind: "page", parent: "inventory", domain: "stock", route: "/admin/inventory", capability: "inventory.view", order: 4, keywords: ["stock", "adjust", "movements", "levels", "write off"] },
+  // Stock › More: the formal purchasing path and the books-side stock pages (tab 2 §2) — owners and purchasing roles.
+  { id: "inventory.more", label: "More", title: "More stock pages", kind: "page", parent: "inventory", domain: "stock", index: "/admin/finance/purchase-orders", order: 5, innerList: true, keywords: ["purchase orders", "goods receipts", "supplier returns", "landed costs", "packaging", "stock check"] },
   // Production is one sidebar entry; its pages are tabs on it (the stock page covers day-to-day attar filling).
-  { id: "inventory.production", label: "Production", kind: "page", parent: "inventory", domain: "operate", index: "/admin/manufacturing/home", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "production"] },
+  { id: "inventory.production", storeCapability: "production", label: "Production", kind: "page", parent: "inventory", domain: "stock", index: "/admin/manufacturing/home", capability: "manufacturing.view", order: 3, keywords: ["manufacturing", "production"] },
   // Production home (docs/STOCK_HUB.md §9): bought, filled, recipes, price & profit — and what the materials can still make.
-  { id: "inventory.production-home", label: "Home", title: "Production", breadcrumb: "Home", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/home", capability: "manufacturing.view", order: -1, keywords: ["production", "can still make", "fill", "owed", "bottles", "low materials"] },
-  { id: "inventory.production-overview", label: "Overview", title: "Production overview", breadcrumb: "Overview", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing", capability: "manufacturing.view", order: 0, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
-  { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
-  { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
-  { id: "inventory.boms", label: "Recipes", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 2, keywords: ["bom", "bill of materials", "recipe", "materials per unit"] },
-  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory.production", domain: "operate", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 3, keywords: ["raw materials", "oil", "bottle", "box", "sticker", "fabric", "trims", "packaging", "purchase unit", "litre", "dozen"] },
+  // Blueprint P1.8: one Production page — Home absorbed the Overview; its old URL redirects here.
+  { id: "inventory.production-home", label: "Home", title: "Production", breadcrumb: "Home", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/home", capability: "manufacturing.view", order: -1, deprecatedRoutes: ["/admin/manufacturing"], keywords: ["production", "can still make", "fill", "owed", "bottles", "low materials", "manufacturing", "wip", "work in progress", "producer performance", "yield"] },
+  { id: "inventory.production-orders", label: "Production runs", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
+  { id: "inventory.production-order-detail", label: "Production run", kind: "detail", parent: "inventory", domain: "stock", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
+  { id: "inventory.boms", label: "Recipes", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 2, keywords: ["bom", "bill of materials", "recipe", "materials per unit"] },
+  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory.production", domain: "stock", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 3, keywords: ["raw materials", "oil", "bottle", "box", "sticker", "fabric", "trims", "packaging", "purchase unit", "litre", "dozen"] },
 
   {
     id: "customers",
@@ -295,19 +310,19 @@ export const NAV_NODES: readonly NavNode[] = [
 
   {
     id: "messages",
-    label: term("message"),
+    label: "Inbox",
     kind: "module",
     domain: "operate",
     index: "/admin/feedback",
     activeFor: ["/admin/feedback", "/admin/saved-answers", "/admin/reviews"],
     icon: "messages",
-    capability: "content.manage",
     badge: "messages",
-    order: 50,
+    order: 35,
+    mobile: "primary",
     goKey: "e",
     keywords: ["support", "feedback"],
   },
-  { id: "messages.feedback", label: "Inbox", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", badge: "inbox", order: 0, keywords: ["support", "messages", "feedback", "contact form", "reply"] },
+  { id: "messages.feedback", label: "Conversations", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", badge: "inbox", order: 0, keywords: ["support", "messages", "feedback", "contact form", "reply"] },
   {
     id: "messages.answers",
     label: "Saved answers",
@@ -319,7 +334,7 @@ export const NAV_NODES: readonly NavNode[] = [
     order: 1,
     keywords: ["auto reply", "faq", "learned", "quick reply", "templates"],
   },
-  { id: "messages.reviews", label: term("review"), kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", badge: "reviews", order: 2 },
+  { id: "messages.reviews", label: "Reviews to approve", kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", badge: "reviews", order: 2, keywords: ["reviews", "ratings"] },
 
   // ── Grow ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   {
@@ -328,9 +343,8 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "grow",
     index: "/admin/flash-sales",
-    activeFor: ["/admin/flash-sales", "/admin/coupons", "/admin/bundles", "/admin/campaigns"],
+    activeFor: ["/admin/flash-sales", "/admin/coupons", "/admin/bundles", "/admin/campaigns", "/admin/finance/ads", "/admin/marketing"],
     icon: "marketing",
-    capability: "promotions.manage",
     order: 60,
     goKey: "m",
     keywords: ["promotions", "discount"],
@@ -339,14 +353,18 @@ export const NAV_NODES: readonly NavNode[] = [
       { id: "create.flash-sale", kind: "create", label: "New flash sale", hint: term("marketing"), route: "/admin/flash-sales", capability: "promotions.manage" },
     ],
   },
-  { id: "marketing.flash-sales", label: term("flashSale"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/flash-sales", capability: "promotions.manage", order: 0 },
-  { id: "marketing.coupons", label: term("coupon"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/coupons", capability: "promotions.manage", order: 1, keywords: ["discount code"] },
-  { id: "marketing.bundles", label: term("bundle"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/bundles", capability: "promotions.manage", order: 2 },
-  { id: "marketing.campaigns", label: term("campaign"), kind: "page", parent: "marketing", domain: "grow", route: "/admin/campaigns", capability: "promotions.manage", order: 3, keywords: ["sms"] },
+  // Blueprint P2.5: every published product's one-page order form for ads (/lp/<slug>)
+  { id: "marketing.landing-pages", label: "Landing pages", kind: "page", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages", capability: "promotions.manage", order: -0.5, keywords: ["lp", "landing page", "ad link", "facebook ad", "order form"] },
+  // Blueprint tab 2 §2: one Discounts entry, its three pages as tabs (URLs kept).
+  { id: "marketing.discounts", label: "Discounts", kind: "page", parent: "marketing", domain: "grow", index: "/admin/flash-sales", capability: "promotions.manage", order: 0, keywords: ["discount", "offer", "sale", "promo"] },
+  { id: "marketing.flash-sales", label: term("flashSale"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/flash-sales", capability: "promotions.manage", order: 0 },
+  { id: "marketing.coupons", label: term("coupon"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/coupons", capability: "promotions.manage", order: 1, keywords: ["discount code"] },
+  { id: "marketing.bundles", label: term("bundle"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/bundles", capability: "promotions.manage", order: 2 },
+  { id: "marketing.campaigns", label: "SMS campaigns", kind: "page", parent: "marketing", domain: "grow", route: "/admin/campaigns", capability: "promotions.manage", order: 3, keywords: ["sms"] },
 
   {
     id: "storefront",
-    label: term("storefront"),
+    label: "Online store",
     kind: "module",
     domain: "grow",
     index: "/admin/homepage",
@@ -365,13 +383,12 @@ export const NAV_NODES: readonly NavNode[] = [
   // ── Manage ──────────────────────────────────────────────────────────────────────────────────────────────────────────
   {
     id: "finance",
-    label: term("finance"),
+    label: "Money",
     kind: "module",
     domain: "manage",
     index: "/admin/finance",
     activeFor: ["/admin/payments", "/admin/finance"],
     icon: "finance",
-    capability: "payments.view",
     order: 80,
     goKey: "f",
     badge: "finance",
@@ -391,24 +408,27 @@ export const NAV_NODES: readonly NavNode[] = [
   {
     id: "finance.home",
     label: "Overview",
-    title: term("finance"),
+    title: "Money",
     kind: "page",
     parent: "finance",
     domain: "manage",
     route: "/admin/finance",
-    capability: "payments.view",
+    capability: "finance.view",
     order: -2,
+    description: "How the month is going, where the money is and who is owed what.",
     keywords: ["finance home", "summary", "cash", "profit", "owed"],
   },
   {
     id: "finance.attention",
     label: "Needs attention",
     kind: "page",
-    parent: "finance",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/attention",
     capability: "finance.view",
-    order: -1,
+    order: 0,
+    // Blueprint P1.1 / P1.6: every alert is on Home, the close on Books › Month-end — the old page only forwards.
+    visibility: "hidden",
     description: "Problems in the books that need you, and the month-end close checklist.",
     keywords: ["alerts", "to do", "overdue", "month end", "close the month", "checklist", "period close"],
   },
@@ -426,68 +446,27 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.money",
-    label: "Money",
+    label: "Accounts & cash",
     kind: "page",
     parent: "finance",
     domain: "manage",
     index: "/admin/finance/accounts",
-    capability: "finance.view",
-    order: 10,
+    order: 1,
     innerList: true,
     description: "Your cash, bank and bKash/Nagad balances, and the money you spend or borrow.",
     keywords: ["cash", "bank", "bkash", "expenses", "loans"],
   },
   {
     id: "finance.selling",
-    label: "Sales & payments",
+    label: "Payments & refunds",
     kind: "page",
     parent: "finance",
     domain: "manage",
     index: "/admin/payments/transactions",
-    capability: "payments.view",
-    order: 11,
+    order: 4,
     innerList: true,
     description: "Money customers paid, refunds, and what couriers and gateways still owe you.",
     keywords: ["payments", "cod", "courier", "gateway", "refunds", "settlements"],
-  },
-  {
-    id: "finance.purchasing",
-    label: "Purchasing",
-    kind: "page",
-    parent: "finance",
-    domain: "manage",
-    index: "/admin/finance/suppliers",
-    capability: "suppliers.view",
-    order: 12,
-    innerList: true,
-    description: "Buying stock: suppliers, purchase orders, deliveries, bills and what you owe them.",
-    keywords: ["suppliers", "purchase orders", "bills", "payables"],
-  },
-  {
-    id: "finance.books",
-    label: "Books & setup",
-    kind: "page",
-    parent: "finance",
-    domain: "manage",
-    index: "/admin/finance/statements",
-    capability: "finance.view",
-    order: 13,
-    innerList: true,
-    description: "Profit and loss, balance sheet, budgets, the full accounting record — and starting and checking the books.",
-    keywords: ["books", "accounts", "statements", "ledger", "journals", "profit", "balance sheet", "reports", "setup", "settings", "checks", "tax", "opening stock"],
-  },
-  {
-    id: "finance.people",
-    label: "Payroll & partners",
-    kind: "page",
-    parent: "finance",
-    domain: "manage",
-    index: "/admin/finance/payroll",
-    capability: "finance.sensitive",
-    order: 14,
-    innerList: true,
-    description: "Staff salaries and payslips, and each partner's capital and drawings.",
-    keywords: ["salary", "payroll", "partners", "equity"],
   },
 
   // Money
@@ -508,11 +487,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.expenses",
     label: "Expenses",
     kind: "page",
-    parent: "finance.money",
+    parent: "finance",
     domain: "manage",
     route: "/admin/finance/expenses",
     capability: "finance.view",
-    order: 1,
+    order: 2,
     description: "Rent, bills, ads and other spending, plus fixed monthly costs.",
     keywords: ["expense", "rent", "salary", "subscription", "recurring", "fixed costs", "break-even"],
   },
@@ -520,11 +499,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.loans",
     label: "Loans",
     kind: "page",
-    parent: "finance.money",
+    parent: "finance",
     domain: "manage",
     route: "/admin/finance/loans",
     capability: "finance.view",
-    order: 2,
+    order: 6,
     description: "Money you borrowed, instalments due and interest.",
     keywords: ["loan", "borrowing", "interest", "emi", "instalment", "repayment"],
   },
@@ -532,41 +511,46 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.reconciliation",
     label: "Bank reconciliation",
     kind: "page",
-    parent: "finance.money",
+    parent: "finance",
     domain: "manage",
     route: "/admin/finance/reconciliation",
     capability: "finance.view",
-    order: 3,
+    order: 8,
     description: "Match your bank statement against the books line by line.",
     keywords: ["statement", "reconcile", "csv import"],
   },
-  { id: "finance.reconciliation-detail", label: "Reconciliation", kind: "detail", parent: "finance.money", domain: "manage", route: "/admin/finance/reconciliation/[id]", capability: "finance.view", order: 3, visibility: "hidden" },
+  { id: "finance.reconciliation-detail", label: "Reconciliation", kind: "detail", parent: "finance", domain: "manage", route: "/admin/finance/reconciliation/[id]", capability: "finance.view", order: 3, visibility: "hidden" },
   {
     id: "finance.prepaid",
     label: "Prepaid costs",
     kind: "page",
-    parent: "finance.money",
+    parent: "finance",
     domain: "manage",
     route: "/admin/finance/prepaid",
     capability: "finance.view",
-    order: 4,
+    order: 7,
     description: "Hosting, domain, rent paid in advance — used up month by month, with renewal dates.",
     keywords: ["prepaid", "domain", "hosting", "server", "advance rent", "subscription", "renewal", "amortisation"],
   },
   {
     id: "finance.ads",
-    label: "Ad spend",
-    kind: "page",
-    parent: "finance.money",
-    domain: "manage",
+    label: "Ads",
+    title: "Ad spend", kind: "page",
+    parent: "marketing",
+    domain: "grow",
     route: "/admin/finance/ads",
     capability: "finance.view",
-    order: 5,
+    order: -1,
     description: "Every campaign's daily spend from Meta or its budget, the orders it brought and profit after ads.",
     keywords: ["facebook ads", "meta", "boost", "campaign", "budget", "roas", "marketing", "tiktok ads"],
   },
 
-  // Sales & payments
+  // Bills to pay
+  { id: "finance.bills", label: "Bills to pay", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/supplier-invoices", order: 3, innerList: true, description: "Supplier bills and what you owe each supplier.", keywords: ["supplier bills", "dues", "payables", "pay supplier"] },
+  // Courier & gateway money in one place (tab 2 §6)
+  { id: "finance.courier-gateway", label: "Courier & gateway", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/settlements", order: 5, innerList: true, description: "Steadfast and gateway payouts, the Steadfast check and what each parcel cost.", keywords: ["steadfast", "payouts", "courier costs", "settlements"] },
+
+  // Payments & refunds
   {
     id: "finance.transactions",
     label: "Customer payments",
@@ -593,9 +577,10 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.settlements",
-    label: "Courier & gateway payouts",
+    label: "Payouts",
+    title: "Courier & gateway payouts",
     kind: "page",
-    parent: "finance.selling",
+    parent: "finance.courier-gateway",
     domain: "manage",
     route: "/admin/finance/settlements",
     capability: "finance.view",
@@ -607,7 +592,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.courier",
     label: "Steadfast check",
     kind: "page",
-    parent: "finance.selling",
+    parent: "finance.courier-gateway",
     domain: "manage",
     route: "/admin/finance/courier",
     capability: "finance.view",
@@ -617,9 +602,10 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.courier-costs",
-    label: "Courier costs",
+    label: "Costs",
+    title: "Courier costs",
     kind: "page",
-    parent: "finance.selling",
+    parent: "finance.courier-gateway",
     domain: "manage",
     route: "/admin/finance/courier-costs",
     capability: "courierCosts.view",
@@ -653,13 +639,14 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.sales",
-    label: "Sales accounting",
+    label: "Sales",
+    title: "Sales accounting",
     kind: "page",
-    parent: "finance.selling",
+    parent: "books.statements",
     domain: "manage",
     route: "/admin/finance/sales",
     capability: "finance.view",
-    order: 5,
+    order: 1,
     description: "How each order was recorded in the books (sales, cost of goods, payments).",
     keywords: ["revenue", "cogs", "journal", "accounting events", "sync"],
   },
@@ -669,11 +656,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.suppliers",
     label: "Suppliers",
     kind: "page",
-    parent: "finance.purchasing",
-    domain: "manage",
+    parent: "inventory",
+    domain: "stock",
     route: "/admin/finance/suppliers",
     capability: "suppliers.view",
-    order: 0,
+    order: 2,
     description: "The people and factories you buy from.",
     keywords: ["vendor", "purchasing", "payables", "supplier"],
   },
@@ -681,24 +668,24 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.purchase-orders",
     label: "Purchase orders",
     kind: "page",
-    parent: "finance.purchasing",
-    domain: "manage",
+    parent: "inventory.more",
+    domain: "stock",
     route: "/admin/finance/purchase-orders",
     capability: "purchasing.view",
-    order: 1,
+    order: 0,
     description: "What you ordered from a supplier, before it arrives.",
     keywords: ["po", "buy", "order stock", "procurement"],
   },
-  { id: "finance.purchase-order-detail", label: "Purchase order", kind: "detail", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/purchase-orders/[id]", capability: "purchasing.view", order: 1, visibility: "hidden" },
+  { id: "finance.purchase-order-detail", label: "Purchase order", kind: "detail", parent: "inventory.more", domain: "stock", route: "/admin/finance/purchase-orders/[id]", capability: "purchasing.view", order: 1, visibility: "hidden" },
   {
     id: "finance.goods-receipts",
     label: "Goods receipts",
     kind: "page",
-    parent: "finance.purchasing",
-    domain: "manage",
+    parent: "inventory.more",
+    domain: "stock",
     route: "/admin/finance/goods-receipts",
     capability: "purchasing.view",
-    order: 2,
+    order: 1,
     description: "Stock that actually arrived — receiving it adds it to inventory.",
     keywords: ["grn", "receive", "delivery", "restock"],
   },
@@ -706,11 +693,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.supplier-invoices",
     label: "Supplier bills",
     kind: "page",
-    parent: "finance.purchasing",
+    parent: "finance.bills",
     domain: "manage",
     route: "/admin/finance/supplier-invoices",
     capability: "ap.view",
-    order: 3,
+    order: 0,
     description: "Bills and credit notes suppliers send you.",
     keywords: ["supplier invoice", "bill", "credit note", "accounts payable", "ap"],
   },
@@ -718,24 +705,24 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.payables",
     label: "Supplier dues",
     kind: "page",
-    parent: "finance.purchasing",
+    parent: "finance.bills",
     domain: "manage",
     route: "/admin/finance/payables",
     capability: "ap.view",
-    order: 4,
+    order: 1,
     description: "How much you owe each supplier, what's overdue, and paying them.",
     keywords: ["payables", "accounts payable", "ageing", "aging", "owed to suppliers", "creditors", "pay supplier", "supplier payment", "supplier statement"],
   },
-  { id: "finance.supplier-account", label: "Supplier account", kind: "detail", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/payables/[supplierId]", capability: "ap.view", order: 4, visibility: "hidden" },
+  { id: "finance.supplier-account", label: "Supplier account", kind: "detail", parent: "finance.bills", domain: "manage", route: "/admin/finance/payables/[supplierId]", capability: "ap.view", order: 4, visibility: "hidden" },
   {
     id: "finance.supplier-returns",
     label: "Supplier returns",
     kind: "page",
-    parent: "finance.purchasing",
-    domain: "manage",
+    parent: "inventory.more",
+    domain: "stock",
     route: "/admin/finance/supplier-returns",
     capability: "purchasing.view",
-    order: 5,
+    order: 2,
     description: "Stock you sent back to a supplier.",
     keywords: ["return to vendor", "rtv", "send back"],
   },
@@ -743,11 +730,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.landed-costs",
     label: "Landed costs",
     kind: "page",
-    parent: "finance.purchasing",
-    domain: "manage",
+    parent: "inventory.more",
+    domain: "stock",
     route: "/admin/finance/landed-costs",
     capability: "finance.view",
-    order: 5.5,
+    order: 3,
     description: "Transport, labour or customs added to the goods they brought — the true cost per piece.",
     keywords: ["transport", "van", "carriage", "customs", "freight", "per piece cost", "landed cost"],
   },
@@ -755,11 +742,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.packaging",
     label: "Packaging",
     kind: "page",
-    parent: "finance.purchasing",
-    domain: "manage",
+    parent: "inventory.more",
+    domain: "stock",
     route: "/admin/finance/packaging",
     capability: "finance.view",
-    order: 5.6,
+    order: 4,
     description: "What each parcel uses (poly, box, sticker), taken from stock automatically, and when it runs out.",
     keywords: ["poly", "box", "sticker", "packet", "packing", "run out", "consumables"],
   },
@@ -767,25 +754,53 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.reports",
     label: "Purchasing reports",
     kind: "page",
-    parent: "finance.purchasing",
+    parent: "analytics",
     domain: "manage",
     route: "/admin/finance/reports",
     capability: "purchasing.view",
-    order: 6,
+    order: 1,
     description: "Purchase register, stock value, price changes and supplier payments as CSV.",
     keywords: ["report", "purchase register", "grni", "price variance", "inventory valuation", "stock value", "cost adjustments", "supplier payments", "csv"],
   },
 
+  // ── Books: the monthly routine and the accounting record ──────────────────────────────────────────────────────────
+  {
+    id: "books",
+    label: "Books",
+    kind: "module",
+    domain: "manage",
+    index: "/admin/finance/month-end",
+    icon: "books",
+    order: 85,
+    goKey: "b",
+    keywords: ["books", "accounting", "month end", "statements", "ledger", "journals", "partners", "payroll"],
+  },
+  // Blueprint P1.6: the monthly close is a page of its own (it was a tab of Needs attention)
+  {
+    id: "books.month-end",
+    label: "Month-end",
+    kind: "page",
+    parent: "books",
+    domain: "manage",
+    route: "/admin/finance/month-end",
+    capability: "finance.view",
+    order: -1,
+    description: "Each step a month needs before its figures are Final, then closing it.",
+    keywords: ["month end", "close the month", "checklist", "period close", "final", "draft"],
+  },
+  { id: "books.statements", label: "Statements", kind: "page", parent: "books", domain: "manage", index: "/admin/finance/statements", order: 3, innerList: true, description: "Profit & loss, balance sheet and cash flow, and how each order was recorded.", keywords: ["statements", "p&l", "sales accounting"] },
+  { id: "books.ledger", label: "Ledger & journals", kind: "page", parent: "books", domain: "manage", index: "/admin/finance/ledger", order: 4, innerList: true, description: "Every account and every entry in the books.", keywords: ["ledger", "journals"] },
+
   // Reports & books
   {
     id: "finance.center",
-    label: "Owner's summary",
+    label: "Records & allocations",
     kind: "page",
-    parent: "finance.books",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/center",
     capability: "finance.view",
-    order: -2,
+    order: 8,
     description: "What you have put in, figures still to confirm, costs to split, renewals and the SMS balance.",
     keywords: ["investment", "invested", "owner", "estimate", "verify", "missing data", "allocate", "split cost", "vehicle", "renewal", "domain", "vps", "sms balance", "usd rate"],
   },
@@ -793,23 +808,23 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.stock-check",
     label: "Stock check",
     kind: "page",
-    parent: "inventory",
-    domain: "operate",
+    parent: "inventory.more",
+    domain: "stock",
     route: "/admin/finance/stock-check",
     capability: "finance.view",
-    order: 0.5,
+    order: 5,
     description: "Where every piece went — sold, on the way, in stock — what the materials must have been, and your counts beside the site.",
     keywords: ["stock", "reconcile", "count", "physical count", "tupi", "cap", "attar", "ml", "bottle", "box", "bubble poly", "roll", "how many bought", "direct steadfast"],
   },
   {
     id: "finance.profit",
-    label: "Profit",
-    kind: "page",
-    parent: "finance.books",
+    label: "By order & product",
+    title: "Profit", kind: "page",
+    parent: "reports.profit",
     domain: "manage",
     route: "/admin/finance/profit",
     capability: "finance.view",
-    order: -1,
+    order: 0,
     description: "Daily profit, sales and ad spend for any period, with a chart — and what each order and product earned.",
     keywords: ["profit", "daily profit", "today", "margin", "ad spend", "roas", "chart", "contribution", "per order", "per product", "launch", "loss", "lav", "labh"],
   },
@@ -818,24 +833,24 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.monthly",
     label: "Month by month",
     kind: "page",
-    parent: "finance.books",
+    parent: "reports.profit",
     domain: "manage",
     route: "/admin/finance/monthly",
     capability: "finance.view",
-    order: -0.95,
+    order: 1,
     description: "Every month since the books started: sales, costs and profit, and what is still to settle before closing it.",
     keywords: ["monthly", "month", "profit by month", "p&l", "since the start", "close month", "mash", "labh"],
   },
   // Cost & profit planning (docs/COST_SHEET.md): what one sale of each size costs and earns, and the shop / category defaults.
   {
     id: "finance.product-costs",
-    label: "Product costs",
-    kind: "page",
-    parent: "finance.books",
+    label: "Product costs & price planner",
+    title: "Product costs", kind: "page",
+    parent: "analytics",
     domain: "manage",
     route: "/admin/finance/product-costs",
     capability: "costing.view",
-    order: -0.9,
+    order: -2,
     description: "What one sale of each product and size costs — making and selling — the profit left, and the price for your target.",
     keywords: ["cost", "cost sheet", "unit cost", "margin", "price", "pricing", "making cost", "recipe cost", "delivery cost", "suggested price", "target margin", "khoroch", "dam"],
   },
@@ -843,7 +858,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.statements",
     label: "Financial statements",
     kind: "page",
-    parent: "finance.books",
+    parent: "books.statements",
     domain: "manage",
     route: "/admin/finance/statements",
     capability: "finance.view",
@@ -855,11 +870,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.budgets",
     label: "Budgets & cash forecast",
     kind: "page",
-    parent: "finance.books",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/budgets",
     capability: "finance.view",
-    order: 1,
+    order: 6,
     description: "Plan vs actual, and how much cash you'll have in the coming weeks.",
     keywords: ["budget", "forecast", "cash flow forecast", "runway", "plan", "variance", "burn"],
   },
@@ -867,11 +882,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.fixed-assets",
     label: "Fixed assets",
     kind: "page",
-    parent: "finance.books",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/fixed-assets",
     capability: "finance.view",
-    order: 2,
+    order: 5,
     description: "Machines, furniture and vehicles you own, and their depreciation.",
     keywords: ["asset register", "depreciation", "equipment", "machine", "vehicle", "disposal", "book value"],
   },
@@ -879,11 +894,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.ledger",
     label: "Ledger",
     kind: "page",
-    parent: "finance.books",
+    parent: "books.ledger",
     domain: "manage",
     route: "/admin/finance/ledger",
     capability: "finance.view",
-    order: 3,
+    order: 0,
     description: "Every accounting account and its balance (for your accountant).",
     keywords: ["chart of accounts", "general ledger", "account balance"],
   },
@@ -891,11 +906,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.journals",
     label: "Journals",
     kind: "page",
-    parent: "finance.books",
+    parent: "books.ledger",
     domain: "manage",
     route: "/admin/finance/journals",
     capability: "finance.view",
-    order: 4,
+    order: 1,
     description: "Every entry in the books; add or correct a manual entry.",
     keywords: ["journal entry", "manual journal", "reverse", "double entry"],
   },
@@ -905,11 +920,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.payroll",
     label: "Payroll",
     kind: "page",
-    parent: "finance.people",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/payroll",
     capability: "finance.sensitive",
-    order: 0,
+    order: 2,
     description: "Employees, monthly salary runs and printable payslips.",
     keywords: ["salary", "salaries", "wages", "payslip", "employees", "staff", "provident fund", "pf", "bonus", "tax withheld"],
   },
@@ -917,7 +932,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.equity",
     label: "Owner & partners",
     kind: "page",
-    parent: "finance.people",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/equity",
     capability: "finance.sensitive",
@@ -926,16 +941,21 @@ export const NAV_NODES: readonly NavNode[] = [
     keywords: ["partner", "capital", "owner", "drawings", "equity", "investment", "invest", "withdraw", "share", "profit share", "20%", "pay partner", "current account"],
   },
 
+  // Settings › Books setup: done once, then rarely (tab 2 §2)
+  { id: "settings.books", label: "Books setup", kind: "settings", parent: "settings", domain: "system", index: "/admin/finance/opening", capability: "finance.view", order: 4, innerList: true, description: "Start the books, opening stock value, account mapping, rates, tax codes and checks.", keywords: ["books setup", "opening", "mapping", "rates"] },
+  { id: "settings.team-security", label: "Team & security", kind: "settings", parent: "settings", domain: "system", index: "/admin/team", order: 5, keywords: ["team", "audit"] },
+  { id: "settings.system", label: "System", kind: "settings", parent: "settings", domain: "system", index: "/admin/system-health", order: 6, keywords: ["storage", "health"] },
+
   // Setup & checks
   {
     id: "finance.rates",
     label: "Courier & gateway rates",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/rates",
     capability: "finance.view",
-    order: 100.5,
+    order: 3,
     description: "Steadfast's charges by area and EPS fees — so every order's cost shows the day it happens.",
     keywords: ["steadfast charge", "delivery charge", "cod charge", "return charge", "eps fee", "rate card"],
   },
@@ -943,11 +963,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.opening",
     label: "Start the books",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/opening",
     capability: "finance.view",
-    order: 100,
+    order: 0,
     description: "Pick the date your books start and enter what you had and owed on that day.",
     keywords: ["opening balances", "opening date", "financial opening date", "fiscal year", "go live", "start", "setup"],
   },
@@ -955,11 +975,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.checks",
     label: "Books health check",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/checks",
     capability: "finance.view",
-    order: 101,
+    order: 5,
     description: "Automatic checks that the books match orders, stock and money accounts.",
     keywords: ["finance checks", "reconciliation", "revenue check", "cogs check"],
   },
@@ -967,11 +987,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.exceptions",
     label: "Missing costs & exceptions",
     kind: "page",
-    parent: "finance.books",
+    parent: "books",
     domain: "manage",
     route: "/admin/finance/exceptions",
     capability: "finance.view",
-    order: 102,
+    order: 7,
     description: "Products sold without a cost, and other records the books couldn't post.",
     keywords: ["finance exceptions", "missing cost", "estimate", "unmatched"],
   },
@@ -979,11 +999,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.inventory-cutover",
     label: "Opening stock value",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/inventory-cutover",
     capability: "costing.view",
-    order: 103,
+    order: 1,
     description: "One-time step: value the stock you already had so profit is calculated correctly.",
     keywords: ["valuation cutover", "inventory valuation", "costing", "average cost", "opening stock value"],
   },
@@ -991,11 +1011,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.tax-codes",
     label: "Purchase tax codes",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/tax-codes",
     capability: "purchasing.view",
-    order: 104,
+    order: 4,
     description: "VAT / input-tax rates used on supplier bills.",
     keywords: ["vat", "input tax", "tax rate"],
   },
@@ -1003,11 +1023,11 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.mappings",
     label: "Account mapping",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/mappings",
     capability: "finance.view",
-    order: 105,
+    order: 2,
     description: "Which account in the books each kind of sale, cost or payment is recorded to.",
     keywords: ["mapping", "posting accounts", "chart of accounts", "default accounts"],
   },
@@ -1015,34 +1035,35 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.activity",
     label: "Activity log",
     kind: "page",
-    parent: "finance.books",
-    domain: "manage",
+    parent: "settings.books",
+    domain: "system",
     route: "/admin/finance/activity",
     capability: "finance.view",
-    order: 106,
+    order: 6,
     description: "Every change made in Finance and who made it, plus accounting events that failed to post.",
     keywords: ["audit", "history", "events", "failed events", "retry", "who changed"],
   },
 
   {
     id: "analytics",
-    label: term("analytics"),
+    label: "Reports",
     kind: "module",
     domain: "manage",
-    index: "/admin/analytics/overview",
+    index: "/admin/finance/profit",
     activeFor: ["/admin/analytics", "/admin/bi", "/admin/ai-assistant"],
-    icon: "analytics",
-    capability: "analytics.view",
+    icon: "reports",
     order: 90,
     goKey: "a",
     keywords: ["business intelligence", "bi", "reports"],
   },
+  { id: "reports.profit", label: "Profit", kind: "page", parent: "analytics", domain: "manage", index: "/admin/finance/profit", order: -3, innerList: true, description: "Book profit by order and product, and month by month.", keywords: ["profit", "month by month"] },
+  { id: "reports.analytics", label: "Store analytics", kind: "page", parent: "analytics", domain: "manage", index: "/admin/analytics/overview", order: 0, description: "Sales, products, customers, marketing and operations — sales estimates, not book profit.", keywords: ["analytics", "bi", "sales estimate"] },
   ...ANALYTICS_TABS.map(
     ([slug, label, keywords, deprecatedRoutes], i): NavNode => ({
       id: `analytics.${slug}`,
       label,
       kind: "report",
-      parent: "analytics",
+      parent: "reports.analytics",
       domain: "manage",
       route: `/admin/analytics/${slug}`,
       capability: "analytics.view",
@@ -1059,7 +1080,7 @@ export const NAV_NODES: readonly NavNode[] = [
     domain: "manage",
     route: "/admin/ai-assistant",
     featureFlag: "ai-assistant",
-    order: ANALYTICS_TABS.length,
+    order: 2,
     keywords: ["ai", "chat"],
   },
 
@@ -1070,7 +1091,7 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "system",
     index: "/admin/settings",
-    activeFor: ["/admin/settings", "/admin/payment-methods", "/admin/sms-notifications"],
+    activeFor: ["/admin/settings", "/admin/payment-methods", "/admin/sms-notifications", "/admin/team", "/admin/audit-log", "/admin/storage", "/admin/system-health"],
     icon: "settings",
     order: 100,
     goKey: "s",
@@ -1101,30 +1122,18 @@ export const NAV_NODES: readonly NavNode[] = [
     keywords: ["sms templates"],
   },
 
-  {
-    id: "administration",
-    label: term("administration"),
-    kind: "module",
-    domain: "system",
-    index: "/admin/team",
-    activeFor: ["/admin/team", "/admin/audit-log", "/admin/storage", "/admin/system-health"],
-    icon: "administration",
-    shortLabel: "Admin",
-    order: 110,
-    keywords: ["admin"],
-  },
-  { id: "administration.team", label: term("teamMember"), kind: "settings", parent: "administration", domain: "system", route: "/admin/team", capability: "team.manage", order: 0, keywords: ["staff", "admins"] },
-  { id: "administration.audit-log", label: "Audit log", kind: "settings", parent: "administration", domain: "system", route: "/admin/audit-log", capability: "audit.view", order: 1, keywords: ["history"] },
-  { id: "administration.storage", label: "Storage", kind: "settings", parent: "administration", domain: "system", route: "/admin/storage", capability: "settings.manage", order: 2, keywords: ["uploads", "media", "trash"] },
+  { id: "administration.team", label: term("teamMember"), kind: "settings", parent: "settings.team-security", domain: "system", route: "/admin/team", capability: "team.manage", order: 0, keywords: ["staff", "admins"] },
+  { id: "administration.audit-log", label: "Audit log", kind: "settings", parent: "settings.team-security", domain: "system", route: "/admin/audit-log", capability: "audit.view", order: 1, keywords: ["history"] },
+  { id: "administration.storage", label: "Storage", kind: "settings", parent: "settings.system", domain: "system", route: "/admin/storage", capability: "settings.manage", order: 1, keywords: ["uploads", "media", "trash"] },
   {
     id: "administration.system-health",
     label: "System health",
     kind: "settings",
-    parent: "administration",
+    parent: "settings.system",
     domain: "system",
     route: "/admin/system-health",
     capability: "ops.view",
-    order: 3,
+    order: 0,
     keywords: ["health", "status", "reliability", "background jobs", "drift", "outbox"],
   },
 ];
@@ -1196,12 +1205,15 @@ export function hrefOf(node: NavNode): string | undefined {
 export interface NavAccess {
   can: (capability: Capability) => boolean;
   flagEnabled: (flag: FeatureFlag) => boolean;
+  /** What the store's data says it does; absent = not known yet, so a node that needs one stays hidden. */
+  storeHas?: (capability: StoreCapability) => boolean;
 }
 
-/** Visible to this admin on this installation (its own capability and flag — not its parents'). */
+/** Visible to this admin on this installation (its own capability, flag and store capability — not its parents'). */
 export function isNodeAllowed(node: NavNode, access: NavAccess): boolean {
   if (node.capability && !access.can(node.capability)) return false;
   if (node.featureFlag && !access.flagEnabled(node.featureFlag)) return false;
+  if (node.storeCapability && !access.storeHas?.(node.storeCapability)) return false;
   return true;
 }
 
@@ -1213,12 +1225,21 @@ export interface NavItem {
   children: NavItem[];
 }
 
+/**
+ * A node's listed pages this admin may open. A grouping page without a route of its own (Money › Payments & refunds)
+ * carries no capability: it shows when at least one of its pages does (blueprint P0.6 — a finance-only role reaches its
+ * pages without being granted anything new), and opens its declared index only when that page is visible, else its first.
+ */
 function visibleChildren(id: string, access: NavAccess): NavItem[] {
   return childrenOf(id)
     .filter((c) => listed(c) && isNodeAllowed(c, access))
     .flatMap((c) => {
-      const href = hrefOf(c);
-      return href ? [{ node: c, href, children: visibleChildren(c.id, access) }] : [];
+      const children = visibleChildren(c.id, access);
+      if (!c.route && children.length === 0) return [];
+      const declared = hrefOf(c);
+      const reachable = !c.index || c.route === c.index || flatten(children).some((x) => x.href === c.index);
+      const href = reachable ? declared : children[0]?.href;
+      return href ? [{ node: c, href, children }] : [];
     });
 }
 
@@ -1320,19 +1341,19 @@ export function createCommands(access: NavAccess): Array<NavCommand & { node: Na
 
 export type PaletteGroup = "Pages" | "Reports" | "Settings";
 
-/** Palette page results: listed, static-route nodes this admin may open (with their module allowed too). */
+/** Palette page results: listed nodes exactly as the sidebar shows them to this admin — a grouping page or module with
+ * no visible pages is absent, and one whose index is hidden lands on its first visible page (never a page it can't open). */
 export function searchableNodes(access: NavAccess): Array<{ node: NavNode; href: string; group: PaletteGroup }> {
-  // Modules exactly as the sidebar shows them — a grouping module with no visible pages is absent, and one whose index
-  // is hidden lands on its first visible page.
-  const modules = new Map(navTree(access).flatMap((g) => g.modules.map((m) => [m.node.id, m.href] as const)));
-  return NAV_NODES.filter((n) => {
-    if (n.search === false || !listed(n) || n.kind === "detail" || n.kind === "create") return false;
-    return modules.has(moduleOf(n).id) && ancestryOf(n).every((a) => isNodeAllowed(a, access));
-  }).flatMap((n) => {
-    const href = n.kind === "module" ? modules.get(n.id) : hrefOf(n);
-    if (!href) return [];
+  const visible = new Map(
+    navTree(access)
+      .flatMap((g) => g.modules)
+      .flatMap((m) => [m, ...flatten(m.children)])
+      .map((i) => [i.node.id, i.href] as const),
+  );
+  return NAV_NODES.filter((n) => n.search !== false && listed(n) && n.kind !== "detail" && n.kind !== "create" && visible.has(n.id)).flatMap((n) => {
+    const href = visible.get(n.id)!;
     // Skip a page its parent already lands on (the parent's entry covers it — "Orders", not also "All orders").
-    if (n.parent && navNode(n.parent)?.index === href) return [];
+    if (n.parent && visible.get(n.parent) === href) return [];
     const group: PaletteGroup = n.kind === "report" ? "Reports" : n.kind === "settings" ? "Settings" : "Pages";
     return [{ node: n, href, group }];
   });

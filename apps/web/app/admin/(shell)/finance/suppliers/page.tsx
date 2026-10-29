@@ -23,6 +23,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { Supplier, SupplierStatus } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const STATUS_BADGE = { ACTIVE: "success", ON_HOLD: "warning", INACTIVE: "neutral" } as const;
 const STATUS_LABEL = { ACTIVE: "active", ON_HOLD: "on hold", INACTIVE: "inactive" } as const;
@@ -52,7 +53,7 @@ export default function SuppliersPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Truck} title="Suppliers aren't available to your role" />
+        <PermissionState icon={Truck} page="Suppliers" />
       </div>
     );
   }

@@ -368,15 +368,21 @@ export interface InventoryTotals {
   lowStockVariants: number;
   outOfStockVariants: number;
   inventoryValue: number;
+  /** Held, tracked variants with stock whose cost is missing: left out of inventoryValue (never valued at 0). */
+  costMissingVariants: number;
+  /** Held, tracked variants with stock that do have a cost. */
+  costedVariants: number;
 }
 
 /** Inventory metrics from InventoryService truth (read-only) and the shared per-variant stock rule (D5). */
 export function inventoryTotals(variants: InventoryVariantFact[]): InventoryTotals {
-  const t = { stockOnHand: 0, lowStockVariants: 0, outOfStockVariants: 0, inventoryValue: 0 };
+  const t = { stockOnHand: 0, lowStockVariants: 0, outOfStockVariants: 0, inventoryValue: 0, costMissingVariants: 0, costedVariants: 0 };
   for (const v of variants) {
     if (v.held && v.trackInventory) {
       t.stockOnHand += v.stock;
-      t.inventoryValue += Math.max(0, v.stock) * v.currentUnitCost;
+      if (v.stock > 0 && v.currentUnitCost === null) t.costMissingVariants++;
+      else if (v.stock > 0) t.costedVariants++;
+      t.inventoryValue += Math.max(0, v.stock) * (v.currentUnitCost ?? 0);
     }
     if (v.purchasable) {
       const state = variantStockState(v.trackInventory, v.stock, v.lowStockThreshold);

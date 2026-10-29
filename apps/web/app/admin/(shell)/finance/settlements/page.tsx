@@ -26,6 +26,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { FinancialAccount, Settlement } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor } from "@/lib/idempotency";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const STATUS_BADGE = { DRAFT: "warning", POSTED: "success", REVERSED: "neutral" } as const;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -76,7 +77,7 @@ export default function SettlementsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Truck} title="Finance is limited to finance roles" />
+        <PermissionState icon={Truck} page="this finance page" />
       </div>
     );
   }

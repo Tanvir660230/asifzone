@@ -46,14 +46,17 @@ test.describe("admin on a phone", () => {
 
     // A module with pages pushes to its own list; "Menu" goes back.
     await sheet.getByRole("button", { name: /^Marketing/ }).click();
-    await expect(sheet.getByRole("link", { name: /Coupons/ })).toBeVisible();
+    // Marketing › Discounts holds flash sales, coupons and bundles as tabs (blueprint tab 2 §2)
+    await expect(sheet.getByRole("link", { name: /Discounts/ })).toBeVisible();
     await sheet.getByRole("button", { name: "Menu" }).click();
     await expect(sheet.getByRole("button", { name: /^Marketing/ })).toBeVisible();
 
     await sheet.getByRole("button", { name: /^Marketing/ }).click();
-    await sheet.getByRole("link", { name: /Coupons/ }).click();
-    await expect(page).toHaveURL(/\/admin\/coupons/, NAV);
+    await sheet.getByRole("link", { name: /Discounts/ }).click();
+    await expect(page).toHaveURL(/\/admin\/flash-sales/, NAV);
     await expect(sheet).toBeHidden();
+    // its other pages are tabs on the page
+    await expect(page.getByRole("link", { name: /Coupons/ }).first()).toBeVisible(NAV);
   });
 
   test("a detail page has a back button and no duplicate", async ({ page }) => {
