@@ -4,8 +4,12 @@
 - Brief downtime is acceptable. There is one application stack and no blue/green.
 - Migrations are additive (expand/contract), so the **previous** code always runs on the **new** schema.
 
-**Pipeline:** `.github/workflows/ci.yml`, job `deploy`, runs on the self-hosted VPS runner after `test` passes on `main`.
-It writes `docker/.env` from GitHub secrets, then runs `bash docker/deploy.sh`.
+**Pipeline:** `.github/workflows/ci.yml`, jobs `deploy-asifzone`, `deploy-nasihamart` and `deploy-tahafi`, run on the
+self-hosted VPS runner after `test` passes on `main` — **each only after the owner approves it** in its GitHub
+Environment (`production-asifzone`, `production-nasihamart`, `production-tahafi`, required reviewer; blueprint tab 13
+G-2). Approve one store, check it, then the next; a store not approved is not deployed. Always approve the newest run.
+Each job fast-forwards that store's checkout and runs `bash docker/deploy.sh` (one at a time on the VPS, `flock`); it
+never writes `docker/.env`, which lives on the server.
 
 ## What `docker/deploy.sh` does
 
