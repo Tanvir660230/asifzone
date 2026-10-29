@@ -1,12 +1,7 @@
 import { z } from "zod";
 import { nullableString, paginationQuerySchema } from "./common";
 
-export const returnRequestStatusEnum = z.enum(["PENDING", "APPROVED", "REJECTED", "COMPLETED"]);
-/** A request that stands: approved, or approved and every unit it expected back received or written off (blueprint P0.4). */
-export const RETURN_REQUEST_AGREED_STATUSES = ["APPROVED", "COMPLETED"] as const;
-export function isAgreedReturnRequest(status: string): boolean {
-  return (RETURN_REQUEST_AGREED_STATUSES as readonly string[]).includes(status);
-}
+export const returnRequestStatusEnum = z.enum(["PENDING", "APPROVED", "REJECTED"]);
 export const returnRequestTypeEnum = z.enum(["RETURN", "EXCHANGE"]);
 
 export const createReturnRequestSchema = z
@@ -48,10 +43,6 @@ export const reviewReturnRequestSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["adminNote"], message: "Tell the customer why the request is rejected" });
     }
   });
-
-/** S8 (tab 11): the customer keeps the items and pays after all — only while nothing of the return came back yet. */
-export const withdrawReturnRequestSchema = z.object({ reason: z.string().trim().min(3).max(300) });
-export type WithdrawReturnRequestInput = z.infer<typeof withdrawReturnRequestSchema>;
 
 export const returnRequestListQuerySchema = paginationQuerySchema.extend({
   status: returnRequestStatusEnum.optional(),

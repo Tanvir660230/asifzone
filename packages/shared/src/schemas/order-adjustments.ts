@@ -54,9 +54,6 @@ export const recordItemReturnSchema = z.object({
   reason: z.string().min(1).max(200),
   note: nullableString(1000),
   compensation: returnCompensationEnum.default("STORE_CREDIT"),
-  /** Blueprint P0.4 (S12): with the store's returns rule on, whether the units are at the shop now (received in the same
-   * step) or only agreed and still to come back (Goods awaiting return, received later). Omitted = in hand. Ignored while the rule is off. */
-  goodsInHand: z.boolean().optional(),
 });
 
 /** Preview of an item-level return: only the lines (what would be valued and credited). */

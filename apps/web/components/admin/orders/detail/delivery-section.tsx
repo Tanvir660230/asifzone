@@ -18,15 +18,12 @@ import type { OrderCommands } from "../use-order-commands";
 import { BlockedHint, DetailSection, Fact } from "./detail-section";
 import { CourierNotePanel } from "./courier-note-panel";
 import { UnitStepper } from "./unit-stepper";
-import { useReturnsRule } from "@/components/admin/returns/use-returns-rule";
 import type { OrderDetailCommands } from "./use-order-detail-commands";
 
 const LOSS_REASON = { CANCELLED_POST_BOOKING: "Cancelled after booking", PARTIAL_RETURN: "Partial return" } as const;
 
 /** Declare which units of a partially delivered order came back; the server restocks them and logs the courier loss. */
 function PartialDelivery({ order, detail, canManage }: { order: Order; detail: OrderDetailCommands; canManage: boolean }) {
-  // Blueprint P0.4: with the returns rule on, the refused items are agreed back now and received (good / damaged) later.
-  const { awaitGoods } = useReturnsRule();
   const [returned, setReturned] = useState<Record<string, number>>({});
   const [damaged, setDamaged] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -38,7 +35,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
     const units = order.items.reduce((sum, i) => sum + i.returnedQuantity, 0);
     return (
       <Alert variant="success" title="Partial delivery reconciled">
-        {formatStoreDateTime(order.partialDeliveryReconciledAt)} — {units > 0 ? (order.items.some((i) => (i.awaitingReturnQuantity ?? 0) > 0) ? `${units} unit(s) agreed back — receive them below when the parcel arrives.` : `${units} unit(s) returned.`) : "the customer kept the full shipment."}
+        {formatStoreDateTime(order.partialDeliveryReconciledAt)} — {units > 0 ? `${units} unit(s) restocked.` : "the customer kept the full shipment."}
       </Alert>
     );
   }
@@ -46,9 +43,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
     <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="partial-delivery">
       <p className="flex items-start gap-2 text-sm text-warning-800">
         <PackageX size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        {awaitGoods
-          ? "The courier reported a partial delivery. Enter how many units of each item the customer refused — they are restocked when the parcel is back with you (receive it then, good or damaged). Leave 0 for anything the customer kept."
-          : "The courier reported a partial delivery. Enter how many units of each item came back and how many of those are damaged — good units are restocked, damaged ones written off. Leave 0 for anything the customer kept."}
+        The courier reported a partial delivery. Enter how many units of each item came back and how many of those are damaged — good units are restocked, damaged ones written off. Leave 0 for anything the customer kept.
       </p>
       <ul className="space-y-2">
         {order.items.map((item) => (
@@ -76,7 +71,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
                   }}
                 />
               </label>
-              {!awaitGoods && <label className="flex items-center gap-1.5 text-xs text-ink-500">
+              <label className="flex items-center gap-1.5 text-xs text-ink-500">
                 Damaged
                 <Input
                   type="number"
@@ -89,7 +84,7 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
                   value={damaged[item.id] ?? 0}
                   onChange={(e) => setDamaged({ ...damaged, [item.id]: Math.max(0, Math.min(returned[item.id] ?? 0, Math.round(Number(e.target.value) || 0))) })}
                 />
-              </label>}
+              </label>
             </div>
           </li>
         ))}
@@ -101,11 +96,11 @@ function PartialDelivery({ order, detail, canManage }: { order: Order; detail: O
             loading={detail.reconcile.isPending}
             onClick={() =>
               detail.reconcile.mutate({
-                items: order.items.map((i) => ({ orderItemId: i.id, returnedQuantity: returned[i.id] ?? 0, damaged: awaitGoods ? 0 : Math.min(damaged[i.id] ?? 0, returned[i.id] ?? 0) })),
+                items: order.items.map((i) => ({ orderItemId: i.id, returnedQuantity: returned[i.id] ?? 0, damaged: Math.min(damaged[i.id] ?? 0, returned[i.id] ?? 0) })),
               })
             }
           >
-            {awaitGoods ? "Reconcile — refused units to come back" : "Restock returned units & reconcile"}
+            Restock returned units & reconcile
           </Button>
         </div>
       )}

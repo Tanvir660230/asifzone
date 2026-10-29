@@ -25,7 +25,6 @@ import {
   createPaymentLinkSchema,
   sendPaymentLinkSchema,
   receiveReturnedParcelSchema,
-  receiveAwaitingReturnSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
@@ -57,8 +56,6 @@ orderRouter.post("/admin", requireAdmin, requirePermission("orders.manage"), val
 orderRouter.get("/stats", requireAdmin, requirePermission("orders.read"), orderController.stats);
 // Blueprint P1.5: parcels cancelled after shipping that haven't come back yet (receive them with POST /:id/receive-return)
 orderRouter.get("/parcels-to-receive", requireAdmin, requirePermission("orders.read"), orderController.parcelsToReceive);
-// Blueprint P0.4: whether agreed returns wait for their goods (the owner sets it in the books settings).
-orderRouter.get("/returns-rule", requireAdmin, requirePermission("orders.read"), orderController.returnsRule);
 orderRouter.get("/export/csv", requireAdmin, requirePermission("orders.export"), validate(orderListQuerySchema, "query"), orderController.exportCsv);
 orderRouter.post("/bulk/status", requireAdmin, requirePermission("orders.manage"), validate(bulkOrderStatusSchema), orderController.bulkStatus);
 orderRouter.post("/bulk/delete", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkDelete);
@@ -108,8 +105,6 @@ orderRouter.patch(
 );
 orderRouter.get("/:id/fill-status", requireAdmin, requirePermission("orders.read"), orderController.fillStatus);
 orderRouter.post("/:id/receive-return", requireAdmin, requirePermission("orders.manage"), validate(receiveReturnedParcelSchema), orderController.receiveReturnedParcel);
-// Blueprint P0.4: goods a return agreed back (Goods awaiting return) are at the shop — good back on the shelf, damaged written off.
-orderRouter.post("/:id/receive-awaiting-return", requireAdmin, requirePermission("returns.manage"), validate(receiveAwaitingReturnSchema), orderController.receiveAwaitingReturn);
 orderRouter.post("/:id/refunds", requireAdmin, requirePermission("refunds.manage"), validate(recordRefundSchema), orderController.createRefund);
 orderRouter.get("/:id/refunds", requireAdmin, requirePermission("orders.read"), orderController.listRefunds);
 orderRouter.post("/:id/refunds/:refundId/complete", requireAdmin, requirePermission("refunds.manage"), validate(completeRefundSchema), orderController.completeRefundRequest);

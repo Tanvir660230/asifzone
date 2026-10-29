@@ -73,19 +73,13 @@ export interface OrderExtras {
   suggested: Map<string, number>;
   /** When an order that is RETURNED now became so (its last move to RETURNED); null otherwise. */
   returnedAt?: Date | null;
-  /** Blueprint P0.4: returns agreed under the receipt rule (not withdrawn), with what was written off as never returned. */
-  agreed?: Array<{ id: string; orderItemId: string; sourceType: string; quantity: number; approvedAt: Date; lostQuantity: number; lostAt: Date | null; lostReason: string | null }>;
-  /** Their receipts: the RETURN (good + damaged units back) and DAMAGED (damaged out again) movements, by expectation. */
-  receipts?: Array<{ movementId: string; expectationId: string; units: number; at: Date; damaged: boolean }>;
-  /** This order is an exchange replacement whose original was agreed back under the receipt rule (S5). */
-  replacementUnderRule?: boolean;
 }
 
 async function loadExtras(o: OrderFact, ctx: FinanceContext): Promise<OrderExtras> {
   const cur = ctx.business.baseCurrency;
-  const [refunds, rrs, credits, estimates, variants, returned, agreed, replacementOf] = await Promise.all([
+  const [refunds, rrs, credits, estimates, variants, returned] = await Promise.all([
     prisma.refund.findMany({ where: { orderId: o.id }, select: { id: true, payment: { select: { provider: true } } } }),
-    prisma.returnRequest.findMany({ where: { orderId: o.id, type: "RETURN", status: { in: ["APPROVED", "COMPLETED"] } }, select: { id: true, lines: true, reviewedAt: true, createdAt: true, _count: { select: { returnExpectations: true } } } }),
+    prisma.returnRequest.findMany({ where: { orderId: o.id, type: "RETURN", status: "APPROVED" }, select: { id: true, lines: true, reviewedAt: true, createdAt: true } }),
     prisma.customerCreditEntry.findMany({ where: { orderId: o.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
     prisma.financeException.findMany({
       where: { businessId: ctx.business.id, orderId: o.id, kind: "MISSING_COST", resolution: "ESTIMATE_APPROVED", key: { startsWith: "cost:line:" } },
@@ -93,21 +87,12 @@ async function loadExtras(o: OrderFact, ctx: FinanceContext): Promise<OrderExtra
     }),
     prisma.productVariant.findMany({ where: { id: { in: o.lines.map((l) => l.variantId) } }, select: { id: true, costPrice: true, product: { select: { costPrice: true } } } }),
     o.status === "RETURNED" ? prisma.orderStatusHistory.findFirst({ where: { orderId: o.id, status: "RETURNED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }) : null,
-    prisma.returnExpectation.findMany({ where: { orderId: o.id, status: { not: "WITHDRAWN" } }, orderBy: [{ approvedAt: "asc" }, { id: "asc" }] }),
-    o.isExchangeReplacement ? prisma.returnRequest.findFirst({ where: { exchangeOrderId: o.id }, select: { _count: { select: { returnExpectations: true } } } }) : null,
   ]);
-  const receipts = agreed.length
-    ? await prisma.stockMovement.findMany({ where: { sourceType: "ReturnExpectation", sourceId: { in: agreed.map((e) => e.id) }, reason: { in: ["RETURN", "DAMAGED"] } }, select: { id: true, sourceId: true, change: true, reason: true, createdAt: true } })
-    : [];
   return {
     returnedAt: returned?.createdAt ?? null,
-    agreed: agreed.map((e) => ({ id: e.id, orderItemId: e.orderItemId, sourceType: e.sourceType, quantity: e.quantity, approvedAt: e.approvedAt, lostQuantity: e.lostQuantity, lostAt: e.lostAt, lostReason: e.lostReason })),
-    receipts: receipts.map((m) => ({ movementId: m.id, expectationId: m.sourceId!, units: Math.abs(m.change), at: m.createdAt, damaged: m.reason === "DAMAGED" })),
-    replacementUnderRule: (replacementOf?._count.returnExpectations ?? 0) > 0,
     refundPayment: new Map(refunds.map((r) => [r.id, r.payment?.provider ?? null])),
-    // Damage on a return agreed under the receipt rule is booked from its receipt (S3), not from the request's lines.
     returnRequests: rrs
-      .filter((r) => Array.isArray(r.lines) && r._count.returnExpectations === 0)
+      .filter((r) => Array.isArray(r.lines))
       .map((r) => ({
         id: r.id,
         at: r.reviewedAt ?? r.createdAt,
@@ -222,21 +207,12 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
   }
 
   // Returns into stock — at the recorded cost, counted exactly when the dashboard's cogs counts them.
-  const returnsCounted: Array<{ movementId: string; cost: number; status: "KNOWN" | "ESTIMATED"; awaiting?: true }> = [];
+  const returnsCounted: Array<{ movementId: string; cost: number; status: "KNOWN" | "ESTIMATED" }> = [];
   for (const e of returnEvents(o)) {
-    if ((!e.movementId && !e.expectationId) || !real || e.at.getTime() >= cut) continue;
+    if (!e.movementId || !real || e.at.getTime() >= cut) continue;
     let cost = e.cost;
     let status: "KNOWN" | "ESTIMATED" = "KNOWN";
-    if (cost === null && e.expectationId) {
-      // An agreed return names its line: that line's approved estimate, else no cost (never invented).
-      const est = x.estimates.get(e.line.orderItemId);
-      if (est === undefined) {
-        missingCost(`cost:awaiting:${e.expectationId}`, e.at, e.line, e.units, `agreed back on order ${o.orderNumber}`);
-        continue;
-      }
-      cost = est * e.units;
-      status = "ESTIMATED";
-    } else if (cost === null) {
+    if (cost === null) {
       const lines = o.lines.filter((l) => l.variantId === e.variantId);
       const units = lines.map((l) => l.unitCostSnapshot ?? x.estimates.get(l.orderItemId) ?? null);
       if (units.every((u) => u !== null)) {
@@ -248,16 +224,9 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
         continue;
       }
     }
-    if (e.expectationId) {
-      // S1 (blueprint P0.4): the cost leaves COGS now and waits as goods awaiting return until the receipt.
-      returnsCounted.push({ movementId: e.expectationId, cost, status, awaiting: true });
-      events.push({ semanticKey: `${base}:awaiting:${e.expectationId}`, type: COMMERCE_EVENT_TYPES.awaiting, at: e.at, entityType: "ReturnExpectation", entityId: e.expectationId, payload: { expectationId: e.expectationId, orderItemId: e.line.orderItemId, variantId: e.variantId, units: e.units, cost, status } });
-      continue;
-    }
-    returnsCounted.push({ movementId: e.movementId!, cost, status });
-    events.push({ semanticKey: `${base}:return:${e.movementId}`, type: COMMERCE_EVENT_TYPES.returned, at: e.at, entityType: "StockMovement", entityId: e.movementId!, payload: { movementId: e.movementId, variantId: e.variantId, units: e.units, cost, status } });
+    returnsCounted.push({ movementId: e.movementId, cost, status });
+    events.push({ semanticKey: `${base}:return:${e.movementId}`, type: COMMERCE_EVENT_TYPES.returned, at: e.at, entityType: "StockMovement", entityId: e.movementId, payload: { movementId: e.movementId, variantId: e.variantId, units: e.units, cost, status } });
   }
-  agreedReturnEvents(o, x, real, cut, base, events, missingCost);
   const engineReturns = sum(orderContributions(o, "cogsReturned").filter((c) => c.at!.getTime() < cut && c.amount > 0).map((c) => c.amount));
   const projectedReturns = sum(returnsCounted.filter((r) => r.status === "KNOWN").map((r) => r.cost));
   if (engineReturns !== projectedReturns) {
@@ -365,58 +334,6 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
   steps.sort((a, b) => a.at - b.at || a.rank - b.rank);
   for (const s of steps) s.apply();
   return { events, exceptions };
-}
-
-/**
- * Blueprint P0.4 (tab 11 §4) — the rest of an agreed return, from its stored rows (S1, an exchange original's included, comes
- * from the engine's return events like any other return): each receipt into stock (S2, S4, S6), each
- * damaged unit written off at receipt (S3), the units written off as never returned (S7), and an exchange replacement's
- * cost when it is delivered (S5). Every amount is the line's recorded unit cost (or its approved estimate), the same cost
- * S1 took out — so goods awaiting return nets to zero per unit.
- */
-function agreedReturnEvents(o: OrderFact, x: OrderExtras, real: ReturnType<typeof realisationOf>, cut: number, base: string, events: Desired[], missingCost: (key: string, at: Date, l: OrderFact["lines"][number], units: number, what: string) => void) {
-  const lineOf = new Map(o.lines.map((l) => [l.orderItemId, l]));
-  const unit = (orderItemId: string): { unit: number; status: "KNOWN" | "ESTIMATED" } | null => {
-    const l = lineOf.get(orderItemId);
-    if (l?.unitCostSnapshot != null) return { unit: l.unitCostSnapshot, status: "KNOWN" };
-    const est = x.estimates.get(orderItemId);
-    return est === undefined ? null : { unit: est, status: "ESTIMATED" };
-  };
-  const inPeriod = (at: Date) => real !== null && at.getTime() < cut;
-  const byId = new Map((x.agreed ?? []).map((e) => [e.id, e]));
-  for (const e of x.agreed ?? []) {
-    const l = lineOf.get(e.orderItemId);
-    if (!l) continue;
-    const c = unit(e.orderItemId);
-    if (e.lostQuantity > 0 && e.lostAt && inPeriod(e.approvedAt)) {
-      if (!c) missingCost(`cost:not_returned:${e.id}`, e.lostAt, l, e.lostQuantity, `never returned on order ${o.orderNumber}`);
-      else events.push({ semanticKey: `${base}:not_returned:${e.id}`, type: COMMERCE_EVENT_TYPES.notReturned, at: e.lostAt, entityType: "ReturnExpectation", entityId: e.id, payload: { expectationId: e.id, units: e.lostQuantity, cost: c.unit * e.lostQuantity, status: c.status, reason: e.lostReason ?? "" } });
-    }
-  }
-  for (const r of x.receipts ?? []) {
-    const e = byId.get(r.expectationId);
-    const l = e ? lineOf.get(e.orderItemId) : undefined;
-    if (!e || !l || !inPeriod(e.approvedAt)) continue;
-    const c = unit(e.orderItemId);
-    const kind = r.damaged ? "received_damaged" : "received";
-    if (!c) {
-      missingCost(`cost:${kind}:${r.movementId}`, r.at, l, r.units, `${r.damaged ? "received damaged" : "received back"} on order ${o.orderNumber}`);
-      continue;
-    }
-    events.push({
-      semanticKey: `${base}:${kind}:${r.movementId}`, type: r.damaged ? COMMERCE_EVENT_TYPES.receivedDamaged : COMMERCE_EVENT_TYPES.received, at: r.at, entityType: "StockMovement", entityId: r.movementId,
-      payload: { expectationId: e.id, movementId: r.movementId, units: r.units, cost: c.unit * r.units, status: c.status },
-    });
-  }
-  if (o.isExchangeReplacement && x.replacementUnderRule && o.replacementCostAt && !o.cancelledAt) {
-    const lines: Array<{ orderItemId: string; units: number; cost: number; status: "KNOWN" | "ESTIMATED" }> = [];
-    for (const l of o.lines) {
-      const c = unit(l.orderItemId);
-      if (!c) missingCost(`cost:replacement:${l.orderItemId}`, o.replacementCostAt, l, l.quantity, `exchange replacement ${o.orderNumber}`);
-      else lines.push({ orderItemId: l.orderItemId, units: l.quantity, cost: c.unit * l.quantity, status: c.status });
-    }
-    if (lines.length) events.push({ semanticKey: `${base}:replacement_cost`, type: COMMERCE_EVENT_TYPES.replacementCost, at: o.replacementCostAt, entityType: "Order", entityId: o.id, payload: { lines } });
-  }
 }
 
 function creditEvent(base: string, c: OrderExtras["credits"][number], exchange: boolean, receivablePart: number, returnPart: number): Desired {
@@ -662,7 +579,6 @@ async function changedOrders(since: Date | null): Promise<string[]> {
   add(await prisma.refund.findMany({ where: { OR: [{ createdAt: { gte: since } }, { completedAt: { gte: since } }] }, select: { orderId: true } }));
   add(await prisma.stockMovement.findMany({ where: { createdAt: { gte: since }, reason: "RETURN" }, select: { orderId: true } }));
   add(await prisma.returnRequest.findMany({ where: { updatedAt: { gte: since } }, select: { orderId: true } }));
-  add(await prisma.returnExpectation.findMany({ where: { updatedAt: { gte: since } }, select: { orderId: true } }));
   add(await prisma.customerCreditEntry.findMany({ where: { createdAt: { gte: since } }, select: { orderId: true } }));
   add(await prisma.financeException.findMany({ where: { resolvedAt: { gte: since }, kind: "MISSING_COST" }, select: { orderId: true } }));
   // Owner's books: a settlement posted or reversed withdraws or restores the order's charge estimates.

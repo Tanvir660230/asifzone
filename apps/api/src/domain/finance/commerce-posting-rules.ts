@@ -26,12 +26,6 @@ export const COMMERCE_EVENT_TYPES = {
   credit: "commerce.store_credit.entry",
   stockWriteOff: "finance.stock.write_off_estimated",
   salesReturn: "commerce.return.sales_return",
-  // Blueprint P0.4 (tab 11 §4): restock only at receipt.
-  awaiting: "commerce.return.awaiting",
-  received: "commerce.return.received",
-  receivedDamaged: "commerce.return.received_damaged",
-  notReturned: "commerce.return.not_returned",
-  replacementCost: "commerce.exchange.replacement_cost",
   uncollected: "commerce.order.uncollected_written_off",
 } as const;
 
@@ -157,61 +151,6 @@ registerPostingRule(COMMERCE_EVENT_TYPES.returned, 1, {
     ], p.orderNumber),
 });
 
-// ── Blueprint P0.4: restock only at receipt (owner decisions Q5, Q13, Q13b, Q-A, Q-B, Q-C; tab 11 §4) ───────────────────
-// A return agreed under the store's returns rule takes the cost out of COGS at the agreement (S1) and holds it as Goods
-// awaiting return (1620) until the goods are received (S2, into inventory; S3, damaged ones then out to shrinkage) or
-// written off as never returned (S7, shrinkage). Either 1620 or inventory holds a returned unit's cost — never both.
-
-const agreedPayload = z.object({ ...base, expectationId: z.string(), orderItemId: z.string(), variantId: z.string(), units: z.number().int(), cost: minor, status: valuation });
-registerPostingRule(COMMERCE_EVENT_TYPES.awaiting, 1, {
-  payload: agreedPayload,
-  build: (p) =>
-    voidOr(p, `Return agreed, goods awaiting return — order ${p.orderNumber} (${p.units} unit(s))`, () => [
-      { account: "asset.goods_awaiting_return", debit: p.cost, credit: 0, valuationStatus: p.status, ...party(p.orderId) },
-      { account: "cogs.goods", debit: 0, credit: p.cost, valuationStatus: p.status, ...party(p.orderId), memo: "Cost of units agreed back, not received yet" },
-    ], p.orderNumber),
-});
-
-const receiptPayload = z.object({ ...base, expectationId: z.string(), movementId: z.string(), units: z.number().int(), cost: minor, status: valuation });
-registerPostingRule(COMMERCE_EVENT_TYPES.received, 1, {
-  payload: receiptPayload,
-  build: (p) =>
-    voidOr(p, `Return received into stock — order ${p.orderNumber} (${p.units} unit(s))`, () => [
-      { account: "asset.inventory", debit: p.cost, credit: 0, valuationStatus: p.status, ...party(p.orderId) },
-      { account: "asset.goods_awaiting_return", debit: 0, credit: p.cost, valuationStatus: p.status, ...party(p.orderId) },
-    ], p.orderNumber),
-});
-registerPostingRule(COMMERCE_EVENT_TYPES.receivedDamaged, 1, {
-  payload: receiptPayload,
-  build: (p) =>
-    voidOr(p, `Return received damaged, written off — order ${p.orderNumber} (${p.units} unit(s))`, () => [
-      { account: "cogs.inventory_shrinkage", debit: p.cost, credit: 0, valuationStatus: p.status, ...party(p.orderId), memo: "Returned damaged, at its recorded cost" },
-      { account: "asset.inventory", debit: 0, credit: p.cost, valuationStatus: p.status, ...party(p.orderId) },
-    ], p.orderNumber),
-});
-
-const lostPayload = z.object({ ...base, expectationId: z.string(), units: z.number().int(), cost: minor, status: valuation, reason: z.string() });
-registerPostingRule(COMMERCE_EVENT_TYPES.notReturned, 1, {
-  payload: lostPayload,
-  build: (p) =>
-    voidOr(p, `Never returned, written off — order ${p.orderNumber} (${p.units} unit(s)): ${p.reason}`, () => [
-      { account: "cogs.inventory_shrinkage", debit: p.cost, credit: 0, valuationStatus: p.status, ...party(p.orderId), memo: "Agreed back, never returned" },
-      { account: "asset.goods_awaiting_return", debit: 0, credit: p.cost, valuationStatus: p.status, ...party(p.orderId) },
-    ], p.orderNumber),
-});
-
-// S5: an exchange replacement under the rule is costed when delivered (its original's cost left COGS at the approval).
-const replacementPayload = z.object({ ...base, lines: z.array(z.object({ orderItemId: z.string(), units: z.number().int(), cost: minor, status: valuation })) });
-registerPostingRule(COMMERCE_EVENT_TYPES.replacementCost, 1, {
-  payload: replacementPayload,
-  build: (p) =>
-    voidOr(p, `Exchange replacement delivered — order ${p.orderNumber}`, () =>
-      p.lines.flatMap((l) => [
-        { account: "cogs.goods" as AccountMappingKey, debit: l.cost, credit: 0, valuationStatus: l.status, ...party(p.orderId), memo: "Cost of the exchange replacement" },
-        { account: "asset.inventory" as AccountMappingKey, debit: 0, credit: l.cost, valuationStatus: l.status, ...party(p.orderId) },
-      ]), p.orderNumber),
-});
-
 const writeOffPayload = z.object({ ...base, returnRequestId: z.string(), orderItemId: z.string(), units: z.number().int(), cost: minor, status: valuation });
 registerPostingRule(COMMERCE_EVENT_TYPES.writtenOff, 1, {
   payload: writeOffPayload,
@@ -261,8 +200,7 @@ const reversalPayload = z.object({
   recognition: recognitionComponents,
   exchange: z.boolean(),
   refunds: z.array(z.object({ refundId: z.string(), revenue: refundRevenue })),
-  /** `awaiting`: an agreed return under the receipt rule (its cost went to goods awaiting return, not inventory). */
-  returns: z.array(z.object({ movementId: z.string(), cost: minor, status: valuation, awaiting: z.boolean().optional() })),
+  returns: z.array(z.object({ movementId: z.string(), cost: minor, status: valuation })),
   /** Sales returns before the cancellation (absent on reversals recorded before they existed). */
   salesReturns: z.array(z.object({ returnRequestId: z.string(), revenue: salesReturnRevenue })).optional(),
 });
@@ -275,7 +213,7 @@ registerPostingRule(COMMERCE_EVENT_TYPES.reversed, 1, {
       ...(p.salesReturns ?? []).flatMap((r) => mirror(salesReturnLines(r.revenue, p.orderId, p.exchange))),
       ...p.returns.flatMap((r) => [
         { account: "cogs.goods" as AccountMappingKey, debit: r.cost, credit: 0, valuationStatus: r.status, ...party(p.orderId) },
-        { account: (r.awaiting ? "asset.goods_awaiting_return" : "asset.inventory") as AccountMappingKey, debit: 0, credit: r.cost, valuationStatus: r.status, ...party(p.orderId) },
+        { account: "asset.inventory" as AccountMappingKey, debit: 0, credit: r.cost, valuationStatus: r.status, ...party(p.orderId) },
       ]),
     ], p.orderNumber),
 });

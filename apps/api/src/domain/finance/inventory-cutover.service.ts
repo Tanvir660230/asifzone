@@ -101,7 +101,7 @@ export async function inventoryLedgerBridge(db: Db, business: Pick<FinanceBusine
       JOIN scope s ON s.id = l."partyId"
       WHERE e."businessId" = ${business.id} AND e.status = 'POSTED' AND l."accountId" = ${inventory.id}
         AND l."partyType" = 'Order' AND l."valuationStatus" = 'KNOWN'
-        AND fe."eventType" IS DISTINCT FROM ${COMMERCE_EVENT_TYPES.writtenOff} AND fe."eventType" IS DISTINCT FROM ${COMMERCE_EVENT_TYPES.receivedDamaged}
+        AND fe."eventType" IS DISTINCT FROM ${COMMERCE_EVENT_TYPES.writtenOff}
       GROUP BY l."partyId"
     )
     SELECT COALESCE(SUM(u.out), 0)::bigint AS out, COALESCE(SUM(c.credited), 0) AS credited,

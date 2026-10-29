@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { can, type AdminIdentity } from "../../domain/auth/authorization";
 import { getOrderStats, listParcelsToReceive } from "../orders/order.service";
-import { listAwaitingReturns } from "../returns/goods-awaiting-return.service";
 import { getPaymentsOverview } from "../payments/payments-overview.service";
 import { countUnreadNotifications } from "../notifications/notification.service";
 import { countOpenConversations } from "../inbox/inbox.service";
@@ -25,12 +24,9 @@ export async function adminAttention(identity: AdminIdentity) {
     can(identity, "ops.read") ? countOpenErrors() : null,
     can(identity, "purchasing.read") ? countPossibleDuplicatePurchases() : null,
     can(identity, "inventory.read") ? stockWaiting() : null,
-    can(identity, "orders.read") ? Promise.all([listParcelsToReceive(), listAwaitingReturns()]) : null,
+    can(identity, "orders.read") ? listParcelsToReceive() : null,
   ]);
-  // Blueprint P0.4 / Q-B: lines a return agreed back count too, each overdue after the same follow-up days.
-  const parcelsToReceive = parcels
-    ? { total: parcels[0].parcels.length + new Set(parcels[1].lines.map((l) => l.orderId)).size, overdue: parcels[0].overdue + new Set(parcels[1].lines.filter((l) => l.overdue).map((l) => l.orderId)).size, followUpDays: parcels[0].followUpDays }
-    : null;
+  const parcelsToReceive = parcels ? { total: parcels.parcels.length, overdue: parcels.overdue, followUpDays: parcels.followUpDays } : null;
   return { orders, payments, pendingReviews, unreadFeedback, unreadNotifications, openErrors, possibleDuplicatePurchases, stock, parcelsToReceive };
 }
 

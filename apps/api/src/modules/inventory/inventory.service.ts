@@ -263,7 +263,7 @@ export async function releaseOrderLines(
   // Variant id order — the lock order every stock writer uses.
   const items = await tx.orderItem.findMany({
     where: { orderId },
-    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, awaitingReturnQuantity: true, returnLostQuantity: true, unitCostSnapshot: true },
+    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true },
     orderBy: [{ variantId: "asc" }, { id: "asc" }],
   });
   const requested = opts.lines ? new Map(opts.lines.map((l) => [l.orderItemId, l.quantity])) : null;
@@ -271,8 +271,7 @@ export async function releaseOrderLines(
   const replenished: string[] = [];
 
   for (const item of items) {
-    // Units agreed back (awaiting return) or written off as never returned are not out to release (blueprint P0.4).
-    const outstanding = item.quantity - item.restockedQuantity - item.awaitingReturnQuantity - item.returnLostQuantity;
+    const outstanding = item.quantity - item.restockedQuantity;
     const wanted = requested ? (requested.get(item.id) ?? 0) : outstanding;
     const amount = Math.min(wanted, outstanding);
     if (amount <= 0) continue;
@@ -280,7 +279,7 @@ export async function releaseOrderLines(
     // Conditional on the line still having that many units outstanding — a concurrent release of the same line
     // (even outside an order-row lock) matches zero rows here instead of double-counting.
     const claimed = await tx.orderItem.updateMany({
-      where: { id: item.id, restockedQuantity: { lte: item.quantity - amount - item.awaitingReturnQuantity - item.returnLostQuantity } },
+      where: { id: item.id, restockedQuantity: { lte: item.quantity - amount } },
       data: {
         restockedQuantity: { increment: amount },
         ...(kind === "return" ? { returnedQuantity: { increment: amount } } : {}),
@@ -364,98 +363,6 @@ export async function writeOffParcelUnits(
     const mv = await tx.stockMovement.create({ data: { ...movement(u.variantId, -u.quantity, u.reason, { ...actor, note }), sourceType: "OrderParcelReceipt", sourceId: order.id } });
     await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: u.unitCostMinor }, ledger: "MOVEMENT", knownCause: true }]);
   }
-}
-
-// ── Blueprint P0.4: restock only at receipt (owner decisions Q5, Q13, Q13b; tab 11) ─────────────────────────────────────
-// With the store's returns rule on, an agreed return no longer puts units back: each line's units are either still out,
-// AWAITING return (awaitingReturnQuantity), back in stock (restockedQuantity) or written off as never returned
-// (returnLostQuantity). These are the only writers of the two new counters; every update is conditional on the line still
-// having the units, so a concurrent agreement, receipt or write-off of the same line matches zero rows instead of
-// double-counting (and the OrderItem CHECK constraint is the backstop).
-
-export type ReturnExpectationSource = "ORDER_RETURNED" | "PARTIAL_DELIVERY" | "EXCHANGE" | "ITEM_RETURN";
-
-/** Agrees units of an order's lines back without restocking them (S1): one ReturnExpectation per line, the line's
- * returnedQuantity (the business fact "returned") and awaitingReturnQuantity up by the units. `lines` omitted = every unit
- * still out. No stock moves. */
-export async function expectOrderLineReturns(
-  tx: Tx,
-  orderId: string,
-  opts: Actor & { source: ReturnExpectationSource; returnRequestId?: string | null; lines?: Array<{ orderItemId: string; quantity: number }>; at?: Date },
-): Promise<Array<{ expectationId: string; orderItemId: string; variantId: string; quantity: number }>> {
-  const items = await tx.orderItem.findMany({
-    where: { orderId },
-    select: { id: true, variantId: true, quantity: true, restockedQuantity: true, awaitingReturnQuantity: true, returnLostQuantity: true },
-    orderBy: [{ variantId: "asc" }, { id: "asc" }],
-  });
-  const requested = opts.lines ? new Map(opts.lines.map((l) => [l.orderItemId, l.quantity])) : null;
-  const at = opts.at ?? new Date();
-  const out: Array<{ expectationId: string; orderItemId: string; variantId: string; quantity: number }> = [];
-  for (const item of items) {
-    const outstanding = item.quantity - item.restockedQuantity - item.awaitingReturnQuantity - item.returnLostQuantity;
-    const amount = Math.min(requested ? (requested.get(item.id) ?? 0) : outstanding, outstanding);
-    if (amount <= 0) continue;
-    const claimed = await tx.$executeRaw`
-      UPDATE "OrderItem" SET "awaitingReturnQuantity" = "awaitingReturnQuantity" + ${amount}, "returnedQuantity" = "returnedQuantity" + ${amount}
-      WHERE id = ${item.id} AND quantity - "restockedQuantity" - "awaitingReturnQuantity" - "returnLostQuantity" >= ${amount}`;
-    if (claimed === 0) continue;
-    const row = await tx.returnExpectation.create({
-      data: { orderId, orderItemId: item.id, variantId: item.variantId, sourceType: opts.source, returnRequestId: opts.returnRequestId ?? null, quantity: amount, approvedAt: at, createdByAdminId: opts.adminId ?? null },
-    });
-    out.push({ expectationId: row.id, orderItemId: item.id, variantId: item.variantId, quantity: amount });
-  }
-  return out;
-}
-
-/** Agreed units are back at the shop (S2/S3): per expectation part, the units move from awaiting to restocked and come in
- * as a RETURN on the order at the line's own cost (linked to the expectation by sourceType/sourceId, so the books credit
- * Goods awaiting return, not COGS); the damaged ones then leave again as DAMAGED at the same cost (outside the order, like
- * writeOffReturnedUnits — INV-3). Refuses (409) when a line no longer awaits that many. */
-export async function receiveExpectedUnits(
-  tx: Tx,
-  order: { id: string; orderNumber: string },
-  parts: Array<{ expectationId: string; orderItemId: string; variantId: string; good: number; damaged: number; unitCostMinor: number | null }>,
-  actor: Actor = {},
-): Promise<{ replenished: string[]; moved: string[] }> {
-  const replenished: string[] = [];
-  const moved: string[] = [];
-  for (const p of [...parts].sort((a, b) => (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0))) {
-    const n = p.good + p.damaged;
-    if (n <= 0) continue;
-    const claimed = await tx.$executeRaw`
-      UPDATE "OrderItem" SET "awaitingReturnQuantity" = "awaitingReturnQuantity" - ${n}, "restockedQuantity" = "restockedQuantity" + ${n}
-      WHERE id = ${p.orderItemId} AND "awaitingReturnQuantity" >= ${n}`;
-    if (claimed === 0) throw new AppError(409, "These units were received or written off just now — reload the order", { code: "NOT_AWAITING_RETURN" });
-    const after = await applyDelta(tx, p.variantId, n, false);
-    if (after === null) continue;
-    moved.push(p.variantId);
-    const back = await tx.stockMovement.create({ data: { ...movement(p.variantId, n, "RETURN", { ...actor, note: actor.note ?? "Return received" }, order.id), sourceType: "ReturnExpectation", sourceId: p.expectationId } });
-    await value(tx, [{ movement: back, basis: { kind: "SNAPSHOT", unitCostMinor: p.unitCostMinor }, ledger: "ORDER" }]);
-    if (p.damaged > 0) {
-      await applyDelta(tx, p.variantId, -p.damaged, false);
-      const out = await tx.stockMovement.create({ data: { ...movement(p.variantId, -p.damaged, "DAMAGED", { ...actor, note: `Returned damaged — order ${order.orderNumber}${actor.note ? `: ${actor.note}` : ""}` }), sourceType: "ReturnExpectation", sourceId: p.expectationId } });
-      await value(tx, [{ movement: out, basis: { kind: "SNAPSHOT", unitCostMinor: p.unitCostMinor }, ledger: "ORDER" }]);
-    }
-    if (p.good > 0 && after - n <= 0 && after - p.damaged > 0) replenished.push(p.variantId);
-  }
-  return { replenished, moved };
-}
-
-/** Agreed units that will never come back (S7): out of awaiting for good. No stock moves (they were never back). */
-export async function closeExpectedUnitsAsLost(tx: Tx, orderItemId: string, units: number) {
-  const n = await tx.$executeRaw`
-    UPDATE "OrderItem" SET "awaitingReturnQuantity" = "awaitingReturnQuantity" - ${units}, "returnLostQuantity" = "returnLostQuantity" + ${units}
-    WHERE id = ${orderItemId} AND "awaitingReturnQuantity" >= ${units}`;
-  if (n === 0) throw new AppError(409, "These units were received or written off just now — reload", { code: "NOT_AWAITING_RETURN" });
-}
-
-/** A return withdrawn before anything came back (S8): the units are the customer's again — no longer awaited, no longer
- * returned. */
-export async function withdrawExpectedUnits(tx: Tx, orderItemId: string, units: number) {
-  const n = await tx.$executeRaw`
-    UPDATE "OrderItem" SET "awaitingReturnQuantity" = "awaitingReturnQuantity" - ${units}, "returnedQuantity" = "returnedQuantity" - ${units}
-    WHERE id = ${orderItemId} AND "awaitingReturnQuantity" >= ${units} AND "returnedQuantity" >= ${units}`;
-  if (n === 0) throw new AppError(409, "Part of this return was received just now — reload", { code: "NOT_AWAITING_RETURN" });
 }
 
 /** Locks the variants' rows and reports which can't supply `quantity` units right now (tracked products only — D5). Lets a

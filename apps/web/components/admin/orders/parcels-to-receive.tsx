@@ -13,7 +13,6 @@ import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type { ParcelToReceive } from "@/lib/api/admin-orders";
 import { formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { AwaitingReturns, ReturnsRuleCard } from "@/components/admin/returns/awaiting-returns";
 
 /**
  * Parcels to receive (blueprint P1.5, under today's rule): orders cancelled after they shipped whose units are still out
@@ -57,19 +56,8 @@ export function ParcelsToReceive() {
       cell: (p) => <Link href={`/admin/orders/${p.orderId}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>Receive parcel</Link>,
     },
   ];
-  const awaiting = q.data?.awaiting;
-  const showAwaiting = Boolean(awaiting && (awaiting.ruleActive || awaiting.effectiveAt || awaiting.lines.length));
   return (
-    <div className="space-y-6">
-      <ReturnsRuleCard />
-      {showAwaiting && (
-        <section className="space-y-3" aria-labelledby="awaiting-heading">
-          <h2 id="awaiting-heading" className="text-[17px] font-semibold tracking-tight text-fg">Returns waiting to come back</h2>
-          <AwaitingReturns data={awaiting} loading={q.isLoading} error={q.error} onRetry={() => void q.refetch()} />
-        </section>
-      )}
-      <section className="space-y-3" aria-labelledby="cancelled-heading">
-      {showAwaiting && <h2 id="cancelled-heading" className="text-[17px] font-semibold tracking-tight text-fg">Parcels cancelled after shipping</h2>}
+    <div className="space-y-3">
       {q.data && q.data.overdue > 0 && (
         <p className="text-sm text-warning-700" data-testid="parcels-overdue">
           {q.data.overdue} parcel{q.data.overdue === 1 ? " has" : "s have"} been out more than {q.data.followUpDays} days — chase the courier, or record them as lost when you receive the order.
@@ -86,7 +74,6 @@ export function ParcelsToReceive() {
         cardBelow="md"
         empty={<EmptyState icon={PackageOpen} title="No parcels on their way back" description="An order cancelled after it shipped shows here until its parcel is received." />}
       />
-      </section>
     </div>
   );
 }

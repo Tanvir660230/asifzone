@@ -114,15 +114,6 @@ Treatment summary:
 - **Returned units** come from the ledger's `StockMovement` rows with reason `RETURN` (orderId, variantId, units,
   timestamp). They are valued at the net unit value above. Exchange-returned units, i.e. the original line of an
   `APPROVED` `EXCHANGE` request, are removed chronologically from that (order, variant) pair.
-- **Returned units under the returns rule (blueprint P0.4, owner decisions Q5, Q13, Q13b).** Once the owner sets
-  `FinanceBusiness.returnsReceiptRuleEffectiveAt`, a return agreed from then on (order Returned, partial delivery
-  reconciled, item return recorded, exchange approved) is a `ReturnExpectation` row: the units are **returned at the
-  agreement** (`approvedAt`, valued at that order line's own net value and recorded cost) and only later come back into
-  stock. Their receipt is a `RETURN` movement linked to the row (`sourceType = "ReturnExpectation"`) and is **not** a
-  second return. A withdrawn agreement (the customer kept the items, S8) never happened. An exchange original agreed
-  under the rule leaves `cogs` at the approval and its replacement enters `cogs` at its delivery (`replacementCostAt`) —
-  units, value and margin metrics keep leaving both out (P5-3). `OrderItem.returnedQuantity` counts agreed units;
-  `restockedQuantity` counts units back on the shelf; `awaitingReturnQuantity` the ones still to come back.
 - Money is integer minor units in the store currency (`StoreSetting.currency`); DTOs carry major units. The store
   currency is **locked once any order exists** (P6-4): orders record no currency, so it is the recorded currency of all
   order money.
@@ -139,7 +130,7 @@ Treatment summary:
 
 ## 4. The registry
 
-Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned** = RETURN movement time (under the returns rule: the agreement, §3) · **refunded** =
+Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned** = RETURN movement time · **refunded** =
 `Refund.completedAt` · **settled** = `Payment.settledAt` · **now** = point-in-time snapshot.
 
 ### 4.1 Sales & financial

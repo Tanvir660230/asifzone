@@ -221,7 +221,7 @@ export async function createShipmentLeg(orderId: string, input: ShipmentCreateIn
     ? await prisma.returnRequest.findFirst({ where: { id: input.returnRequestId, orderId: rootId }, select: { id: true, type: true, status: true, exchangeOrderId: true } })
     : null;
   if (input.returnRequestId && !request) throw AppError.badRequest("That return / exchange doesn't belong to this order");
-  if (request && request.status !== "APPROVED" && request.status !== "COMPLETED") throw AppError.badRequest("Approve the return / exchange before recording its parcels");
+  if (request && request.status !== "APPROVED") throw AppError.badRequest("Approve the return / exchange before recording its parcels");
 
   let parcelOrderId = rootId;
   if (input.type === "REPLACEMENT") {

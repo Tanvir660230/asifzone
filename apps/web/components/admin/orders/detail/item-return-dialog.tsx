@@ -18,7 +18,6 @@ import { adjustmentErrorOf } from "@/lib/order-adjustment-errors";
 import { cn } from "@/lib/utils";
 import { invalidateOrderQueries, orderKeys } from "../order-domain";
 import { UnitStepper } from "./unit-stepper";
-import { useReturnsRule } from "@/components/admin/returns/use-returns-rule";
 
 /**
  * Item-level return on a delivered order (docs/ORDER_ADJUSTMENTS.md §8, §11 — "kept 1 of 3"). Staff pick exact units per
@@ -32,13 +31,7 @@ export function ItemReturnDialog({ order, open, onClose }: { order: Order; open:
 
 function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void }) {
   const queryClient = useQueryClient();
-  // Units still with the customer: not back in stock, not already agreed back, not written off as never returned.
-  const outOf = (i: Order["items"][number]) => i.quantity - i.restockedQuantity - (i.awaitingReturnQuantity ?? 0) - (i.returnLostQuantity ?? 0);
-  const lines = order.items.filter((i) => outOf(i) > 0);
-  // Blueprint P0.4 (S12): with the returns rule on, say whether the items are at the shop now or still to come back.
-  const { awaitGoods } = useReturnsRule();
-  const [inHand, setInHand] = useState(true);
-  const damageNow = !awaitGoods || inHand;
+  const lines = order.items.filter((i) => i.quantity - i.restockedQuantity > 0);
   const [qty, setQty] = useState<Record<string, { returning: number; damaged: number }>>({});
   const [compensation, setCompensation] = useState<ReturnCompensation>("STORE_CREDIT");
   const [reason, setReason] = useState("");
@@ -68,7 +61,7 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
   const scope = `item-return:${order.id}`;
   const record = useMutation({
     mutationFn: () => {
-      const body = { ...input, reason: reason.trim(), note: note.trim() || null, compensation, ...(awaitGoods ? { goodsInHand: inHand } : {}) };
+      const body = { ...input, reason: reason.trim(), note: note.trim() || null, compensation };
       return adjustmentsApi.recordItemReturn(order.id, body, idempotencyKeyFor(scope, body));
     },
     onSuccess: ({ returnRequest }) => {
@@ -140,39 +133,10 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
       }
     >
       <div className="space-y-4" data-testid="item-return-dialog">
-        {awaitGoods && (
-          <fieldset className="grid gap-2 sm:grid-cols-2" data-testid="return-goods-in-hand">
-            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-500">Where are the items?</legend>
-            {(
-              [
-                { value: true, label: "Here at the shop", hint: "Back on the shelf now (damaged ones written off)." },
-                { value: false, label: "Still with the customer", hint: "Agreed now — receive them when they arrive." },
-              ] as const
-            ).map((o) => (
-              <label key={String(o.value)} className={cn("flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm", inHand === o.value ? "border-ink-900" : "border-line-subtle")}>
-                <input
-                  type="radio"
-                  name="return-goods-in-hand"
-                  className="mt-1"
-                  checked={inHand === o.value}
-                  onChange={() => {
-                    setInHand(o.value);
-                    setConfirming(false);
-                    if (!o.value) setQty((cur) => Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, { ...v, damaged: 0 }])));
-                  }}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="font-medium text-ink-900">{o.label}</span>
-                  <span className="block text-xs text-ink-500">{o.hint}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-        )}
         <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle">
           {lines.map((item) => {
             const q = qty[item.id] ?? { returning: 0, damaged: 0 };
-            const returnable = outOf(item);
+            const returnable = item.quantity - item.restockedQuantity;
             const valued = p?.lines.find((l) => l.orderItemId === item.id);
             const label = [item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(" / ");
             return (
@@ -182,21 +146,21 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
                     {item.productNameSnapshot} <span className="font-normal text-ink-500">{label}</span>
                   </p>
                   <p className="text-xs text-ink-500">
-                    Ordered {item.quantity} · already returned {item.quantity - returnable} · <span className="font-medium text-ink-700">returnable {returnable}</span>
+                    Ordered {item.quantity} · already back {item.restockedQuantity} · <span className="font-medium text-ink-700">returnable {returnable}</span>
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
                   <span className="flex items-center gap-2">
                     Returning <UnitStepper label={`Units of ${item.productNameSnapshot} ${label} returning`} value={q.returning} max={returnable} onChange={(v) => set(item.id, { returning: v })} />
                   </span>
-                  {damageNow && <span className={cn("flex items-center gap-2", q.returning === 0 && "opacity-50")}>
+                  <span className={cn("flex items-center gap-2", q.returning === 0 && "opacity-50")}>
                     of which damaged <UnitStepper label={`Damaged units of ${item.productNameSnapshot} ${label}`} value={q.damaged} max={q.returning} onChange={(v) => set(item.id, { damaged: v })} />
-                  </span>}
+                  </span>
                 </div>
                 {q.returning > 0 && (
                   <p className="text-xs text-ink-600">
-                    Customer keeps {returnable - q.returning} · {damageNow ? `back on the shelf ${q.returning - q.damaged}` : `to come back ${q.returning}`}
-                    {damageNow && q.damaged > 0 && ` · written off ${q.damaged}`}
+                    Customer keeps {returnable - q.returning} · back on the shelf {q.returning - q.damaged}
+                    {q.damaged > 0 && ` · written off ${q.damaged}`}
                     {valued && <span className="ml-2 font-medium text-ink-900">Paid value {formatPrice(valued.value)}</span>}
                   </p>
                 )}

@@ -201,8 +201,6 @@ enum ReturnRequestStatus {
   PENDING
   APPROVED
   REJECTED
-  /// Blueprint P0.4: approved, and every unit it expected back was received or written off.
-  COMPLETED
 }
 
 enum ReviewStatus {
@@ -1239,7 +1237,6 @@ model Order {
   bundleDiscount Decimal @default(0) @db.Decimal(10, 2)
 
   items                  OrderItem[]
-  returnExpectations     ReturnExpectation[]
   autoFillFailures       StockAutoFillFailure[]
   statusHistory          OrderStatusHistory[]
   returnRequests         ReturnRequest[]
@@ -1423,8 +1420,6 @@ model ReturnRequest {
   exchangeOrder          Order?              @relation("ReturnRequestExchangeOrder", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
   /// The legs of this return / exchange (the parcel coming back, the replacement) — docs/COURIER_COSTS.md.
   shipments              Shipment[]
-  /// Blueprint P0.4: the units this request expects back (Goods awaiting return).
-  returnExpectations     ReturnExpectation[]
   // At most one PENDING request per order is also enforced at the DB level by a raw partial unique
   // index (see migrations/..._return_request_one_pending_per_order) — Prisma's schema DSL can't
   // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
@@ -1750,46 +1745,6 @@ model ProductReview {
   @@index([status])
 }
 
-/// Blueprint P0.4 (owner decisions Q5, Q13, Q13b; tab 11 §3–§4): one agreed return of units of an order line that are
-/// not back at the shop yet. Written when a return is agreed (order Returned, a partial delivery reconciled, an exchange
-/// approved, an item return recorded) while the store's returns rule is in force; the units then come back only through
-/// the Receive action (good / damaged), or are written off as never returned after FinanceBusiness.returnLossDays.
-/// AWAITING until quantity = receivedGood + receivedDamaged + lostQuantity (then CLOSED); WITHDRAWN when the customer kept
-/// the item and pays after all (S8). The books follow it: S1 at approvedAt (Dr 1620 / Cr COGS), S2/S3 at each receipt,
-/// S7 at the write-off (commerce-accounting.service.ts).
-model ReturnExpectation {
-  id               String         @id @default(cuid())
-  orderId          String
-  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderItemId      String
-  orderItem        OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  variantId        String
-  /// ORDER_RETURNED | PARTIAL_DELIVERY | EXCHANGE | ITEM_RETURN — the path that agreed the return (tab 11 §1 R1–R3, R5).
-  sourceType       String
-  returnRequestId  String?
-  returnRequest    ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
-  quantity         Int
-  receivedGood     Int            @default(0)
-  receivedDamaged  Int            @default(0)
-  lostQuantity     Int            @default(0)
-  lostReason       String?
-  lostAt           DateTime?
-  lostByAdminId    String?
-  /// AWAITING | CLOSED | WITHDRAWN
-  status           String         @default("AWAITING")
-  approvedAt       DateTime       @default(now())
-  closedAt         DateTime?
-  withdrawnAt      DateTime?
-  createdByAdminId String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-
-  @@index([orderId])
-  @@index([orderItemId])
-  @@index([returnRequestId])
-  @@index([status, approvedAt])
-}
-
 model OrderItem {
   id                      String               @id @default(cuid())
   orderId                 String
@@ -1811,14 +1766,6 @@ model OrderItem {
   /// never exceeds `quantity - restockedQuantity`, which is what makes every restock path idempotent
   /// (docs/INVENTORY_INVARIANTS.md). Only inventory.service.ts writes it.
   restockedQuantity       Int                  @default(0)
-  /// Blueprint P0.4 (owner decisions Q5, Q13, Q13b): units of this line a return was agreed for that are not back at the
-  /// shop yet (Goods awaiting return). A unit is either here, back in stock (restockedQuantity) or written off as never
-  /// returned (returnLostQuantity) — a line never releases more than quantity − restocked − awaiting − lost. Only
-  /// modules/returns/return-expectations.service.ts writes these two.
-  awaitingReturnQuantity  Int                  @default(0)
-  /// Units agreed back that never arrived and were written off (S7) — they stay out of stock for good.
-  returnLostQuantity      Int                  @default(0)
-  returnExpectations      ReturnExpectation[]
   /// Pricing snapshot (Phase 2). A line has ONE unit price: a cart line that is partly flash-priced (D4 stockLimit)
   /// is stored as two OrderItem rows. Null before Phase 2.
   /// The regular (pre-flash) unit price: the variant's own price, else the product base price.
@@ -3384,12 +3331,6 @@ model FinanceBusiness {
   countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
   /// Owner decision Q-B: a parcel or return still out after this many days is a Home follow-up.
   returnFollowUpDays          Int                       @default(14)
-  /// Blueprint P0.4 (Q5, Q13, Q13b; tab 11 §7): from this instant an agreed return no longer restocks at approval — the
-  /// units wait as Goods awaiting return (1620) until received. NULL = the rule is off (returns restock at approval, as
-  /// before). Set only by the owner, after the closed-month comparison; never backdated.
-  returnsReceiptRuleEffectiveAt DateTime?
-  /// Owner decision Q-B: a unit agreed back may be written off as never returned only this many days after the approval.
-  returnLossDays              Int                       @default(30)
   /// Blueprint P1.2 (tab 2 §3): the owner may snooze the "Unpaid by Steadfast" reminder until this business date (inclusive).
   courierUnpaidSnoozedUntil   DateTime?                 @db.Date
   /// What the last night's run did, for the settings page.

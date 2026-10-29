@@ -21,7 +21,6 @@ import { AttentionPanel, NotesSection, ReturnsSection } from "@/components/admin
 import { ChangesSection } from "@/components/admin/orders/detail/changes-section";
 import { AccountingSection } from "@/components/admin/orders/detail/accounting-section";
 import { CourierCostsSection } from "@/components/admin/orders/detail/courier-costs-section";
-import { AwaitingReturnSection } from "@/components/admin/orders/detail/awaiting-return-section";
 import { ModifyOrderDialog } from "@/components/admin/orders/detail/modify-order-dialog";
 import { ItemReturnDialog } from "@/components/admin/orders/detail/item-return-dialog";
 
@@ -83,7 +82,6 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
   const sections = {
     customer: <CustomerSection order={order} detail={detail} perms={perms} stacked={variant === "page"} />,
     items: <ItemsSection order={order} detail={detail} perms={perms} />,
-    awaiting: <AwaitingReturnSection order={order} perms={perms} />,
     payments: <PaymentsSection order={order} detail={detail} perms={perms} confirm={commands.confirm} />,
     delivery: <DeliverySection order={order} commands={commands} detail={detail} perms={perms} />,
     followUp: <FollowUpSection order={order} detail={detail} perms={perms} />,
@@ -104,7 +102,6 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
           <div className="min-w-0 space-y-5">
             {sections.items}
-            {sections.awaiting}
             {sections.changes}
             {sections.payments}
             {sections.delivery}
@@ -124,7 +121,6 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
           {sections.customer}
           {sections.followUp}
           {sections.items}
-          {sections.awaiting}
           {sections.changes}
           {sections.payments}
           {sections.delivery}

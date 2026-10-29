@@ -18,8 +18,7 @@ import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { generateOrderNumber } from "../../lib/order-number";
 import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.service";
-import { expectOrderLineReturns, notifyStockMoved, recordSale, releaseOrderLines, writeOffParcelUnits } from "../inventory/inventory.service";
-import { returnsRuleActive } from "../returns/goods-awaiting-return.service";
+import { notifyStockMoved, recordSale, releaseOrderLines, writeOffParcelUnits } from "../inventory/inventory.service";
 import { fillMoved, fillToOrderFloors, withFillToOrder } from "../../domain/stock/fill-capacity.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
@@ -159,10 +158,6 @@ async function getReturnRequestById(id: string) {
 export async function reviewReturnRequest(id: string, input: ReviewReturnRequestInput, adminId: string) {
   const request = await getReturnRequestById(id);
   if (request.status !== "PENDING") throw AppError.conflict("This return request has already been reviewed");
-  // Blueprint P0.4: with the returns rule in force nothing is back at approval — damage is recorded when it is received.
-  if (input.status === "APPROVED" && input.damaged?.length && (await returnsRuleActive())) {
-    throw new AppError(400, "Record damaged items when the return is received back", { code: "DAMAGE_AT_RECEIPT" });
-  }
 
   let moved: string[] = [];
   const outcome = await prisma.$transaction(async (tx) => {
@@ -181,7 +176,7 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
       return null;
     }
     const before = input.damaged?.length ? await restockedByLine(tx, request.orderId) : null;
-    const outcome = await applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId, returnRequestId: request.id });
+    const outcome = await applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
     if (before && input.damaged) {
       const damage = await writeOffDamagedReturn(tx, request.orderId, before, input.damaged, adminId);
       moved = damage.moved;
@@ -371,9 +366,6 @@ async function createExchangeOrder(
   // Phase 4B: the replacement is a new stock exit — its own cost, determined at that exit (recordSale), never the original
   // item's.
   const replacementSnapshots = await captureLineSnapshots(tx, [requestedVariant.id], cur);
-  // Blueprint P0.4 (R3, S5; Q13 = C): with the returns rule in force the replacement ships first and the original waits as
-  // Goods awaiting return until it is received — it is not restocked at approval.
-  const awaitOriginal = await returnsRuleActive(tx);
   const exchangeOrder = await tx.order.create({
     data: {
       orderNumber: generateOrderNumber(),
@@ -427,7 +419,7 @@ async function createExchangeOrder(
       statusHistory: {
         create: {
           status: "CONFIRMED",
-          note: `Exchange for order ${originalOrder.orderNumber} — ${awaitOriginal ? "original item to come back" : "original item restocked"}`,
+          note: `Exchange for order ${originalOrder.orderNumber} — original item restocked`,
           changedByAdminId: adminId,
         },
       },
@@ -456,14 +448,11 @@ async function createExchangeOrder(
     }
     throw err;
   }
-  const released = awaitOriginal
-    ? (await expectOrderLineReturns(tx, originalOrder.id, { source: "EXCHANGE", returnRequestId: request.id, adminId, note: "Exchange approved — waiting for the original", lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }] }))
-        .map((e) => ({ orderItemId: e.orderItemId, variantId: e.variantId, quantity: e.quantity, awaiting: true }))
-    : (await releaseOrderLines(tx, originalOrder.id, "return", {
-        adminId,
-        note: "Stock restored — exchange approved",
-        lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
-      })).released.map((r) => ({ ...r, awaiting: false }));
+  const { released } = await releaseOrderLines(tx, originalOrder.id, "return", {
+    adminId,
+    note: "Stock restored — exchange approved",
+    lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
+  });
   // The release is a conditional update: if a concurrent return/exchange took these units first, nothing was released —
   // then the whole approval (replacement order, its stock, any refund) rolls back instead of shipping a second item.
   const returnedUnits = released.filter((r) => r.orderItemId === originalItem.id).reduce((n, r) => n + r.quantity, 0);
@@ -505,5 +494,5 @@ async function createExchangeOrder(
   });
 
   // For notifyStockMoved after commit: the replacement (and its materials) left, the original came back.
-  return { exchangeOrder, moved: [...fillMoved(fill), ...released.filter((r) => !r.awaiting).map((r) => r.variantId)] };
+  return { exchangeOrder, moved: [...fillMoved(fill), ...released.map((r) => r.variantId)] };
 }

@@ -114,7 +114,7 @@ const P = {
     refundAllocations(o)
       .filter((a) => a.overpayment > 0)
       .map((a) => one(a.at, a.overpayment, o)),
-  returnsValue: (o: OrderFact) => realised(o, () => returnEvents(o).filter((e) => !e.exchange).map((e) => one(e.at, e.value, o, e.line))),
+  returnsValue: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.value, o, e.line))),
   refunds: (o: OrderFact) => o.refunds.filter((r) => r.status === "COMPLETED" && r.completedAt).map((r) => one(r.completedAt, r.amount, o)),
   refundCount: (o: OrderFact) => o.refunds.filter((r) => r.status === "COMPLETED" && r.completedAt).map((r) => one(r.completedAt, 1, o)),
   // Money received: store credit spent on an order is not new money (it was received once, on the order it came from).
@@ -124,13 +124,9 @@ const P = {
   codPlaced: (o: OrderFact) => (isSaleOrder(o) && o.paymentMethod === "COD" ? [one(o.placedAt, 1, o)] : []),
   unitsOrdered: (o: OrderFact) => (isSaleOrder(o) ? o.lines.map((l) => one(o.placedAt, l.quantity, o, l)) : []),
   unitsSold: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, l.quantity, o, l))),
-  unitsReturned: (o: OrderFact) => realised(o, () => returnEvents(o).filter((e) => !e.exchange).map((e) => one(e.at, e.units, o, e.line))),
+  unitsReturned: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.units, o, e.line))),
   /** Recorded cost of units sold — lines without a recorded cost are unknown and excluded (P6-2, never counted at 0). */
-  cogsSold: (o: OrderFact) =>
-    o.isExchangeReplacement && o.replacementCostAt && !o.deleted
-      ? // Blueprint P0.4 (S5): the replacement is costed at its delivery (its original's cost left COGS at the approval)
-        o.lines.filter((l) => l.unitCostSnapshot !== null).map((l) => one(o.replacementCostAt!, l.quantity * l.unitCostSnapshot!, o, l))
-      : realised(o, (at) => o.lines.filter((l) => l.unitCostSnapshot !== null).map((l) => one(at, l.quantity * l.unitCostSnapshot!, o, l))),
+  cogsSold: (o: OrderFact) => realised(o, (at) => o.lines.filter((l) => l.unitCostSnapshot !== null).map((l) => one(at, l.quantity * l.unitCostSnapshot!, o, l))),
   cogsReturned: (o: OrderFact) =>
     realised(o, () =>
       returnEvents(o)
@@ -147,7 +143,7 @@ const P = {
   marginReturned: (o: OrderFact) =>
     realised(o, () =>
       returnEvents(o)
-        .filter((e) => e.cost !== null && !e.exchange)
+        .filter((e) => e.cost !== null)
         .map((e) => one(e.at, e.valueExVat - e.cost!, o, e.line)),
     ),
 } satisfies Record<string, Producer>;

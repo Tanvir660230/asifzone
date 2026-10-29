@@ -559,8 +559,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: the owner's stock value correction (docs/STOCK_HUB.md §12)
     // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
     // +1: parcels to receive (blueprint P1.5)
-    // +4: goods awaiting return (blueprint P0.4) — the rule, receive, write off never returned, withdraw a return
-    expect(routes).toHaveLength(763);
+    expect(routes).toHaveLength(759);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

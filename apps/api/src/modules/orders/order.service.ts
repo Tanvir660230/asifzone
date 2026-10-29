@@ -65,8 +65,7 @@ import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryS
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
-import { expectOrderLineReturns, notifyReplenished, notifyStockMoved, recordSale, releaseOrderLines, reReserveOrderLines, writeOffParcelUnits, writeOffReturnedUnits } from "../inventory/inventory.service";
-import { returnsRuleActive } from "../returns/goods-awaiting-return.service";
+import { notifyReplenished, notifyStockMoved, recordSale, releaseOrderLines, reReserveOrderLines, writeOffParcelUnits, writeOffReturnedUnits } from "../inventory/inventory.service";
 import { applyCapacity, fillCapacity, fillShortfall, fillToOrderFloors } from "../../domain/stock/fill-capacity.service";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import {
@@ -1232,7 +1231,7 @@ export async function applyOrderTransition(
   input: UpdateOrderStatusInput,
   /** `quietNoop`: an automated source (courier webhook / sync) — a same-status call leaves no timeline entry, so a
    * duplicate or late provider push never adds noise (Phase 9). */
-  actor: { adminId?: string | null; quietNoop?: boolean; /** The approved return request behind a T7 (blueprint P0.4: its expectation names it). */ returnRequestId?: string | null } = {},
+  actor: { adminId?: string | null; quietNoop?: boolean } = {},
 ): Promise<OrderTransitionOutcome> {
   const [locked] = await tx.$queryRaw<
     Array<{
@@ -1283,11 +1282,7 @@ export async function applyOrderTransition(
 
   let replenished: string[] = [];
   let stockMoved: string[] = [];
-  // Blueprint P0.4 (R1): with the store's returns rule in force, a returned order's units wait as Goods awaiting return
-  // until they are received — nothing is restocked at the status change.
-  if (rule.stock === "return" && (await returnsRuleActive(tx))) {
-    await expectOrderLineReturns(tx, orderId, { source: "ORDER_RETURNED", returnRequestId: actor.returnRequestId ?? null, adminId: actor.adminId, note: "Order returned — waiting for the goods" });
-  } else if (rule.stock !== "none") {
+  if (rule.stock !== "none") {
     const note = rule.stock === "return" ? `Stock restored — order returned` : `Stock released — order cancelled`;
     const result = await releaseOrderLines(tx, orderId, rule.stock, { adminId: actor.adminId, note });
     replenished = result.replenished;
@@ -1650,10 +1645,6 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   const returnedByItem = new Map(returnedEntries.map((e) => [e.orderItemId, e.returnedQuantity]));
   const keptNothing = existing.items.every((item) => (returnedByItem.get(item.id) ?? 0) >= item.quantity);
 
-  // Blueprint P0.4 (R2, S10): with the returns rule in force the refused items are agreed back and received later — their
-  // condition (damaged or not) is recorded at receipt, not here.
-  const awaitGoods = returnedEntries.length > 0 && (await returnsRuleActive());
-  if (awaitGoods && damagedUnits > 0) throw new AppError(400, "Record damaged items when the parcel is received back", { code: "DAMAGE_AT_RECEIPT" });
   const { order, replenished, moved } = await prisma.$transaction(async (tx) => {
     // Row lock + re-check: two admins reconciling at once must not both restock.
     const [locked] = await tx.$queryRaw<Array<{ partialDeliveryReconciledAt: Date | null }>>`
@@ -1661,13 +1652,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
     `;
     if (locked?.partialDeliveryReconciledAt) throw AppError.conflict("This order has already been reconciled");
 
-    const expected = awaitGoods
-      ? await expectOrderLineReturns(tx, orderId, { source: "PARTIAL_DELIVERY", adminId, lines: returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })) })
-      : [];
-    if (awaitGoods && expected.reduce((n, e) => n + e.quantity, 0) !== returnedEntries.reduce((n, e) => n + e.returnedQuantity, 0)) {
-      throw AppError.conflict("These items were returned by another request just now — reload the order");
-    }
-    const result = returnedEntries.length && !awaitGoods
+    const result = returnedEntries.length
       ? await releaseOrderLines(tx, orderId, "return", {
           adminId,
           note: "Stock restored — partial delivery reconciliation",
@@ -1692,7 +1677,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
     }
 
     const note = returnedEntries.length
-      ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned${awaitGoods ? ", waiting for the parcel to come back" : damagedUnits ? `, ${damagedUnits} unit(s) damaged and written off` : " and restocked"}`
+      ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned${damagedUnits ? `, ${damagedUnits} unit(s) damaged and written off` : " and restocked"}`
       : "Partial delivery reconciled — customer kept the full shipment";
 
     // Gives the returned portion its own visible record in the same Return Requests list an admin
@@ -1706,7 +1691,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
         const item = itemById.get(entry.orderItemId)!;
         return `${item.productNameSnapshot}${formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} x${entry.returnedQuantity}`;
       });
-      const rr = await tx.returnRequest.create({
+      await tx.returnRequest.create({
         data: {
           orderId,
           customerId: existing.customerId,
@@ -1719,7 +1704,6 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
           lines: returnLines as unknown as Prisma.InputJsonValue,
         },
       });
-      if (expected.length) await tx.returnExpectation.updateMany({ where: { id: { in: expected.map((e) => e.expectationId) } }, data: { returnRequestId: rr.id } });
     }
 
     const updated = await tx.order.update({
@@ -1870,7 +1854,7 @@ export async function backfillPartialDeliveryReturns(opts: { apply?: boolean } =
   const rows: Array<{ orderNumber: string; returnRequestId: string; value: number; keptNothing: boolean; status: string }> = [];
   for (const rr of pending) {
     const order = await prisma.order.findUniqueOrThrow({ where: { id: rr.orderId }, include: { items: true } });
-    const later = await prisma.returnRequest.findMany({ where: { orderId: rr.orderId, type: "RETURN", status: { in: ["APPROVED", "COMPLETED"] }, NOT: { id: rr.id } }, select: { lines: true } });
+    const later = await prisma.returnRequest.findMany({ where: { orderId: rr.orderId, type: "RETURN", status: "APPROVED", NOT: { id: rr.id } }, select: { lines: true } });
     const laterUnits = new Map<string, number>();
     for (const r of later) {
       for (const l of Array.isArray(r.lines) ? (r.lines as Array<{ orderItemId?: string; quantity?: number }>) : []) {

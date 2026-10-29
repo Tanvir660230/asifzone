@@ -55,7 +55,7 @@ function LegRow({ leg, onOpen }: { leg: Shipment; onOpen: () => void }) {
  * outside the courier booking. */
 function AddLegDialog({ data, orderId, open, onClose }: { data: OrderShipments; orderId: string; open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const approved = data.returnRequests.filter((r) => r.status === "APPROVED" || r.status === "COMPLETED");
+  const approved = data.returnRequests.filter((r) => r.status === "APPROVED");
   const options = [
     ...approved.filter((r) => !data.shipments.some((s) => s.returnRequest?.id === r.id && s.type === "RETURN")).map((r) => ({ key: `RETURN:${r.id}`, label: `Parcel coming back — ${r.type === "EXCHANGE" ? "exchange" : "return"}: ${r.reason}` })),
     ...approved.filter((r) => r.type === "EXCHANGE" && r.exchangeOrderId && !data.shipments.some((s) => s.returnRequest?.id === r.id && s.type === "REPLACEMENT")).map((r) => ({ key: `REPLACEMENT:${r.id}`, label: `Replacement sent outside the courier booking — ${r.reason}` })),

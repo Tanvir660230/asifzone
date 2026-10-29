@@ -25,7 +25,6 @@ import { supplierOpeningDues } from "./opening-balances.service";
 import { financeTransaction } from "./finance-tx";
 import { clearingBreakdown } from "./settlements.service";
 import { inventoryLedgerBridge } from "./inventory-cutover.service";
-import { goodsAwaitingReturnCheck } from "./returns-accounting.service";
 
 export interface ReconciliationRange {
   from?: string;
@@ -761,13 +760,6 @@ export const RECONCILIATION_CHECKS = {
         },
       };
     },
-  },
-
-  // ── Blueprint P0.4 (tab 11 §5): goods awaiting return = what is still to come back ─────────────────────────────────────
-  "returns.goods_awaiting_return": {
-    label: "Goods awaiting return = what is still to come back",
-    description: "The goods-awaiting-return account (1620) equals, over every return agreed under the returns rule and not withdrawn, the units not received or written off yet at their line's recorded cost — in total and for each order.",
-    run: (ctx) => goodsAwaitingReturnCheck(ctx),
   },
 
   // ── Owner's books §3–§4: what is accrued until a payout is exactly the live estimates ────────────────────────────────
