@@ -1,6 +1,6 @@
 import { Suspense, type ReactNode } from "react";
 import nextDynamic from "next/dynamic";
-import { StoreFooter, StoreHeader } from "@/components/storefront/store-chrome";
+import { StoreDock, StoreFooter, StoreHeader } from "@/components/storefront/store-chrome";
 import { AnnouncementBar } from "@/components/storefront/announcement-bar";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 import { AddedToBag } from "@/components/storefront/added-to-bag";
@@ -10,7 +10,6 @@ import { StickyBottomBarSpacer } from "@/components/storefront/sticky-bottom-bar
 import { ContactWidget } from "@/components/storefront/contact-widget";
 import { AppShellWorker } from "@/components/storefront/app-shell-worker";
 import { NavigationProgress } from "@/components/storefront/navigation-progress";
-import { MobileBottomNav } from "@/components/storefront/mobile-bottom-nav";
 import { PageTransition } from "@/components/storefront/page-transition";
 import { SkipToContentLink } from "@/components/storefront/skip-to-content-link";
 import { Toaster } from "@/components/ui/toast";
@@ -68,7 +67,7 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
       <CartReminderBanner />
       <StickyCartBar />
       <ContactWidget socialLinks={links} settings={settings} />
-      <MobileBottomNav />
+      <StoreDock />
       <LiveChatWidget settings={settings} />
       <QuickViewModal />
       <CompareBar />

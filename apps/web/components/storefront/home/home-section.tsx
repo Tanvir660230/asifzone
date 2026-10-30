@@ -22,7 +22,6 @@ import type {
 // is fetched by the browser and blocked by the nonce CSP ('strict-dynamic') — docs/DESIGN_SYSTEM.md §2.
 import { BrandStory } from "@/components/storefront/brand-story";
 import { Hero } from "@/components/storefront/hero";
-import { TahafiHero } from "../presets/tahafi/hero";
 import { SmartRecommendations } from "@/components/storefront/smart-recommendations";
 import { ValuesGrid } from "@/components/storefront/values-grid";
 import { HeroCarousel } from "@/components/storefront/hero-carousel";
@@ -46,6 +45,8 @@ import {
   MihrabTrustRow,
   MihrabValues,
 } from "@/components/storefront/presets/mihrab/sections";
+import { TahafiHero } from "@/components/storefront/presets/tahafi/hero";
+import { TahafiCategoryIndex, TahafiLookbook, TahafiPromiseLine } from "@/components/storefront/presets/tahafi/sections";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import type { StoreLayout } from "@/lib/theme-layout";
 import { carouselListingHref, reviewsFor, type RenderableSection } from "@/lib/homepage-data";
@@ -84,6 +85,7 @@ export function HomeSection({ section, data, layout }: { section: RenderableSect
 function renderSection(section: RenderableSection, data: HomeSectionData, layout: StoreLayout, appearance: SectionAppearance | undefined) {
   const { storeName, tagline } = data;
   const mihrab = layout === "mihrab";
+  const tahafi = layout === "tahafi";
   switch (section.type) {
     case "HERO": {
       if (data.banners.length > 0) return <HeroCarousel banners={data.banners} />;
@@ -103,12 +105,14 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
         imageAltText: config.imageAltText,
       };
       if (mihrab) return <MihrabHero {...props} />;
-      if (layout === "tahafi") return <TahafiHero {...props} tone={appearance?.tone} layout={appearance?.layout} />;
+      if (tahafi) return <TahafiHero {...props} />;
       return <Hero {...props} tone={appearance?.tone} layout={appearance?.layout} />;
     }
     case "TRUST_STRIP": {
       const config = section.config as TrustStripConfig;
-      return mihrab ? <MihrabTrustRow items={config.items} /> : <TrustStrip items={config.items} />;
+      if (mihrab) return <MihrabTrustRow items={config.items} />;
+      if (tahafi) return <TahafiPromiseLine items={config.items} />;
+      return <TrustStrip items={config.items} />;
     }
     case "PERSONALIZED_LEAD": {
       const config = section.config as PersonalizedLeadConfig;
@@ -126,11 +130,9 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
       return mihrab ? <MihrabFlashSale flashSale={data.flashSale} /> : <FlashSaleSection flashSale={data.flashSale} />;
     case "CATEGORY_GRID": {
       const config = section.config as CategoryGridConfig;
-      return mihrab ? (
-        <MihrabCategoryArches categories={data.tree} heading={config.heading} subtitle={config.subtitle} />
-      ) : (
-        <CategoryGrid categories={data.tree} heading={config.heading} subtitle={config.subtitle} />
-      );
+      if (mihrab) return <MihrabCategoryArches categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
+      if (tahafi) return <TahafiCategoryIndex categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
+      return <CategoryGrid categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
     }
     case "BRAND_STORY": {
       const config = section.config as BrandStoryConfig;
@@ -185,7 +187,9 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
     }
     case "IMAGE_GALLERY": {
       const config = section.config as ImageGalleryConfig;
-      return <ImageGallerySection eyebrow={config.eyebrow} heading={config.heading} items={(config.items ?? []).filter((i) => i?.imageUrl)} layout={config.layout} />;
+      const items = (config.items ?? []).filter((i) => i?.imageUrl);
+      if (tahafi) return <TahafiLookbook eyebrow={config.eyebrow} heading={config.heading} items={items} />;
+      return <ImageGallerySection eyebrow={config.eyebrow} heading={config.heading} items={items} layout={config.layout} />;
     }
     default:
       return null;

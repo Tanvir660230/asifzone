@@ -19,6 +19,7 @@ import { StarRating } from "./star-rating";
 import { VariantPickerDialog } from "./variant-picker-dialog";
 import { storeLayout } from "@/lib/theme-layout";
 import { MihrabProductCard } from "./presets/mihrab/product-card";
+import { TahafiProductCard } from "./presets/tahafi/product-card";
 
 interface ProductCardProps {
   product: Product;
@@ -29,7 +30,10 @@ interface ProductCardProps {
 }
 
 export function ProductCard(props: ProductCardProps) {
-  return storeLayout() === "mihrab" ? <MihrabProductCard {...props} /> : <ClassicProductCard {...props} />;
+  const layout = storeLayout();
+  if (layout === "mihrab") return <MihrabProductCard {...props} />;
+  if (layout === "tahafi") return <TahafiProductCard {...props} />;
+  return <ClassicProductCard {...props} />;
 }
 
 function ClassicProductCard({ product, priority }: ProductCardProps) {

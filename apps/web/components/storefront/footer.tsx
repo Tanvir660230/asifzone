@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Phone } from "lucide-react";
 import type { PaymentMethodOption, SocialLink, StoreSettings } from "@clothing-brand/shared";
@@ -19,6 +19,10 @@ interface FooterProps {
   settings: StoreSettings;
   socialLinks?: SocialLink[];
   paymentMethods?: PaymentMethodOption[];
+  /** Drawn across the footer's top edge (a preset's own shape, e.g. Tahafi's canopy); absent = a straight edge. */
+  crown?: ReactNode;
+  /** Set above the bottom bar (a preset's own art, e.g. Tahafi's full-width logo). */
+  signature?: ReactNode;
 }
 
 interface FooterLinkGroupProps {
@@ -60,7 +64,7 @@ const FOOTER_LINK_CLASS = "inline-block py-1 text-ink-300 transition-colors dura
 /** The storefront footer: a newsletter row, then the brand and its contact details beside three link columns, then one
  * bottom bar with how to pay, the copyright and the legal links. Designed on the dark palette as a `.ui-band-inverse`
  * section, so a theme may render it light (logos swap through `.ui-art-on-dark` / `.ui-art-on-light`). */
-export function Footer({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
+export function Footer({ categories = [], settings, socialLinks = [], paymentMethods = [], crown, signature }: FooterProps) {
   const address = shortAddress(settings);
   // Depth-first flatten (each parent immediately followed by its own children) so a store with
   // few top-level categories still fills this column meaningfully via subcategories, e.g.
@@ -89,6 +93,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
 
   return (
     <footer data-band="footer" className="ui-band-inverse mt-12 bg-ink-950 text-cream-200 sm:mt-16">
+      {crown}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Newsletter: its own row, the invitation on the left and the form where the eye lands next. */}
         {design?.showNewsletter !== false && (
@@ -242,6 +247,8 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             </FooterLinkGroup>
           </div>
         </div>
+
+        {signature}
 
         {/* Bottom bar: how to pay (only what the store configured — an uploaded graphic, or its payment methods), then the
             copyright and the legal links. */}

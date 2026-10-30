@@ -644,6 +644,8 @@ const themeDefinitions = {
       "--story-media-max-w": "64rem",
       "--story-media-h-sm": "28rem",
       "--sheet-radius": "1rem",
+      // The floating dock (presets/tahafi/dock.tsx): its 3.5rem row plus the 0.5rem gap below it.
+      "--dock-tab-bar": "4rem",
     },
     // The brand story renders on cream; the hero, footer, flash sale and promo bands are ink, like the logo's ink ground.
     lightBands: ["story"],
