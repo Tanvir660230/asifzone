@@ -21,6 +21,10 @@ ink "canopy / hang-tag" catalogue — because the colours fought the photographs
 | The one accent | the logo's olive `#4F5343` (`sale`) | links, the bag count, sale tags, icon tiles on `#EEF0E8` |
 | Glass | `.glass` / `.glass-panel` (globals.css) | the header, the dock, controls floating on photographs |
 
+**Dark mode** (option B, `tahafi.dark`): page `#0F0F0E`, cards `#1C1C1A`, text `#F4F4F2`, light glossy actions, the
+olive tag stays and olive text turns light `#C3CBA8`. It follows the shopper's device unless they choose Light or Dark
+(header button; Auto returns to the device). Storefront only — the admin is always light.
+
 Type: Geist throughout, titles at 650 with tight tracking. Contrast is enforced by
 `apps/api/src/config/theme-tokens.test.ts`.
 

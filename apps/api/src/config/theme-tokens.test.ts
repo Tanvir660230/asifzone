@@ -145,6 +145,34 @@ describe("brand themes", () => {
   });
 });
 
+describe("Tahafi dark colour mode", () => {
+  const dark = tokens.themes.tahafi!.darkModeVariables;
+  const band = tokens.themes.tahafi!.darkModeBandVariables;
+  const d = (name: string) => channels(dark[`--color-${name}`] ?? tokens.themes.tahafi!.cssVariables[`--color-${name}`]!);
+  const b = (name: string) => channels(band[`--color-${name}`]!);
+
+  it("exists for Tahafi only, and the admin never sees it (storefront pages only, emitted by tailwind.config.ts)", () => {
+    expect(Object.keys(dark).length).toBeGreaterThan(0);
+    expect(dark["color-scheme"]).toBe("dark");
+    expect(tokens.themes.default!.darkModeVariables).toEqual({});
+    expect(tokens.themes.nasihamart!.darkModeVariables).toEqual({});
+  });
+
+  it("keeps text and actions legible (WCAG AA 4.5:1) on the dark page, cards and bands", () => {
+    for (const ground of ["cream-100", "cream-50", "cream-200"]) {
+      for (const text of ["ink-900", "ink-700", "ink-500", "ink-400", "sale-600"]) {
+        expect(contrast(d(text), d(ground)), `dark ${text} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    const accent = channels(dark["--color-accent"]!);
+    expect(contrast(d("cream-50"), accent), "dark text on the light action").toBeGreaterThanOrEqual(4.5);
+    expect(contrast([255, 255, 255], d("sale-500")), "white on the olive tag").toBeGreaterThanOrEqual(4.5);
+    for (const text of ["cream-50", "cream-200", "ink-300", "ink-400", "ink-500"]) {
+      expect(contrast(b(text), b("ink-950")), `dark band ${text}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
 describe("per-section band tone (Storefront Studio)", () => {
   it("keeps a band's text legible (WCAG AA 4.5:1) when a store forces it light or dark, in every theme", () => {
     for (const [id, theme] of Object.entries(tokens.themes)) {

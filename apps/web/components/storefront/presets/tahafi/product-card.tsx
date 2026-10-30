@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Plus } from "lucide-react";
@@ -9,9 +9,8 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { Money } from "@/components/ui/money";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { availabilityOf } from "@/lib/availability-display";
-import { cn, isPaleColor } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
-import { WishlistButton } from "../../wishlist-button";
 import { getProductBadge } from "../../promo-badge";
 import { StarRating } from "../../star-rating";
 import { VariantPickerDialog } from "../../variant-picker-dialog";
@@ -22,11 +21,10 @@ interface ProductCardProps {
 }
 
 /**
- * The tahafi preset's product card, in the light-glass look: a white card with soft depth, the photograph on white (so
- * product shots on white sit seamlessly), the name and a firm price under it, colours as small dots, a tag in the corner
- * (a live discount in olive) and a round glass "+" to add without leaving the grid — it asks for the size first when
- * there is a choice (the options sheet). Behaviour is the classic card's (product-card.tsx): the same availability, server-resolved prices and
- * add-to-cart hook.
+ * The tahafi preset's product card, as in the approved mockup: a white card with soft depth, the photograph square, the name
+ * and a firm price under it, a tag only for a live discount, and a round glass "+" to add without leaving the grid — it
+ * asks for the size first when there is a choice (the options sheet). Saving to the wishlist is on the product page.
+ * Behaviour is the classic card's (product-card.tsx): the same availability, server-resolved prices and add-to-cart hook.
  */
 export function TahafiProductCard({ product, priority }: ProductCardProps) {
   const [primaryImage, secondaryImage] = product.images;
@@ -50,12 +48,6 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
     product,
   });
 
-  const colors = useMemo(() => {
-    const seen = new Map<string, string | null>();
-    for (const v of product.variants) if (v.color && !seen.has(v.color)) seen.set(v.color, v.colorHex);
-    return Array.from(seen.entries());
-  }, [product.variants]);
-
   function handleQuickAdd(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -64,8 +56,9 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
   }
 
   const tag = soldOut
-    ? { label: "Sold out", className: "bg-ink-900 text-white" }
-    : badge && { label: badge.label, className: badge.tone === "sale" ? "bg-sale-500 text-white" : "bg-surface text-fg shadow-[0_1px_3px_rgb(28_28_26/0.18)]" };
+    ? { label: "Sold out", className: "bg-fg text-canvas" }
+    : // Only a live discount: "New Arrival" and "Limited Item" on every card read as clutter (owner, 2026-10-31).
+      badge?.tone === "sale" && { label: badge.label, className: "bg-sale-500 text-white" };
 
   return (
     <div data-nav-pending-scope className="ui-press group block overflow-hidden rounded-[1.375rem] bg-surface shadow-[var(--card-frame-shadow)] transition-shadow duration-300 ease-smooth lg:hover:shadow-[var(--card-frame-shadow-hover)]">
@@ -107,7 +100,6 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
             {tag.label}
           </span>
         )}
-        <WishlistButton productId={product.id} className="absolute right-2.5 top-2.5 z-10 h-8 w-8" />
         {!soldOut && (
           <button
             type="button"
@@ -124,7 +116,7 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
         <div>
           <h3 className="line-clamp-2 text-[0.9375rem] font-semibold leading-snug text-fg">{product.name}</h3>
           <p className="mt-1 flex items-baseline gap-1.5 tabular-nums" data-testid="card-price">
-            <span className={cn("text-[0.9375rem] font-bold", soldOut ? "text-fg-muted" : onSale ? "text-sale-500" : "text-fg")}>
+            <span className={cn("text-[0.9375rem] font-bold", soldOut ? "text-fg-muted" : onSale ? "text-sale-600" : "text-fg")}>
               <Money value={shown.price} />
             </span>
             {onSale && (
@@ -138,19 +130,6 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
           <div className="mt-1.5 flex items-center gap-1.5">
             <StarRating value={product.avgRating} size={11} />
             <span className="text-xs text-fg-subtle">({product.reviewCount})</span>
-          </div>
-        )}
-        {colors.length > 1 && (
-          <div className="mt-2 flex items-center gap-1.5" aria-label={`Colours: ${colors.map(([c]) => c).join(", ")}`}>
-            {colors.slice(0, 5).map(([color, hex]) => (
-              <span
-                key={color}
-                title={color}
-                className={cn("h-3 w-3 rounded-full border", isPaleColor(hex) ? "border-ink-300" : "border-transparent")}
-                style={{ backgroundColor: hex ?? "#d4d4d4" }}
-              />
-            ))}
-            {colors.length > 5 && <span className="text-xs text-fg-subtle">+{colors.length - 5}</span>}
           </div>
         )}
       </Link>

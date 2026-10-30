@@ -302,6 +302,12 @@ const componentTokens = {
   "--card-media-aspect": "1 / 1",
   // The thread a preset's hang-tag hangs from (Tahafi's hero).
   "--tag-thread": "rgb(var(--color-ink-300))",
+  // The lit edge of a floating glass panel (globals.css .glass-panel); a dark colour mode dims it.
+  "--glass-edge": "rgb(255 255 255 / 0.7)",
+  // Artwork made for the light page or for the dark one (.ui-mode-light-art / .ui-mode-dark-art, e.g. the header logo):
+  // which one shows. A theme's dark colour mode swaps them.
+  "--mode-light-art": "contents",
+  "--mode-dark-art": "none",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -644,6 +650,56 @@ const themeDefinitions = {
       "--hero-cta-text": "rgb(255 255 255)",
       "--band-accent": "rgb(79 83 67)",
     },
+    // The dark colour mode (option B of the mockup): the shopper's phone or computer setting, or their own choice
+    // (presets/tahafi/mode-toggle.tsx). Near-black page, charcoal cards, light text, light glossy actions; the olive stays
+    // for tags and turns light (#C3CBA8) where it is text. Storefront only — the admin is always light.
+    dark: {
+      palette: {
+        ink: {
+          50: "#262624", // subtle fills
+          100: "#2c2c29", // hairlines
+          200: "#3a3a36", // borders
+          300: "#4c4c47", // strong line
+          400: "#9d9d97", // tertiary text — 6.9:1 on the page, 6.1:1 on a card
+          500: "#b4b4ae", // secondary text — 8.9:1 on the page
+          600: "#cfcfc9",
+          700: "#e4e4df", // body text
+          800: "#ececE8",
+          900: "#f4f4f2", // headings — 17.6:1 on the page
+          950: "#ffffff",
+        },
+        // 50 = the cards, 100 = the page, 200 = secondary grounds.
+        cream: { 50: "#1c1c1a", 100: "#0f0f0e", 200: "#232321", 300: "#2c2c29" },
+        // The olive tag stays (white on it 8.0:1); olive as text or icon is the light olive (9.6:1 on the page).
+        sale: { 50: "#262a1e", 500: "#4f5343", 600: "#c3cba8" },
+      },
+      components: {
+        "color-scheme": "dark",
+        "--color-accent": "244 244 242",
+        "--color-accent-hover": "214 214 208",
+        "--accent-hover": "rgb(214 214 208)",
+        "--nav-hover": "rgb(195 203 168)",
+        "--nav-underline": "rgb(195 203 168)",
+        "--band-accent": "rgb(195 203 168)",
+        "--glass-alpha": "0.62",
+        "--glass-edge": "rgb(255 255 255 / 0.12)",
+        "--header-shadow": "0 1px 0 0 rgb(255 255 255 / 0.06)",
+        "--panel-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
+        "--card-frame-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
+        "--card-frame-shadow-hover": "inset 0 0 0 1px rgb(255 255 255 / 0.12)",
+        "--badge-note-bg": "rgb(28 28 26 / 0.9)",
+        "--badge-note-fg": "rgb(244 244 242)",
+        "--hero-cta-fill": "rgb(244 244 242)",
+        "--hero-cta-text": "rgb(28 28 26)",
+        "--mode-light-art": "none",
+        "--mode-dark-art": "contents",
+      },
+      // The sections designed dark (footer, flash sale …) render dark here: the light theme's own values, with the grey
+      // text steps lifted for a dark ground (8.0 and 5.5:1 on #1C1C1A).
+      bandPalette: { ink: { 400: "#b0b0aa", 500: "#8f8f89" } },
+      // …and their accent the light olive, as on the page (the light mode's olive is too dark on charcoal).
+      bandComponents: { "--band-accent": "rgb(195 203 168)" },
+    },
   },
 };
 
@@ -683,6 +739,27 @@ function referenceVariables() {
     if (value.startsWith("var(--color-")) variables[name] = value;
   }
   return variables;
+}
+
+/** A theme's dark colour mode on :root: its dark palette and component values. */
+function darkModeVariables(dark) {
+  const variables = {};
+  for (const [scale, steps] of Object.entries(dark.palette ?? {})) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  return { ...variables, ...dark.components };
+}
+
+/** Inside the sections designed on the dark palette, in a theme's dark colour mode: they render dark — the theme's light
+ * palette as the base design intended it, with `dark.bandPalette` re-valued for the dark ground. */
+function darkModeBandVariables(definition) {
+  const variables = {};
+  const scales = { ...definition.palette };
+  for (const [scale, steps] of Object.entries(definition.dark.bandPalette ?? {})) scales[scale] = { ...scales[scale], ...steps };
+  for (const [scale, steps] of Object.entries(scales)) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  return { ...variables, ...referenceVariables(), "--band-dark-art": "contents", "--band-light-art": "none", ...definition.dark.bandComponents };
 }
 
 /** Palette steps a theme re-values inside the sections that stay dark (`darkBandPalette`). */
@@ -748,6 +825,9 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
     darkBandVariables: darkBand(definition),
     // A band whose tone the store chose per section (Storefront Studio → Style → Tone, `data-tone` on the band).
     toneVariables: { light: { ...lightBand(definition), ...definition.bandComponents }, dark: darkTone(definition) },
+    // The theme's dark colour mode, if it has one (storefront only; tailwind.config.ts emits it).
+    darkModeVariables: definition.dark ? darkModeVariables(definition.dark) : {},
+    darkModeBandVariables: definition.dark ? darkModeBandVariables(definition) : {},
   };
 }
 const DEFAULT_THEME = "default";

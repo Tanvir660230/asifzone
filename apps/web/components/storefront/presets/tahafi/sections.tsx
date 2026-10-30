@@ -6,7 +6,7 @@ import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { resolveImageUrl } from "@/lib/image-url";
 import { resolveHomepageIcon } from "@/lib/homepage-icons";
 
-/* The tahafi preset's homepage sections: the light-glass look — white cards with soft depth on the grey page, large
+/* The tahafi preset's homepage sections (photo cards keep the light theme's colours in either mode, data-surface): the light-glass look — white cards with soft depth on the grey page, large
    radii, glass where something floats on a photograph. Same props and the same admin-authored content as the classic
    sections; never invented copy. */
 
@@ -41,7 +41,7 @@ export function TahafiPromiseLine({ items = [...DEFAULT_TRUST_STRIP_ITEMS] }: { 
           const Icon = resolveHomepageIcon(icon);
           return (
             <li key={label} className="flex items-center gap-3 py-3 sm:justify-center sm:px-5 sm:py-4">
-              <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] bg-sale-50 text-sale-500">
+              <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] bg-sale-50 text-sale-600">
                 <Icon size={17} strokeWidth={1.9} />
               </span>
               <span className="text-[0.9375rem] font-medium text-fg">{label}</span>
@@ -81,7 +81,7 @@ export function TahafiCategoryIndex({ categories, heading, subtitle }: { categor
       <ul className="hidden gap-5 md:grid md:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
         {categories.map((cat) => (
           <li key={cat.id}>
-            <Link href={`/category/${cat.slug}`} className="group relative block aspect-[4/5] overflow-hidden rounded-[1.75rem] bg-cream-200">
+            <Link data-surface="storefront" href={`/category/${cat.slug}`} className="group relative block aspect-[4/5] overflow-hidden rounded-[1.75rem] bg-cream-200">
               {cat.imageUrl && (
                 <Image
                   src={resolveImageUrl(cat.imageUrl)}
@@ -129,11 +129,11 @@ export function TahafiLookbook({ eyebrow, heading, items }: { eyebrow?: string |
           return (
             <li key={`${item.imageUrl}-${i}`} className="w-[15rem] shrink-0 snap-start sm:w-[18rem]">
               {item.linkUrl ? (
-                <Link href={item.linkUrl} className="ui-press relative block aspect-[3/4] overflow-hidden rounded-[1.75rem] bg-cream-200">
+                <Link data-surface="storefront" href={item.linkUrl} className="ui-press relative block aspect-[3/4] overflow-hidden rounded-[1.75rem] bg-cream-200">
                   {card}
                 </Link>
               ) : (
-                <div className="relative aspect-[3/4] overflow-hidden rounded-[1.75rem] bg-cream-200">{card}</div>
+                <div data-surface="storefront" className="relative aspect-[3/4] overflow-hidden rounded-[1.75rem] bg-cream-200">{card}</div>
               )}
             </li>
           );

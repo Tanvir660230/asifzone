@@ -30,8 +30,10 @@ const WHITE_PILL =
   "inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-white to-cream-200 px-6 text-[0.9375rem] font-semibold text-ink-900 shadow-[inset_0_1px_0_#fff,0_6px_16px_-8px_rgb(0_0_0/0.5)] transition-transform duration-200 ease-smooth active:scale-[0.97]";
 
 /**
- * The Tahafi hero, like a Today card on an iPhone: the photograph in one large rounded card, the headline set on its
- * lower edge over a scrim, and the featured piece on a glass bar with the way to order it. The small line above the
+ * The Tahafi hero, like a Today card on an iPhone: on phones the photograph runs edge to edge from the top of the screen,
+ * under the header's floating glass buttons, its lower corners rounded; on wide screens it is one large rounded card. The
+ * headline sits on its lower edge over a scrim, and the featured piece on a glass bar with the way to order it. Its
+ * colours are the light theme's in either colour mode (`data-surface="storefront"`): white type on a photograph. The small line above the
  * headline (Admin → Homepage → Hero) is the bar's text, split at "|" into the piece and its details — "Utility Jacket |
  * Olive cotton twill | ৳2,950". Without a photograph the card is ink.
  */
@@ -58,8 +60,8 @@ export function TahafiHero({
   );
 
   return (
-    <section className="mx-auto max-w-7xl px-3 pt-3 sm:px-6 sm:pt-5 lg:px-8">
-      <div className="relative isolate h-[min(76svh,34rem)] overflow-hidden rounded-[2rem] bg-ink-900 sm:h-[min(80svh,42rem)]">
+    <section data-surface="storefront" className="mx-auto -mt-[3.75rem] max-w-7xl bg-transparent lg:mt-0 lg:px-8 lg:pt-5">
+      <div className="relative isolate h-[min(82svh,38rem)] overflow-hidden rounded-b-[2rem] bg-ink-900 lg:h-[min(80svh,42rem)] lg:rounded-[2rem]">
         {imageUrl && (
           <>
             {mobileImageUrl && (
@@ -73,7 +75,7 @@ export function TahafiHero({
               sizes={mobileImageUrl ? "(min-width: 1280px) 1216px, (min-width: 640px) 100vw, 1px" : "(min-width: 1280px) 1216px, 100vw"}
               className={cn("object-cover object-[50%_20%]", mobileImageUrl && "hidden sm:block")}
             />
-            <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/0" />
+            <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/25" />
           </>
         )}
 

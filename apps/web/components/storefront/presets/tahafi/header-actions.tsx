@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Search, ShoppingBag, User } from "lucide-react";
 import { useCartCount } from "@/store/cart";
@@ -29,8 +29,8 @@ export function BagCount({ count, className = "-right-0.5 -top-0.5" }: { count: 
   );
 }
 
-/** The header's right side on wide screens: a search field that opens the search sheet, the account and the bag. */
-export function TahafiHeaderActions() {
+/** The header's right side on wide screens: a search field that opens the search sheet, light/dark, the account and the bag. */
+export function TahafiHeaderActions({ modeToggle }: { modeToggle?: ReactNode }) {
   const openSearch = useSearchOverlayStore((s) => s.open);
   const openBag = useCartDrawerStore((s) => s.open);
   const count = useShownBagCount();
@@ -45,6 +45,7 @@ export function TahafiHeaderActions() {
         <Search size={17} aria-hidden="true" />
         Search jackets, panjabi…
       </button>
+      {modeToggle}
       <Link href="/account" aria-label="Your account" className={ICON_BUTTON}>
         <User size={20} aria-hidden="true" />
       </Link>

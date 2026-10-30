@@ -20,6 +20,9 @@ interface UiTokens {
       darkBandVariables: Record<string, string>;
       /** A band given its own tone in the Storefront Studio (`.ui-band-inverse[data-tone="light"|"dark"]`). */
       toneVariables: { light: Record<string, string>; dark: Record<string, string> };
+      /** The theme's dark colour mode on the storefront (empty when it has none), and inside its dark-designed bands. */
+      darkModeVariables: Record<string, string>;
+      darkModeBandVariables: Record<string, string>;
     }
   >;
   DEFAULT_THEME: string;
