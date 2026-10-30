@@ -302,6 +302,8 @@ const componentTokens = {
   "--card-media-aspect": "1 / 1",
   // The thread a preset's hang-tag hangs from (Tahafi's hero).
   "--tag-thread": "rgb(var(--color-ink-300))",
+  // A mark above section titles (globals.css `.ui-section-title::before`): `none` = no mark; `""` = the twin diamonds.
+  "--title-mark": "none",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -527,33 +529,34 @@ const themeDefinitions = {
     // Inside the navy sections: the mid tones the dark palette uses for text, re-valued light enough for navy.
     darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
   },
-  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). Olive-black (#1E211B) for type, olive
-  // (#3E4A33) for actions, warm cream (#F4F0E8) page, sand (#E9E2D2) wells, brass (#A8843C) only for small marks (nav
-  // underline, badges, accents on dark), terracotta (#B4492F) for promotions. Instrument Serif titles over Geist; its own
-  // layout preset (`tahafi`): the brand's hang-tag carries the hero's featured price.
+  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). Only the logo's four colours (the designer's
+  // sheet, docs/brand/tahafi/source/logo-paths.json): olive #4F5343 is the brand's ground — header strip, hero, footer and
+  // every primary action; ink #1C1C1A for type; cream #F2EFEA page; sage #84857E for threads, rules and quiet marks (3.3:1
+  // on cream — never body text; its darker step #64655E carries hints at 5.1:1). No red: a sale is an ink tag, like a
+  // tailor's. Instrument Serif titles over Geist; its own layout preset (`tahafi`): the logo's canopy frames the hero.
   tahafi: {
-    label: "Tahafi (olive · cream · brass)",
+    label: "Tahafi (olive · cream · sage · ink)",
     layout: "tahafi",
     palette: {
       ink: {
-        50: "#efeadf", // subtle fills
-        100: "#e7e1d4", // subtle hairlines
-        200: "#ddd6c8", // warm border (lines, inputs)
-        300: "#cfc6b4", // strong line
-        400: "#5f6357", // tertiary text (struck prices, hints) — 5.4:1 on cream, 4.7:1 on sand
-        500: "#575b50", // secondary text — 6.1:1 on cream
-        600: "#3b3f36",
-        700: "#2a2e25", // body text
-        800: "#303a27", // olive, deeper: hover of olive actions
-        900: "#1e211b", // olive-black: headings, text — 14.6:1 on cream
-        950: "#1e211b", // the dark sections and footer
+        50: "#ebe8e2", // subtle fills
+        100: "#e3e0d9", // subtle hairlines
+        200: "#d8d5cd", // border (lines, inputs)
+        300: "#c4c2b9", // strong line
+        400: "#64655e", // tertiary text (struck prices, hints) — 5.1:1 on cream, 4.6:1 on the photo well
+        500: "#575850", // secondary text — 6.3:1 on cream
+        600: "#3d3f36",
+        700: "#2a2a27", // body text — 12.6:1
+        800: "#3f4335", // olive, deeper: hover of olive surfaces
+        900: "#1c1c1a", // ink: headings, text — 14.9:1 on cream
+        950: "#4f5343", // olive: the dark sections (hero, footer, promo bands) — cream on it 6.9:1
       },
-      // 100 = the cream page; 200 = sand wells behind product photos.
-      cream: { 50: "#fbf9f5", 100: "#f4f0e8", 200: "#e9e2d2", 300: "#ddd4c0" },
-      // Terracotta, the one promotional accent: 5.6:1 under the light badge text, 5.0:1 as text on cream.
-      sale: { 50: "#f6e6e1", 500: "#b4492f", 600: "#963b26" },
+      // 100 = the cream page; 200 = the sage-washed well behind product photos.
+      cream: { 50: "#faf8f5", 100: "#f2efea", 200: "#e4e2dc", 300: "#d9d7cf" },
+      // A sale is an ink tag with white type (17:1), and ink text — the logo has no red.
+      sale: { 50: "#e9e7e1", 500: "#1c1c1a", 600: "#2a2a27" },
     },
-    radii: { sm: "2px", DEFAULT: "3px", md: "4px", lg: "6px", xl: "8px", "2xl": "10px", "3xl": "14px" },
+    radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "12px", "2xl": "16px", "3xl": "22px" },
     fontVariables: {
       "--font-body-family": "var(--font-geist)",
       "--font-display-family": "var(--font-instrument-serif)",
@@ -562,10 +565,10 @@ const themeDefinitions = {
       "--eyebrow-weight": "500",
     },
     components: {
-      // Olive actions (9.9:1 under cream text) — the role, not a palette step, so text stays olive-black.
-      "--color-accent": "62 74 51",
-      "--color-accent-hover": "48 58 39",
-      "--accent-hover": "rgb(48 58 39)",
+      // Olive actions (6.9:1 under cream text), ink on hover — the role, not a palette step, so text stays ink.
+      "--color-accent": "79 83 67",
+      "--color-accent-hover": "28 28 26",
+      "--accent-hover": "rgb(28 28 26)",
       // Sentence case everywhere: no tracked-out capitals.
       "--caps-transform": "none",
       "--caps-spread": "0",
@@ -574,15 +577,21 @@ const themeDefinitions = {
       "--gloss": "0",
       "--glass-alpha": "0.95",
       "--header-shadow": "0 1px 0 0 rgb(var(--color-ink-200))",
-      "--nav-hover": "rgb(62 74 51)",
-      "--nav-underline": "rgb(168 132 60)",
-      "--tag-thread": "rgb(168 132 60)",
+      "--nav-hover": "rgb(79 83 67)",
+      "--nav-underline": "rgb(79 83 67)",
+      "--tag-thread": "rgb(132 133 126)",
+      // The logo's twin diamonds above every section title.
+      "--title-mark": '""',
       "--icon-stroke": "1.5",
-      "--band-accent": "rgb(200 184 154)",
-      "--badge-note-bg": "rgb(168 132 60)",
-      "--badge-note-fg": "rgb(30 33 27)",
-      "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
-      // Product cards: the photograph on sand, 4:5, no frame and no lift.
+      // On olive: eyebrows and link hovers in light sage (4.8:1).
+      "--band-accent": "rgb(203 202 191)",
+      "--badge-note-bg": "rgb(var(--color-cream-50) / 0.94)",
+      "--badge-note-fg": "rgb(28 28 26)",
+      "--media-scrim": "rgb(28 28 26 / 0.38)",
+      // The hero's primary action on olive: a cream button with olive type.
+      "--hero-cta-fill": "rgb(242 239 234)",
+      "--hero-cta-text": "rgb(79 83 67)",
+      // Product cards: the photograph on the sage-washed well, 4:5, no frame and no lift.
       "--card-media-aspect": "4 / 5",
       "--card-lift": "0",
       "--card-frame-border": "transparent",
@@ -595,6 +604,9 @@ const themeDefinitions = {
       "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
       "--line-item-radius": "var(--radius-md)",
+      "--stepper-radius": "var(--radius-default)",
+      "--chip-radius": "var(--radius-sm)",
+      "--swatch-radius": "var(--radius-sm)",
       // The serif runs large: it is narrow and light.
       "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
       "--product-title-size": "clamp(2.125rem, 1.75rem + 1.2vw, 2.875rem)",
@@ -629,16 +641,14 @@ const themeDefinitions = {
       "--story-media-h-sm": "28rem",
       "--sheet-radius": "1rem",
     },
-    // The hero and the brand story render on cream; the footer, flash sale and promo bands stay olive-black.
-    lightBands: ["hero", "story"],
+    // The brand story renders on cream; the hero, footer, flash sale and promo bands are olive, like the logo's own ground.
+    lightBands: ["story"],
     bandSurface: "cream-100",
     bandComponents: {
-      "--hero-cta-fill": "rgb(62 74 51)",
-      "--hero-cta-text": "rgb(244 240 232)",
-      "--band-accent": "rgb(62 74 51)",
+      "--band-accent": "rgb(79 83 67)",
     },
-    // Inside the dark sections: sand and warm greys for the secondary text.
-    darkBandPalette: { ink: { 300: "#dcd5c6", 400: "#c8b89a", 500: "#a9a493" } },
+    // Inside the olive sections: light sage-greys for the secondary text (6.1, 5.3 and 4.8:1 on olive).
+    darkBandPalette: { ink: { 300: "#e4e1da", 400: "#d6d4cb", 500: "#cbcabf" } },
   },
 };
 

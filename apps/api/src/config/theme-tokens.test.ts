@@ -110,19 +110,22 @@ describe("brand themes", () => {
     }
   });
 
-  it("gives Tahafi its own identity: olive / cream / brass, Instrument Serif over Geist, the tahafi preset", () => {
+  it("gives Tahafi the logo's own colours (olive, sage, cream, ink), Instrument Serif over Geist, the tahafi preset", () => {
     const t = tokens.themes.tahafi!.cssVariables;
-    expect(t["--color-ink-900"]).toBe("30 33 27"); // olive-black #1E211B
-    expect(t["--color-cream-100"]).toBe("244 240 232"); // cream #F4F0E8
-    expect(t["--color-accent"]).toBe("62 74 51"); // olive actions #3E4A33
+    expect(t["--color-ink-900"]).toBe("28 28 26"); // ink #1C1C1A
+    expect(t["--color-ink-950"]).toBe("79 83 67"); // olive #4F5343: hero, footer, promo bands
+    expect(t["--color-cream-100"]).toBe("242 239 234"); // cream #F2EFEA
+    expect(t["--color-accent"]).toBe("79 83 67"); // olive actions
+    expect(t["--tag-thread"]).toBe("rgb(132 133 126)"); // sage #84857E
+    expect(t["--title-mark"]).toBe('""'); // the twin diamonds above section titles
     expect(t["--font-display-family"]).toBe("var(--font-instrument-serif)");
     expect(t["--font-body-family"]).toBe("var(--font-geist)");
     expect(t["--card-media-aspect"]).toBe("4 / 5");
     expect(tokens.themes.tahafi!.layout).toBe("tahafi");
-    expect(tokens.themes.tahafi!.lightBandRoles).toEqual(["hero", "story"]);
+    expect(tokens.themes.tahafi!.lightBandRoles).toEqual(["story"]);
   });
 
-  it("keeps Tahafi's text and actions legible (WCAG AA 4.5:1) on cream, on olive-black and inside the light band", () => {
+  it("keeps Tahafi's text and actions legible (WCAG AA 4.5:1) on cream, on olive and inside the light band", () => {
     const olive = channels(tokens.themes.tahafi!.cssVariables["--color-accent"]!);
     for (const ground of ["cream-100", "cream-50", "cream-200"]) {
       for (const text of ["ink-900", "ink-700", "ink-500", "ink-400"]) {
@@ -132,9 +135,9 @@ describe("brand themes", () => {
     const canvas = step("tahafi", "cream-100");
     expect(contrast(olive, canvas), "olive action on canvas").toBeGreaterThanOrEqual(4.5);
     expect(contrast(step("tahafi", "cream-50"), olive), "light text on olive").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(step("tahafi", "cream-50"), step("tahafi", "sale-500")), "badge text on terracotta").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "cream-50"), step("tahafi", "sale-500")), "badge text on the ink sale tag").toBeGreaterThanOrEqual(4.5);
     expect(contrast(step("tahafi", "sale-500"), canvas), "sale price on canvas").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(hex("#1E211B"), hex("#A8843C")), "olive-black on the brass note badge").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hex("#1C1C1A"), step("tahafi", "cream-50")), "ink on the cream note badge").toBeGreaterThanOrEqual(4.5);
     const dark = step("tahafi", "ink-950", "dark");
     for (const text of ["cream-50", "cream-200", "ink-300", "ink-400", "ink-500"]) {
       expect(contrast(step("tahafi", text, "dark"), dark), `dark section ${text}`).toBeGreaterThanOrEqual(4.5);

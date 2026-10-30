@@ -342,6 +342,62 @@
     clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
   }
 
+  /* The canopy — the bar of Tahafi's mark (presets/tahafi/canopy.tsx): the frame's top edge dips in a curve, as deep as a
+     tenth of its width at any aspect ratio (the cut is sized `100% auto`, so it keeps its own 10:1 shape), and the cut-away
+     lens is left for the twin diamonds to sit in. */
+  .ui-canopy {
+    --canopy-cut: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='10' viewBox='0 0 100 10' preserveAspectRatio='none'%3E%3Cpath d='M0 0H100Q50 20 0 0Z'/%3E%3C/svg%3E");
+    -webkit-mask: linear-gradient(#000 0 0), var(--canopy-cut) top / 100% auto no-repeat;
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0), var(--canopy-cut) top / 100% auto no-repeat;
+    mask-composite: exclude;
+  }
+
+  /* The twin diamonds of the logo, as a mark above section titles (`--title-mark: ""` turns it on; `none` in the base
+     design). They take the title's own colour; a centred title centres them. */
+  .ui-section-title::before,
+  .ui-section-heading::before {
+    content: var(--title-mark);
+    display: block;
+    width: 1.375rem;
+    height: 0.6875rem;
+    margin-bottom: 0.875rem;
+    background-color: currentColor;
+    -webkit-mask: var(--twin-diamonds) center / contain no-repeat;
+    mask: var(--twin-diamonds) center / contain no-repeat;
+  }
+  .text-center.ui-section-title::before,
+  .text-center.ui-section-heading::before,
+  .text-center .ui-section-title::before,
+  .text-center .ui-section-heading::before {
+    margin-inline: auto;
+  }
+  :root {
+    --twin-diamonds: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 156 78'%3E%3Cpath d='M39 0l39 39-39 39L0 39zM117 0l39 39-39 39-39-39z'/%3E%3C/svg%3E");
+  }
+  /* Loading: the two diamonds take turns. */
+  .ui-diamond-turn > :nth-child(1) {
+    animation: diamond-turn 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  .ui-diamond-turn > :nth-child(2) {
+    animation: diamond-turn 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.7s infinite;
+  }
+  @keyframes diamond-turn {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-diamond-turn > * {
+      animation: none !important;
+      opacity: 1;
+    }
+  }
+
   /* Pointed (two-centred) arch — the mihrab preset's frame for photography (components/storefront/presets/mihrab/arch.tsx).
      The mask scales with the box, so arches are drawn on 4:5 or taller frames. */
   .ui-arch {

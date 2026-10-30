@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import type { SectionAppearance } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { bandTone } from "@/lib/band-tone";
+import { cn } from "@/lib/utils";
 
 /** The two hero compositions a store can force per section (Style → Photo position), each the full set of hero tokens
  * that make it work — the same values the base design (stacked) and the editorial theme (split) declare in ui-tokens —
@@ -53,6 +54,10 @@ interface HeroProps {
   layout?: SectionAppearance["layout"];
   /** Drawn over the photograph (a layout preset's own mark, e.g. Tahafi's hang-tag); only shown with an image. */
   mediaOverlay?: ReactNode;
+  /** The photograph frame's shape (a preset's own, e.g. Tahafi's canopy); absent = the rounded rectangle. */
+  mediaFrameClassName?: string;
+  /** Drawn over the frame's top edge, outside the photograph (Tahafi's twin diamonds); only shown with an image. */
+  mediaCrown?: ReactNode;
 }
 
 /** The homepage hero when no hero banners are active. Its message is entirely the store's (Admin → Homepage → Hero, then
@@ -75,6 +80,8 @@ export function Hero({
   tone,
   layout,
   mediaOverlay,
+  mediaFrameClassName,
+  mediaCrown,
 }: HeroProps) {
   const copy = (
     <div className="ui-hero-copy relative z-10 px-4">
@@ -163,29 +170,51 @@ export function Hero({
           transition={{ delay: 0.2, duration: 0.6 }}
           className="ui-hero-media mx-auto mt-12 max-w-7xl px-4 pb-4 sm:mt-14 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8"
         >
-          <div className="ui-hero-media-frame relative overflow-hidden rounded-2xl bg-ink-900">
-            {mobileImageUrl && (
+          {/* A crown sits above the frame, so frame and crown share a box; without one the frame stands alone. */}
+          <Crowned crown={mediaCrown}>
+            <div
+              className={cn(
+                "ui-hero-media-frame relative overflow-hidden bg-ink-900",
+                mediaFrameClassName ?? "rounded-2xl",
+              )}
+            >
+              {mobileImageUrl && (
+                <Image
+                  src={resolveImageUrl(mobileImageUrl)}
+                  alt={imageAltText || headline || storeName}
+                  fill
+                  priority
+                  sizes="(min-width: 640px) 1px, 100vw"
+                  className="object-cover sm:hidden"
+                />
+              )}
               <Image
-                src={resolveImageUrl(mobileImageUrl)}
+                src={resolveImageUrl(imageUrl)}
                 alt={imageAltText || headline || storeName}
                 fill
                 priority
-                sizes="(min-width: 640px) 1px, 100vw"
-                className="object-cover sm:hidden"
+                sizes={
+                  mobileImageUrl
+                    ? "(min-width: 1280px) 1216px, (min-width: 640px) 100vw, 1px"
+                    : "(min-width: 1280px) 1216px, 100vw"
+                }
+                className={mobileImageUrl ? "hidden object-cover sm:block" : "object-cover"}
               />
-            )}
-            <Image
-              src={resolveImageUrl(imageUrl)}
-              alt={imageAltText || headline || storeName}
-              fill
-              priority
-              sizes={mobileImageUrl ? "(min-width: 1280px) 1216px, (min-width: 640px) 100vw, 1px" : "(min-width: 1280px) 1216px, 100vw"}
-              className={mobileImageUrl ? "hidden object-cover sm:block" : "object-cover"}
-            />
-            {mediaOverlay}
-          </div>
+              {mediaOverlay}
+            </div>
+          </Crowned>
         </motion.div>
       </div>
     </section>
+  );
+}
+
+function Crowned({ crown, children }: { crown?: ReactNode; children: ReactNode }) {
+  if (!crown) return children;
+  return (
+    <div className="relative">
+      {children}
+      {crown}
+    </div>
   );
 }
