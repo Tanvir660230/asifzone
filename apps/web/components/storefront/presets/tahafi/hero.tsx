@@ -3,9 +3,9 @@ import { Hero } from "../../hero";
 import { HangTag } from "./hang-tag";
 import { TwinDiamonds } from "./twin-diamonds";
 
-/** The Tahafi hero, drawn from the logo: on the olive ground the photograph's top edge dips like the bar of the mark (the
+/** The Tahafi hero, drawn from the logo: on the ink ground the photograph's top edge dips like the bar of the mark (the
  * `.ui-canopy` frame) and the twin diamonds sit in the dip. The small line above the headline hangs on a tag over the
- * photograph (no eyebrow over the title). Without a photograph it is the classic hero on olive. */
+ * photograph (no eyebrow over the title). Without a photograph it is the classic hero on ink. */
 export function TahafiHero(props: ComponentProps<typeof Hero>) {
   if (!props.imageUrl) return <Hero {...props} />;
   return (

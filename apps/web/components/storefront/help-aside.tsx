@@ -17,7 +17,7 @@ export function HelpAside() {
         {LINKS.map(({ href, icon: Icon, title, text }) => (
           <li key={href}>
             <Link href={href} className="-mx-2 flex gap-3 rounded-xl p-2 transition-colors hover:bg-surface-muted">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+              <span className="flex h-[var(--icon-chip-size,2.25rem)] w-[var(--icon-chip-size,2.25rem)] shrink-0 items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-surface-muted)))] text-ink-900">
                 <Icon size={16} aria-hidden="true" />
               </span>
               <span>

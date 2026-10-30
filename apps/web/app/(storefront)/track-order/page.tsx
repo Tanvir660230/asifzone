@@ -62,7 +62,7 @@ export default function TrackOrderPage() {
         </div>
         <aside aria-label="Help with tracking" className="space-y-6 text-sm text-ink-600 lg:pt-2">
           <div className="flex gap-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+            <span className="flex h-[var(--icon-chip-size,2.5rem)] w-[var(--icon-chip-size,2.5rem)] shrink-0 items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-surface-muted)))] text-ink-900">
               <PackageSearch size={18} aria-hidden="true" />
             </span>
             <div>
@@ -71,7 +71,7 @@ export default function TrackOrderPage() {
             </div>
           </div>
           <div className="flex gap-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+            <span className="flex h-[var(--icon-chip-size,2.5rem)] w-[var(--icon-chip-size,2.5rem)] shrink-0 items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-surface-muted)))] text-ink-900">
               <UserRound size={18} aria-hidden="true" />
             </span>
             <div>
@@ -85,7 +85,7 @@ export default function TrackOrderPage() {
             </div>
           </div>
           <div className="flex gap-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+            <span className="flex h-[var(--icon-chip-size,2.5rem)] w-[var(--icon-chip-size,2.5rem)] shrink-0 items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-surface-muted)))] text-ink-900">
               <MessageCircle size={18} aria-hidden="true" />
             </span>
             <div>

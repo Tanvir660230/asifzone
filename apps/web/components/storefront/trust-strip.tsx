@@ -22,7 +22,7 @@ export function TrustStrip({ items = DEFAULT_ITEMS }: { items?: TrustStripItem[]
               key={label}
               className="flex min-w-0 items-center gap-2.5 lg:justify-center lg:gap-3 lg:px-6"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+              <span className="flex h-[var(--icon-chip-size,2.25rem)] w-[var(--icon-chip-size,2.25rem)] shrink-0 items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-surface-muted)))] text-ink-900">
                 <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span className="text-[0.8125rem] font-medium leading-snug text-ink-900 sm:text-sm lg:whitespace-nowrap">{label}</span>

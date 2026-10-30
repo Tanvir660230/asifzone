@@ -353,8 +353,9 @@
     mask-composite: exclude;
   }
 
-  /* The twin diamonds of the logo, as a mark above section titles (`--title-mark: ""` turns it on; `none` in the base
-     design). They take the title's own colour; a centred title centres them. */
+  /* The twin diamonds of the logo, as a mark above page and section titles (`--title-mark: ""` turns it on; `none` in the
+     base design). They take the title's own colour; a centred title centres them. */
+  .ui-page-title::before,
   .ui-section-title::before,
   .ui-section-heading::before {
     content: var(--title-mark);
@@ -366,11 +367,18 @@
     -webkit-mask: var(--twin-diamonds) center / contain no-repeat;
     mask: var(--twin-diamonds) center / contain no-repeat;
   }
+  .text-center.ui-page-title::before,
   .text-center.ui-section-title::before,
   .text-center.ui-section-heading::before,
+  .text-center .ui-page-title::before,
   .text-center .ui-section-title::before,
   .text-center .ui-section-heading::before {
     margin-inline: auto;
+  }
+  /* A title that already has a small label above it (an eyebrow: "404", "Popular right now") keeps just the label. */
+  .ui-eyebrow + :is(.ui-page-title, .ui-section-title, .ui-section-heading)::before,
+  header:has(> .ui-eyebrow) .ui-page-title::before {
+    content: none;
   }
   :root {
     --twin-diamonds: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 156 78'%3E%3Cpath d='M39 0l39 39-39 39L0 39zM117 0l39 39-39 39-39-39z'/%3E%3C/svg%3E");

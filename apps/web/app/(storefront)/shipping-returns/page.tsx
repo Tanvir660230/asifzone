@@ -100,7 +100,7 @@ export default async function ShippingReturnsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
             {shippingFacts(policy).map((fact) => (
               <div key={fact.title} className="rounded-2xl border border-ink-100 bg-cream-50 p-6">
-                <span aria-hidden="true" className="glossy mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-brass-100 text-brass-600">
+                <span aria-hidden="true" className="glossy mb-4 flex h-[var(--icon-chip-size,2.75rem)] w-[var(--icon-chip-size,2.75rem)] items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-brass-100)))] text-brass-600">
                   <fact.icon size={18} />
                 </span>
                 <h3 className="mb-1.5 font-display text-base text-ink-900">{fact.title}</h3>

@@ -302,7 +302,7 @@ const componentTokens = {
   "--card-media-aspect": "1 / 1",
   // The thread a preset's hang-tag hangs from (Tahafi's hero).
   "--tag-thread": "rgb(var(--color-ink-300))",
-  // A mark above section titles (globals.css `.ui-section-title::before`): `none` = no mark; `""` = the twin diamonds.
+  // A mark above page and section titles (globals.css `.ui-section-title::before`): `none` = no mark; `""` = the twin diamonds.
   "--title-mark": "none",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
@@ -530,12 +530,12 @@ const themeDefinitions = {
     darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
   },
   // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). Only the logo's four colours (the designer's
-  // sheet, docs/brand/tahafi/source/logo-paths.json): olive #4F5343 is the brand's ground — header strip, hero, footer and
-  // every primary action; ink #1C1C1A for type; cream #F2EFEA page; sage #84857E for threads, rules and quiet marks (3.3:1
-  // on cream — never body text; its darker step #64655E carries hints at 5.1:1). No red: a sale is an ink tag, like a
-  // tailor's. Instrument Serif titles over Geist; its own layout preset (`tahafi`): the logo's canopy frames the hero.
+  // sheet, docs/brand/tahafi/source/logo-paths.json): ink #1C1C1A is the brand's ground — header strip, hero, footer and
+  // every primary action — and its type; olive #4F5343 is the second voice (hover of actions, the nav underline, the sale
+  // tag); cream #F2EFEA page; sage #84857E for threads, rules and quiet marks (3.3:1 on cream — never body text; its darker
+  // step #64655E carries hints at 5.1:1). No red: a sale is an olive tag. Instrument Serif titles over Geist; its own layout preset (`tahafi`): the logo's canopy frames the hero.
   tahafi: {
-    label: "Tahafi (olive · cream · sage · ink)",
+    label: "Tahafi (ink · cream · olive · sage)",
     layout: "tahafi",
     palette: {
       ink: {
@@ -547,14 +547,14 @@ const themeDefinitions = {
         500: "#575850", // secondary text — 6.3:1 on cream
         600: "#3d3f36",
         700: "#2a2a27", // body text — 12.6:1
-        800: "#3f4335", // olive, deeper: hover of olive surfaces
+        800: "#2e2e2b", // ink, lifted: hover of ink surfaces
         900: "#1c1c1a", // ink: headings, text — 14.9:1 on cream
-        950: "#4f5343", // olive: the dark sections (hero, footer, promo bands) — cream on it 6.9:1
+        950: "#1c1c1a", // ink: the dark sections (hero, top strip, footer, promo bands) — cream on it 14.9:1
       },
       // 100 = the cream page; 200 = the sage-washed well behind product photos.
       cream: { 50: "#faf8f5", 100: "#f2efea", 200: "#e4e2dc", 300: "#d9d7cf" },
-      // A sale is an ink tag with white type (17:1), and ink text — the logo has no red.
-      sale: { 50: "#e9e7e1", 500: "#1c1c1a", 600: "#2a2a27" },
+      // A sale is an olive tag with white type (8.0:1), and olive text (6.9:1 on cream) — the logo has no red.
+      sale: { 50: "#e7e8e1", 500: "#4f5343", 600: "#3f4335" },
     },
     radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "12px", "2xl": "16px", "3xl": "22px" },
     fontVariables: {
@@ -565,10 +565,10 @@ const themeDefinitions = {
       "--eyebrow-weight": "500",
     },
     components: {
-      // Olive actions (6.9:1 under cream text), ink on hover — the role, not a palette step, so text stays ink.
-      "--color-accent": "79 83 67",
-      "--color-accent-hover": "28 28 26",
-      "--accent-hover": "rgb(28 28 26)",
+      // Ink actions (14.9:1 under cream text), olive on hover — the role, not a palette step.
+      "--color-accent": "28 28 26",
+      "--color-accent-hover": "79 83 67",
+      "--accent-hover": "rgb(79 83 67)",
       // Sentence case everywhere: no tracked-out capitals.
       "--caps-transform": "none",
       "--caps-spread": "0",
@@ -580,17 +580,21 @@ const themeDefinitions = {
       "--nav-hover": "rgb(79 83 67)",
       "--nav-underline": "rgb(79 83 67)",
       "--tag-thread": "rgb(132 133 126)",
-      // The logo's twin diamonds above every section title.
+      // The logo's twin diamonds above every page and section title.
       "--title-mark": '""',
+      // Icons stand bare beside their text, never in a decorative circle (brand rule): the chip behind help, promise and
+      // sign-in icons is transparent and only as big as the icon. (Unset elsewhere: a 2.25–2.5rem muted circle.)
+      "--icon-chip-size": "1.25rem",
+      "--icon-chip-bg": "transparent",
       "--icon-stroke": "1.5",
-      // On olive: eyebrows and link hovers in light sage (4.8:1).
+      // On ink: eyebrows and link hovers in light sage (10.4:1).
       "--band-accent": "rgb(203 202 191)",
       "--badge-note-bg": "rgb(var(--color-cream-50) / 0.94)",
       "--badge-note-fg": "rgb(28 28 26)",
       "--media-scrim": "rgb(28 28 26 / 0.38)",
-      // The hero's primary action on olive: a cream button with olive type.
+      // The hero's primary action on ink: a cream button with ink type.
       "--hero-cta-fill": "rgb(242 239 234)",
-      "--hero-cta-text": "rgb(79 83 67)",
+      "--hero-cta-text": "rgb(28 28 26)",
       // Product cards: the photograph on the sage-washed well, 4:5, no frame and no lift.
       "--card-media-aspect": "4 / 5",
       "--card-lift": "0",
@@ -641,14 +645,14 @@ const themeDefinitions = {
       "--story-media-h-sm": "28rem",
       "--sheet-radius": "1rem",
     },
-    // The brand story renders on cream; the hero, footer, flash sale and promo bands are olive, like the logo's own ground.
+    // The brand story renders on cream; the hero, footer, flash sale and promo bands are ink, like the logo's ink ground.
     lightBands: ["story"],
     bandSurface: "cream-100",
     bandComponents: {
       "--band-accent": "rgb(79 83 67)",
     },
-    // Inside the olive sections: light sage-greys for the secondary text (6.1, 5.3 and 4.8:1 on olive).
-    darkBandPalette: { ink: { 300: "#e4e1da", 400: "#d6d4cb", 500: "#cbcabf" } },
+    // Inside the ink sections: light sage-greys for the secondary text (13.1, 9.6 and 7.2:1 on ink).
+    darkBandPalette: { ink: { 300: "#e4e1da", 400: "#c4c2b9", 500: "#a9a9a0" } },
   },
 };
 

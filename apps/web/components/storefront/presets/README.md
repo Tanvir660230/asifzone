@@ -6,7 +6,7 @@ A brand theme has two halves. **Tokens** (packages/ui-tokens `themeDefinitions`)
 |---|---|---|
 | `classic` | Asif Zone (base design) | — |
 | `mihrab` | Nasihamart | header, footer, product card, loader, hero, trust row, carousels, category arches, flash sale |
-| `tahafi` | Tahafi | header (olive promise strip), hero (canopy frame, twin diamonds, hang-tag), loader; section-title diamonds via `--title-mark`; everything else is `classic` re-valued by tokens |
+| `tahafi` | Tahafi | header (ink promise strip), page-title diamonds, hero (canopy frame, twin diamonds, hang-tag), loader; twin diamonds via `--title-mark`, bare icons via `--icon-chip-*`; everything else is `classic` re-valued by tokens |
 
 ## Adding a preset
 
