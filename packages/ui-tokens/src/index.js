@@ -802,6 +802,24 @@ const surfaceDefinitions = {
       // for a missing value (Cost missing), everywhere. Default to the existing neutral / warning badge pairs.
       "--data-estimate-bg": "rgb(var(--color-ink-100))",
       "--data-estimate-fg": "rgb(var(--color-ink-700))",
+      // Money (finance) "Liquid Glass" — owner, 2026-10-31: the finance area alone gets an iPhone-style glossy feel; the
+      // rest of the admin stays flat. Recipes .liquid, .liquid-pass, .liquid-key and .liquid-chip (globals.css) read these
+      // inside [data-area="finance"], which also turns the shared button gloss on.
+      "--finance-gloss": "0.75",
+      "--liquid-fill": "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.80) 100%)",
+      "--liquid-shadow": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04), 0 14px 34px -18px rgba(20,24,40,0.28)",
+      "--liquid-shadow-hover": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.09), 0 2px 4px rgba(0,0,0,0.05), 0 20px 40px -18px rgba(20,24,40,0.34)",
+      // The money card: brushed white titanium (Apple Card), with one soft light streak across it.
+      "--pass-fill": "linear-gradient(140deg, #ffffff 0%, #f1f2f5 38%, #e6e8ed 62%, #f8f8fa 100%)",
+      "--pass-sheen": "linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.75) 46%, rgba(255,255,255,0) 60%)",
+      "--pass-shadow": "inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.04), 0 0 0 0.5px rgba(0,0,0,0.08), 0 30px 60px -28px rgba(20,24,40,0.40), 0 8px 18px -10px rgba(20,24,40,0.18)",
+      // Wallet cards per kind of money account (tinted glass, dark text stays AA on every tint).
+      "--pass-cash": "linear-gradient(150deg, #f3fbf6 0%, #dff3e7 100%)",
+      "--pass-bank": "linear-gradient(150deg, #f2f7fd 0%, #dbe8f8 100%)",
+      "--pass-wallet": "linear-gradient(150deg, #fbf3f8 0%, #f3dfeb 100%)",
+      // An action key's icon well (round, glossy).
+      "--key-fill": "linear-gradient(180deg, #ffffff 0%, #eef0f4 100%)",
+      "--key-shadow": "inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.05), 0 0 0 0.5px rgba(0,0,0,0.08), 0 8px 18px -8px rgba(20,24,40,0.30)",
       "--data-missing-bg": "rgb(var(--color-warning-100))",
       "--data-missing-fg": "rgb(var(--color-warning-700))",
     },
