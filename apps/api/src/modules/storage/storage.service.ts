@@ -24,7 +24,8 @@ const TRASH_DIR = ".trash";
 /** Product images are stored as one `<id>-full.webp` URL, but processProductImage writes thumb/card/full
  * siblings — the whole set is in use when any one of them is referenced. */
 const PRODUCT_IMAGE_SET = /^(products\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-[a-z]+\.webp$/i;
-const UPLOAD_REF = /\/uploads\/([^\s"'<>()\\?#,]+)/g;
+// `{` and `}` end a path too: a text[] column reads as {/uploads/a.webp,/uploads/b.webp} (review photos).
+const UPLOAD_REF = /\/uploads\/([^\s"'<>()\\?#,{}]+)/g;
 
 function uploadsRoot() {
   return path.resolve(process.cwd(), env.uploadsDir);
@@ -41,20 +42,36 @@ function safeResolve(base: string, relativePath: string) {
   return resolved;
 }
 
-async function walk(dir: string, prefix = ""): Promise<Array<{ path: string; size: number; modifiedAt: Date }>> {
+/** Runs `fn` over `items` with at most `limit` in flight; results keep the input order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+type FileEntry = { path: string; size: number; modifiedAt: Date };
+
+/** Every file under `dir`. A directory's entries are stat-ed together (bounded), not one after another — a store's
+ * uploads folder holds thousands of files, and the Storage page waits on this. */
+async function walk(dir: string, prefix = ""): Promise<FileEntry[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-  const files: Array<{ path: string; size: number; modifiedAt: Date }> = [];
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue; // .trash and any dotfiles
+  const visible = entries.filter((entry) => !entry.name.startsWith(".")); // .trash and any dotfiles
+  const nested = await mapLimit(visible, 16, async (entry): Promise<FileEntry[]> => {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...(await walk(full, rel)));
-    else if (entry.isFile()) {
-      const stat = await fs.stat(full);
-      files.push({ path: rel, size: stat.size, modifiedAt: stat.mtime });
-    }
-  }
-  return files;
+    if (entry.isDirectory()) return walk(full, rel);
+    if (!entry.isFile()) return [];
+    const stat = await fs.stat(full);
+    return [{ path: rel, size: stat.size, modifiedAt: stat.mtime }];
+  });
+  return nested.flat();
 }
 
 /** Pure history/analytics tables: a URL in an audit diff or a page-view log is a record of the past, not
@@ -72,14 +89,20 @@ async function collectReferences(): Promise<Set<string>> {
       AND (data_type IN ('text', 'character varying', 'json', 'jsonb') OR udt_name IN ('_text', '_varchar'))
   `;
 
+  // One scan per table, all its text/JSON columns at once (a table has up to dozens of them), a few tables at a time —
+  // not one sequential query per column, which made the Storage page wait seconds.
+  const byTable = new Map<string, string[]>();
+  for (const { table_name, column_name } of columns) byTable.set(table_name, [...(byTable.get(table_name) ?? []), column_name]);
+  // Identifiers come from the catalog, not from a request; quoted the way Postgres requires.
+  const quote = (identifier: string) => `"${identifier.replace(/"/g, '""')}"`;
+  const perTable = await mapLimit([...byTable], 4, ([tableName, columnNames]) =>
+    prisma.$queryRawUnsafe<Array<{ v: string }>>(
+      `SELECT DISTINCT x.v FROM ${quote(tableName)} CROSS JOIN LATERAL (VALUES ${columnNames.map((c) => `(${quote(c)}::text)`).join(", ")}) AS x(v) WHERE x.v LIKE '%/uploads/%'`,
+    ),
+  );
+
   const refs = new Set<string>();
-  for (const { table_name, column_name } of columns) {
-    // Identifiers come from the catalog, not from a request; quoted the way Postgres requires.
-    const table = `"${table_name.replace(/"/g, '""')}"`;
-    const column = `"${column_name.replace(/"/g, '""')}"`;
-    const rows = await prisma.$queryRawUnsafe<Array<{ v: string }>>(
-      `SELECT DISTINCT ${column}::text AS v FROM ${table} WHERE ${column}::text LIKE '%/uploads/%'`,
-    );
+  for (const rows of perTable) {
     for (const { v } of rows) {
       for (const match of v.matchAll(UPLOAD_REF)) {
         let rel = match[1]!;
