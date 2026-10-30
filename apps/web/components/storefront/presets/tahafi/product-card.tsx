@@ -22,10 +22,10 @@ interface ProductCardProps {
 }
 
 /**
- * The tahafi preset's product card: the photograph unframed on the sage-washed well (4:5), a square tag flush with its
- * left edge (a live discount in olive, a note on cream), the name in the serif with the price beside it, colours as small
- * diamonds, and a round "+" to add without leaving the grid — it asks for the size first when there is a choice (the
- * options sheet). Behaviour is the classic card's (product-card.tsx): the same availability, server-resolved prices and
+ * The tahafi preset's product card, in the light-glass look: a white card with soft depth, the photograph on white (so
+ * product shots on white sit seamlessly), the name and a firm price under it, colours as small dots, a tag in the corner
+ * (a live discount in olive) and a round glass "+" to add without leaving the grid — it asks for the size first when
+ * there is a choice (the options sheet). Behaviour is the classic card's (product-card.tsx): the same availability, server-resolved prices and
  * add-to-cart hook.
  */
 export function TahafiProductCard({ product, priority }: ProductCardProps) {
@@ -64,12 +64,12 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
   }
 
   const tag = soldOut
-    ? { label: "Sold out", className: "bg-ink-950 text-cream-50" }
-    : badge && { label: badge.label, className: badge.tone === "sale" ? "bg-sale-500 text-cream-50" : "bg-[color:var(--badge-note-bg)] text-[color:var(--badge-note-fg)]" };
+    ? { label: "Sold out", className: "bg-ink-900 text-white" }
+    : badge && { label: badge.label, className: badge.tone === "sale" ? "bg-sale-500 text-white" : "bg-surface text-fg shadow-[0_1px_3px_rgb(28_28_26/0.18)]" };
 
   return (
-    <div data-nav-pending-scope className="ui-press group block">
-      <div className="relative aspect-[var(--card-media-aspect)] overflow-hidden bg-cream-200">
+    <div data-nav-pending-scope className="ui-press group block overflow-hidden rounded-[1.375rem] bg-surface shadow-[var(--card-frame-shadow)] transition-shadow duration-300 ease-smooth lg:hover:shadow-[var(--card-frame-shadow-hover)]">
+      <div className="relative aspect-[var(--card-media-aspect)] overflow-hidden bg-surface">
         <Link href={`/product/${product.slug}`} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
             <>
@@ -101,7 +101,7 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
         </Link>
         {tag && (
           <span
-            className={cn("pointer-events-none absolute left-0 top-3 px-2.5 py-1.5 text-xs font-medium leading-none", tag.className)}
+            className={cn("pointer-events-none absolute left-2.5 top-2.5 rounded-full px-2.5 py-1.5 text-xs font-semibold leading-none", tag.className)}
             data-testid={soldOut ? "card-sold-out" : undefined}
           >
             {tag.label}
@@ -114,17 +114,17 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
             onClick={handleQuickAdd}
             aria-label={needsChoice ? `Choose a size for ${product.name}` : `Add ${product.name} to bag`}
             data-fab-collision
-            className="absolute bottom-2.5 right-2.5 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-ink-950 text-cream-50 shadow-float transition-transform duration-200 ease-smooth active:scale-95 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
+            className="glass-panel absolute bottom-2.5 right-2.5 z-10 flex h-10 w-10 items-center justify-center rounded-full text-fg transition-transform duration-200 ease-smooth active:scale-95"
           >
-            <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+            <Plus size={20} strokeWidth={2} aria-hidden="true" />
           </button>
         )}
       </div>
-      <Link href={`/product/${product.slug}`} className="mt-3 block">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-          <h3 className="line-clamp-2 font-display text-[1.3125rem] leading-[1.1] text-fg sm:text-[1.4375rem]">{product.name}</h3>
-          <p className="flex shrink-0 items-baseline gap-1.5 tabular-nums" data-testid="card-price">
-            <span className={cn("text-[0.9375rem] font-medium", soldOut ? "text-fg-muted" : onSale ? "text-sale-500" : "text-fg")}>
+      <Link href={`/product/${product.slug}`} className="block px-3.5 pb-3.5 pt-2.5">
+        <div>
+          <h3 className="line-clamp-2 text-[0.9375rem] font-semibold leading-snug text-fg">{product.name}</h3>
+          <p className="mt-1 flex items-baseline gap-1.5 tabular-nums" data-testid="card-price">
+            <span className={cn("text-[0.9375rem] font-bold", soldOut ? "text-fg-muted" : onSale ? "text-sale-500" : "text-fg")}>
               <Money value={shown.price} />
             </span>
             {onSale && (
@@ -141,12 +141,12 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
           </div>
         )}
         {colors.length > 1 && (
-          <div className="mt-2.5 flex items-center gap-2" aria-label={`Colours: ${colors.map(([c]) => c).join(", ")}`}>
+          <div className="mt-2 flex items-center gap-1.5" aria-label={`Colours: ${colors.map(([c]) => c).join(", ")}`}>
             {colors.slice(0, 5).map(([color, hex]) => (
               <span
                 key={color}
                 title={color}
-                className={cn("h-2.5 w-2.5 rotate-45 border", isPaleColor(hex) ? "border-ink-300" : "border-transparent")}
+                className={cn("h-3 w-3 rounded-full border", isPaleColor(hex) ? "border-ink-300" : "border-transparent")}
                 style={{ backgroundColor: hex ?? "#d4d4d4" }}
               />
             ))}

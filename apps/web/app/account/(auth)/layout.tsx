@@ -28,7 +28,7 @@ export default function AccountAuthLayout({ children }: { children: ReactNode })
             <ul className="mt-6 space-y-6">
               {BENEFITS.map(({ icon: Icon, title, text }) => (
                 <li key={title} className="flex gap-4">
-                  <span className="flex h-[var(--icon-chip-size,2.5rem)] w-[var(--icon-chip-size,2.5rem)] shrink-0 items-center justify-center rounded-full bg-[color:var(--icon-chip-bg,rgb(var(--color-surface-muted)))] text-ink-900">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
                     <Icon size={18} aria-hidden="true" />
                   </span>
                   <div>

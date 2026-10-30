@@ -12,9 +12,6 @@ const OPT_IN_TOKENS = new Set([
   "--eyebrow-weight",
   "--hero-cta-text",
   "--band-accent",
-  // Icon chips (help aside, promise strip, sign-in, track order): unset = each one's own muted circle.
-  "--icon-chip-size",
-  "--icon-chip-bg",
 ]);
 
 function channels(value: string): [number, number, number] {
@@ -113,40 +110,34 @@ describe("brand themes", () => {
     }
   });
 
-  it("gives Tahafi the logo's own colours (ink ground, olive accent, cream, sage), Instrument Serif over Geist, the tahafi preset", () => {
+  it("gives Tahafi the light-glass look: grey page, white cards, ink actions, the logo's olive as the one accent, Geist, the tahafi preset", () => {
     const t = tokens.themes.tahafi!.cssVariables;
+    expect(t["--color-cream-100"]).toBe("244 244 242"); // the page #F4F4F2
+    expect(t["--color-cream-50"]).toBe("255 255 255"); // white cards
     expect(t["--color-ink-900"]).toBe("28 28 26"); // ink #1C1C1A
-    expect(t["--color-ink-950"]).toBe("28 28 26"); // ink: hero, top strip, footer, promo bands
-    expect(t["--color-cream-100"]).toBe("242 239 234"); // cream #F2EFEA
-    expect(t["--color-accent"]).toBe("28 28 26"); // ink actions
-    expect(t["--color-accent-hover"]).toBe("79 83 67"); // olive #4F5343 on hover
-    expect(t["--color-sale-500"]).toBe("79 83 67"); // the sale tag is olive, never red
-    expect(t["--tag-thread"]).toBe("rgb(132 133 126)"); // sage #84857E
-    expect(t["--title-mark"]).toBe('""'); // the twin diamonds above section titles
-    expect(t["--font-display-family"]).toBe("var(--font-instrument-serif)");
+    expect(t["--color-accent"]).toBe("28 28 26"); // glossy ink actions
+    expect(t["--color-sale-500"]).toBe("79 83 67"); // olive #4F5343 — the sale tag, never red
+    expect(t["--gloss"]).toBe("1");
+    expect(t["--font-display-family"]).toBe("var(--font-geist)");
     expect(t["--font-body-family"]).toBe("var(--font-geist)");
-    expect(t["--card-media-aspect"]).toBe("4 / 5");
+    expect(t["--card-media-aspect"]).toBe("1 / 1");
     expect(tokens.themes.tahafi!.layout).toBe("tahafi");
-    expect(tokens.themes.tahafi!.lightBandRoles).toEqual(["story"]);
+    expect(tokens.themes.tahafi!.lightBandRoles).toBeNull(); // every band light
   });
 
-  it("keeps Tahafi's text and actions legible (WCAG AA 4.5:1) on cream, on ink and inside the light band", () => {
-    const olive = channels(tokens.themes.tahafi!.cssVariables["--color-accent"]!);
+  it("keeps Tahafi's text and actions legible (WCAG AA 4.5:1) on the page, on white cards and inside the light bands", () => {
+    const ink = channels(tokens.themes.tahafi!.cssVariables["--color-accent"]!);
     for (const ground of ["cream-100", "cream-50", "cream-200"]) {
       for (const text of ["ink-900", "ink-700", "ink-500", "ink-400"]) {
         expect(contrast(step("tahafi", text), step("tahafi", ground)), `${text} on ${ground}`).toBeGreaterThanOrEqual(4.5);
       }
     }
     const canvas = step("tahafi", "cream-100");
-    expect(contrast(olive, canvas), "olive action on canvas").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(step("tahafi", "cream-50"), olive), "light text on olive").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(step("tahafi", "cream-50"), step("tahafi", "sale-500")), "badge text on the olive sale tag").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(step("tahafi", "sale-500"), canvas), "sale price on canvas").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(hex("#1C1C1A"), step("tahafi", "cream-50")), "ink on the cream note badge").toBeGreaterThanOrEqual(4.5);
-    const dark = step("tahafi", "ink-950", "dark");
-    for (const text of ["cream-50", "cream-200", "ink-300", "ink-400", "ink-500"]) {
-      expect(contrast(step("tahafi", text, "dark"), dark), `dark section ${text}`).toBeGreaterThanOrEqual(4.5);
-    }
+    expect(contrast(ink, canvas), "ink action on the page").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "cream-50"), ink), "white text on ink").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "cream-50"), step("tahafi", "sale-500")), "white on the olive sale tag").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "sale-500"), canvas), "olive price and links on the page").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(step("tahafi", "sale-500"), step("tahafi", "sale-50")), "olive icon on its tinted tile").toBeGreaterThanOrEqual(4.5);
     const band = step("tahafi", "ink-950", "band");
     for (const text of ["cream-50", "cream-200", "ink-300", "ink-400"]) {
       expect(contrast(step("tahafi", text, "band"), band), `band ${text}`).toBeGreaterThanOrEqual(4.5);

@@ -187,7 +187,7 @@ export default function OrderConfirmationPage() {
 
   return (
     <StorefrontPage>
-      {/* Tahafi: the order on a hang-tag (presets/tahafi/order-tag.tsx) in place of the page heading. */}
+      {/* Tahafi: the order on one success card (presets/tahafi/order-tag.tsx) in place of the page heading. */}
       {storeLayout() === "tahafi" ? (
         <TahafiOrderTag order={order} arrives={deliveryEstimate} />
       ) : (

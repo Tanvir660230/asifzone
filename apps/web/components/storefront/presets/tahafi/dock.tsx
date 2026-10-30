@@ -13,7 +13,7 @@ import { useSearchOverlayStore } from "@/store/search-overlay";
 import { closeStorefrontPanels } from "@/store/panels";
 import { markNavigation } from "@/lib/nav-direction";
 import { bagLabel } from "../../count-badge";
-import { TwinDiamonds } from "./twin-diamonds";
+import { BagCount } from "./header-actions";
 
 type Tab = { label: string; icon: LucideIcon } & ({ href: string } | { panel: "menu" | "search" });
 
@@ -25,11 +25,11 @@ const TABS: Tab[] = [
 ];
 
 /**
- * The tahafi preset's phone tab bar: a floating ink capsule for moving around (Home, Shop, Search, Saved), and the bag on
- * its own beside it in olive with its count, so the way to checkout is always one tap away and never one icon among five.
- * Account sits in the header. It behaves like the classic tab bar (mobile-bottom-nav.tsx): the panels it opens stop
- * above it (`--dock-tab-bar` is its height plus the gap below it), the open panel's tab is the active one, and it steps
- * aside for the on-screen keyboard and on the checkout.
+ * The tahafi preset's phone tab bar, in light glass like a new iPhone's: a floating capsule for moving around (Home, Shop,
+ * Search, Saved) with the open tab on a soft pill, and the bag on its own beside it with its olive count, so the way to
+ * checkout is always one tap away and never one icon among five. Account sits in the header. It behaves like the classic
+ * tab bar (mobile-bottom-nav.tsx): the panels it opens stop above it (`--dock-tab-bar` is its height plus the gap below
+ * it), the open panel's tab is the active one, and it steps aside for the on-screen keyboard and on the checkout.
  */
 export function TahafiDock() {
   const pathname = usePathname();
@@ -48,13 +48,11 @@ export function TahafiDock() {
 
   if (pathname.startsWith("/checkout")) return null;
 
-  const tabClass = (active: boolean) =>
+  const tab = (active: boolean) =>
     cn(
-      "flex flex-col items-center justify-center gap-0.5 text-[0.6875rem] font-medium leading-none transition-colors duration-150 ease-smooth",
-      active ? "text-cream-100" : "text-ink-300 hover:text-cream-100",
+      "my-1.5 flex flex-col items-center justify-center gap-0.5 rounded-full text-[0.6875rem] leading-none transition-colors duration-150 ease-smooth",
+      active ? "bg-ink-900/[0.08] font-semibold text-fg" : "font-medium text-fg-muted",
     );
-  const mark = (active: boolean) =>
-    active ? <TwinDiamonds className="mt-0.5 h-1.5 w-3 text-cream-100" /> : <span aria-hidden="true" className="mt-0.5 h-1.5" />;
 
   return (
     <nav
@@ -62,9 +60,9 @@ export function TahafiDock() {
       data-app-chrome
       data-hide-on-keyboard
       aria-label="Primary"
-      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-dock flex h-14 gap-2 lg:hidden"
+      className="fixed inset-x-3.5 bottom-[calc(env(safe-area-inset-bottom)+0.875rem)] z-dock flex h-[3.875rem] gap-2.5 lg:hidden"
     >
-      <div className="grid flex-1 grid-cols-4 rounded-[1.375rem] bg-ink-950 px-1.5 shadow-[0_10px_30px_-12px_rgb(0_0_0/0.55)]">
+      <div className="glass-panel grid flex-1 grid-cols-4 rounded-full px-1.5">
         {TABS.map(({ label, icon: Icon, ...target }) => {
           if ("panel" in target) {
             const open = target.panel === "menu" ? menuOpen : searchOpen;
@@ -77,11 +75,10 @@ export function TahafiDock() {
                   closeStorefrontPanels();
                   if (!open) (target.panel === "menu" ? openMenu : openSearch)();
                 }}
-                className={tabClass(open)}
+                className={tab(open)}
               >
-                <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+                <Icon size={22} strokeWidth={open ? 2 : 1.6} aria-hidden="true" />
                 {label}
-                {mark(open)}
               </button>
             );
           }
@@ -101,11 +98,10 @@ export function TahafiDock() {
                 markNavigation("none");
                 closeStorefrontPanels();
               }}
-              className={tabClass(active)}
+              className={tab(active)}
             >
-              <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+              <Icon size={22} strokeWidth={active ? 2 : 1.6} aria-hidden="true" />
               {label}
-              {mark(active)}
             </Link>
           );
         })}
@@ -118,18 +114,10 @@ export function TahafiDock() {
           closeStorefrontPanels();
           if (!bagOpen) openBag();
         }}
-        // sale-500 is the logo's olive in this theme (the second voice): the bag stands apart from the tabs.
-        className="flex w-[4.75rem] flex-col items-center justify-center gap-1 rounded-[1.375rem] bg-sale-500 text-[0.6875rem] font-medium leading-none text-cream-50 shadow-[0_10px_30px_-12px_rgb(0_0_0/0.55)]"
+        className="glass-panel relative flex w-[3.875rem] shrink-0 items-center justify-center rounded-full text-fg"
       >
-        <span className="relative">
-          <ShoppingBag size={22} strokeWidth={1.5} aria-hidden="true" />
-          {shown > 0 && (
-            <span aria-hidden="true" className="absolute -right-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cream-50 px-1 text-[0.625rem] font-semibold tabular-nums text-ink-950">
-              {shown}
-            </span>
-          )}
-        </span>
-        Bag
+        <ShoppingBag size={24} strokeWidth={1.75} aria-hidden="true" />
+        <BagCount count={shown} className="right-2 top-2" />
       </button>
     </nav>
   );

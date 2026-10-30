@@ -302,8 +302,6 @@ const componentTokens = {
   "--card-media-aspect": "1 / 1",
   // The thread a preset's hang-tag hangs from (Tahafi's hero).
   "--tag-thread": "rgb(var(--color-ink-300))",
-  // A mark above page and section titles (globals.css `.ui-section-title::before`): `none` = no mark; `""` = the twin diamonds.
-  "--title-mark": "none",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -529,108 +527,100 @@ const themeDefinitions = {
     // Inside the navy sections: the mid tones the dark palette uses for text, re-valued light enough for navy.
     darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
   },
-  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). Only the logo's four colours (the designer's
-  // sheet, docs/brand/tahafi/source/logo-paths.json): ink #1C1C1A is the brand's ground — header strip, hero, footer and
-  // every primary action — and its type; olive #4F5343 is the second voice (hover of actions, the nav underline, the sale
-  // tag); cream #F2EFEA page; sage #84857E for threads, rules and quiet marks (3.3:1 on cream — never body text; its darker
-  // step #64655E carries hints at 5.1:1). No red: a sale is an olive tag. Instrument Serif titles over Geist; its own layout preset (`tahafi`): the logo's canopy frames the hero.
+  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). The owner's direction (2026-10-31): the feel of
+  // a new iPhone — light, clear and glossy. A soft grey page (#F4F4F2), white cards for the photographs, ink #1C1C1A for
+  // type and for the glossy primary actions, olive #4F5343 (the logo's colour) as the one accent: the logo, links, the bag
+  // count, a sale. Glass (blurred, translucent white) for the header, the dock and controls floating on photographs.
+  // Geist throughout, set firm; large continuous radii. Its own layout preset (`tahafi`).
   tahafi: {
-    label: "Tahafi (ink · cream · olive · sage)",
+    label: "Tahafi (light glass · ink · olive)",
     layout: "tahafi",
     palette: {
       ink: {
-        50: "#ebe8e2", // subtle fills
-        100: "#e3e0d9", // subtle hairlines
-        200: "#d8d5cd", // border (lines, inputs)
-        300: "#c4c2b9", // strong line
-        400: "#64655e", // tertiary text (struck prices, hints) — 5.1:1 on cream, 4.6:1 on the photo well
-        500: "#575850", // secondary text — 6.3:1 on cream
-        600: "#3d3f36",
-        700: "#2a2a27", // body text — 12.6:1
-        800: "#2e2e2b", // ink, lifted: hover of ink surfaces
-        900: "#1c1c1a", // ink: headings, text — 14.9:1 on cream
-        950: "#1c1c1a", // ink: the dark sections (hero, top strip, footer, promo bands) — cream on it 14.9:1
+        50: "#efefec", // subtle fills
+        100: "#e7e7e3", // hairlines
+        200: "#dcdcd7", // borders (inputs, dividers)
+        300: "#c6c6c0", // strong line
+        400: "#686863", // tertiary text (hints, struck prices) — 5.0:1 on the page, 5.6:1 on white
+        500: "#585853", // secondary text — 6.4:1 on the page
+        600: "#42423e",
+        700: "#2c2c29", // body text
+        800: "#3a3a36", // hover of ink actions
+        900: "#1c1c1a", // headings, primary actions — 15.6:1 on the page
+        950: "#1c1c1a",
       },
-      // 100 = the cream page; 200 = the sage-washed well behind product photos.
-      cream: { 50: "#faf8f5", 100: "#f2efea", 200: "#e4e2dc", 300: "#d9d7cf" },
-      // A sale is an olive tag with white type (8.0:1), and olive text (6.9:1 on cream) — the logo has no red.
-      sale: { 50: "#e7e8e1", 500: "#4f5343", 600: "#3f4335" },
+      // 50 = white cards and the photo stage; 100 = the page; 200 = secondary grounds (the footer, wells).
+      cream: { 50: "#ffffff", 100: "#f4f4f2", 200: "#ebebe8", 300: "#e0e0dc" },
+      // A sale is olive with white type (8.0:1) — the logo's colour, never red.
+      sale: { 50: "#eef0e8", 500: "#4f5343", 600: "#3f4335" },
     },
-    radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "12px", "2xl": "16px", "3xl": "22px" },
+    radii: { sm: "8px", DEFAULT: "12px", md: "14px", lg: "18px", xl: "22px", "2xl": "26px", "3xl": "32px" },
     fontVariables: {
       "--font-body-family": "var(--font-geist)",
-      "--font-display-family": "var(--font-instrument-serif)",
-      "--font-display-weight": "400",
-      "--font-display-tracking": "-0.01em",
-      "--eyebrow-weight": "500",
+      "--font-display-family": "var(--font-geist)",
+      "--font-display-weight": "650",
+      "--font-display-tracking": "-0.022em",
+      "--eyebrow-weight": "600",
     },
     components: {
-      // Ink actions (14.9:1 under cream text), olive on hover — the role, not a palette step.
       "--color-accent": "28 28 26",
-      "--color-accent-hover": "79 83 67",
-      "--accent-hover": "rgb(79 83 67)",
-      // Sentence case everywhere: no tracked-out capitals.
+      "--color-accent-hover": "58 58 54",
+      "--accent-hover": "rgb(58 58 54)",
       "--caps-transform": "none",
       "--caps-spread": "0",
       "--eyebrow-transform": "none",
       "--eyebrow-spread": "0",
-      "--gloss": "0",
-      "--glass-alpha": "0.95",
-      "--header-shadow": "0 1px 0 0 rgb(var(--color-ink-200))",
+      // Filled controls carry the sheen; chrome is glass.
+      "--gloss": "1",
+      "--glass-alpha": "0.72",
+      "--header-shadow": "0 1px 0 0 rgb(28 28 26 / 0.06)",
+      "--control-radius": "9999px",
+      "--chip-radius": "var(--radius-default)",
+      "--swatch-radius": "9999px",
+      "--fab-radius": "9999px",
+      "--line-item-radius": "var(--radius-lg)",
+      "--stepper-radius": "9999px",
       "--nav-hover": "rgb(79 83 67)",
       "--nav-underline": "rgb(79 83 67)",
-      "--tag-thread": "rgb(132 133 126)",
-      // The logo's twin diamonds above every page and section title.
-      "--title-mark": '""',
-      // Icons stand bare beside their text, never in a decorative circle (brand rule): the chip behind help, promise and
-      // sign-in icons is transparent and only as big as the icon. (Unset elsewhere: a 2.25–2.5rem muted circle.)
-      "--icon-chip-size": "1.25rem",
-      "--icon-chip-bg": "transparent",
-      "--icon-stroke": "1.5",
-      // On ink: eyebrows and link hovers in light sage (10.4:1).
-      "--band-accent": "rgb(203 202 191)",
-      "--badge-note-bg": "rgb(var(--color-cream-50) / 0.94)",
+      "--tag-thread": "rgb(198 198 192)",
+      "--icon-stroke": "1.75",
+      "--band-accent": "rgb(79 83 67)",
+      "--badge-note-bg": "rgb(255 255 255 / 0.92)",
       "--badge-note-fg": "rgb(28 28 26)",
-      "--media-scrim": "rgb(28 28 26 / 0.38)",
-      // The hero's primary action on ink: a cream button with ink type.
-      "--hero-cta-fill": "rgb(242 239 234)",
-      "--hero-cta-text": "rgb(28 28 26)",
-      // Product cards: the photograph on the sage-washed well, 4:5, no frame and no lift.
-      "--card-media-aspect": "4 / 5",
+      "--media-scrim": "rgb(0 0 0 / 0.35)",
+      "--hero-cta-fill": "rgb(28 28 26)",
+      "--hero-cta-text": "rgb(255 255 255)",
+      // Product cards: the photograph on white, square, inside a soft white card.
+      "--card-media-aspect": "1 / 1",
       "--card-lift": "0",
       "--card-frame-border": "transparent",
-      "--card-frame-shadow": "none",
-      "--card-frame-shadow-hover": "none",
+      "--card-frame-shadow": "0 1px 2px rgb(28 28 26 / 0.05), 0 10px 24px -16px rgb(28 28 26 / 0.22)",
+      "--card-frame-shadow-hover": "0 2px 4px rgb(28 28 26 / 0.06), 0 16px 32px -16px rgb(28 28 26 / 0.28)",
       "--card-image-zoom": "1.03",
-      "--card-title-tracking": "0",
+      "--card-title-tracking": "-0.005em",
       "--card-tier-display": "none",
       "--product-tier-display": "none",
-      "--panel-border": "rgb(var(--color-ink-200))",
-      "--panel-shadow": "none",
-      "--line-item-radius": "var(--radius-md)",
-      "--stepper-radius": "var(--radius-default)",
-      "--chip-radius": "var(--radius-sm)",
-      "--swatch-radius": "var(--radius-sm)",
-      // The serif runs large: it is narrow and light.
-      "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
-      "--product-title-size": "clamp(2.125rem, 1.75rem + 1.2vw, 2.875rem)",
-      "--product-title-leading": "1.02",
-      "--product-title-weight": "400",
-      "--product-title-tracking": "-0.01em",
-      "--section-title-size": "2rem",
-      "--section-title-leading": "1.05",
-      "--section-title-size-sm": "2.75rem",
-      "--section-title-leading-sm": "1",
-      "--section-rhythm": "1.15",
-      "--page-title-size": "2.5rem",
-      "--page-title-leading": "1.02",
-      "--page-title-size-sm": "3.5rem",
-      "--page-title-leading-sm": "1",
-      "--section-heading-size": "2.125rem",
-      "--section-heading-leading": "1.05",
-      "--section-heading-size-sm": "3rem",
-      "--section-heading-leading-sm": "1",
-      // Editorial hero: left-aligned copy beside a tall photograph from 1024px.
+      "--panel-border": "transparent",
+      "--panel-shadow": "0 1px 2px rgb(28 28 26 / 0.05), 0 10px 24px -18px rgb(28 28 26 / 0.2)",
+      "--tile-media-radius": "var(--radius-2xl)",
+      "--product-title-family": "var(--font-geist), var(--font-taka), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
+      "--product-title-size": "clamp(1.625rem, 1.4rem + 0.8vw, 2.125rem)",
+      "--product-title-leading": "1.1",
+      "--product-title-weight": "650",
+      "--product-title-tracking": "-0.022em",
+      "--section-title-size": "1.5rem",
+      "--section-title-leading": "1.15",
+      "--section-title-size-sm": "1.875rem",
+      "--section-title-leading-sm": "1.1",
+      "--section-rhythm": "1",
+      "--page-title-size": "2rem",
+      "--page-title-leading": "1.08",
+      "--page-title-size-sm": "2.75rem",
+      "--page-title-leading-sm": "1.05",
+      "--section-heading-size": "1.75rem",
+      "--section-heading-leading": "1.1",
+      "--section-heading-size-sm": "2.25rem",
+      "--section-heading-leading-sm": "1.08",
       "--hero-align": "left",
       "--hero-layout-lg": "grid",
       "--hero-media-aspect-lg": "4 / 5",
@@ -638,23 +628,22 @@ const themeDefinitions = {
       "--hero-copy-pad-lg": "2rem",
       "--hero-media-offset-lg": "0",
       "--hero-secondary-ring": "transparent",
-      "--hero-primary-mr": "1.25rem",
+      "--hero-primary-mr": "0.75rem",
       "--hero-secondary-ml": "0px",
-      "--tile-caption-padding": "1.125rem",
       "--story-media-max-w": "64rem",
-      "--story-media-h-sm": "28rem",
-      "--sheet-radius": "1rem",
-      // The floating dock (presets/tahafi/dock.tsx): its 3.5rem row plus the 0.5rem gap below it.
-      "--dock-tab-bar": "4rem",
+      "--story-media-h-sm": "26rem",
+      "--sheet-radius": "1.75rem",
+      // The floating glass dock (presets/tahafi/dock.tsx): its 3.875rem row plus the gap below it.
+      "--dock-tab-bar": "4.75rem",
     },
-    // The brand story renders on cream; the hero, footer, flash sale and promo bands are ink, like the logo's ink ground.
-    lightBands: ["story"],
-    bandSurface: "cream-100",
+    // Every section designed on the dark palette renders light: one calm, bright page from top to bottom.
+    band: "light",
+    bandSurface: "cream-200",
     bandComponents: {
+      "--hero-cta-fill": "rgb(28 28 26)",
+      "--hero-cta-text": "rgb(255 255 255)",
       "--band-accent": "rgb(79 83 67)",
     },
-    // Inside the ink sections: light sage-greys for the secondary text (13.1, 9.6 and 7.2:1 on ink).
-    darkBandPalette: { ink: { 300: "#e4e1da", 400: "#c4c2b9", 500: "#a9a9a0" } },
   },
 };
 

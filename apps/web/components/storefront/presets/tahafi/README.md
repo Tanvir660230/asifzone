@@ -1,29 +1,29 @@
 # `tahafi` preset
 
-Tahafi's own storefront, every piece drawn from the logo's mark (twin diamonds over a curved bar). Mockup the owner
-approved (2026-10-31): https://claude.ai/artifact/5bbb2i9bNJXFoLzTmZTxHD.
+Tahafi's own storefront in the light-glass look the owner chose (2026-10-31, option A of
+https://claude.ai/artifact/5bbb2i9bNJXFoLzTmZTxHD): the feel of a new iPhone — a soft grey page, white cards with soft
+depth, glass for what floats, glossy ink actions, the logo's olive as the one accent, Geist throughout.
 
 Chrome (`store-chrome.tsx` switches):
-- `header.tsx` + `header-actions.tsx`: an ink bar — pieces of clothing left, logo centred, words right (Search, Track order,
-  Account, Bag (n)); phones show the logo and Account, pages inside a tab get Back and Search (PhoneNavBar, drawn cream
-  through `--color-fg`). The menu sheet is the mihrab preset's `MihrabMenu`.
-- `dock.tsx`: the phone tab bar — a floating ink capsule (Home, Shop, Search, Saved) and the bag on its own in olive with
-  its count. `--dock-tab-bar` (4rem) is its height plus the gap below it, so panels stop above it.
-- `footer.tsx`: the classic footer's content with `crown` (the canopy) and `signature` (the logo full width).
+- `header.tsx` + `header-actions.tsx`: a bar of light glass — on wide screens the logo, the pieces of clothing as soft
+  pills, a search field, the account and the bag with its olive count; on phones Search, the logo and Account (pages inside
+  a tab get Back and Search from PhoneNavBar). The menu sheet is the mihrab preset's `MihrabMenu`.
+- `dock.tsx`: the phone tab bar — a floating glass capsule (Home, Shop, Search, Saved) and the bag apart as a glass
+  circle. `--dock-tab-bar` (4.75rem) is its height plus the gap below it, so panels stop above it.
+- The footer is the classic one; the theme renders every band light.
 
 Homepage (`home/home-section.tsx` switches):
-- `hero.tsx`: the photograph edge to edge under the canopy, the diamonds settling into the dip and the hang-tag swinging
-  once (`.ui-diamonds-settle` / `.ui-tag-sway`, still with reduced motion); headline over a scrim.
-- `sections.tsx`: `TahafiPromiseLine` (TRUST_STRIP as words), `TahafiCategoryIndex` (CATEGORY_GRID as a serif index;
-  the photo beside it follows the pointer, `category-index-photo.tsx`), `TahafiLookbook` (IMAGE_GALLERY as an ink band
-  with "Shop this look").
+- `hero.tsx`: a Today-style card — the photograph in one large rounded card, the headline on its lower edge, the featured
+  piece (the hero's small line, split at "|") on a glass bar with the way to order it.
+- `sections.tsx`: `TahafiPromiseLine` (TRUST_STRIP on one white card, icons on tinted tiles), `TahafiCategoryIndex`
+  (chips with round photos on phones, rounded photo cards with a glass label on wide screens), `TahafiLookbook`
+  (IMAGE_GALLERY as rounded photo cards with the caption on glass).
 
 Elsewhere:
-- `product-card.tsx` (`product-card.tsx` switch): unframed photo, square tag flush left, serif name beside the price,
-  colour diamonds, round "+" quick add.
-- `tag-card.tsx`: a card cut like the hang-tag — the product page's delivery dates and promises (`product-showcase.tsx`).
-- `order-tag.tsx`: the order on a large hang-tag at the top of the confirmation page.
-- `hang-tag.tsx`, `twin-diamonds.tsx`, `canopy.tsx`, `loader.tsx`, `styles.ts`: the shared marks.
+- `product-card.tsx`: a white card, the photo square, the name and a firm price, colour dots, a round glass "+".
+- `info-card.tsx`: the product page's delivery dates and promises on one white card (`product-showcase.tsx`).
+- `order-tag.tsx`: the placed order on one success card at the top of the confirmation page.
+- `loader.tsx` (the logo's two diamonds taking turns), `styles.ts`.
 
 Sections not listed render the classic components, styled by the `tahafi` tokens. Brand rules:
 docs/brand/tahafi/THEME_BLUEPRINT.md.

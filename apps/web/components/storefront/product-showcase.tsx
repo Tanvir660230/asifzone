@@ -15,7 +15,7 @@ import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { DeliveryEstimate } from "@/components/storefront/delivery-estimate";
 import { ShareButton } from "@/components/storefront/share-button";
 import { WhatsAppOrderButton } from "@/components/storefront/whatsapp-order-button";
-import { TagCard } from "@/components/storefront/presets/tahafi/tag-card";
+import { InfoCard } from "@/components/storefront/presets/tahafi/info-card";
 import { storeLayout } from "@/lib/theme-layout";
 import { Money } from "@/components/ui/money";
 import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
@@ -202,20 +202,25 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         )}
 
         {tagged ? (
-          // Tahafi: the delivery dates and the store's promises on one hang-tag.
-          <TagCard className="mt-8">
+          // Tahafi: the delivery dates and the store's promises on one white card, each promise on a tinted icon tile.
+          <InfoCard className="mt-6">
             <DeliveryEstimate bare fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
             {otherPolicies.length > 0 && (
-              <ul className="mt-3 space-y-1.5 border-t border-line-subtle pt-3 text-sm text-ink-700">
-                {otherPolicies.map(({ kind, label }) => (
-                  <li key={kind} className="flex items-center gap-2.5">
-                    <span aria-hidden="true" className="text-[0.625rem] text-[color:var(--tag-thread)]">◆</span>
-                    {label}
-                  </li>
-                ))}
+              <ul className="mt-4 space-y-2.5 border-t border-line-subtle pt-4 text-[0.9375rem] text-fg">
+                {otherPolicies.map(({ kind, label }) => {
+                  const Icon = POLICY_ICON[kind];
+                  return (
+                    <li key={kind} className="flex items-center gap-3">
+                      <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] bg-sale-50 text-sale-500">
+                        <Icon size={17} />
+                      </span>
+                      {label}
+                    </li>
+                  );
+                })}
               </ul>
             )}
-          </TagCard>
+          </InfoCard>
         ) : (
           <>
             <div className="mt-8">

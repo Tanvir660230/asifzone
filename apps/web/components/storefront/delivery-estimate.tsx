@@ -13,7 +13,7 @@ interface DeliveryEstimateProps {
   fees?: { insideDhaka: string; elsewhere: string };
   /** The product ships free (shown instead of the fee). */
   freeDelivery?: boolean;
-  /** Inside a card of the caller's own (Tahafi's hang-tag): no box or icon of its own. */
+  /** Inside a card of the caller's own (Tahafi's info card): no box or icon of its own. */
   bare?: boolean;
 }
 
