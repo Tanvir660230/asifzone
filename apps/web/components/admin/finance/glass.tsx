@@ -38,6 +38,10 @@ export function AmountInput({ id, value, onChange, label = "Amount", autoFocus, 
   );
 }
 
+/** The expense kinds a shop records most (ledger codes, in this order): packaging, delivery, ads, hosting, SMS, rent,
+ * utilities, other. Forms show these first and keep the rest one tap away. */
+export const EVERYDAY_COSTS = ["6800", "6600", "6500", "6400", "6410", "6100", "6300", "6900"];
+
 export interface Choice<T extends string> {
   value: T;
   label: ReactNode;

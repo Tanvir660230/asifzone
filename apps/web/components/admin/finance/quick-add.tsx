@@ -15,7 +15,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { OwnerHome } from "@/lib/api/finance-books";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, partnerPaymentScope, settleIdempotencyKey } from "@/lib/idempotency";
-import { AccountChips, AmountInput, ChoiceChips } from "./glass";
+import { AccountChips, AmountInput, ChoiceChips, EVERYDAY_COSTS } from "./glass";
 import { todayLocal } from "@/lib/datetime-local";
 
 export type QuickAddKind = "EXPENSE" | "OWNER_OUT" | "OWNER_IN" | "PAY_PARTNER";
@@ -84,7 +84,6 @@ function useDone(onDone: () => void, message: string) {
 const amountOk = (v: string) => v.trim() !== "" && Number(v) > 0;
 /** Everyday costs, most common first. The rest of the chart (depreciation, payroll, adjustments…) is booked by the
  * system or from its own page. */
-const EVERYDAY_COSTS = ["6800", "6600", "6500", "6400", "6410", "6100", "6300", "6900"];
 
 /** Date and note: the rarely-changed details, after the choices. */
 function DateAndNote({ idPrefix, date, onDate, note, onNote, noteLabel, notePlaceholder, noteRequired }: { idPrefix: string; date: string; onDate: (v: string) => void; note: string; onNote: (v: string) => void; noteLabel: string; notePlaceholder: string; noteRequired?: boolean }) {
