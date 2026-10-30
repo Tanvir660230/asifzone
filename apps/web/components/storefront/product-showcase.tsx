@@ -15,6 +15,8 @@ import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { DeliveryEstimate } from "@/components/storefront/delivery-estimate";
 import { ShareButton } from "@/components/storefront/share-button";
 import { WhatsAppOrderButton } from "@/components/storefront/whatsapp-order-button";
+import { TagCard } from "@/components/storefront/presets/tahafi/tag-card";
+import { storeLayout } from "@/lib/theme-layout";
 import { Money } from "@/components/ui/money";
 import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
 import type { SpecAccordionItem } from "@/lib/product-specs";
@@ -104,6 +106,10 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
     ...(selection.size && selection.size !== NO_SIZE_VALUE ? [{ label: dimensionLabel("size", "Size"), value: selection.size }] : []),
     ...(selection.color ? [{ label: dimensionLabel("color", "Color"), value: selection.color }] : []),
   ];
+
+  // The policy lines besides delivery (the delivery box gives that one).
+  const otherPolicies = policyLines.filter((l) => l.kind !== "delivery");
+  const tagged = storeLayout() === "tahafi";
 
   return (
     <div className="grid grid-cols-1 gap-5 sm:gap-8 lg:mt-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
@@ -195,23 +201,42 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           </div>
         )}
 
-        <div className="mt-8">
-          <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
-        </div>
+        {tagged ? (
+          // Tahafi: the delivery dates and the store's promises on one hang-tag.
+          <TagCard className="mt-8">
+            <DeliveryEstimate bare fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
+            {otherPolicies.length > 0 && (
+              <ul className="mt-3 space-y-1.5 border-t border-line-subtle pt-3 text-sm text-ink-700">
+                {otherPolicies.map(({ kind, label }) => (
+                  <li key={kind} className="flex items-center gap-2.5">
+                    <span aria-hidden="true" className="text-[0.625rem] text-[color:var(--tag-thread)]">◆</span>
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </TagCard>
+        ) : (
+          <>
+            <div className="mt-8">
+              <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
+            </div>
 
-        {/* The delivery box above already gives the delivery time and fee, so the delivery policy line would say it again. */}
-        {policyLines.some((l) => l.kind !== "delivery") && (
-          <ul className="mt-6 space-y-3">
-            {policyLines.filter((l) => l.kind !== "delivery").map(({ kind, label }) => {
-              const Icon = POLICY_ICON[kind];
-              return (
-                <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">
-                  <Icon size={18} className="shrink-0 text-ink-900" aria-hidden="true" />
-                  {label}
-                </li>
-              );
-            })}
-          </ul>
+            {/* The delivery box above already gives the delivery time and fee, so the delivery policy line would say it again. */}
+            {otherPolicies.length > 0 && (
+              <ul className="mt-6 space-y-3">
+                {otherPolicies.map(({ kind, label }) => {
+                  const Icon = POLICY_ICON[kind];
+                  return (
+                    <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">
+                      <Icon size={18} className="shrink-0 text-ink-900" aria-hidden="true" />
+                      {label}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
 
         <ProductAccordion items={accordionItems} />

@@ -31,14 +31,22 @@ Contrast is enforced by `apps/api/src/config/theme-tokens.test.ts` (every text s
 
 ## Layout preset `tahafi` (`apps/web/components/storefront/presets/tahafi/`)
 
-Tahafi composes most sections the classic way and adds its own pieces, each taken from the mark:
+Tahafi composes its own storefront (owner, 2026-10-31: "it should not look like Asif Zone"; approved mockup
+https://claude.ai/artifact/5bbb2i9bNJXFoLzTmZTxHD). Every piece comes from the mark:
 
-- **Canopy hero** (`hero.tsx`, `twin-diamonds.tsx`, `.ui-canopy` in globals.css). On the ink hero the photograph's top edge dips like the bar of the mark, a tenth of its width deep at any size, and the twin diamonds sit in the dip. This is the brand's one loud moment; keep everything else calm.
-- **Hang-tag** (`hang-tag.tsx`). The hero's small line, "name | detail | price", hangs on a sage thread over the photograph instead of sitting above the headline, and links to the hero's button target.
-- **Twin diamonds** above every page and section title (the `--title-mark` token; a title with an eyebrow keeps only the eyebrow) and as the loading state (`loader.tsx`): the two diamonds take turns.
-- **Header** (`header.tsx`): the classic header with the horizontal olive logo, under an ink strip of the store's own delivery promises.
+- **The canopy** (`canopy.tsx`): the bar of the mark as an edge between two grounds — the ink header hanging into the
+  hero, the cream page dipping into the lookbook and the footer.
+- **Twin diamonds**: settling into the hero's dip (the page's one moment of motion), above every page and section title
+  (`--title-mark`), the open tab of the dock, the loader, colour swatches on cards.
+- **The hang-tag**: the hero's featured piece, the product page's delivery dates and promises (`tag-card.tsx`), the
+  placed order (`order-tag.tsx`).
+- **App feel on phones, unlike Asif Zone's**: a header of just the logo, and a floating ink dock (Home, Shop, Search,
+  Saved) with the bag apart in olive. The bag, menu and size picker rise as sheets (shared).
+- **Catalogue, not tiles**: categories as a serif index; frameless product cards with the name in the serif.
 
-To add a Tahafi-only piece, branch on `storeLayout() === "tahafi"` at the component switch (see `store-chrome.tsx`, `brand-loader.tsx`, `product-card.tsx`, `home/home-section.tsx`) and put the component in `presets/tahafi/`. Never branch on the brand name.
+What each file does: `presets/tahafi/README.md`. To add a Tahafi-only piece, branch on `storeLayout() === "tahafi"` at
+the component switch (`store-chrome.tsx`, `product-card.tsx`, `home/home-section.tsx`, `brand-loader.tsx`) and put the
+component in `presets/tahafi/`. Never branch on the brand name.
 
 ## Rules
 

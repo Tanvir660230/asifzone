@@ -18,6 +18,8 @@ import { formatDateShort } from "@/lib/format";
 import { pixelPurchase } from "@/lib/pixels";
 import { useCartStore } from "@/store/cart";
 import { sessionGet, sessionSet } from "@/lib/safe-storage";
+import { storeLayout } from "@/lib/theme-layout";
+import { TahafiOrderTag } from "@/components/storefront/presets/tahafi/order-tag";
 
 const SESSION_KEY = "lastOrderPhone";
 const PAYMENT_TOAST_KEY = "paymentSuccessToastShown";
@@ -185,6 +187,10 @@ export default function OrderConfirmationPage() {
 
   return (
     <StorefrontPage>
+      {/* Tahafi: the order on a hang-tag (presets/tahafi/order-tag.tsx) in place of the page heading. */}
+      {storeLayout() === "tahafi" ? (
+        <TahafiOrderTag order={order} arrives={deliveryEstimate} />
+      ) : (
       <StorefrontPageHeader
         eyebrow={<StatusLabel icon={<CheckCircle2 size={14} aria-hidden="true" />} text="Order placed" tone="success" />}
         title={<>Thank you, {order.customerName.split(" ")[0]}!</>}
@@ -195,6 +201,7 @@ export default function OrderConfirmationPage() {
           </>
         }
       />
+      )}
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
         <OrderSummaryCard order={order} />
         <aside className="space-y-4">
