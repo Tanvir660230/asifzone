@@ -22,6 +22,7 @@ import type { StatementSection } from "@/lib/api/finance";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
 
 type View = "income" | "balance" | "cash" | "trial";
 const VIEWS = [
@@ -30,7 +31,7 @@ const VIEWS = [
   { value: "cash" as const, label: "Cash flow" },
   { value: "trial" as const, label: "Trial balance" },
 ];
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocal();
 const monthStart = () => `${today().slice(0, 7)}-01`;
 
 /** Financial statements (docs/FINANCE_STATEMENTS.md), read from posted journals — the same sums as the trial balance, so

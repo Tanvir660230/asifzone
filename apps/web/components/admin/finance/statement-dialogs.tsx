@@ -15,6 +15,7 @@ import type { StatementImportInput, StatementPreview } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { STATEMENT_DATE_FORMATS } from "@clothing-brand/shared";
+import { todayLocal } from "@/lib/datetime-local";
 
 const MAPPING_FIELDS: Array<[keyof financeApi.StatementMapping, string]> = [
   ["date", "Date"],
@@ -180,7 +181,7 @@ export function StatementImportDialog({ accountId, onClose }: { accountId: strin
 /** A statement line entered by hand — evidence of what the institution recorded, matched later; it never posts. */
 export function StatementLineDialog({ accountId, onClose }: { accountId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [transactionDate, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [transactionDate, setDate] = useState(todayLocal());
   const [direction, setDirection] = useState<"in" | "out">("out");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");

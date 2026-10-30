@@ -15,6 +15,7 @@ import * as financeApi from "@/lib/api/finance";
 import type { FinancialAccount, MovementKind } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { todayLocal } from "@/lib/datetime-local";
 
 export type MovementDialogKind = Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT" | "SUPPLIER_REFUND">;
 
@@ -32,7 +33,7 @@ export function counterAccountsFor(all: financeApi.LedgerAccountSummary[], accou
   return all.filter((a) => a.isPostable && a.isActive && a.type !== "REVENUE" && a.type !== "COGS" && !money.has(a.id));
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocal();
 
 export function MoneyMovementDialog({ kind, accounts, accountId, onClose }: { kind: MovementDialogKind; accounts: FinancialAccount[]; accountId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();

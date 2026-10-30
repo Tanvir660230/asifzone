@@ -27,9 +27,10 @@ import type { FinancialAccount, Settlement } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor } from "@/lib/idempotency";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
 
 const STATUS_BADGE = { DRAFT: "warning", POSTED: "success", REVERSED: "neutral" } as const;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocal();
 type Line = { orderNumber: string; amount: string; fee: string };
 const blankLine = (): Line => ({ orderNumber: "", amount: "", fee: "" });
 

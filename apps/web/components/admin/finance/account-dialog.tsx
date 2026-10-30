@@ -14,6 +14,7 @@ import type { FinancialAccount, FinancialAccountKind } from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import { listAdmins } from "@/lib/auth";
 import { useCapabilities } from "@/hooks/use-capability";
+import { todayLocal } from "@/lib/datetime-local";
 
 const KINDS: FinancialAccountKind[] = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "AD_PLATFORM", "OTHER"];
 const NAME_HINT: Partial<Record<FinancialAccountKind, string>> = { BANK: "City Bank current", MOBILE_WALLET: "bKash merchant", AD_PLATFORM: "Meta ads — main", CASH: "Cash — Manager" };
@@ -32,7 +33,7 @@ export function AccountDialog({ account, onClose }: { account?: FinancialAccount
   const [threshold, setThreshold] = useState(account?.approvalThreshold != null ? String(account.approvalThreshold) : "");
   const [isActive, setActive] = useState(account?.isActive ?? true);
   const [openingAmount, setOpeningAmount] = useState("");
-  const [openingDate, setOpeningDate] = useState(new Date().toISOString().slice(0, 10));
+  const [openingDate, setOpeningDate] = useState(todayLocal());
   const [custodianId, setCustodianId] = useState(account?.custodian?.id ?? "");
   const { can } = useCapabilities();
   // Owner's books §2: a cash box is somebody's — choose who holds it.

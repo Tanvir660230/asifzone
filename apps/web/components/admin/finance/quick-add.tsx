@@ -16,10 +16,11 @@ import type { OwnerHome } from "@/lib/api/finance-books";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, partnerPaymentScope, settleIdempotencyKey } from "@/lib/idempotency";
 import { AccountChips, AmountInput, ChoiceChips } from "./glass";
+import { todayLocal } from "@/lib/datetime-local";
 
 export type QuickAddKind = "EXPENSE" | "OWNER_OUT" | "OWNER_IN" | "PAY_PARTNER";
 
-const today = () => new Date().toLocaleDateString("en-CA");
+const today = todayLocal;
 const OWNER_POCKET = "owner";
 const PAYING = ["CASH", "BANK", "MOBILE_WALLET"];
 const METHOD: Array<{ value: PaymentMethod; label: string }> = [

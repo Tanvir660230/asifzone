@@ -25,6 +25,7 @@ import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour }
 import { formatPrice } from "@/lib/format";
 import { ExpenseImportModal, NewCategoryModal } from "@/components/admin/finance/expense-import";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
 
 const PERIOD_BADGE: Record<CommitmentPeriod["status"], { variant: "success" | "warning" | "danger" | "neutral"; label: string }> = {
   PAID: { variant: "success", label: "paid" }, AWAITING_APPROVAL: { variant: "warning", label: "awaiting approval" }, OVERDUE: { variant: "danger", label: "overdue" }, DUE: { variant: "neutral", label: "due" },
@@ -39,7 +40,7 @@ export default function ExpensesPage() {
   const { can, ready } = useCapabilities();
   const queryClient = useQueryClient();
   const allowed = can("finance.view");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
   const [recording, setRecording] = useState<{ commitment?: Commitment; period?: CommitmentPeriod } | null>(null);
@@ -171,7 +172,7 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
   const [accountId, setAccountId] = useState(c?.expenseAccount.id ?? "");
   const [amount, setAmount] = useState(c ? String(c.amount) : "");
   const [fromId, setFromId] = useState(c?.financialAccount?.id ?? "");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayLocal());
   const [behaviour, setBehaviour] = useState<CostBehaviour>(c?.costBehaviour ?? "VARIABLE");
   const [description, setDescription] = useState(c && preset.period ? `${c.name} — ${preset.period.periodKey}` : "");
   const [payee, setPayee] = useState(c?.payee ?? "");
@@ -241,7 +242,7 @@ function CommitmentModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [amount, setAmount] = useState("");
   const [frequency, setFrequency] = useState<CommitmentFrequency>("MONTHLY");
   const [day, setDay] = useState("1");
-  const [start, setStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [start, setStart] = useState(() => todayLocal());
   const [behaviour, setBehaviour] = useState<CostBehaviour>("FIXED");
   const [fromId, setFromId] = useState("");
   const [payee, setPayee] = useState("");
