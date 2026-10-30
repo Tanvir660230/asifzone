@@ -3514,6 +3514,8 @@ model FinanceBusiness {
   /// Smart stock page: a count loss by someone without inventory.approve worth at least this (at the average cost) waits for
   /// the owner (StockCountApproval) instead of moving the stock.
   countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
+  /// No longer read: folded into StoreSetting.returnNotBackDays (migration 20261206100000). Kept because migrations only add.
+  returnFollowUpDays          Int                       @default(14)
   /// Blueprint P1.2 (tab 2 §3): the owner may snooze the "Unpaid by Steadfast" reminder until this business date (inclusive).
   courierUnpaidSnoozedUntil   DateTime?                 @db.Date
   /// What the last night's run did, for the settings page.

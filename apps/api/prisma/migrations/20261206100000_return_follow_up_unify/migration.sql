@@ -27,4 +27,5 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE "FinanceBusiness" DROP COLUMN "returnFollowUpDays";
+-- The old column stays, no longer read: migrations only add (a rollback must still find what the previous code reads —
+-- src/domain/identity/phase11.guard.test.ts refuses DROP COLUMN).

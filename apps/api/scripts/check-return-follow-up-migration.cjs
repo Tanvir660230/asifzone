@@ -8,7 +8,8 @@ const url = process.env.DATABASE_URL ?? "";
 if (!/_migcheck\?/.test(url)) throw new Error("DATABASE_URL must name a *_migcheck scratch database");
 const prisma = new PrismaClient();
 const sql = fs.readFileSync(path.join(__dirname, "../prisma/migrations/20261206100000_return_follow_up_unify/migration.sql"), "utf8");
-const [doBlock, drop] = [sql.slice(sql.indexOf("DO $$"), sql.indexOf("END $$;") + "END $$;".length), 'ALTER TABLE "FinanceBusiness" DROP COLUMN "returnFollowUpDays"'];
+const doBlock = sql.slice(sql.indexOf("DO $$"), sql.indexOf("END $$;") + "END $$;".length);
+if (/DROP\s+COLUMN/i.test(sql.replace(/--.*$/gm, ""))) throw new Error("the migration must not drop a column");
 
 const cases = [
   { name: "only the old setting changed → it moves across", businesses: [21], store: 14, expect: 21 },
@@ -38,7 +39,6 @@ const cases = [
     if (c.store !== null) await prisma.$executeRawUnsafe(`INSERT INTO "StoreSetting" (id, "returnNotBackDays", "updatedAt") VALUES ('singleton', ${c.store}, NOW())`);
     await prisma.$executeRawUnsafe('ALTER TABLE "FinanceBusiness" ENABLE TRIGGER USER');
     await prisma.$executeRawUnsafe(doBlock);
-    await prisma.$executeRawUnsafe(drop);
     const row = await prisma.$queryRawUnsafe('SELECT "returnNotBackDays" AS d FROM "StoreSetting" WHERE id = \'singleton\'');
     const got = row[0]?.d ?? null;
     const ok = got === c.expect;

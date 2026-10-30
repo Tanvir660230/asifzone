@@ -1,5 +1,7 @@
 import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { financeBusinessUpdateSchema } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { getBusinessSettings } from "../../domain/finance/chart.service";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { adminAttention } from "../admin-home/attention.service";
 import { getSettings, updateSettings } from "../settings/settings.service";
@@ -113,9 +115,9 @@ describe("one follow-up deadline — the store's returnNotBackDays (owner decisi
     expect((await adminAttention({ adminId: await ownerId(), role: "STAFF", permissions: ["orders.read"] })).parcelsToReceive?.followUpDays).toBe(21);
   });
 
+  // The old column stays in the database (migrations only add — phase11.guard), but nothing reads or writes it.
   it("the finance settings no longer carry a second deadline", async () => {
-    const columns = await prisma.$queryRaw<Array<{ column_name: string }>>`
-      SELECT column_name FROM information_schema.columns WHERE table_name = 'FinanceBusiness' AND column_name = 'returnFollowUpDays'`;
-    expect(columns).toHaveLength(0);
+    expect(await getBusinessSettings()).not.toHaveProperty("returnFollowUpDays");
+    expect(financeBusinessUpdateSchema.safeParse({ returnFollowUpDays: 30 }).success).toBe(false);
   });
 });
