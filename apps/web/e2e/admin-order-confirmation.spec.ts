@@ -111,6 +111,9 @@ test.describe("customer confirmation calls", () => {
       const claimed = new URL(page.url()).searchParams.get("open")!;
       const state = await adminFetch(page, `/api/orders/${claimed}/confirmation`, "GET");
       expect(state.body?.claimedBy).toBeTruthy();
+      // The claim is the caller's own: their outcome buttons stay usable (only a colleague's claim locks them).
+      await expect(outcome(page, "No answer")).toBeEnabled();
+      await expect(panel(page).getByText(/is on this call/)).toHaveCount(0);
       // Hand it back (it may be another suite's order), then decline our own.
       await adminFetch(page, `/api/orders/${claimed}/confirmation/release`, "POST");
 
