@@ -659,7 +659,9 @@ describe("alerts and month-end close (E14)", () => {
     expect(c.open).toBe(c.steps.filter((x) => x.status === "TODO").length);
     expect(c.ready).toBe(c.open === 0);
     for (const x of c.steps) expect(x.href).toMatch(/^\/admin\//);
-    expect((await monthEndChecklist({ month: "2026-10" })).ended).toBe(false);
+    // The current business month hasn't ended (a fixed month here broke the suite the moment that month did).
+    const thisMonth = businessToday((await getFinanceContext()).business).slice(0, 7);
+    expect((await monthEndChecklist({ month: thisMonth })).ended).toBe(false);
 
     const openMonths = async () => (await financeAlerts()).alerts.find((a) => a.key === "periods.open")?.count ?? 0;
     const before = await openMonths();
