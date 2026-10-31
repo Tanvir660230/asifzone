@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { variantDisplayPrice } from "@/lib/pricing-display";
+import { storeLayout } from "@/lib/theme-layout";
 import type { PickerIntent } from "./variant-picker-dialog";
 
 interface StickyAddToCartProps {
@@ -61,6 +62,27 @@ export function StickyAddToCart({
   function handleBuyNow() {
     if (!selectedVariant) return onRequireSelection?.("buy");
     buyNow(1);
+  }
+
+  if (storeLayout() === "tahafi") {
+    // Tahafi (the approved mockup): one floating glass capsule holding one glossy "Order now · ৳price" — a single clear
+    // action above the dock (whose bag button is right below, so the bar does not repeat it; the inline buttons keep
+    // Add to Cart).
+    return (
+      <div data-testid="sticky-add-to-cart" className="fixed inset-x-0 bottom-[var(--dock-offset)] z-40 animate-fade-in px-3 pb-2 lg:hidden">
+        <div className="glass-panel mx-auto flex max-w-md items-center rounded-full p-1.5 shadow-floatLg">
+          <Button variant="primary" size="lg" className="h-12 flex-1 rounded-full" disabled={outOfStock} onClick={handleBuyNow}>
+            {outOfStock ? (
+              "Sold out"
+            ) : (
+              <>
+                Order now <span aria-hidden="true">·</span> <Money value={price} />
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

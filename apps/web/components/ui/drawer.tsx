@@ -92,7 +92,7 @@ export function Drawer({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "ml-auto flex h-full w-full flex-col border-l border-white/70 bg-surface shadow-glass-lg animate-slide-in-right",
+          "ml-auto flex h-full w-full flex-col border-l border-[color:var(--glass-edge)] bg-surface shadow-glass-lg animate-slide-in-right",
           widthClassName,
         )}
       >

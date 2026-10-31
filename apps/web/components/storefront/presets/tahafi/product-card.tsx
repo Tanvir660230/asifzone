@@ -114,7 +114,8 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
       </div>
       <Link href={`/product/${product.slug}`} className="block px-3.5 pb-3.5 pt-2.5">
         <div>
-          <h3 className="line-clamp-2 text-[0.9375rem] font-semibold leading-snug text-fg">{product.name}</h3>
+          {/* Two lines kept for every name, so prices line up across a row whatever the name's length. */}
+          <h3 className="line-clamp-2 min-h-[2.75em] text-[0.9375rem] font-semibold leading-snug text-fg">{product.name}</h3>
           <p className="mt-1 flex items-baseline gap-1.5 tabular-nums" data-testid="card-price">
             <span className={cn("text-[0.9375rem] font-bold", soldOut ? "text-fg-muted" : onSale ? "text-sale-600" : "text-fg")}>
               <Money value={shown.price} />

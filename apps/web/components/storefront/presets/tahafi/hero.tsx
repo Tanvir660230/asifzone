@@ -85,6 +85,11 @@ export function TahafiHero({
               {headline || tagline || storeName}
             </h2>
             {bodyText && <p className="mt-3 max-w-md text-[0.9375rem] leading-relaxed text-cream-50/85 sm:text-lg">{bodyText}</p>}
+            {secondaryCtaLabel && secondaryCtaHref && (
+              <Link href={secondaryCtaHref} className="mt-2 inline-flex h-10 items-center text-sm font-medium text-cream-50 underline decoration-cream-50/50 underline-offset-4 hover:decoration-cream-50">
+                {secondaryCtaLabel}
+              </Link>
+            )}
           </div>
 
           {piece ? (
@@ -97,11 +102,6 @@ export function TahafiHero({
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-3 px-2 sm:px-0">{cta}</div>
-          )}
-          {secondaryCtaLabel && secondaryCtaHref && (
-            <Link href={secondaryCtaHref} className="mt-2 inline-flex h-10 items-center px-2 text-sm font-medium text-cream-50/90 underline-offset-4 hover:underline sm:px-0">
-              {secondaryCtaLabel}
-            </Link>
           )}
         </div>
       </div>

@@ -45,7 +45,7 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={cn(
-          "ui-modal-panel w-full animate-modal-in rounded-2xl border border-white/70 bg-surface shadow-glass-lg ring-1 ring-ink-900/[0.04]",
+          "ui-modal-panel w-full animate-modal-in rounded-2xl border border-[color:var(--glass-edge)] bg-surface shadow-glass-lg ring-1 ring-ink-900/[0.04]",
           widthClassName,
         )}
       >

@@ -13,7 +13,7 @@ Chrome (`store-chrome.tsx` switches):
 - `header.tsx` + `header-actions.tsx`: on phones, round glass buttons float over the page (light/dark, the logo in a
   capsule, the account) and the bar turns to glass once the page scrolls (`.ui-header-float`); pages inside a tab get
   Back and Search from PhoneNavBar. Wide screens: one glass bar — logo, the pieces as soft pills, search, light/dark,
-  account, bag with its olive count. The menu sheet is the mihrab preset's `MihrabMenu`.
+  account, bag with its olive count. `menu.tsx`: the Shop sheet — search, the pieces as photo tiles two to a row, the help pages on a white card.
 - `dock.tsx`: the phone tab bar — a floating glass capsule (Home, Shop, Search, Saved) and the bag apart as a glass
   circle. `--dock-tab-bar` (4.75rem) is its height plus the gap below it, so panels stop above it.
 - The footer is the classic one; the theme renders every band light.

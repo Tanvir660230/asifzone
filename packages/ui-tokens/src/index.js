@@ -304,6 +304,8 @@ const componentTokens = {
   "--tag-thread": "rgb(var(--color-ink-300))",
   // The lit edge of a floating glass panel (globals.css .glass-panel); a dark colour mode dims it.
   "--glass-edge": "rgb(255 255 255 / 0.7)",
+  // …and of a glass button (components/ui/button.tsx `glass`), a touch fainter.
+  "--glass-edge-soft": "rgb(255 255 255 / 0.6)",
   // Artwork made for the light page or for the dark one (.ui-mode-light-art / .ui-mode-dark-art, e.g. the header logo):
   // which one shows. A theme's dark colour mode swaps them.
   "--mode-light-art": "contents",
@@ -642,9 +644,10 @@ const themeDefinitions = {
       // The floating glass dock (presets/tahafi/dock.tsx): its 3.875rem row plus the gap below it.
       "--dock-tab-bar": "4.75rem",
     },
-    // Every section designed on the dark palette renders light: one calm, bright page from top to bottom.
+    // Every section designed on the dark palette renders light, on white: one calm, bright page from top to bottom, the
+    // grey page and the white sections clearly two grounds (not three near-identical greys).
     band: "light",
-    bandSurface: "cream-200",
+    bandSurface: "cream-50",
     bandComponents: {
       "--hero-cta-fill": "rgb(28 28 26)",
       "--hero-cta-text": "rgb(255 255 255)",
@@ -672,6 +675,12 @@ const themeDefinitions = {
         cream: { 50: "#1c1c1a", 100: "#0f0f0e", 200: "#232321", 300: "#2c2c29" },
         // The olive tag stays (white on it 8.0:1); olive as text or icon is the light olive (9.6:1 on the page).
         sale: { 50: "#262a1e", 500: "#4f5343", 600: "#c3cba8" },
+        // Status colours for a dark page: deep tints behind light text (the "In stock" pill, a form error), so nothing
+        // glows. Danger 600 is the error text (4.9:1 on a card).
+        success: { 50: "#132620", 100: "#173328", 200: "#1f4a3a", 500: "#2fc9a3", 600: "#4fd6b3", 700: "#8ee6cf" },
+        warning: { 50: "#2a2112", 100: "#3a2c15", 200: "#57411c", 500: "#e0a447", 600: "#ebb565", 700: "#f2c98a" },
+        danger: { 50: "#2c1615", 100: "#3d1c1a", 200: "#5c2724", 400: "#e0827c", 500: "#e4675f", 600: "#ec7f77", 700: "#f4aaa4" },
+        info: { 50: "#122030", 100: "#172a3f", 200: "#22405f", 500: "#5c9ae0", 600: "#7aaee6", 700: "#a3c8f0" },
       },
       components: {
         "color-scheme": "dark",
@@ -683,6 +692,12 @@ const themeDefinitions = {
         "--band-accent": "rgb(195 203 168)",
         "--glass-alpha": "0.62",
         "--glass-edge": "rgb(255 255 255 / 0.12)",
+        "--glass-edge-soft": "rgb(255 255 255 / 0.1)",
+        // Fills behind white type (components/ui/button.tsx): danger/sale 600–700 are light text colours here, so the
+        // red button and the olive hover get their own deep fills (white on them 5.3, 6.4 and 6.3:1).
+        "--danger-fill": "rgb(190 64 56)",
+        "--danger-fill-hover": "rgb(170 54 47)",
+        "--sale-fill-hover": "rgb(93 98 80)",
         "--header-shadow": "0 1px 0 0 rgb(255 255 255 / 0.06)",
         "--panel-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
         "--card-frame-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",

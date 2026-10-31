@@ -7,7 +7,7 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { HeaderShell } from "../../header-shell";
 import { PhoneNavBar } from "../../phone-nav-bar";
-import { MihrabMenu } from "../mihrab/header-actions";
+import { TahafiMenu } from "./menu";
 import { TahafiHeaderActions } from "./header-actions";
 import { ModeToggle } from "./mode-toggle";
 import { TAHAFI_GLASS_BUTTON, TAHAFI_NAV_LINK } from "./styles";
@@ -18,8 +18,8 @@ interface HeaderProps {
 }
 
 /**
- * The Tahafi header, as in the approved mockup. Phones: on the tab pages, round glass buttons float over the page — light
- * or dark, the logo in a glass capsule, the account — and the bar behind them turns to glass once the page scrolls
+ * The Tahafi header, as in the approved mockup. Phones: on the tab pages, round glass buttons float over the page — the
+ * account, the logo in a glass capsule, light or dark — and the bar behind them turns to glass once the page scrolls
  * (`.ui-header-float`); on pages inside a tab, Back and Search (PhoneNavBar) on that glass bar. Wide screens: one glass
  * bar — the logo, the pieces as soft pills, search, light/dark, account, bag. The logo is the store's light-page one, or
  * its dark-page one in dark mode. The menu sheet the dock's Shop opens is the mihrab preset's, which reads only tokens.
@@ -53,13 +53,13 @@ export function TahafiHeader({ categories, settings }: HeaderProps) {
       <div className="ui-header-float glass border-b border-ink-900/[0.06]">
         <PhoneNavBar brand={home("h-7 w-28 object-contain")}>
           <div className="flex h-[3.75rem] items-center justify-between px-3 lg:hidden">
-            <ModeToggle className={TAHAFI_GLASS_BUTTON} />
-            {home("h-6 w-24 object-contain", "glass-panel h-11 rounded-full px-4")}
             <Link href="/account" aria-label="Your account" className={TAHAFI_GLASS_BUTTON}>
               <User size={20} aria-hidden="true" />
             </Link>
+            {home("h-6 w-24 object-contain", "glass-panel h-11 rounded-full px-4")}
+            <ModeToggle className={TAHAFI_GLASS_BUTTON} />
           </div>
-          <MihrabMenu categories={menu} />
+          <TahafiMenu categories={menu} />
         </PhoneNavBar>
 
         <div className="mx-auto hidden h-[4.25rem] max-w-7xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-8 px-8 lg:grid">
