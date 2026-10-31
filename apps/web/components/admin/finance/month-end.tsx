@@ -60,6 +60,11 @@ export function MonthEnd({ initialMonth, canClose }: { initialMonth: string | nu
         </div>
       </div>
 
+      {/* how far the month is: one glance instead of counting ticks */}
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink-200/70" role="progressbar" aria-label="Month-end steps done" aria-valuemin={0} aria-valuemax={c.steps.length} aria-valuenow={done}>
+        <div className={cn("h-full rounded-full transition-[width] duration-base ease-smooth", done === c.steps.length ? "bg-success-500" : "bg-accent")} style={{ width: `${c.steps.length ? (done / c.steps.length) * 100 : 0}%` }} />
+      </div>
+
       {!c.ended && <Alert variant="info" title="This month hasn't ended yet">The checklist shows where things stand; a month can be closed once it has ended.</Alert>}
 
       <Card className="divide-y divide-line p-0">

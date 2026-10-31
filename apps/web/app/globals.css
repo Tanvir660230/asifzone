@@ -143,6 +143,12 @@
   [data-area="finance"] {
     --gloss: var(--finance-gloss, 0);
   }
+  /* Every plain card on a Money page is a liquid panel: the same fill, edge and shadow as .liquid. */
+  [data-area="finance"] [data-card="default"] {
+    @apply rounded-2xl border-transparent;
+    background: var(--liquid-fill);
+    box-shadow: var(--liquid-shadow);
+  }
   .liquid {
     background: var(--liquid-fill, rgb(var(--color-surface)));
     box-shadow: var(--liquid-shadow, none);
