@@ -2,6 +2,7 @@ import { z } from "zod";
 import { bdPhoneSchema, nullableEmail, nullableString, paginationQuerySchema } from "./common";
 import { couponCartItemSchema } from "./coupon";
 import { BD_DIVISIONS } from "../country/bd";
+import { ORDER_EXCEPTION_IDS } from "../order-exceptions";
 
 export const orderStatusEnum = z.enum([
   "PENDING",
@@ -162,6 +163,8 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "active" = the daily work list (finished orders left out); "history" = only finished orders — Order history. A
   // finished order is closed for good with nothing left to settle, reconcile, receive, inspect or refund (order-history.ts).
   scope: z.enum(["active", "history"]).optional(),
+  // Exception Center (docs/WAREHOUSE_OPERATIONS.md §5): parcels whose facts disagree or waited too long (order-exceptions.ts).
+  exception: z.enum(ORDER_EXCEPTION_IDS).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   // Daily-pulse drill-down (docs/METRICS_REGISTRY.md §4.5): the orders that reached a step on a business date — e.g. every

@@ -562,7 +562,9 @@ export function OrdersList(props: OrdersListProps) {
                       </Button>
                     ) : null
                   ) : canConfirm ? (
-                    <Button variant="outline" size="sm" onClick={() => commands.requestStatusChange([order], "CONFIRMED")}>
+                    // Opens the order on its call panel: a confirmation is recorded with its call outcome (Change status still
+                    // confirms without one).
+                    <Button variant="outline" size="sm" onClick={() => onOpen(order.id)}>
                       <Check size={13} /> Confirm
                     </Button>
                   ) : canBook ? (

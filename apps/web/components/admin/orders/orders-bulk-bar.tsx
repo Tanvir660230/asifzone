@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, MoreHorizontal, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
+import { ChevronDown, ClipboardList, MoreHorizontal, PackageCheck, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
 import type { AdminOrderListItem, OrderStatus } from "@clothing-brand/shared";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,14 @@ export function OrdersBulkBar({
               <Truck size={14} /> Book courier
             </Button>
           )}
+          {perms.scan && orders.some((o) => o.courierConsignmentId) && (
+            <Button variant="outline" size="sm" loading={commands.pending.handOver} onClick={() => commands.handOver(orders)}>
+              <PackageCheck size={14} /> Rider took these
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => commands.openPickList(orders.map((o) => o.id))}>
+            <ClipboardList size={14} /> Pick list
+          </Button>
           <Button variant="outline" size="sm" onClick={() => commands.printLabels(orders.map((o) => o.id))}>
             <Printer size={14} /> Print labels
           </Button>

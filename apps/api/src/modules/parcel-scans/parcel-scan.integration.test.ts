@@ -1,9 +1,9 @@
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
-import { ORDER_QUEUE_FILTERS, scanCodeCandidates } from "@clothing-brand/shared";
+import { ORDER_QUEUE_FILTERS, scanCodeCandidates, scannedPhone } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, stockOf } from "../../test-fixtures";
 import { changeOrderStatus, listOrders, receiveReturnedParcel } from "../orders/order.service";
-import { cancelBatch, confirmBatch, createBatch, recordScan, resolveScanCode, voidScan } from "./parcel-scan.service";
+import { cancelBatch, confirmBatch, createBatch, handOverFromList, recordScan, resolveScanCode, voidScan } from "./parcel-scan.service";
 
 // Order Operations plan, phase 4 — dispatch and return scanning. Acceptance: duplicate / already-processed / unknown /
 // ineligible each get their own answer and change nothing; one parcel on two devices is accepted once; the same
@@ -48,6 +48,15 @@ describe("resolving codes", () => {
     expect((await resolveScanCode(`https://shop.example/track?code=${o.trackingNumber}&x=1`))?.id).toBe(o.id);
     expect(await resolveScanCode("SFX-UNKNOWN-STICKER-0001")).toBeNull();
     expect(scanCodeCandidates("https://x.example/t/AZT123?o=ORD-1#top")).toEqual(["https://x.example/t/AZT123?o=ORD-1#top", "ORD-1", "AZT123"]);
+  });
+
+  it("knows Steadfast's return-slip and label barcodes, which end in the zero-padded consignment id", async () => {
+    const o = await bookedOrder();
+    expect((await resolveScanCode(`003-0102-001-00${o.courierConsignmentId}`))?.id).toBe(o.id);
+    expect(scanCodeCandidates("003-0102-001-00313808106")).toEqual(["003-0102-001-00313808106", "313808106"]);
+    expect(scanCodeCandidates("002-0356-001-00311971298")).toEqual(["002-0356-001-00311971298", "311971298"]);
+    expect(scanCodeCandidates("ORD-20261027-QQGXH3")).toEqual(["ORD-20261027-QQGXH3"]);
+    expect([scannedPhone("01911133943"), scannedPhone("+8801911133943"), scannedPhone("0191113394"), scannedPhone("SFR261028")]).toEqual(["01911133943", "01911133943", null, null]);
   });
 });
 
@@ -190,5 +199,32 @@ describe("HTTP", () => {
     expect((await agent.post(`/api/parcel-scans/batches/${created.body.id}/scans`, { code: "x", clientScanId: "bad id!" })).status).toBe(400);
     expect((await agent.post(`/api/parcel-scans/batches/${created.body.id}/confirm`)).body.status).toBe("CONFIRMED");
     expect((await agent.get("/api/parcel-scans/summary")).body.handedOverToday).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("the rider took these — from the list, no scanner", () => {
+  it("twenty booked, twelve picked: twelve handed over through one dispatch batch, the rest untouched; a repeat and an unbooked order change nothing", async () => {
+    const booked = await Promise.all(Array.from({ length: 20 }, () => bookedOrder()));
+    const taken = booked.slice(0, 12);
+    const unbooked = await placeOrder([{ variantId: taken[0]!.variantId, quantity: 1 }]);
+    const stock = await stockOf(taken[0]!.variantId);
+
+    const r = await handOverFromList(owner, [...taken.map((o) => o.id), unbooked.id], "Rider Karim, evening pickup");
+    expect(r.handedOver).toBe(12);
+    expect(r.skipped.map((s) => s.orderNumber)).toEqual([unbooked.orderNumber]);
+    const after = await prisma.order.findMany({ where: { id: { in: booked.map((o) => o.id) } }, select: { id: true, handedOverAt: true, handedOverBatchId: true, status: true } });
+    expect(after.filter((o) => o.handedOverAt).map((o) => o.id).sort()).toEqual(taken.map((o) => o.id).sort());
+    expect(new Set(after.filter((o) => o.handedOverAt).map((o) => o.handedOverBatchId))).toEqual(new Set([r.batchId]));
+    expect(after.every((o) => o.status === "SHIPPED")).toBe(true);
+    expect(await stockOf(taken[0]!.variantId)).toBe(stock);
+    const batch = await prisma.parcelScanBatch.findUniqueOrThrow({ where: { id: r.batchId! } });
+    expect(batch).toMatchObject({ status: "CONFIRMED", kind: "DISPATCH" });
+    expect(batch.note).toMatch(/not scanned.*Rider Karim/);
+
+    // Pressed again: everything is already handed over — nothing new, no empty batch left open.
+    const again = await handOverFromList(owner, taken.map((o) => o.id));
+    expect(again).toMatchObject({ handedOver: 0, batchId: null });
+    expect(again.skipped).toHaveLength(12);
+    expect(await prisma.parcelScanBatch.count({ where: { createdByAdminId: owner, status: "OPEN", note: { contains: "not scanned" } } })).toBe(0);
   });
 });

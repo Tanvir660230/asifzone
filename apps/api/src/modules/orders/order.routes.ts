@@ -57,6 +57,8 @@ orderRouter.get("/", requireAdmin, requirePermission("orders.read"), validate(or
 orderRouter.post("/admin", requireAdmin, requirePermission("orders.manage"), validate(adminCreateOrderSchema), orderController.createManual);
 // Must come before "/:id" — otherwise Express would match "stats"/"export" as an :id param.
 orderRouter.get("/stats", requireAdmin, requirePermission("orders.read"), orderController.stats);
+// Exception Center (docs/WAREHOUSE_OPERATIONS.md §5): read-only counts of parcels whose facts disagree or waited too long.
+orderRouter.get("/exceptions", requireAdmin, requirePermission("orders.read"), orderController.exceptions);
 // Customer confirmation (Order Operations phase 3): claim the next order to call — before "/:id" like the others.
 orderRouter.post("/confirmation/next", requireAdmin, requirePermission("orders.manage"), confirmationController.next);
 // Blueprint P1.5: parcels cancelled after shipping that haven't come back yet (receive them with POST /:id/receive-return)

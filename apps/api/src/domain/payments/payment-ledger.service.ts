@@ -277,67 +277,7 @@ export async function recordManualPayment(orderId: string, input: RecordPaymentI
   }
   const currency = await storeCurrency();
   try {
-    const payment = await prisma.$transaction(async (tx) => {
-      const order = await lockOrder(tx, orderId);
-      if (order.deletedAt) throw AppError.badRequest("Restore this order before recording a payment");
-      const amount = fromMajor(String(input.amount), currency);
-      if (input.kind === "RETURN_CHARGE") {
-        if (!RETURN_CHARGE_ORDER_STATUSES.includes(order.status)) {
-          throw AppError.badRequest("A return charge is recorded only for a refused parcel — partly delivered, returned or cancelled", { code: "PAYMENT_NOT_ALLOWED" });
-        }
-        if (amount.amount <= 0) throw AppError.badRequest("Amount must be positive");
-        const via = input.via ?? "COURIER";
-        const note = [via === "COURIER" ? "Through the courier" : null, input.method, input.note].filter(Boolean).join(" — ") || null;
-        const created = await tx.payment.create({
-          data: {
-            orderId,
-            provider: via === "COURIER" ? "COD" : "MANUAL",
-            purpose: "RETURN_CHARGE",
-            status: "SUCCEEDED",
-            amount: toMajor(amount),
-            note,
-            recordedByAdminId: adminId,
-            idempotencyKey: idempotencyKey ?? null,
-          },
-        });
-        await timelineNote(tx, orderId, order.status, `Return charge received: ${noteMoney(amount)}${note ? ` (${note})` : ""} — courier cost recovered, not owed back`, adminId);
-        await refreshPaymentStatus(tx, orderId, currency);
-        return created;
-      }
-      if (input.kind === "COD_COLLECTED") {
-        if (order.paymentMethod !== "COD" || order.status !== "PARTIALLY_DELIVERED") {
-          throw AppError.badRequest("Courier-collected cash is recorded only for a partially delivered Cash on Delivery order", { code: "PAYMENT_NOT_ALLOWED" });
-        }
-      } else {
-        if (CLOSED.has(order.status)) throw AppError.badRequest(`Can't record a payment on an order that is ${order.status.toLowerCase()}`, { code: "PAYMENT_NOT_ALLOWED" });
-        if (order.paymentMethod === "COD" && order.courierConsignmentId) {
-          throw AppError.badRequest("The courier already has this parcel's COD amount — unlink the booking before recording a prepayment", { code: "PAYMENT_NOT_ALLOWED" });
-        }
-      }
-      const position = await loadPosition(tx, order, currency);
-      const check = checkManualPayment(position, amount);
-      if (!check.ok) {
-        throw AppError.badRequest(
-          check.code === "EXCEEDS_AMOUNT_DUE" ? `Only ${noteMoney(check.amountDue)} is still due on this order` : "Amount must be positive",
-          { code: "PAYMENT_EXCEEDS_AMOUNT_DUE", amountDue: toMajor(check.amountDue) },
-        );
-      }
-      const note = [input.method, input.note].filter(Boolean).join(" — ") || null;
-      const created = await tx.payment.create({
-        data: {
-          orderId,
-          provider: input.kind === "COD_COLLECTED" ? "COD" : "MANUAL",
-          status: "SUCCEEDED",
-          amount: toMajor(amount),
-          note,
-          recordedByAdminId: adminId,
-          idempotencyKey: idempotencyKey ?? null,
-        },
-      });
-      await timelineNote(tx, orderId, order.status, `Payment recorded: ${noteMoney(amount)}${note ? ` (${note})` : ""}`, adminId);
-      await refreshPaymentStatus(tx, orderId, currency);
-      return created;
-    });
+    const payment = await prisma.$transaction((tx) => recordManualPaymentInTx(tx, orderId, input, adminId, idempotencyKey ?? null, currency));
     return { payment, summary: await getOrderPaymentSummary(orderId) };
   } catch (err) {
     if (idempotencyKey && isUniqueViolation(err)) {
@@ -346,6 +286,79 @@ export async function recordManualPayment(orderId: string, input: RecordPaymentI
     }
     throw err;
   }
+}
+
+/** What is still due on the order and the return charge already taken, in major units, read under the order lock — for a
+ * caller that records courier money inside its own transaction (the scanner's parcel receipt). */
+export async function orderMoneyInTx(tx: Db, orderId: string) {
+  const currency = await storeCurrency();
+  const order = await lockOrder(tx, orderId);
+  const position = await loadPosition(tx, order, currency);
+  return { currency, amountDue: Number(toMajor(position.amountDue)), returnCharge: Number(toMajor(position.returnCharge)) };
+}
+
+/** The body of recordManualPayment, in the caller's transaction (the scanner's parcel receipt records the courier's money
+ * with the inspection, all or nothing). Same rules, same timeline note. */
+export async function recordManualPaymentInTx(tx: Db, orderId: string, input: RecordPaymentInput, adminId: string, idempotencyKey: string | null, currency: string) {
+  const order = await lockOrder(tx, orderId);
+  if (order.deletedAt) throw AppError.badRequest("Restore this order before recording a payment");
+  const amount = fromMajor(String(input.amount), currency);
+  if (input.kind === "RETURN_CHARGE") {
+    if (!RETURN_CHARGE_ORDER_STATUSES.includes(order.status)) {
+      throw AppError.badRequest("A return charge is recorded only for a refused parcel — partly delivered, returned or cancelled", { code: "PAYMENT_NOT_ALLOWED" });
+    }
+    if (amount.amount <= 0) throw AppError.badRequest("Amount must be positive");
+    const via = input.via ?? "COURIER";
+    const note = [via === "COURIER" ? "Through the courier" : null, input.method, input.note].filter(Boolean).join(" — ") || null;
+    const created = await tx.payment.create({
+      data: {
+        orderId,
+        provider: via === "COURIER" ? "COD" : "MANUAL",
+        purpose: "RETURN_CHARGE",
+        status: "SUCCEEDED",
+        amount: toMajor(amount),
+        note,
+        recordedByAdminId: adminId,
+        idempotencyKey: idempotencyKey ?? null,
+      },
+    });
+    await timelineNote(tx, orderId, order.status, `Return charge received: ${noteMoney(amount)}${note ? ` (${note})` : ""} — courier cost recovered, not owed back`, adminId);
+    await refreshPaymentStatus(tx, orderId, currency);
+    return created;
+  }
+  if (input.kind === "COD_COLLECTED") {
+    if (order.paymentMethod !== "COD" || order.status !== "PARTIALLY_DELIVERED") {
+      throw AppError.badRequest("Courier-collected cash is recorded only for a partially delivered Cash on Delivery order", { code: "PAYMENT_NOT_ALLOWED" });
+    }
+  } else {
+    if (CLOSED.has(order.status)) throw AppError.badRequest(`Can't record a payment on an order that is ${order.status.toLowerCase()}`, { code: "PAYMENT_NOT_ALLOWED" });
+    if (order.paymentMethod === "COD" && order.courierConsignmentId) {
+      throw AppError.badRequest("The courier already has this parcel's COD amount — unlink the booking before recording a prepayment", { code: "PAYMENT_NOT_ALLOWED" });
+    }
+  }
+  const position = await loadPosition(tx, order, currency);
+  const check = checkManualPayment(position, amount);
+  if (!check.ok) {
+    throw AppError.badRequest(
+      check.code === "EXCEEDS_AMOUNT_DUE" ? `Only ${noteMoney(check.amountDue)} is still due on this order` : "Amount must be positive",
+      { code: "PAYMENT_EXCEEDS_AMOUNT_DUE", amountDue: toMajor(check.amountDue) },
+    );
+  }
+  const note = [input.method, input.note].filter(Boolean).join(" — ") || null;
+  const created = await tx.payment.create({
+    data: {
+      orderId,
+      provider: input.kind === "COD_COLLECTED" ? "COD" : "MANUAL",
+      status: "SUCCEEDED",
+      amount: toMajor(amount),
+      note,
+      recordedByAdminId: adminId,
+      idempotencyKey: idempotencyKey ?? null,
+    },
+  });
+  await timelineNote(tx, orderId, order.status, `Payment recorded: ${noteMoney(amount)}${note ? ` (${note})` : ""}`, adminId);
+  await refreshPaymentStatus(tx, orderId, currency);
+  return created;
 }
 
 /** §5b — what Steadfast reported the rider collected on a partial delivery (Order.courierCollectedAmount), settled as the
@@ -367,8 +380,11 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
       if (order.deletedAt || !row.courierCollectedAmount) return "NOT_YET";
       const collected = fromMajor(row.courierCollectedAmount.toString(), currency);
       if (collected.amount <= 0) return "NOT_YET";
+      // A refused parcel received on the scanner before Steadfast reported it is Cancelled (after shipping): the customer
+      // kept nothing either.
       const keptNothing =
         order.status === "RETURNED" ||
+        (order.status === "CANCELLED" && order.courierConsignmentId !== null) ||
         (order.status === "PARTIALLY_DELIVERED" && row.partialDeliveryReconciledAt !== null && row.items.every((i) => i.returnedQuantity >= i.quantity));
       if (!keptNothing) return "NOT_YET";
       if (await tx.payment.findUnique({ where: { idempotencyKey: key }, select: { id: true } })) return "SKIPPED";

@@ -563,7 +563,10 @@ describe("the role matrix — every admin route, every identity", () => {
     // +8: parcel scanning — batches, scans, void, confirm, cancel, current, summary (Order Operations Phase 4)
     // +2: the daily courier check — latest run, run now (Order Operations Phase 5)
     // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
-    expect(routes).toHaveLength(776);
+    // +5: Warehouse Operations — the Exception Center counts; pick list, product labels, print log read/record (docs/WAREHOUSE_OPERATIONS.md)
+    // +5: the unified scanner — resolve a code, the parcel card, receive, correct a receipt, link a code
+    // +1: the rider took these — handover from the orders list without a scanner
+    expect(routes).toHaveLength(787);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

@@ -7,6 +7,8 @@ import { PRE_SHIPMENT_STATUSES, type Order, type OrderStatus } from "@clothing-b
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
+import * as parcelScansApi from "@/lib/api/parcel-scans";
+import { PICK_LIST_ORDER_IDS_KEY } from "@/lib/api/warehouse";
 import type { BulkOrderOutcome } from "@/lib/api/admin-orders";
 import { ApiError } from "@/lib/api-client";
 import { courierStatusLabel, formatPrice, orderStatusLabel } from "@/lib/format";
@@ -226,6 +228,32 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     },
     onError: (err) => toast.error(errorText(err, "Bulk courier sync failed")),
   });
+  // "The rider took these" — handover without a scanner, through a dispatch batch on the server (same checks and audit).
+  const handOverMutation = useMutation({
+    mutationFn: (orders: OrderRef[]) => parcelScansApi.handOverFromList(orders.map((o) => o.id)),
+    onSettled: () => refresh(),
+    onSuccess: (r, orders) => {
+      const skipped = new Map(r.skipped.map((s) => [s.orderNumber, s.message]));
+      const result: BulkResult = {
+        title: "Handed to the rider",
+        succeededLabel: "Handed over",
+        succeeded: orders.filter((o) => !skipped.has(o.orderNumber)).map((o) => ({ orderId: o.id, orderNumber: o.orderNumber })),
+        failed: orders.filter((o) => skipped.has(o.orderNumber)).map((o) => ({ orderId: o.id, orderNumber: o.orderNumber, detail: skipped.get(o.orderNumber) })),
+      };
+      if (result.failed.length === 0) toast.success(`${r.handedOver} parcel${r.handedOver === 1 ? "" : "s"} handed to the rider`);
+      else setBulkResult(result);
+    },
+    onError: (err) => toast.error(errorText(err, "Couldn't record the handover")),
+  });
+  async function handOver(orders: OrderRef[]) {
+    const n = orders.length;
+    const ok = await confirm(`Mark ${n} parcel${n === 1 ? "" : "s"} as handed to the rider? Use this when the rider has them in hand. Parcels that aren't booked or were already handed over are left as they are.`, {
+      confirmLabel: "Rider has them",
+      tone: "default",
+    });
+    if (ok) handOverMutation.mutate(orders);
+  }
+
   const scoreMutation = useMutation({
     mutationFn: ({ orders }: { orders: OrderRef[]; quiet?: boolean }) => adminOrdersApi.bulkCheckDeliveryScore(orders.map((o) => o.id)),
     onSettled: () => refresh(),
@@ -292,6 +320,12 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     router.push("/admin/orders/print-labels");
   }
 
+  /** Product-wise pick list + packing sheets for the selection (docs/WAREHOUSE_OPERATIONS.md §3). */
+  function openPickList(ids: string[]) {
+    sessionStorage.setItem(PICK_LIST_ORDER_IDS_KEY, JSON.stringify(ids));
+    router.push("/admin/orders/pick-list");
+  }
+
   const dialogs: ReactNode = (
     <>
       {confirmDialog}
@@ -323,7 +357,10 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     unlinkCourier,
     checkDeliveryScore: (orders: OrderRef[], quiet = false) => scoreMutation.mutate({ orders, quiet }),
     printLabels,
+    openPickList,
+    handOver,
     pending: {
+      handOver: handOverMutation.isPending,
       status: statusMutation.isPending || bulkStatusMutation.isPending,
       trash: trashMutation.isPending || bulkTrashMutation.isPending,
       restore: restoreMutation.isPending || bulkRestoreMutation.isPending,

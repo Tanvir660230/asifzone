@@ -1,15 +1,15 @@
 # Order Operations — operator runbook
 
 How the order workflow from the Order Operations plan (phases 0–5) runs day to day, what still needs a person outside
-the code (M1, M6, M7), and how to release it. The design reasons live next to the code; this file is the checklist.
+the code (M1, M7; M6 is resolved), and how to release it. The design reasons live next to the code; this file is the checklist.
 
 ## Where things are
 
 | Page | What it is for |
 | --- | --- |
 | Orders (`/admin/orders`) | The daily work list. Finished orders are left out; a search still finds every order. Queues: Needs action, Call now / Call later / Escalated, Ready to book, Handover pending, Coming back, To inspect, Discrepancy, Stuck in transit, Return overdue, Courier issues, refund queues. |
-| Dispatch scan (`/admin/orders/dispatch`) | Scan parcels into the courier's hands; confirming the batch records the handover. |
-| Returns in (`/admin/orders/returns-in`) | Scan parcels that came back; records receipt only. Stock moves at inspection, on the order. |
+| Dispatch scan (`/admin/orders/dispatch`) | Scan parcels into the courier's hands; confirming the batch records the handover. The last parcel scanned opens beside the batch with its items; **Check contents** ticks each item as its SKU is scanned. |
+| Returns in (`/admin/orders/returns-in`) | **Receive and inspect** (default, `returns.manage`): scan a parcel that came back, say what is in it, confirm — see [Receive and inspect](#receive-and-inspect). **Quick receipt (batch)**: records only that parcels are back; inspect them later. |
 | Order history (`/admin/orders/history`) | Finished orders, read-only, searchable by order number, phone, tracking or consignment code, with date / payment / status filters. |
 | System health › Courier | Webhook health (Phase 0): events received, refused calls, poll pace. |
 | Home › Parcels to receive / to inspect | Counts of Coming back, Return overdue and To inspect, linking to those queues — the one list of parcels on their way back (blueprint P1.5). Coming back includes a parcel cancelled after it shipped without a Steadfast booking. Overdue = longer than `returnNotBackDays` (Settings › Dispatch, 14 days by default) since the courier reported the return. |
@@ -51,12 +51,56 @@ If refusals appear with reason `bad_token`, the panel and the store hold differe
 `not_configured`, step 1 is missing. Until the webhook is proven, the 15-minute status poll keeps orders moving, and
 Phase 0 keeps that poll at its safe pace.
 
-## M6 — Steadfast return sticker
+## M6 — Steadfast return sticker (resolved 2026-10-31)
 
-Codes printed on our labels resolve: order number, tracking number and consignment id, plus label-URL forms of them. A
-Steadfast return sticker's own code is not decoded, because we have no sample sticker. Such a scan is logged as
-**Unknown code**, changes nothing, and the parcel is found by searching its order or consignment number. When a photo of
-a real sticker is available, add its format to `scanCodeCandidates` (`packages/shared/src/parcel-scan.ts`) with a test.
+Photos of real parcels settled it. The codes the scanner knows (`apps/api/src/modules/parcel-scans/parcel-resolve.service.ts`):
+
+| Code on the parcel | Example | Names |
+| --- | --- | --- |
+| Steadfast return slip barcode | `003-0102-001-00311971298` | consignment `311971298` (the last group, zero padding dropped) |
+| Steadfast parcel label barcode | `002-0356-001-00311971298` | the same consignment |
+| Steadfast QR | `https://steadfast.com.bd/tl/…` | `Order.courierTrackingLink`, matched whole (stored for every booking) |
+| Our label barcode | `SFR261028ST6E69CA9BD` | `Order.trackingNumber` |
+| Our label "Parcel" number | `313808106` | the consignment id |
+| Order number / invoice | `ORD-20261025-8HSXRG` | the order |
+| A code linked by hand | any | `ParcelCodeAlias` — Returns in › Unknown code › Link and open |
+| A product SKU / variant barcode | `PC-BLK-S` | every open parcel holding it — the operator picks, never the first |
+| A customer phone | `01911133943` | that customer's open parcels — the operator picks |
+
+Anything else is **Unknown code**: nothing changes. Another store's parcel lives in its own database, so it is unknown
+here too. A new courier format is added in `scanCodeCandidates` / `steadfastSlipConsignment`
+(`packages/shared/src/parcel-scan.ts`) with a test.
+
+## Receive and inspect
+
+Owner decisions D1–D6, 2026-10-31. A parcel in hand is received in one confirmation; **no return request is needed
+first**, and scanning alone never creates one. What the confirm does, in one transaction under the order lock
+(`parcel-receive.service.ts`):
+
+1. **The outcome**, when the courier hasn't reported one (order still Shipped). *Kept nothing* → Cancelled, with **no
+   customer SMS** (D3). *Kept some* → Partly delivered, reconciled: what they kept stays sold and is never restocked.
+   A partial delivery Steadfast reported but nobody reconciled is reconciled here; kept nothing → Returned.
+2. **The inspection**, per item: *good* goes back on sale; *damaged* is taken in and written off at the line's cost;
+   *missing*, *wrong item* and *other* stay **waiting** (D1, D2) — the order stays under To inspect until they arrive
+   (receive again) or someone writes them off. Scanning an item's own SKU on the open parcel counts it good.
+3. **The courier's money** (`payments.record`, D4). Expected COD is shown; the amount handed over is entered by hand. A
+   difference needs a reason (Partial delivery, Customer refused, Courier charge only, COD adjustment, Other). If the
+   customer kept something, the money pays for that first; the rest — and all of it on a refused parcel — is a **return
+   charge** (courier cost recovered, PAYMENT_LEDGER §5a), never a sale. Money already on the order (by hand, or
+   Steadfast's figure settled automatically) is never recorded twice (409 `MONEY_ALREADY_RECORDED`). The courier charge
+   (`courier_costs.record`) goes on the parcel's shipment record as *entered*. Without the permission the parcel is
+   still received, without money.
+4. **The record**: a `ParcelReceipt` row (who, when, code scanned, status before / after, every count, the money and
+   reason, the stock entries written) and a timeline note.
+
+Duplicates and races: the confirm carries an Idempotency-Key (a retry or double tap returns the first receipt); the card's
+`version` makes a receipt from a stale card fail with "just received by …" (two operators, or the courier changed it);
+quantities above what can still come back are refused on the server.
+
+**Corrections** (D6): *Correct this receipt* in the parcel's history. Good → damaged writes the unit off; damaged → good
+reverses the write-off exactly; good / damaged → never in the parcel takes the unit out of stock again on the order
+(`unreceiveOrderLines`) and leaves it waiting. A reason is required; nothing is edited. Once the receipt's month is
+closed in the books only the owner can correct it.
 
 ## M7 — USB scanner acceptance checklist
 
@@ -73,8 +117,10 @@ Run once per scanner model, on the station's real computer and browser.
 8. Unplug the network and scan one label. It shows **Waiting**, and Confirm stays off. Plug it back: the scan is
    judged, then Confirm works.
 9. Confirm the batch. The parcels show the handover time, and their order status is unchanged.
-10. Returns in: scan a cancelled parcel's label. It is **Received**; its stock is unchanged until the order is inspected.
-11. If a step fails, test the camera fallback (Scan with camera) on a phone: same results expected.
+10. Returns in › Quick receipt: scan a cancelled parcel's label. It is **Received**; its stock is unchanged until the
+    order is inspected. Returns in › Receive and inspect: scan the Steadfast return slip; the parcel opens with its items.
+11. With the cursor in a quantity or note field, scan a parcel: the field keeps its value and the code is taken as a scan.
+12. If a step fails, test the camera fallback (Scan with camera) on a phone: same results expected.
 
 Record the scanner model, browser and result. A failure at step 1 or 6 is a scanner setting; steps 2–10 are app
 behaviour, so report those.

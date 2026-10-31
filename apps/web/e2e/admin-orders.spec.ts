@@ -120,7 +120,10 @@ test.describe("orders workspace", () => {
     await expect(menu.getByRole("menuitem", { name: "Refunded" })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "Returned" })).toHaveCount(0);
     await page.keyboard.press("Escape");
-    await detail.getByRole("button", { name: "Confirm order" }).click();
+    // A pending order's main button leads to the call; confirming without a call stays under Change status.
+    await expect(detail.getByRole("button", { name: /Call & confirm/ }).first()).toBeVisible();
+    await detail.getByRole("button", { name: "Change status" }).click();
+    await menu.getByRole("menuitem", { name: "Confirmed" }).click();
     await expect(dialog(page).getByText(/order confirmed.*SMS/)).toBeVisible();
     await dialog(page).getByLabel("Note for the timeline (optional)").fill("e2e: confirmed on call");
     await dialog(page).getByRole("button", { name: "Move to Confirmed" }).click();

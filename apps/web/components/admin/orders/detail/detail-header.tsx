@@ -184,14 +184,22 @@ export function DetailHeader({
  * it. Status moves open the status dialog; Book courier books; Reconcile / Record refund take you to that section. */
 export function usePrimaryOrderAction(order: Order, perms: OrderPermissions, commands: OrderCommands) {
   const deleted = Boolean(order.deletedAt);
-  const primary = deleted ? null : primaryOrderAction(order, { courierAvailable: perms.courierConfigured });
+  const next = deleted ? null : primaryOrderAction(order, { courierAvailable: perms.courierConfigured });
+  // A pending order is confirmed on a call: the button leads to the call panel, so every confirmation leaves its call
+  // outcome (who, when, what the customer said). Confirming without a call stays under Change status.
+  const callFirst = next?.kind === "transition" && next.to === "CONFIRMED" && order.status === "PENDING";
+  const primary = callFirst && next ? { ...next, label: "Call & confirm" } : next;
   const show =
     primary !== null &&
     (primary.kind === "transition" ? perms.manage : primary.kind === "book_courier" ? perms.courier : primary.kind === "record_refund" ? perms.refunds : perms.manage);
   const goTo = (testId: string) => document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   function run() {
     if (!primary) return;
-    if (primary.kind === "transition") commands.requestStatusChange([order], primary.to);
+    const callPanel = callFirst ? document.querySelector('[data-testid="order-call-panel"]') : null;
+    if (callPanel) {
+      callPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      (callPanel.querySelector("a[href^='tel:'], button") as HTMLElement | null)?.focus({ preventScroll: true });
+    } else if (primary.kind === "transition") commands.requestStatusChange([order], primary.to);
     else if (primary.kind === "book_courier") void commands.bookCourier(order);
     else if (primary.kind === "reconcile") goTo("partial-delivery");
     else goTo("order-payments");

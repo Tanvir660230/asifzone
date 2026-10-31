@@ -223,8 +223,9 @@ describe("navigation manifest — derivation", () => {
 
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(11);
-    // Orders: the list, return requests, the two scanning stations (Order Operations phase 4) and Order history.
-    expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/orders/ready", "/admin/return-requests", "/admin/orders/dispatch", "/admin/orders/returns-in", "/admin/orders/history"]);
+    // Orders: the list, Ready to book, Today (Warehouse Operations), return requests, the two scanning stations (Order
+    // Operations phase 4), Order history and Product labels.
+    expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/orders/ready", "/admin/orders/today", "/admin/return-requests", "/admin/orders/dispatch", "/admin/orders/returns-in", "/admin/orders/history", "/admin/orders/product-labels"]);
     // Marketing › Discounts: three pages as tabs (blueprint tab 2 §2)
     expect(sectionTabsFor("/admin/coupons", access("OWNER")).map((t) => t.href)).toEqual(["/admin/flash-sales", "/admin/coupons", "/admin/bundles"]);
     // Inventory groups stock and production (docs/MANUFACTURING.md, STOCK_HUB §7): Stock, Stock levels, Stock check (admin
