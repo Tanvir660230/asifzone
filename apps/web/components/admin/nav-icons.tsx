@@ -1,9 +1,11 @@
 import {
+  BookOpen,
   Boxes,
   ClipboardList,
   CreditCard,
   Gauge,
   LayoutDashboard,
+  LineChart,
   LayoutTemplate,
   Megaphone,
   MessageSquare,
@@ -29,4 +31,6 @@ export const NAV_ICONS: Record<NavIconName, LucideIcon> = {
   analytics: Gauge,
   settings: Settings,
   administration: ShieldCheck,
+  books: BookOpen,
+  reports: LineChart,
 };

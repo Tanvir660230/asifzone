@@ -107,6 +107,10 @@ export interface AdCampaign {
   period: { from: string; to: string }; spend: number; actualSpend: number; plannedSpend: number; orders: number; delivered: number; revenue: number;
   costPerOrder: number | null; roas: number | null; lastActualDay: string | null;
   foreignSpend?: Array<{ currency: string; amount: number }>; budgetHistory?: Array<{ from: string; budgetType: "DAILY" | "LIFETIME" | null; budget: number | null }>;
+  /** Blueprint P0.7 (Q-E): an archived campaign is out of the month-end ad-spend check. */
+  archivedAt?: string | null; archiveReason?: string | null;
+  /** Days in the period a person confirmed as zero spend. */
+  confirmedZeroDays?: string[];
 }
 /** A utm_campaign value visitors came with that no campaign claims yet (Meta sends the campaign's numeric id). */
 export interface UnlinkedAdTag { tag: string; sessions: number; orders: number }
@@ -117,6 +121,10 @@ export const recordDaySpend = (id: string, body: { date: string; amount?: number
 export interface PeriodSpendResult { from: string; to: string; total: number; original: number | null; currency: string | null; rate: number | null; estimated: boolean; ownDays: number; ownTotal: number; sharedDays: number; shared: number }
 /** A total for a stretch of days, shared over the days that have no figure of their own. */
 export const recordPeriodSpend = (id: string, body: { from: string; to: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<PeriodSpendResult>(`${BASE}/ads/campaigns/${id}/period-spend`, { method: "PUT", body });
+/** Archive (or bring back) a campaign — it then leaves (or rejoins) the month-end ad-spend check. */
+export const setCampaignArchived = (id: string, body: { archived: boolean; reason?: string | null }) => apiFetch<{ id: string; archivedAt: string | null }>(`${BASE}/ads/campaigns/${id}/archive`, { method: "POST", body });
+/** Confirm that a campaign spent nothing on these days (needs finance.post and a reason). */
+export const confirmZeroSpend = (id: string, body: { dates: string[]; reason: string }) => apiFetch<{ campaignId: string; confirmed: string[] }>(`${BASE}/ads/campaigns/${id}/confirm-zero`, { method: "POST", body });
 export const importMetaSpend = (body: { days?: number; since?: string }) =>
   apiFetch<{ since: string; until: string; accounts: Array<{ adAccountId: string; financialAccount: string | null; days: number; campaigns: number; error: string | null }> }>(`${BASE}/ads/import-meta`, { method: "POST", body });
 
@@ -163,7 +171,11 @@ export const quickRefill = (body: { variantId: string; quantity: number; used?: 
 
 export interface ProfitReport {
   period: { from: string; to: string };
-  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; outsideSalesCost: number; outsideSaleCostPct: number | null; otherCosts: number; netProfit: number };
+  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; outsideSalesCost: number; outsideSaleCostPct: number | null; stockCorrections?: number; grossMargin?: number; otherCosts: number; netProfit: number };
+  /** The books profit ladder (blueprint P2.4): net sales down to the income statement's net profit; subtotals marked. */
+  ladder?: Array<{ key: string; label: string; amount: number; subtotal?: boolean }>;
+  /** What the figures still lean on: sales with no cost, costs booked as estimates, and a whole month's status. */
+  completeness?: { missingCostLines: number; estimatedCostLines: number; monthStatus: "OPEN" | "SOFT_CLOSED" | "CLOSED" | null };
   orders: Array<{ orderId: string; orderNumber: string; date: string; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number }>;
   products: Array<{ name: string; units: number; sales: number; costs: number; contribution: number; marginPct: number | null }>;
 }
@@ -171,7 +183,8 @@ export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitR
 export interface LaunchReport { /** null: the books open before the first order, so there were no weeks before them. */ period: { from: string; to: string } | null; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
 /** One business day of the books in the owner's words (docs/FINANCE_PROFIT_DASHBOARD.md). Costs are positive amounts.
- * `stockCorrections`: count differences and cost corrections (positive = a cost, negative = a gain) — stock put right, not
+ * `stockCorrections`: damaged or lost stock written off, count differences and cost corrections (owner decision Q15 = A;
+ * positive = a cost, negative = a gain) — stock put right, not
  * goods sold. `salesProfit`: the profit from selling, before them; `profit` (the books) = salesProfit − stockCorrections. */
 export interface ProfitDay { date: string; orders: number; sales: number; goods: number; stockCorrections: number; packaging: number; delivery: number; paymentFees: number; ads: number; running: number; salesProfit: number; profit: number }
 export type ProfitTotals = Omit<ProfitDay, "date"> & { marginPct: number | null; salesMarginPct: number | null; salesPerAdTaka: number | null };

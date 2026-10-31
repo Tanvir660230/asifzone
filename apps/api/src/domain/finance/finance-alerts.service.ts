@@ -14,6 +14,7 @@ import { listReconciliationChecks } from "./reconciliation.service";
 import { unpaidDeliveredCod } from "./courier-payouts.service";
 import { dueDates } from "./expenses.service";
 import { payrollOverview, payrollStartMonth } from "./payroll.service";
+import { adSpendGaps } from "./ads.service";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 export interface FinanceAlert {
@@ -174,7 +175,10 @@ export async function financeAlerts() {
   else if (openingBatch?.status !== "POSTED") add({ key: "books.not_started", severity: "warning", title: "Opening balances not posted", detail: `Books start on ${business.openingDate}. Enter what you had and owed that day, then post it — sales are recorded from then on.`, count: 1, href: "/admin/finance/opening", action: "Finish starting the books" });
   add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
   // The courier holds the cash for delivered COD parcels until it pays out — money the owner should chase.
-  if (unpaidCod) add({ key: "courier.unpaid", severity: "warning", title: "Unpaid by Steadfast", detail: `Delivered more than ${COURIER_UNPAID_DAYS} days ago and not in any payout yet: ${unpaidCod.orders.slice(0, 4).map((o) => o.orderNumber).join(" · ")}${unpaidCod.orders.length > 4 ? " …" : ""}. Ask Steadfast for the payout, then import it.`, count: unpaidCod.orders.length, amount: major(unpaidCod.orders.reduce((s, o) => s + toMinor(o.total, cur), 0)), href: "/admin/finance/courier", action: "Open Steadfast check" });
+  // Blueprint P1.2: the owner may snooze this reminder until a date (chasing Steadfast takes time).
+  const snoozed = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { courierUnpaidSnoozedUntil: true } });
+  const snoozedUntil = snoozed.courierUnpaidSnoozedUntil ? businessDateOf(snoozed.courierUnpaidSnoozedUntil) : null;
+  if (unpaidCod && !(snoozedUntil && businessToday(business) <= snoozedUntil)) add({ key: "courier.unpaid", severity: "warning", title: "Unpaid by Steadfast", detail: `Delivered more than ${COURIER_UNPAID_DAYS} days ago and not in any payout yet: ${unpaidCod.orders.slice(0, 4).map((o) => o.orderNumber).join(" · ")}${unpaidCod.orders.length > 4 ? " …" : ""}. Ask Steadfast for the payout, then import it.`, count: unpaidCod.orders.length, amount: major(unpaidCod.orders.reduce((s, o) => s + toMinor(o.total, cur), 0)), href: "/admin/finance/courier", action: "Open Steadfast check" });
   add({ key: "events.waiting", severity: "warning", title: "Financial events waiting to post", detail: "Received more than 15 minutes ago and still not posted.", count: waitingEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
 
   const labels = new Map<string, string>(listReconciliationChecks().map((c) => [c.key, c.label]));
@@ -222,7 +226,7 @@ export async function financeAlerts() {
 
   if (periods.length) {
     const first = businessDateOf(periods[0]!.startDate).slice(0, 7);
-    add({ key: "periods.open", severity: "info", title: "Months ended but not closed", detail: `From ${first}. Closing a month stops further postings into it.`, count: periods.length, href: `/admin/finance/attention?view=month-end&month=${first}`, action: "Month-end checklist" });
+    add({ key: "periods.open", severity: "info", title: "Months ended but not closed", detail: `From ${first}. Closing a month stops further postings into it.`, count: periods.length, href: `/admin/finance/month-end?month=${first}`, action: "Month-end checklist" });
   }
 
   // Finance Center: subscriptions to renew, the SMS balance running low, costs still to split (docs/FINANCE_CENTER.md)
@@ -253,6 +257,14 @@ export interface ChecklistStep {
   href: string;
 }
 
+/** Blueprint I-4: a month reads Final once its period is CLOSED and no month-end step is open — or when it was closed
+ * before the rule took effect, so months shared under the old rule keep their label. Draft otherwise. Pure. */
+export function monthLabel(period: { status: string; closedAt: Date | null } | null, openSteps: number, effectiveAt: Date): "FINAL" | "DRAFT" {
+  if (period?.status !== "CLOSED") return "DRAFT";
+  if (openSteps === 0) return "FINAL";
+  return period.closedAt && period.closedAt < effectiveAt ? "FINAL" : "DRAFT";
+}
+
 /** What has to be true before a month is closed, in the order an accountant works through it. Default: last month. */
 export async function monthEndChecklist(q: { month?: string } = {}) {
   const { business } = await getFinanceContext();
@@ -279,6 +291,11 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     prisma.loanAccrualRun.findFirst({ where: { businessId: business.id, periodKey: month, status: "POSTED" }, select: { id: true } }),
     prisma.recurringCommitment.findMany({ where: { businessId: business.id, isActive: true }, include: { expenses: { select: { periodKey: true, movement: { select: { status: true } } } } } }),
     latestCheckRuns(business.id),
+  ]);
+  const [draftPayouts, adGaps, rule] = await Promise.all([
+    prisma.clearingSettlement.count({ where: { businessId: business.id, status: "DRAFT", settlementDate: { lte: day(to) } } }),
+    adSpendGaps(month),
+    prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { monthEndRuleEffectiveAt: true } }),
   ]);
   const [payRun, payees, payrollStart] = await Promise.all([
     prisma.payRun.findFirst({ where: { businessId: business.id, periodKey: month, status: { not: "REVERSED" } }, select: { number: true, status: true } }),
@@ -313,6 +330,19 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
   const labels = new Map<string, string>(listReconciliationChecks().map((c) => [c.key, c.label]));
   const afterMonth = checkRuns.filter((r) => businessDateOf(r.createdAt) > to);
   const differing = checkRuns.filter((r) => r.status === "DIFFERENCE" || r.status === "ERROR").map((r) => labels.get(r.checkKey) ?? r.checkKey);
+  // Blueprint P0.7 step 10 (P-5): payouts already imported or entered are posted. Money Steadfast still holds is a
+  // receivable shown as information, never a step.
+  step({ key: "payouts", label: "Courier and gateway payouts posted", status: draftPayouts ? "TODO" : "DONE", detail: draftPayouts ? `${plural(draftPayouts, "payout")} dated by ${to} entered but not posted.` : "Every payout entered so far is posted.", href: "/admin/finance/settlements" });
+  // Step 11 (Q16 = A, Q-E): every in-scope campaign has each day's spend, or a confirmed zero.
+  const gapDays = adGaps.reduce((s, g) => s + g.missing.length, 0);
+  step({
+    key: "ads",
+    label: "Ad spend complete",
+    status: gapDays ? "TODO" : "DONE",
+    detail: gapDays ? `${plural(gapDays, "day")} without spend or a confirmed zero: ${adGaps.map((g) => `${g.name} (${g.missing.length})`).join(", ")}.` : "Every campaign with spend has each day recorded.",
+    href: `/admin/finance/ads?from=${from}&to=${to}`,
+  });
+
   step({ key: "checks", label: "Finance checks match", status: differing.length || afterMonth.length < labels.size ? "TODO" : "DONE", detail: differing.length ? `Difference: ${differing.join(", ")}.` : afterMonth.length < labels.size ? `Run every check after ${to}.` : "Every check matched after the month ended.", href: "/admin/finance/checks" });
 
   const before = steps.filter((s) => s.status === "TODO").length;
@@ -324,5 +354,8 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     open: before,
     /** Every step done (or not applicable) and the month has ended. */
     ready: before === 0 && to < today,
+    /** Blueprint I-4: Final once CLOSED with every step done, or closed before the rule took effect; Draft otherwise. */
+    label: monthLabel(period ? { status: period.status, closedAt: period.closedAt } : null, before, rule.monthEndRuleEffectiveAt),
+    adGaps,
   };
 }

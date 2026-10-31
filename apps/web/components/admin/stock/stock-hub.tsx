@@ -12,7 +12,6 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -43,6 +42,7 @@ import { TraceSheet } from "./trace-sheet";
 import type { ProductGroup } from "./stock-shared";
 import { byProduct } from "./stock-shared";
 import { ProblemAlert } from "./stock-problem";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type Sheet = "bought" | "reorder" | "filled" | "batch-fill" | "counted" | "guided-count" | null;
 const GO_LIVE = "Stock costing starts at go-live";
@@ -98,7 +98,8 @@ export function StockHub() {
     for (const k of ["bought", "count", "fill"]) next.delete(k);
     const s = next.toString();
     router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
-    if (!overview.data.costingActive) { toast.info(GO_LIVE); return; }
+    // Received goods works before go-live too (blueprint P1.4 simple mode); fills and counts wait for it
+    if (!overview.data.costingActive && deepLinkKind !== "bought") { toast.info(GO_LIVE); return; }
     if (deepLinkKind === "bought") { setBoughtStart(deepLink === "new" ? null : { supplierName: null, lines: [{ variantId: deepLink, qty: 1, lastUnitCost: null }] }); setSheet("bought"); }
     else if (deepLinkKind === "fill") setSheet("filled");
     else { setCountFor([deepLink]); setSheet("guided-count"); }
@@ -108,12 +109,13 @@ export function StockHub() {
   const opened = useRef(false);
   useEffect(() => {
     const want = params.get("open");
-    if (opened.current || !overview.data?.costingActive || (want !== "filled" && want !== "bought" && want !== "counted")) return;
+    if (opened.current || !overview.data || (want !== "filled" && want !== "bought" && want !== "counted")) return;
+    if (!overview.data.costingActive && want !== "bought") return;
     opened.current = true;
     setSheet(want === "filled" && today.data?.fill ? "batch-fill" : want);
   }, [params, overview.data, today.data]);
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="Stock isn't available to your role" description="Ask the owner for access to inventory." /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Boxes} page="Stock" /></div>;
 
   const data = overview.data;
   const live = data?.costingActive ?? false;
@@ -128,7 +130,7 @@ export function StockHub() {
 
   /** The one thing to do with an item, from the search box or the item itself. */
   function doAction(i: StockListItem, a: QuickAction) {
-    if (!live) { toast.info(GO_LIVE); return; }
+    if (!live && a !== "reorder") { toast.info(GO_LIVE); return; }
     if (a === "fill") setSheet(today.data?.fill ? "batch-fill" : "filled");
     else if (a === "reorder") { setBoughtStart({ supplierName: null, lines: [{ variantId: i.variantId, qty: Math.max(1, i.reorder?.suggested ?? 1), lastUnitCost: null }] }); setSheet("bought"); }
     else { setCountFor([i.variantId]); setSheet("guided-count"); }
@@ -140,7 +142,7 @@ export function StockHub() {
       if (product) { setPolicyFor(product); if (!wide) setItemOf(null); }
     } : undefined,
     onFill: live && can("manufacturing.view") ? () => doAction(i, "fill") : undefined,
-    onReorder: live && can("purchasing.receive") ? () => doAction(i, "reorder") : undefined,
+    onReorder: can("purchasing.receive") ? () => doAction(i, "reorder") : undefined,
     onCount: live && can("inventory.adjust") ? () => doAction(i, "count") : undefined,
   });
 
@@ -164,9 +166,9 @@ export function StockHub() {
                 <Button
                   key={a.key}
                   variant={a.variant}
-                  disabled={!data || !live}
-                  title={data && !live ? GO_LIVE : undefined}
-                  aria-describedby={data && !live ? "stock-golive" : undefined}
+                  disabled={!data || (!live && a.key !== "bought")}
+                  title={data && !live && a.key !== "bought" ? GO_LIVE : undefined}
+                  aria-describedby={data && !live && a.key !== "bought" ? "stock-golive" : undefined}
                   onClick={() => setSheet(a.key === "filled" && today.data?.fill ? "batch-fill" : a.key)}
                   data-testid={`stock-action-${a.key}`}
                 >
@@ -181,7 +183,7 @@ export function StockHub() {
       {data && !live && (
         <div id="stock-golive" data-testid="stock-golive">
           <Alert variant="info" title={GO_LIVE}>
-            Purchases, fills and counts are recorded here once the stock has been counted and valued. Until then, the figures below are what the shop has now.
+            Fills and counts are recorded here once the stock has been counted and valued. Received goods can be recorded now: the stock goes in and what was paid is kept for the books. Until then, the figures below are what the shop has now.
           </Alert>
         </div>
       )}
@@ -248,7 +250,7 @@ export function StockHub() {
         </>
       ) : null}
 
-      {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} start={boughtStart ?? undefined} onClose={() => { setSheet(null); setBoughtStart(null); }} />}
+      {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} canEditCatalog={can("catalog.manage")} start={boughtStart ?? undefined} onClose={() => { setSheet(null); setBoughtStart(null); }} />}
       {sheet === "reorder" && today.data?.reorder && (
         <ReorderSheet reorder={today.data.reorder} today={today.data.today} onRecord={(s) => { setBoughtStart(s); setSheet("bought"); }} onClose={() => setSheet(null)} />
       )}
@@ -275,7 +277,7 @@ function FinishDialog({ purchase, canOwnerMoney, onClose }: { purchase: StockPur
   const [from, setFrom] = useState("");
   const [problem, setProblem] = useState<StockProblem | null>(null);
   const finish = useMutation({
-    mutationFn: () => stockApi.finishStockPurchase(purchase.id, from === "" ? {} : { paidFrom: from === "owner" ? { ownerPocket: true } : { financialAccountId: from } }),
+    mutationFn: () => stockApi.finishStockPurchase(purchase.id, from === "" ? {} : { paidFrom: from === "owner" ? { ownerPocket: true, funding: "CAPITAL" } : from === "owner-repay" ? { ownerPocket: true, funding: "REIMBURSE" } : { financialAccountId: from } }),
     onSuccess: () => {
       toast.success("Purchase finished");
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
@@ -298,8 +300,9 @@ function FinishDialog({ purchase, canOwnerMoney, onClose }: { purchase: StockPur
         <p className="text-sm text-fg-muted">It stopped at {purchase.pendingStep ? stockApi.PENDING_STEP_LABEL[purchase.pendingStep] : "the last step"}. Finishing runs the steps that are left.</p>
         <Field htmlFor="finish-from" label="Paid from" hint="Another account can be chosen only while nothing has been paid for it.">
           <Select id="finish-from" value={from} onChange={(e) => setFrom(e.target.value)} disabled={accountsQ.isLoading}>
-            <option value="">As before: {purchase.paidFrom.kind === "OWNER" ? "owner's own money" : purchase.paidFrom.name}</option>
-            {canOwnerMoney && purchase.paidFrom.kind !== "OWNER" && <option value="owner">Owner&apos;s own money</option>}
+            <option value="">As before: {purchase.paidFrom.kind === "OWNER" ? (purchase.paidFrom.funding === "REIMBURSE" ? "owner's own money, to repay" : "owner's own money, as capital") : purchase.paidFrom.name}</option>
+            {canOwnerMoney && purchase.paidFrom.kind !== "OWNER" && <option value="owner-repay">Owner&apos;s own money — to repay later</option>}
+            {canOwnerMoney && purchase.paidFrom.kind !== "OWNER" && <option value="owner">Owner&apos;s own money — put in as capital</option>}
             {accounts.filter((a) => a.id !== purchase.paidFrom.financialAccountId).map((a) => <option key={a.id} value={a.id}>{a.name} ({formatPrice(a.currentBalance)})</option>)}
           </Select>
         </Field>

@@ -23,6 +23,7 @@ import * as purchasingApi from "@/lib/api/purchasing";
 import type { ReportId } from "@/lib/api/purchasing";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type Format = "money" | "int" | "pct" | "text";
 interface Column { key: string; label: string; format: Format }
@@ -118,7 +119,7 @@ export default function FinanceReportsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={BarChart3} title="Reports aren't available to your role" />
+        <PermissionState icon={BarChart3} page="Reports" />
       </div>
     );
   }

@@ -28,6 +28,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { GoodsReceipt, PurchasableVariant } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** Goods receipts (docs/FINANCE_PHASE_4D.md): what actually arrived. Posting one brings the stock and its cost in together;
  * a posted receipt never changes — a mistake is reversed. */
@@ -65,7 +66,7 @@ export default function GoodsReceiptsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={PackageCheck} title="Purchasing isn't available to your role" />
+        <PermissionState icon={PackageCheck} page="Purchasing" />
       </div>
     );
   }

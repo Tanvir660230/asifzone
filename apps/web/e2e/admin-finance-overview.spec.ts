@@ -27,9 +27,9 @@ test.beforeAll(async ({ browser }) => {
   owner = await login(browser);
 });
 
-test("the Finance module opens on the owner's home; every other page is in the folded map", async () => {
+test("Money opens on the owner's overview; every other money and books page is in the folded map", async () => {
   await owner.goto("/admin/finance");
-  await expect(owner.getByRole("heading", { name: "Finance", level: 1 })).toBeVisible(NAV);
+  await expect(owner.getByRole("heading", { name: "Money", level: 1 })).toBeVisible(NAV);
   await expect(owner.getByTestId("owner-month")).toBeVisible(NAV);
   await expect(owner.getByTestId("owner-money").getByRole("link", { name: /Cash, bank and bKash/ })).toHaveAttribute("href", "/admin/finance/accounts");
   await expect(owner.getByTestId("owner-todo").or(owner.getByTestId("owner-todo-empty"))).toBeVisible(NAV);
@@ -38,7 +38,7 @@ test("the Finance module opens on the owner's home; every other page is in the f
   await owner.keyboard.press("Escape");
   await owner.getByTestId("finance-map-fold").locator("summary").click();
   const map = owner.getByTestId("finance-map");
-  for (const group of ["Money", "Sales & payments", "Purchasing", "Books & setup", "Payroll & partners"]) {
+  for (const group of ["Money", "Money › Payments & refunds", "Money › Bills to pay", "Books", "Books › Statements", "Reports › Profit", "Books setup"]) {
     await expect(map.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
   await map.getByRole("link", { name: /Start the books/ }).click();
@@ -47,11 +47,11 @@ test("the Finance module opens on the owner's home; every other page is in the f
   await expect(owner.getByTestId("opening-posted").or(owner.getByTestId("opening-date-step"))).toBeVisible(NAV);
 });
 
-test("payments pages sit in Sales & payments with the group's list beside them", async () => {
+test("payments pages sit in Money › Payments & refunds with the group's list beside them", async () => {
   await owner.goto("/admin/payments/transactions");
   await expect(owner.getByRole("heading", { name: "Customer payments" })).toBeVisible(NAV);
-  const list = owner.getByRole("navigation", { name: "Sales & payments" });
-  await expect(list.getByRole("link", { name: "Courier & gateway payouts" })).toHaveAttribute("href", "/admin/finance/settlements");
+  const list = owner.getByRole("navigation", { name: "Payments & refunds" });
+  await expect(list.getByRole("link", { name: "Refunds" })).toHaveAttribute("href", "/admin/payments/refunds");
   await list.getByRole("link", { name: "Gateway monitor" }).click();
   await expect(owner.getByRole("heading", { name: "Gateway monitor" })).toBeVisible(NAV);
 });

@@ -2678,6 +2678,7 @@ model StoreSetting {
   /// Courier automation (Order Operations phase 5, plan M8): a parcel out longer than this (from handover, or booking for
   /// an unscanned one) is "stuck in transit"; a return the courier reported this long ago that hasn't arrived is overdue.
   stuckInTransitDays           Int      @default(6)
+  /// Owner decision Q-B: the store's one follow-up deadline for parcels coming back (FinanceBusiness.returnFollowUpDays was folded in).
   returnNotBackDays            Int      @default(14)
   updatedAt                    DateTime @updatedAt
 }
@@ -3479,6 +3480,9 @@ model FinanceBusiness {
   /// once the opening balances are posted.
   openingDate                 DateTime?                 @db.Date
   /// Phase 3: may an approved ESTIMATED cost be posted for a sale line with no recorded cost? Default: never (KNOWN only).
+  /// Blueprint P0.7 / I-4: a CLOSED month is Final when every month-end step is done, or when it was closed before this
+  /// rule took effect (set when the column was added, so months closed earlier keep their Final label).
+  monthEndRuleEffectiveAt     DateTime                  @default(now())
   costPolicy                  FinanceCostPolicy         @default(KNOWN_ONLY)
   /// Phase 4: when inventory costing became authoritative (set by the 4C valuation cutover). Null = costing is not active:
   /// order lines keep the catalog cost (labelled CATALOG) and no valuation entry is written.
@@ -3510,6 +3514,10 @@ model FinanceBusiness {
   /// Smart stock page: a count loss by someone without inventory.approve worth at least this (at the average cost) waits for
   /// the owner (StockCountApproval) instead of moving the stock.
   countLossApprovalThreshold  Decimal                   @default(1000) @db.Decimal(18, 2)
+  /// No longer read: folded into StoreSetting.returnNotBackDays (migration 20261206100000). Kept because migrations only add.
+  returnFollowUpDays          Int                       @default(14)
+  /// Blueprint P1.2 (tab 2 §3): the owner may snooze the "Unpaid by Steadfast" reminder until this business date (inclusive).
+  courierUnpaidSnoozedUntil   DateTime?                 @db.Date
   /// What the last night's run did, for the settings page.
   autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())
@@ -3541,6 +3549,8 @@ model FinanceBusiness {
   stockCountApprovals         StockCountApproval[]
   materialRolls               MaterialRoll[]
   stockHubEntries             StockHubEntry[]
+  ownerAdvances               OwnerAdvance[]
+  ownerAdvanceAllocations     OwnerAdvanceAllocation[]
   landedCosts                 LandedCost[]
   courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
@@ -3781,6 +3791,10 @@ model AdCampaign {
   /// The page the ads send people to (a landing page /lp/<slug>, a product) — for profit after ads.
   landingPath        String?
   isActive           Boolean          @default(true)
+  /// Owner decision Q-E: an explicit Archive takes the campaign out of the month-end ad-spend check (blueprint P0.7).
+  archivedAt         DateTime?
+  archivedByAdminId  String?
+  archiveReason      String?
   notes              String?
   createdByAdminId   String?
   createdAt          DateTime         @default(now())
@@ -3807,6 +3821,11 @@ model AdSpendDay {
   impressions      Int?
   clicks           Int?
   purchases        Int?
+  /// Owner decision Q-E: a day with no spend counts as recorded only once a person confirms the zero (finance.post +
+  /// reason). Zero rows from imports (CSV, PERIOD, the API) stay unconfirmed until then.
+  confirmedZeroAt        DateTime?
+  confirmedZeroByAdminId String?
+  confirmedZeroReason    String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -4419,6 +4438,8 @@ model TreasuryMovement {
   landedCost             LandedCost?
   matches                BankTransactionMatch[]
   supplierAllocations    SupplierAllocation[]
+  ownerAdvance           OwnerAdvance?          @relation("OwnerAdvanceFunding")
+  ownerAdvanceRepayments OwnerAdvanceAllocation[] @relation("OwnerAdvanceRepayment")
   expense                Expense?
   loanDrawdown           Loan?                  @relation("LoanDrawdown")
   loanRepaymentPrincipal LoanRepayment?         @relation("RepaymentPrincipal")
@@ -4588,6 +4609,8 @@ model BankReconciliation {
 enum FinanceCostPolicy {
   KNOWN_ONLY
   APPROVED_ESTIMATES
+  /// Blueprint P0.2 (Q3 = A, Q-D): a sold line with no cost is booked at an automatic, labelled estimate.
+  AUTO_ESTIMATE
 }
 
 enum FinanceExceptionKind {
@@ -5097,6 +5120,11 @@ model GoodsReceipt {
   evidence                String?
   /// Over-receipt beyond the tolerance needs purchasing.approve and a reason.
   overReceiptReason       String?
+  /// Blueprint P0.3 (owner Q7): other live receipts this one looked like when it was entered (same supplier, ±3 days,
+  /// ≥ 70% items, total ±1%) — a warning only, never a refusal. Null when nothing matched.
+  duplicateWarning        Json?
+  /// Why the person went ahead despite the warning (optional).
+  duplicateReason         String?
   createdByAdminId        String?
   postedByAdminId         String?
   postedAt                DateTime?
@@ -6461,6 +6489,48 @@ enum StockHubEntryKind {
 }
 
 /// Stock hub (docs/STOCK_HUB.md): one Bought or Counted entry made on /admin/stock, keyed by its Idempotency-Key. Each
+/// Owner decision Q-F (blueprint P1.4): the owner-advance subledger. One line per purchase or expense the owner paid from
+/// his own pocket to be repaid (its funding deposit credits liability.owner_reimbursable); a line counts once that deposit
+/// is POSTED. Ledger entries are unchanged — the subledger only links each repayment to what it repays.
+model OwnerAdvance {
+  id                String                   @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// The deposit that brought the owner's money in, owed back to him.
+  fundingMovementId String                   @unique
+  fundingMovement   TreasuryMovement         @relation("OwnerAdvanceFunding", fields: [fundingMovementId], references: [id], onDelete: Restrict)
+  /// StockPurchase (a stock hub entry) or Expense.
+  sourceType        String
+  sourceId          String
+  amount            Decimal                  @db.Decimal(18, 2)
+  advanceDate       DateTime                 @db.Date
+  description       String
+  createdByAdminId  String?
+  createdAt         DateTime                 @default(now())
+  allocations       OwnerAdvanceAllocation[]
+
+  @@index([businessId, advanceDate])
+  @@index([sourceType, sourceId])
+}
+
+/// Part of a "Repay owner" withdrawal set against one advance line. It counts while the withdrawal is waiting for approval
+/// or posted; a rejected or reversed withdrawal frees it (read from the movement's status, never copied here).
+model OwnerAdvanceAllocation {
+  id                  String           @id @default(cuid())
+  businessId          String
+  business            FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  advanceId           String
+  advance             OwnerAdvance     @relation(fields: [advanceId], references: [id], onDelete: Restrict)
+  repaymentMovementId String
+  repaymentMovement   TreasuryMovement @relation("OwnerAdvanceRepayment", fields: [repaymentMovementId], references: [id], onDelete: Restrict)
+  amount              Decimal          @db.Decimal(18, 2)
+  createdByAdminId    String?
+  createdAt           DateTime         @default(now())
+
+  @@unique([repaymentMovementId, advanceId])
+  @@index([advanceId])
+}
+
 /// entry composes existing documents (receipt, bill, payment, landed cost; counts and adjustments); `steps` records what
 /// each step made, so a retry after a mid-way failure resumes where it stopped and a replay writes nothing. `leaseUntil`:
 /// only one request works on an entry at a time (a double tap can't write twice).

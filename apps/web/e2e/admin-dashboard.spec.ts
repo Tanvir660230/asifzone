@@ -41,10 +41,10 @@ test.describe("admin dashboard", () => {
     await page.keyboard.press("Control+k");
     const dialog = page.getByRole("dialog", { name: "Search and jump" });
     await expect(dialog).toBeVisible();
-    await page.keyboard.type("inventory");
-    await expect(dialog.getByRole("option", { name: /Inventory/ }).first()).toBeVisible();
+    await page.keyboard.type("stock");
+    await expect(dialog.getByRole("option", { name: /Stock/ }).first()).toBeVisible();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/admin\/stock/, NAV); // Inventory opens on the stock hub (docs/STOCK_HUB.md)
+    await expect(page).toHaveURL(/\/admin\/stock/, NAV); // the Stock section opens on the stock hub (docs/STOCK_HUB.md)
   });
 
   test("Create menu offers a new order", async ({ page }) => {

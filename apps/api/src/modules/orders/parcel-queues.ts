@@ -7,11 +7,13 @@ import { prisma } from "../../config/prisma";
  * badges and the scanning pages.
  *
  *   Handover pending  booked in the last 7 days, still open, no handover scan yet ("booked − handed over" should be 0)
- *   Coming back       cancelled / returned units not yet restocked and the parcel hasn't physically arrived
+ *   Coming back       cancelled / returned units not yet restocked and the parcel hasn't physically arrived — the one
+ *                     list of parcels on their way back (Home's "Parcels to receive" counts it)
  *   Inspection        physically back, not yet inspected (inspection is the only step that restocks)
  *   Discrepancy       physically back although nothing says it should be (the courier still reports it out / delivered)
  *   Stuck in transit  shipped and out longer than stuckInTransitDays (phase 5)
- *   Return overdue    coming back, reported longer ago than returnNotBackDays (phase 5)
+ *   Return overdue    coming back, reported longer ago than returnNotBackDays (phase 5; the store's one follow-up
+ *                     deadline — owner decision Q-B)
  */
 
 /** Statuses where the parcel is still meant to go out (or is out). */
@@ -69,13 +71,14 @@ export function parcelQueueWhere(queue: ParcelQueue, now: Date, policy: ParcelPo
       };
     case "comingBack":
       return {
-        ...booked,
         receivedBackAt: null,
         OR: [
-          // Cancelled after booking: every unit not yet restocked is on its way back.
+          // Cancelled after it shipped: every unit not yet restocked is on its way back. Booked or not — a parcel sent
+          // without a Steadfast booking is out too (a cancellation before shipping restocks at once, and the Phase 1
+          // backfill marked every older cancellation restocked, so nothing else matches).
           { status: "CANCELLED", items: { some: { restockedQuantity: { lt: prisma.orderItem.fields.quantity } } } },
           // A return, a partial delivery's undelivered units, a recorded customer return: returned but not yet restocked.
-          { status: { in: ["RETURNED", "PARTIALLY_DELIVERED", "DELIVERED", "REFUNDED"] }, items: { some: { restockedQuantity: { lt: prisma.orderItem.fields.returnedQuantity } } } },
+          { ...booked, status: { in: ["RETURNED", "PARTIALLY_DELIVERED", "DELIVERED", "REFUNDED"] }, items: { some: { restockedQuantity: { lt: prisma.orderItem.fields.returnedQuantity } } } },
         ],
       };
     case "inspectionPending":

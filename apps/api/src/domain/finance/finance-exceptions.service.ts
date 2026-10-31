@@ -107,7 +107,7 @@ export async function acknowledgeException(id: string, note: string, actor: Fina
  * it (a RESOLVED exception is final, so nothing is written to it afterwards). */
 export async function markEstimateApproved(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, unitCostMinor: number, note: string, actor: FinanceActor, financialEventId: string | null = null) {
   const policy = (await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true } })).costPolicy;
-  if (policy !== "APPROVED_ESTIMATES") {
+  if (policy !== "APPROVED_ESTIMATES" && policy !== "AUTO_ESTIMATE") {
     throw financeError(409, "ESTIMATES_NOT_PERMITTED", "The accounting policy books known costs only — an estimate can't be posted (change the cost policy first)");
   }
   const e = await lockException(tx, business.id, id);

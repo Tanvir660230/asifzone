@@ -64,7 +64,7 @@ export function ProductSalesHeatmap({ data }: { data: ProductSalesHeatmapData })
                     onMouseEnter={() => setHovered({ productName: product.name, day, qty })}
                     onMouseLeave={() => setHovered(null)}
                     className="aspect-square rounded-sm"
-                    style={{ backgroundColor: `rgba(17,17,17,${alpha})` }}
+                    style={{ backgroundColor: `rgb(var(--color-ink-900) / ${alpha})` }}
                   />
                 );
               })}
@@ -75,7 +75,7 @@ export function ProductSalesHeatmap({ data }: { data: ProductSalesHeatmapData })
       <div className="mt-3 flex items-center justify-end gap-2 text-[10px] text-ink-400">
         <span>Less</span>
         {[0.05, 0.2, 0.4, 0.6, 0.9].map((alpha) => (
-          <span key={alpha} className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: `rgba(17,17,17,${alpha})` }} />
+          <span key={alpha} className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: `rgb(var(--color-ink-900) / ${alpha})` }} />
         ))}
         <span>More</span>
       </div>

@@ -89,6 +89,21 @@ describe("brand themes", () => {
     expect(contrast(hex("#123B73"), step("nasihamart", "cream-100")), "secondary blue on ivory").toBeGreaterThanOrEqual(4.5);
   });
 
+  it("admin data-meaning tokens (estimate, missing) are declared and legible (ERP UI plan tab 21 §1)", () => {
+    const admin = tokens.surfaces.admin!.cssVariables as Record<string, string>;
+    const resolve = (v: string) => {
+      const m = /^rgb\(var\((--color-[a-z]+-\d+)\)\)$/.exec(v);
+      expect(m, v).toBeTruthy();
+      return channels(admin[m![1]!] ?? tokens.cssVariables[m![1]!]!);
+    };
+    for (const kind of ["estimate", "missing"]) {
+      const bg = admin[`--data-${kind}-bg`];
+      const fg = admin[`--data-${kind}-fg`];
+      expect(bg && fg, kind).toBeTruthy();
+      expect(contrast(resolve(fg!), resolve(bg!)), kind).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it("keeps Nasihamart's text legible (WCAG AA 4.5:1) on its surfaces, inside the light band too", () => {
     const canvas = step("nasihamart", "cream-100");
     const surface = step("nasihamart", "cream-50");

@@ -107,7 +107,9 @@ describe("draft", () => {
     expect(res.status).toBe(200);
     expect(res.body.prerequisites).toMatchObject({ openingDateSet: true, openingBalancesPosted: true, costingActive: false });
     expect(res.body.preview.inTransit).toBeGreaterThanOrEqual(240);
-    const missing = await listCutoverLines({ status: "MISSING", page: 1, pageSize: 200 });
+    // its own line (by SKU), not the first page of the whole store: a long-lived test database holds hundreds
+    const { sku } = await prisma.productVariant.findUniqueOrThrow({ where: { id: v.B!.id }, select: { sku: true } });
+    const missing = await listCutoverLines({ status: "MISSING", search: sku, page: 1, pageSize: 200 });
     expect(missing.lines.map((l) => l.variantId)).toContain(v.B!.id);
   });
 });

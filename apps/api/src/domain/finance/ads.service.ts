@@ -611,6 +611,8 @@ export async function listCampaigns(q: { from?: string; to?: string }) {
     const revenue = attributed.reduce((s, o) => s + toMinor(o.total, cur), 0);
     out.push({
       id: c.id, name: c.name, platform: c.platform, externalId: c.externalId, objective: c.objective, adAccount: c.adAccount, isActive: c.isActive,
+      archivedAt: c.archivedAt, archiveReason: c.archiveReason,
+      confirmedZeroDays: c.spendDays.filter((d) => d.confirmedZeroAt).map((d) => businessDateOf(d.date)).filter((d) => d >= from && d <= to),
       startDate: businessDateOf(c.startDate), endDate: c.endDate ? businessDateOf(c.endDate) : null, budgetType: c.budgetType, budget: c.budget ? major(toMinor(c.budget, cur)) : null,
       landingPath: c.landingPath, notes: c.notes,
       period: { from, to }, spend: major(spend), actualSpend: major(actualMinor), plannedSpend: major(plannedMinor),
@@ -670,4 +672,84 @@ async function attributedOrders(c: { externalId: string | null; name: string; la
   });
   const sessions = new Set(views.filter((v) => (v.utmCampaign && keys.includes(v.utmCampaign.toLowerCase())) || (c.landingPath && v.path?.startsWith(c.landingPath))).map((v) => v.sessionId));
   return inRange.filter((o) => sessions.has(o.sessionId!));
+}
+
+// ── Month-end ad-spend completeness (blueprint P0.7; owner decisions Q16 = A, Q-E) ─────────────────────────────────────
+
+/** Archive (or bring back) a campaign. An archived campaign is out of scope of the month-end ad-spend check (Q-E: "not
+ * archived"); its spend stays in the books and the list. Isn't a delete, and doesn't touch `isActive`. */
+export async function setCampaignArchived(id: string, input: { archived: boolean; reason?: string | null }, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  const c = await prisma.adCampaign.findFirst({ where: { id, businessId: business.id } });
+  if (!c) throw financeError(404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+  if (Boolean(c.archivedAt) === input.archived) return { id, archivedAt: c.archivedAt, archiveReason: c.archiveReason };
+  return financeTransaction(async (tx) => {
+    const after = await tx.adCampaign.update({
+      where: { id },
+      data: input.archived ? { archivedAt: new Date(), archivedByAdminId: adminOf(actor), archiveReason: input.reason ?? null } : { archivedAt: null, archivedByAdminId: null, archiveReason: null },
+    });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: input.archived ? "ad_campaign.archive" : "ad_campaign.unarchive", entityType: "AdCampaign", entityId: id, before: { archivedAt: c.archivedAt }, after: { archivedAt: after.archivedAt }, reason: input.reason ?? undefined });
+    return { id, archivedAt: after.archivedAt, archiveReason: after.archiveReason };
+  });
+}
+
+/**
+ * Confirms that a campaign spent nothing on the given days (owner decision Q-E: confirmed zero is distinct from missing).
+ * A day without a row gets a zero row (source MANUAL); an existing zero row — typed, imported or from the API — is marked.
+ * A day that has spend is refused: a confirmed zero never hides a real figure. Needs finance.post and a reason (route).
+ */
+export async function confirmZeroSpendDays(campaignId: string, input: { dates: string[]; reason: string }, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const c = await prisma.adCampaign.findFirst({ where: { id: campaignId, businessId: business.id }, include: { spendDays: true } });
+  if (!c) throw financeError(404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+  const today = businessToday(business);
+  const dates = [...new Set(input.dates)].sort();
+  const byDay = new Map(c.spendDays.map((d) => [businessDateOf(d.date), d]));
+  for (const d of dates) {
+    if (d >= today) throw financeError(400, "ZERO_DAY_NOT_PASSED", `${d} hasn't ended yet`);
+    const row = byDay.get(d);
+    if (row && toMinor(row.amount, cur) > 0) throw financeError(409, "DAY_HAS_SPEND", `${d} has spend recorded (${toMajorNumber(toMinor(row.amount, cur), cur)}) — correct the figure instead`);
+  }
+  const at = new Date();
+  await financeTransaction(async (tx) => {
+    for (const d of dates) {
+      const marks = { confirmedZeroAt: at, confirmedZeroByAdminId: adminOf(actor), confirmedZeroReason: input.reason };
+      const row = await tx.adSpendDay.upsert({ where: { campaignId_date: { campaignId, date: dateColumn(d) } }, create: { campaignId, date: dateColumn(d), source: "MANUAL", amount: toDecimal(0, cur), ...marks }, update: marks });
+      await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.confirm_zero", entityType: "AdSpendDay", entityId: row.id, after: { campaignId, date: d, amount: 0 }, reason: input.reason });
+    }
+  });
+  await syncCampaignSpend(campaignId);
+  return { campaignId, confirmed: dates };
+}
+
+/** Days of `month` each in-scope campaign still lacks: in scope = not archived, with at least one day
+ * of spend > 0 in the month or the month before (Q16 = A, Q-E). A day counts as recorded when its spend is > 0 or a person
+ * confirmed its zero. Days before the campaign started, after it ended, and from today on are not asked for. */
+export async function adSpendGaps(month: string): Promise<Array<{ campaignId: string; name: string; missing: string[] }>> {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const today = businessToday(business);
+  const from = `${month}-01`;
+  const to = addDays(`${addDays(from, 32).slice(0, 7)}-01`, -1);
+  const prevFrom = `${addDays(from, -1).slice(0, 7)}-01`;
+  const campaigns = await prisma.adCampaign.findMany({
+    where: {
+      businessId: business.id,
+      archivedAt: null,
+      spendDays: { some: { date: { gte: dateColumn(prevFrom), lte: dateColumn(to) }, amount: { gt: 0 } } },
+    },
+    include: { spendDays: { where: { date: { gte: dateColumn(from), lte: dateColumn(to) } } } },
+    orderBy: { name: "asc" },
+  });
+  const out: Array<{ campaignId: string; name: string; missing: string[] }> = [];
+  for (const c of campaigns) {
+    const recorded = new Set(c.spendDays.filter((d) => toMinor(d.amount, cur) > 0 || d.confirmedZeroAt).map((d) => businessDateOf(d.date)));
+    const first = [from, businessDateOf(c.startDate)].sort().at(-1)!;
+    const last = [to, c.endDate ? businessDateOf(c.endDate) : to, addDays(today, -1)].sort()[0]!;
+    const missing: string[] = [];
+    for (let d = first; d <= last; d = addDays(d, 1)) if (!recorded.has(d)) missing.push(d);
+    if (missing.length) out.push({ campaignId: c.id, name: c.name, missing });
+  }
+  return out;
 }

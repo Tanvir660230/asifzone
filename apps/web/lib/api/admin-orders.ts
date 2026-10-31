@@ -36,6 +36,8 @@ export interface AdminOrderListParams {
   shippingDistrict?: string;
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue.
   followUpDue?: "true";
+  // "true" = COD orders still PENDING after 48 h (owner decision Q6) — a person decides; nothing is released automatically.
+  codPendingStale?: "true";
   // "true" = the "Needs action" queue (every order a person has to act on).
   needsAction?: "true";
   // "true" = only CANCELLED orders where paymentStatus is still PAID — the refund-risk queue.
@@ -97,6 +99,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.shippingDivision) query.set("shippingDivision", params.shippingDivision);
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
   if (params.followUpDue) query.set("followUpDue", params.followUpDue);
+  if (params.codPendingStale) query.set("codPendingStale", params.codPendingStale);
   if (params.needsAction) query.set("needsAction", params.needsAction);
   if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
   if (params.refundDue) query.set("refundDue", params.refundDue);

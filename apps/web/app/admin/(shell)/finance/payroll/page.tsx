@@ -30,6 +30,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { Employee, PayComponent, PayComponentKind, PayRun, Payslip } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type View = "runs" | "employees" | "components";
 const KIND_LABEL: Record<PayComponentKind, string> = { EARNING: "Earning", DEDUCTION: "Deduction", EMPLOYER_CONTRIBUTION: "Employer contribution" };
@@ -54,7 +55,7 @@ export default function PayrollPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Users} title="Payroll isn't available to your role" description="Salaries are visible only to the owner." />
+        <PermissionState icon={Users} page="Payroll" />
       </div>
     );
   }

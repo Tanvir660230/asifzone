@@ -30,10 +30,10 @@ export function FaqEditor({ value, onChange }: { value: FaqRow[]; onChange: (row
         <div key={i} className="rounded-lg border border-ink-100 p-3">
           <div className="flex items-start gap-2">
             <div className="flex flex-col">
-              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="text-ink-400 hover:text-ink-900 disabled:opacity-25" aria-label={`Move question ${i + 1} up`}>
+              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded text-ink-400 hover:text-ink-900 disabled:opacity-25 [@media(pointer:coarse)]:p-[15px]" aria-label={`Move question ${i + 1} up`}>
                 <ArrowUp size={14} />
               </button>
-              <button type="button" onClick={() => move(i, 1)} disabled={i === value.length - 1} className="text-ink-400 hover:text-ink-900 disabled:opacity-25" aria-label={`Move question ${i + 1} down`}>
+              <button type="button" onClick={() => move(i, 1)} disabled={i === value.length - 1} className="rounded text-ink-400 hover:text-ink-900 disabled:opacity-25 [@media(pointer:coarse)]:p-[15px]" aria-label={`Move question ${i + 1} down`}>
                 <ArrowDown size={14} />
               </button>
             </div>

@@ -118,7 +118,7 @@ const PUBLIC_ROUTES = [
 ];
 
 /** Self-service admin routes: own session and own notifications — no permission, by design. */
-const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "DELETE /api/auth/sessions/:id", "POST /api/auth/sessions/revoke-others", "POST /api/auth/logout-all", "POST /api/auth/2fa/setup", "POST /api/auth/2fa/enable", "POST /api/auth/2fa/disable", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention", "GET /api/v1/admin/views", "POST /api/v1/admin/views", "DELETE /api/v1/admin/views/:id", "GET /api/v1/admin/list-preferences/:list", "PUT /api/v1/admin/list-preferences/:list"]; // attention: each section re-checks the caller's permissions; views: the caller's own (DR-18)
+const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "DELETE /api/auth/sessions/:id", "POST /api/auth/sessions/revoke-others", "POST /api/auth/logout-all", "POST /api/auth/2fa/setup", "POST /api/auth/2fa/enable", "POST /api/auth/2fa/disable", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention", "GET /api/v1/admin/views", "POST /api/v1/admin/views", "DELETE /api/v1/admin/views/:id", "GET /api/v1/admin/list-preferences/:list", "PUT /api/v1/admin/list-preferences/:list", "GET /api/v1/admin/store-capabilities"]; // attention: each section re-checks the caller's permissions; views: the caller's own (DR-18)
 
 describe("requirePermission on its own (defence in depth, independent of route order)", () => {
   const run = (admin: unknown) => {

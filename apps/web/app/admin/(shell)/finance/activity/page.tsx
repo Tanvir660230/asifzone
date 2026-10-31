@@ -22,6 +22,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { FinancialEventStatus } from "@/lib/api/finance";
 import { formatBookDate, formatStoreDateTime } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type View = "changes" | "events";
 const PAGE_SIZE = 50;
@@ -50,7 +51,7 @@ export default function FinanceActivityPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={History} title="The finance activity log isn't available to your role" />
+        <PermissionState icon={History} page="the finance activity log" />
       </div>
     );
   }

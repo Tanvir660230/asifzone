@@ -57,6 +57,14 @@ export const custodyExpenseSchema = z.object({
 /** An expense the owner paid from their own pocket: their money comes into a cash account (owed back to them, or added
  * as capital) and the expense is paid from it in the same step. */
 export const OWNER_FUNDING_KINDS = ["REIMBURSE", "CAPITAL"] as const;
+/** Owner decision Q-F: repay the owner for chosen owed-back purchases and expenses, from one money account. */
+export const ownerRepaySchema = z.object({
+  fromFinancialAccountId: id,
+  date: businessDate.optional(),
+  lines: z.array(z.object({ advanceId: id, amount: positive })).min(1).max(100).refine((ls) => new Set(ls.map((l) => l.advanceId)).size === ls.length, "Each line once"),
+  note: optionalText(300),
+});
+export type OwnerRepayInput = z.input<typeof ownerRepaySchema>;
 export const ownerPaidExpenseSchema = z.object({
   cashFinancialAccountId: id,
   expenseAccountId: id,
@@ -132,6 +140,10 @@ export const adPeriodSpendSchema = z
   .refine((v) => v.from <= v.to, "The period ends after it starts")
   .refine((v) => (v.amount ?? null) !== null || ((v.originalAmount ?? null) !== null && !!v.currency), "Give the total in taka, or in its currency");
 export const adCsvImportSchema = z.object({ financialAccountId: id, csv: z.string().min(1).max(2_000_000), currency: currencyCode.optional().nullable(), fxRate: fxRate.optional().nullable(), commit: z.boolean() });
+/** Blueprint P0.7 (Q-E): archive / bring back a campaign. */
+export const adCampaignArchiveSchema = z.object({ archived: z.boolean(), reason: z.string().trim().max(500).optional().nullable() });
+/** Owner-confirmed zero spend for days that have none (finance.post); a reason is required. */
+export const adConfirmZeroSchema = z.object({ dates: z.array(businessDate).min(1).max(62), reason: z.string().trim().min(3).max(500) });
 export const adCampaignListQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional() });
 export const metaSpendImportSchema = z.object({ days: z.number().int().min(1).max(400).optional(), since: businessDate.optional() });
 
@@ -203,7 +215,7 @@ export const landedCostCancelSchema = z.object({ reason: z.string().trim().min(3
 // ── Finance Center (docs/FINANCE_CENTER.md) ────────────────────────────────────────────────────────────────────────────
 
 export const ENTRY_VERIFICATIONS = ["CONFIRMED", "ESTIMATED", "NEEDS_CHECK", "DISPUTED"] as const;
-export const VERIFIABLE_ENTITY_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay"] as const;
+export const VERIFIABLE_ENTITY_TYPES = ["Expense", "PrepaidCost", "FixedAsset", "OpeningBalanceLine", "OpeningInventoryItem", "LandedCost", "TreasuryMovement", "AdSpendDay", "FinanceException"] as const;
 export const verificationSetSchema = z.object({ entityType: z.enum(VERIFIABLE_ENTITY_TYPES), entityId: id, status: z.enum(ENTRY_VERIFICATIONS), source: optionalText(200), note: optionalText(1000) });
 export const verificationListQuerySchema = z.object({ status: z.enum(ENTRY_VERIFICATIONS).optional() });
 export const expenseAllocationSchema = z.object({

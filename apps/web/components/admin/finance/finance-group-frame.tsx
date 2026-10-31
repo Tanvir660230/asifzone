@@ -6,7 +6,8 @@ import { InnerNav } from "@/components/admin/inner-nav";
 import { navNode, resolveNavNode } from "@/lib/admin/navigation";
 
 /**
- * Finance's groups (Money, Sales & payments, Purchasing, Reports & books, Payroll & partners, Setup & checks) list their pages beside the page on wide screens, like
+ * The money and books groups (Accounts & cash, Bills to pay, Payments & refunds, Courier & gateway, Statements, Ledger &
+ * journals, Profit, Stock › More, Settings › Books setup) list their pages beside the page on wide screens, like
  * Catalog setup — the manifest marks each group `innerList`. Pages outside a group (Overview, Needs attention) and detail views
  * (a money account, a supplier's account) keep the full width.
  */

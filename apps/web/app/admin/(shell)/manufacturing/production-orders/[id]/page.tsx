@@ -13,7 +13,6 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { IssueModal, ReturnModal, UsageModal } from "@/components/admin/manufacturing/custody-modals";
 import { ProductionCosts } from "@/components/admin/manufacturing/production-costs";
@@ -27,6 +26,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** One production order (docs/MANUFACTURING.md §5): the plan by size and colour, the materials it needs against what is in
  * stock, the planned costs, and the actions its state allows. */
@@ -53,7 +53,7 @@ export default function ProductionOrderPage() {
     onError: (err) => toast.error(getErrorMessage(err, "The draft couldn't be deleted")),
   });
 
-  if (ready && !allowed) return <EmptyState icon={Factory} title="Manufacturing isn't available to your role" />;
+  if (ready && !allowed) return <PermissionState icon={Factory} page="Manufacturing" />;
   if (mo.isLoading) return <Skeleton className="h-64 w-full" />;
   if (mo.isError || !mo.data) return <Alert variant="danger" title="This production order couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => mo.refetch()}>Retry</Button>}>{getErrorMessage(mo.error, "")}</Alert>;
   const o = mo.data;

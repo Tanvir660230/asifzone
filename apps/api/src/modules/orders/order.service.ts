@@ -19,6 +19,7 @@ import {
   MONEY_HELD_PAYMENT_STATUSES,
   ORDER_QUEUE_FILTERS,
   ORDER_QUEUE_IDS,
+  COD_PENDING_ALERT_HOURS,
   PRICE_ADJUSTMENT_LOCKED_STATUSES,
   type OrderQueueId,
   type OrderTransitionRule,
@@ -899,6 +900,8 @@ function buildOrderWhere(query: OrderListQuery, ctx: OrderWhereContext) {
     // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
     // mutually-exclusive pattern as the other quick filters).
     ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
+    // Owner decision Q6: COD orders still PENDING after 48 h — listed for a person to decide; never released automatically.
+    ...(query.codPendingStale === "true" ? { status: "PENDING" as const, paymentMethod: "COD" as const, createdAt: { lte: new Date(Date.now() - COD_PENDING_ALERT_HOURS * 3_600_000) } } : {}),
     // The refund-risk queue — CANCELLED orders still holding customer money (one shared predicate from the payment
     // ledger), surfaced via the "Cancelled but paid" admin alert (updateOrderStatus/getOrderStats).
     ...(query.cancelledButPaid === "true" ? REFUND_QUEUE_WHERE : {}),
@@ -1770,6 +1773,18 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
     return getOrderById(orderId);
   }
   return order;
+}
+
+/**
+ * Parcels on their way back, for Home (blueprint P1.5, owner decision Q-B): #96's parcel queues counted — coming back,
+ * past the store's returnNotBackDays (the one follow-up deadline), and back in hand waiting for inspection. The lists
+ * themselves are Orders › Coming back / Return overdue / To inspect.
+ */
+export async function parcelReturnSummary(now: Date = new Date()) {
+  const ctx = await orderWhereContext(now);
+  const count = (q: "comingBack" | "returnOverdue" | "inspectionPending") => prisma.order.count({ where: { deletedAt: null, ...parcelQueueWhere(q, ctx.now, ctx.parcel) } });
+  const [comingBack, returnOverdue, inspectionPending] = await Promise.all([count("comingBack"), count("returnOverdue"), count("inspectionPending")]);
+  return { comingBack, returnOverdue, inspectionPending, returnNotBackDays: ctx.parcel.returnNotBackDays };
 }
 
 /** Order statuses whose customer return (OrderItem.returnedQuantity) can be waiting at the courier or the door. */

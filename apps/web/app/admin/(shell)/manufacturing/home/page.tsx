@@ -9,7 +9,6 @@ import { Card } from "@/components/ui/card";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -17,6 +16,8 @@ import { getErrorMessage } from "@/lib/api-client";
 import { getProductionHome, stockKeys } from "@/lib/api/stock";
 import { formatBookDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
+import { ProductionOverview } from "@/components/admin/manufacturing/production-overview";
 
 const num = (n: number) => n.toLocaleString("en-US");
 
@@ -31,7 +32,7 @@ export default function ProductionHomePage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Factory} title="Production isn't available to your role" description="Ask the owner for access to inventory and production." />
+        <PermissionState icon={Factory} page="Production" />
       </div>
     );
   }
@@ -140,6 +141,8 @@ export default function ProductionHomePage() {
           {!d.costingActive && <Alert variant="info" className="lg:col-span-2">Stock costing hasn&apos;t gone live, so Bought and Filled open once it does.</Alert>}
         </div>
       )}
+      {/* Blueprint P1.8: the former Overview (runs in progress, producers, planned vs final) lives here now. */}
+      <ProductionOverview />
     </div>
   );
 }

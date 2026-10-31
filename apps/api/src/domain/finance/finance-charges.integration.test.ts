@@ -9,7 +9,7 @@ import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { financeTransaction } from "./finance-tx";
 import { getFinanceContext } from "./finance-context";
 import { approveCostEstimate, projectOrder, syncCommerce } from "./commerce-accounting.service";
-import { setCostPolicy } from "./chart.service";
+import { setCostPolicy, updateBusinessSettings } from "./chart.service";
 import { adjustVariantStock } from "../../modules/inventory/inventory.service";
 import { PERMISSIONS } from "@clothing-brand/shared";
 import type { FinanceActor } from "./finance-audit";
@@ -249,6 +249,16 @@ describe("the courier's side of the books", () => {
     const alert = (await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid");
     expect(alert).toMatchObject({ severity: "warning", count: rec.unsettled.length, href: "/admin/finance/courier" });
     expect(alert!.amount).toBe(rec.unsettled.reduce((s: number, u: { total: number }) => s + u.total, 0));
+    // Blueprint P1.2: the owner snoozes it until a date — hidden through that day, back after; null shows it again.
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const ctx = await getFinanceContext();
+    const actor = { type: "ADMIN" as const, adminId: admin, label: "owner", permissions: ["finance.configure"] };
+    await updateBusinessSettings({ courierUnpaidSnoozedUntil: tomorrow }, actor);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid")).toBeUndefined();
+    await updateBusinessSettings({ courierUnpaidSnoozedUntil: "2026-01-02" }, actor);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "courier.unpaid")).toBeTruthy();
+    await updateBusinessSettings({ courierUnpaidSnoozedUntil: null }, actor);
+    expect((await prisma.financeBusiness.findUniqueOrThrow({ where: { id: ctx.business.id } })).courierUnpaidSnoozedUntil).toBeNull();
   });
 
   it("shows what the books expect from Steadfast next to its own balance, and the parcels that need a look", async () => {
@@ -266,7 +276,8 @@ describe("the courier's side of the books", () => {
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.totals.courier).toBeGreaterThan(0);
     expect(r.body.totals.gateway).toBeGreaterThan(0);
-    expect(Math.round((r.body.totals.contribution - r.body.totals.otherCosts) * 100) / 100).toBe(r.body.totals.netProfit);
+    // Q15 = A: stock corrections are their own step between contribution and net profit
+    expect(Math.round((r.body.totals.contribution + r.body.totals.outsideSales - r.body.totals.outsideSalesCost - r.body.totals.stockCorrections - r.body.totals.otherCosts) * 100) / 100).toBe(r.body.totals.netProfit);
     expect(r.body.orders.length).toBeGreaterThan(0);
     // per size (planned vs actual, docs/COST_SHEET.md §5): every order shared over its lines — the sizes add up to the
     // totals, give or take a paisa a line for the shares' rounding
@@ -345,7 +356,7 @@ describe("parcels booked straight on Steadfast (never orders on the site)", () =
     expect(checks.body.results.map((x: { status: string }) => x.status)).toEqual(["MATCHED", "MATCHED"]);
     const profit = (await owner().get("/profit?from=2026-01-01&to=2099-12-31")).body;
     expect(profit.totals).toMatchObject({ outsideSales: 500, outsideSalesCost: 200, outsideSaleCostPct: 40 });
-    expect(Math.round((profit.totals.contribution + profit.totals.outsideSales - profit.totals.outsideSalesCost - profit.totals.otherCosts) * 100) / 100).toBe(profit.totals.netProfit);
+    expect(Math.round((profit.totals.contribution + profit.totals.outsideSales - profit.totals.outsideSalesCost - profit.totals.stockCorrections - profit.totals.otherCosts) * 100) / 100).toBe(profit.totals.netProfit);
 
     // Later the site's stock is corrected for the units that left: that decrease is the goods already costed — it comes off
     // 1690, not a second cost of goods.

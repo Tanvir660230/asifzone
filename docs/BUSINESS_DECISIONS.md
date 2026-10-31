@@ -439,3 +439,37 @@ decisions make sure two installations never see, use or disturb each other's dat
 |---|---|---|---|
 | D-OO1 | **Returned goods become sellable only after the parcel is physically received and inspected.** Approving a return, Delivered → Returned, approving an exchange, reconciling a partial delivery and recording an item return each record the return (the money and sales side) and move no stock. Damage is judged at receipt, not at the decision. Refund and store-credit decisions are unchanged. | Four paths (five with item returns) put units back on sale before the parcel arrived. | `apps/api/src/modules/inventory/inventory.service.ts` (`recordReturnDecision`, `releaseOrderLines` `receive`); `modules/orders/return-stock-safety.integration.test.ts` |
 | D-OO2 | **Courier-status polling never stops, and slows only on evidence.** Parcels are re-checked by age (15 min / 1 h / 6 h), bounded per run, stopping on a 429. The webhook can reduce polling only after it is measured healthy for 48 h (level 1) or a week (level 2), capped by `COURIER_POLL_MAX_LEVEL` (default 0 — no reduction until an operator raises it). Unknown and approval-pending courier states are in the Courier issues queue. | No webhook event had ever been logged; 195 parcels were polled one by one every 15 minutes; 58 parcels were in no queue. | `apps/api/src/modules/courier/courier-sync-policy.ts`, `courier-health.service.ts`; `modules/courier/courier-phase0.integration.test.ts` |
+
+## ERP blueprint decisions (owner, 27 Oct 2026)
+
+Answers to the Business-First Master Blueprint (tab 8 of the blueprint doc). One ERP for every store: a row that names a
+store describes that store's configuration or lifecycle state (cost policy, whether costing or books have started), never
+a separate implementation. Implemented on `feat/erp-core`; the commit is given where it landed.
+
+| Q | Decision | Rule | Where |
+|---|---|---|---|
+| Q1 | A — book cost when costing is live, catalog cost otherwise | A missing cost is never 0: "cost missing", no margin. Ledger and posted results untouched. | `domain/finance/cost-resolver.ts` (P0.1) |
+| Q2 | A — book net profit in Finance; Analytics is a "sales estimate" | Partner shares, settlements and closed periods unchanged. | profit ladder (P2.4), analytics labels |
+| Q3 | A — labelled automatic estimates + publish guard | Every estimate labelled; a store on KNOWN_ONLY is unchanged. | `costPolicy` AUTO_ESTIMATE (P0.2) |
+| Q4 | A — keep moving average | No FIFO. | costing |
+| Q5 | A — stock rises only after physical receipt | No RETURN movement before a receipt and inspection. | D-OO1 above (Order Operations, always on) |
+| Q6 | A — never release a pending COD order automatically | Pending COD over 48 h is a Home item. | Home queue (P1.2) |
+| Q7 | A / A — quick Received goods every day, formal PO owner-only; duplicate warning | Same supplier, ±3 days, ≥ 70 % item overlap, total ±1 %; warning only. | P0.3, P1.4 |
+| Q8 | A — keep the finance-only roles; fix their visibility | No new permission granted to make a page visible. | navigation (P0.6) |
+| Q9 | A — one Home, one Money overview | Home = actions and alerts; Money overview = book figures. | P1.2 |
+| Q10 | A — Production under Stock, only where production exists | | P1.8 (with Q-G) |
+| Q11 | A — no second courier or refund API for six months | | not on the roadmap |
+| Q12 | A — read-only audit of branches and worktrees | No branch or worktree changed without approval. | blueprint tab 10 |
+| Q13 | C — ship the replacement first, receive the original later | The original waits until it is received and inspected. | D-OO1 |
+| Q13b | B — Goods awaiting return account | Cost to 1620 at the agreement, to inventory at receipt. | **Not built yet** — until then a returned unit's cost leaves COGS at its receipt (D-OO1) |
+| Q14 | B — owner-funded purchase is "owed back" or "capital", chosen per purchase | Owed back is a liability reduced by a linked repayment. | P1.4 |
+| Q15 | A — stock corrections on their own ladder line | Presentation only; net unchanged. | P2.4 |
+| Q16 | A — month-end needs every day of non-archived campaigns with spend this or last month | Confirmed zero ≠ missing. | P0.7 |
+| Q-A | 1620 "Goods awaiting return", asset under 1600, key `asset.goods_awaiting_return` | Comes with Q13b. | not built yet |
+| Q-B | Damaged at receipt: written off, no approval. Never arrived: only after 30 days, owner approval at or above ৳1,000 (`countLossApprovalThreshold`). Home follow-up at 14 days. | The follow-up period is one store setting, `returnNotBackDays` (Settings › Dispatch; the ERP core’s `returnFollowUpDays` was folded into it). The 30-day write-off wait comes with Q13b. | follow-up: Orders › Coming back / Return overdue and Home (one queue, D-OO1); write-off: on receipt (D-OO1) |
+| Q-C | A customer who keeps an exchanged original: written off as a loss, no automatic charge | S7 with reason "customer kept the item". | with Q13b |
+| Q-D | AUTO_ESTIMATE source order: book average → approved recipe → last posted purchase → catalog | | P0.2 |
+| Q-E | Spend day = spend > 0; explicit campaign Archive and confirmed-zero marker; imported zero rows stay unconfirmed | | P0.7 |
+| Q-F | Quick Received goods without costing; "update catalog cost" on by default; repayment subledger | Every repayment says which purchase or expense it repays. | P1.4 |
+| Q-G | Production shown with permission **and** store production capability | Capability from data; never hides existing records. | P1.8 |
+| Q-H | Deferred — Nasihamart's books start date | Until its six evidence items are reviewed. | open |

@@ -1,15 +1,23 @@
 "use client";
 
 import { useMemo } from "react";
-import type { NavAccess, NavBadgeSource } from "@/lib/admin/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { getStoreCapabilities } from "@/lib/api/admin-home";
+import type { NavAccess, NavBadgeSource, StoreCapability } from "@/lib/admin/navigation";
 import { isFeatureEnabled } from "@/lib/admin/features";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useAttentionCounts } from "@/hooks/use-attention-counts";
 
-/** What the navigation manifest needs to know about this admin and installation — capabilities and feature flags. */
+/** What the navigation manifest needs to know about this admin and installation — capabilities, feature flags and what
+ * the store's own data says it does (Q-G). */
 export function useNavAccess(): NavAccess & { ready: boolean } {
   const { can, ready } = useCapabilities();
-  return useMemo(() => ({ can, flagEnabled: isFeatureEnabled, ready }), [can, ready]);
+  const store = useQuery({ queryKey: ["admin", "store-capabilities"], queryFn: getStoreCapabilities, enabled: ready, staleTime: 10 * 60_000 });
+  const production = store.data?.production;
+  return useMemo(
+    () => ({ can, flagEnabled: isFeatureEnabled, storeHas: (c: StoreCapability) => (c === "production" ? production === true : false), ready }),
+    [can, ready, production],
+  );
 }
 
 /** Work-queue counts for nodes that declare a `badge` — the same numbers as the dashboard's Action Center. */

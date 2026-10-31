@@ -16,6 +16,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const BUCKETS = [
   { key: "current", label: "Not yet due" },
@@ -35,7 +36,7 @@ export default function PayablesPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Wallet} title="Payables aren't available to your role" />
+        <PermissionState icon={Wallet} page="Payables" />
       </div>
     );
   }

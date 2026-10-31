@@ -24,6 +24,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { ChartAccount, JournalEntry } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const KIND_LABEL: Record<JournalEntry["kind"], string> = { MANUAL: "Manual", OPENING_BALANCE: "Opening balances", EVENT: "Automatic", REVERSAL: "Reversal", CORRECTION: "Correction", TREASURY: "Money movement", ADJUSTMENT: "Adjustment" };
 
@@ -59,7 +60,7 @@ export default function JournalsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={FileStack} title="Journals aren't available to your role" />
+        <PermissionState icon={FileStack} page="Journals" />
       </div>
     );
   }

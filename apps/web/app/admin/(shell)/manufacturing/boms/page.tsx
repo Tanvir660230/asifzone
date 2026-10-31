@@ -26,6 +26,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
 import type { Bom, MaterialSupplier, ProducibleProduct } from "@/lib/api/manufacturing";
 import type { PurchasableVariant } from "@/lib/api/purchasing";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** Bills of materials (docs/MANUFACTURING.md §4): what one finished unit takes. Versioned — an approved version is frozen
  * and plans production orders; a change is a new version. */
@@ -51,7 +52,7 @@ export default function BomsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={ListTree} title="Manufacturing isn't available to your role" />
+        <PermissionState icon={ListTree} page="Manufacturing" />
       </div>
     );
   }

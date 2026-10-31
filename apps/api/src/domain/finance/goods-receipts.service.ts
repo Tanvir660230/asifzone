@@ -26,6 +26,7 @@ import { nextFinanceSequence } from "./suppliers.service";
 import { recordFinancialEvent } from "./events.service";
 import { PURCHASING_EVENT_TYPES, type GoodsReceivedPayload } from "./purchasing-posting-rules";
 import { adminOf, docNumber, lockPurchaseOrder, refreshReceivingStatus, unitCostWithTax } from "./purchase-orders.service";
+import { findDuplicateReceipts, type DuplicateWarning } from "../stock/duplicate-purchase";
 
 const GRN_INCLUDE = {
   supplier: { select: { id: true, code: true, displayName: true } },
@@ -48,6 +49,8 @@ export function goodsReceiptDto(r: GrnRow, cur: string) {
     direct: !r.purchaseOrderId,
     directReason: r.directReason,
     overReceiptReason: r.overReceiptReason,
+    duplicateWarning: (r.duplicateWarning as DuplicateWarning | null) ?? null,
+    duplicateReason: r.duplicateReason,
     postedAt: r.postedAt,
     reversedAt: r.reversedAt,
     reversalReason: r.reversalReason,
@@ -124,12 +127,23 @@ export async function createGoodsReceipt(input: GoodsReceiptCreateInput, actor: 
         return { lineNo: i + 1, variantId: v.id, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyRejected, unitCost: toDecimal(unit, cur), value: toDecimal(unit * l.qtyAccepted, cur) };
       });
     }
+    // Blueprint P0.3: does this look like a purchase already entered? Stored as a warning; never refuses.
+    const matches = await findDuplicateReceipts(tx, {
+      businessId: business.id,
+      supplierId,
+      currency: cur,
+      purchaseOrderId: input.purchaseOrderId ?? null,
+      shape: { date: receiptDate, variantIds: rows.map((r) => r.variantId), totalMinor: rows.reduce((s, r) => s + toMinor(r.value as Prisma.Decimal, cur), 0) },
+    });
+    const duplicateWarning: DuplicateWarning | null = matches.length ? { matches, checkedAt: new Date().toISOString() } : null;
     const created = await tx.goodsReceipt.create({
       data: {
         businessId: business.id, brandId: brand.id, supplierId, purchaseOrderId: input.purchaseOrderId ?? null,
         number: await nextFinanceSequence(tx, business.id, "goods_receipt"), receiptDate: dateColumn(receiptDate),
         supplierRef: input.supplierRef ?? null, notes: input.notes ?? null, evidence: input.evidence ?? null,
         directReason: input.purchaseOrderId ? null : input.directReason ?? null, createdByAdminId: adminOf(actor),
+        duplicateWarning: duplicateWarning ? (duplicateWarning as unknown as Prisma.InputJsonValue) : undefined,
+        duplicateReason: duplicateWarning ? input.duplicateReason ?? null : null,
         lines: { createMany: { data: rows } },
       },
       include: GRN_INCLUDE,

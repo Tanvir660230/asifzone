@@ -105,7 +105,7 @@ export async function ownerHome(q: { month?: string }, viewer: FinanceViewer) {
     if (r.status === "RENEW_SOON" || r.status === "EXPIRED") todo.push({ kind: r.status === "EXPIRED" ? "EXPIRED" : "RENEW_SOON", name: r.name, date: r.serviceEnd, amount: r.renewalAmount ?? r.amount, href: "/admin/finance/prepaid" });
   }
   const pending = await prisma.treasuryMovement.count({ where: { businessId: business.id, status: "PENDING_APPROVAL" } });
-  if (pending) todo.push({ kind: "APPROVE_MONEY", count: pending, href: "/admin/finance/attention" });
+  if (pending) todo.push({ kind: "APPROVE_MONEY", count: pending, href: "/admin/finance/accounts" });
 
   return { currency: cur, today, booksStarted: started, month, lastMonth: last, money, people, todo };
 }

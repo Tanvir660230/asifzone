@@ -12,6 +12,7 @@ the code (M1, M6, M7), and how to release it. The design reasons live next to th
 | Returns in (`/admin/orders/returns-in`) | Scan parcels that came back; records receipt only. Stock moves at inspection, on the order. |
 | Order history (`/admin/orders/history`) | Finished orders, read-only, searchable by order number, phone, tracking or consignment code, with date / payment / status filters. |
 | System health › Courier | Webhook health (Phase 0): events received, refused calls, poll pace. |
+| Home › Parcels to receive / to inspect | Counts of Coming back, Return overdue and To inspect, linking to those queues — the one list of parcels on their way back (blueprint P1.5). Coming back includes a parcel cancelled after it shipped without a Steadfast booking. Overdue = longer than `returnNotBackDays` (Settings › Dispatch, 14 days by default) since the courier reported the return. |
 
 ### When is an order finished (Order history)?
 

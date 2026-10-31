@@ -44,6 +44,12 @@ export function useAttentionCounts() {
     unreadFeedback: data?.unreadFeedback ?? undefined,
     unreadNotifications: data?.unreadNotifications ?? 0,
     openErrors: data?.openErrors ?? undefined,
+    /** Receipts flagged as a possible duplicate and not explained (blueprint P0.3). */
+    possibleDuplicatePurchases: data?.possibleDuplicatePurchases ?? undefined,
+    /** Count losses waiting for approval and bottles a booking couldn't fill. */
+    stockWaiting: data?.stock ?? undefined,
+    /** Parcels on their way back after a cancellation, and how many are past the follow-up days. */
+    parcelsToReceive: data?.parcelsToReceive ?? undefined,
     financeAlerts: finance.data ? finance.data.counts.critical + finance.data.counts.warning : undefined,
     /** Finance alerts by severity, for Home's Action Center (undefined without finance.view). */
     financeAlertCounts: finance.data?.counts,

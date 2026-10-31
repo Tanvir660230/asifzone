@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -17,6 +16,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { CheckResult } from "@/lib/api/finance";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const STATUS_BADGE = { MATCHED: "success", DIFFERENCE: "danger", NOT_APPLICABLE: "neutral", ERROR: "danger" } as const;
 const STATUS_LABEL = { MATCHED: "matches", DIFFERENCE: "difference", NOT_APPLICABLE: "not applicable", ERROR: "error" } as const;
@@ -44,7 +44,7 @@ export default function FinanceChecksPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={ShieldCheck} title="Finance is limited to finance roles" />
+        <PermissionState icon={ShieldCheck} page="this finance page" />
       </div>
     );
   }

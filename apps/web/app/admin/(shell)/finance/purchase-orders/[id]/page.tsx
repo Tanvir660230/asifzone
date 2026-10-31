@@ -18,7 +18,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { GRN_STATUS_BADGE, GRN_STATUS_LABEL, PO_STATUS_BADGE, PO_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -26,6 +25,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchaseOrder } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 /** One purchase order (docs/FINANCE_PHASE_4D.md): its lines, what has arrived, and the actions its state allows. */
 export default function PurchaseOrderPage() {
@@ -51,7 +51,7 @@ export default function PurchaseOrderPage() {
     onError: (err) => toast.error(getErrorMessage(err, "The draft couldn't be deleted")),
   });
 
-  if (ready && !allowed) return <EmptyState icon={ClipboardList} title="Purchasing isn't available to your role" />;
+  if (ready && !allowed) return <PermissionState icon={ClipboardList} page="Purchasing" />;
   if (po.isLoading) return <Skeleton className="h-64 w-full" />;
   if (po.isError || !po.data) return <Alert variant="danger" title="This purchase order couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => po.refetch()}>Retry</Button>}>{getErrorMessage(po.error, "")}</Alert>;
   const o = po.data;

@@ -9,6 +9,9 @@ import { listProducts } from "./product.service";
 let outId: string;
 let lowId: string;
 let inId: string;
+/** The fixtures' shared name prefix ("Vitest P1 <run>"): every list below is narrowed to this file's own products, so the
+ * assertions hold however many other products the database already has (a whole-store page of 100 does not). */
+let mine: string;
 
 beforeAll(async () => {
   const out = await createStockedProduct({ stocks: [0, 0], basePrice: 500 });
@@ -17,6 +20,7 @@ beforeAll(async () => {
   outId = out.product.id;
   lowId = low.product.id;
   inId = plenty.product.id;
+  mine = out.product.name.replace(/\s\d+$/, "");
   await prisma.product.update({ where: { id: lowId }, data: { lowStockThreshold: 5 } });
 });
 
@@ -25,7 +29,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-const q = (extra: Record<string, unknown>) => productListQuerySchema.parse({ page: 1, pageSize: 100, ...extra });
+const q = (extra: Record<string, unknown>) => productListQuerySchema.parse({ page: 1, pageSize: 100, search: mine, ...extra });
 
 describe("admin product list (P4)", () => {
   it("rolls stock up to a state per product and reports completeness", async () => {

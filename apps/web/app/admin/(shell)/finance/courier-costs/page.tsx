@@ -22,7 +22,6 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { Amount, FinancialStatusBadge, legTitle } from "@/components/admin/courier-costs/courier-cost-ui";
@@ -33,6 +32,7 @@ import * as api from "@/lib/api/courier-costs";
 import type { Shipment } from "@/lib/api/courier-costs";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type Filters = Partial<ShipmentReportQuery>;
 type Attention = NonNullable<ShipmentReportQuery["attention"]>;
@@ -85,7 +85,7 @@ export default function CourierCostsPage() {
   });
 
   const set = (patch: Filters) => setFilters((f) => ({ ...f, ...patch, page: 1 }));
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Truck} title="This page isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Truck} page="This page" /></div>;
   const d = q.data;
   const t = d?.totals;
   const active = Object.entries(filters).some(([k, v]) => !["page", "pageSize"].includes(k) && v);

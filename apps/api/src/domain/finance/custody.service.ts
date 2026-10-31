@@ -22,6 +22,7 @@ import { accountSums, moneyBalanceAt } from "./ledger.service";
 import { MOVEMENT_INCLUDE, approveMovement, movementDto, rejectMovement, requestMovementInTx } from "./treasury.service";
 import { recordExpenseInTx } from "./expenses.service";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
+import { recordOwnerAdvanceInTx } from "./owner-advances.service";
 
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 
@@ -257,6 +258,10 @@ export async function ownerPaidExpense(
       expenseDate: date, expenseAccountId: input.expenseAccountId, amount: input.amount, fromFinancialAccountId: fa.id, description: input.description,
       payee: input.payee ?? null, reference: input.reference ?? null, costBehaviour: "VARIABLE",
     }, actor, `owner-paid:${idempotencyKey}`);
+    // owner decision Q-F: an expense owed back to the owner is a line "Repay owner" can pay
+    if (input.funding === "REIMBURSE") {
+      await recordOwnerAdvanceInTx(tx, business, { fundingMovementId: funding.id, sourceType: "Expense", sourceId: expense.expense.id, amount: input.amount, date, description: input.description }, actor);
+    }
     return { ...expense, funding: movementDto(funding) };
   });
 }

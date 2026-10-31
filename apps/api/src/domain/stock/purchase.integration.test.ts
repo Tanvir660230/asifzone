@@ -138,15 +138,8 @@ afterAll(async () => {
 const oilPurchase = (paidFrom: object, extras = [{ description: "Transport", amount: 400 }]) => ({ lines: [{ variantId: oil, quantity: 500, amount: 12000 }], documentTotal: 500, extras, paidFrom });
 
 describe("Bought — before go-live", () => {
-  it("refused before costing is active, with the reason, and nothing is written", async () => {
-    const before = await counts();
-    const r = await api().post("/stock/purchases", oilPurchase({ financialAccountId: bank }), `sp-early-${RUN}`);
-    expect(r.status, JSON.stringify(r.body)).toBe(409);
-    expect(r.body.details?.code).toBe("COSTING_NOT_ACTIVE");
-    expect(r.body.error).toMatch(/go-live/);
-    expect(await counts()).toEqual(before);
-    expect(await prisma.stockHubEntry.count()).toBe(0);
-  });
+  // Before costing is live a purchase is recorded in simple mode, never booked (blueprint P1.4, Q-F) — covered with its own
+  // data in simple-purchase.integration.test.ts; nothing is recorded here, so the oil's valuation below starts at zero.
 
   it("go-live: the valuation cutover activates costing", async () => {
     await draftCutover({}, OWNER);
@@ -428,5 +421,62 @@ describe("Bought — review fixes", () => {
     expect(seen).toMatchObject({ goods: 12000, total: 12400, lines: [{ amount: 12000, unitCost: 24 }] });
     const hidden = (await listPurchases({}, { canSeeCost: false })).purchases.find((p) => p.id === entry.id)!;
     expect(hidden).toMatchObject({ goods: null, extras: null, total: null, lines: [{ variantId: oil, quantity: 500, amount: null, unitCost: null }], extrasLines: [{ description: "Transport", amount: null }] });
+  });
+});
+
+describe("Duplicate-purchase warning (blueprint P0.3)", () => {
+  it("a purchase like one already entered is warned before saving, saved anyway with its reason, and never refused", async () => {
+    const check = await api().post("/stock/purchases/duplicate-check", { supplierName: "Local market", lines: [{ variantId: oil, amount: 12000 }] });
+    expect(check.status, JSON.stringify(check.body)).toBe(200);
+    expect(check.body.matches.length).toBeGreaterThan(0);
+    expect(check.body.matches[0]).toMatchObject({ itemOverlap: 1, totalDifference: 0 });
+
+    const r = await api().post("/stock/purchases", { ...oilPurchase({ financialAccountId: bank }, []), duplicateReason: "second delivery of the same order" }, `sp-dup-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const receipt = await prisma.goodsReceipt.findUniqueOrThrow({ where: { id: r.body.receiptId ?? r.body.steps?.receiptId } });
+    expect((receipt.duplicateWarning as { matches: unknown[] }).matches.length).toBeGreaterThan(0);
+    expect(receipt.duplicateReason).toBe("second delivery of the same order");
+  });
+
+  it("a different total or another supplier is not a duplicate", async () => {
+    const otherTotal = await api().post("/stock/purchases/duplicate-check", { supplierName: "Local market", lines: [{ variantId: oil, amount: 15000 }] });
+    expect(otherTotal.body.matches).toEqual([]);
+    const unknownSupplier = await api().post("/stock/purchases/duplicate-check", { supplierName: `Nobody ${RUN}`, lines: [{ variantId: oil, amount: 12000 }] });
+    expect(unknownSupplier.body.matches).toEqual([]);
+  });
+});
+
+describe("Bought — the owner's money owed back (owner decision Q14 = B)", () => {
+  it("chosen per purchase: owed back raises what the business owes him, capital stays as it was; the books match", async () => {
+    const { business } = await getFinanceContext();
+    const balanceOf = async (key: string) => {
+      const m = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: business.id, key } } });
+      if (!m) return 0;
+      const s = await prisma.journalLine.aggregate({ where: { accountId: m.accountId, entry: { status: "POSTED" } }, _sum: { debit: true, credit: true } });
+      return Number(s._sum.credit ?? 0) - Number(s._sum.debit ?? 0);
+    };
+    const owedBefore = await balanceOf("liability.owner_reimbursable");
+    const capitalBefore = await balanceOf("equity.owner_capital");
+    const body = { supplierName: `Owed back ${RUN}`, lines: [{ variantId: cap, quantity: 2, amount: 700 }], documentTotal: 2, paidFrom: { ownerPocket: true, funding: "REIMBURSE" } };
+    const r = await api().post("/stock/purchases", body, `sp-owed-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.purchase.paidFrom).toMatchObject({ kind: "OWNER", funding: "REIMBURSE" });
+    expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    expect(await balanceOf("equity.owner_capital")).toBe(capitalBefore);
+    const pocket = r.body.purchase.paidFrom.financialAccountId as string;
+    expect(await balance(pocket)).toBe(0); // in and out the same day
+    // owner decision Q-F: the purchase is a line "Repay owner" can pay
+    const lines = (await api().get("/equity/owner/advances")).body.lines as Array<{ sourceType: string; sourceId: string; amount: number; outstanding: number }>;
+    expect(lines.filter((l) => l.sourceId === r.body.purchase.id)).toEqual([expect.objectContaining({ sourceType: "StockPurchase", amount: 700, outstanding: 700 })]);
+    // a replay posts nothing twice
+    expect((await api().post("/stock/purchases", body, `sp-owed-${RUN}`)).body.replayed).toBe(true);
+    expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    expect(await prisma.ownerAdvance.count({ where: { sourceId: r.body.purchase.id } })).toBe(1);
+    // without a choice it stays capital, as before
+    const capitalPaid = await api().post("/stock/purchases", { ...body, paidFrom: { ownerPocket: true } }, `sp-owed-capital-${RUN}`);
+    expect(capitalPaid.status, JSON.stringify(capitalPaid.body)).toBe(201);
+    expect(await balanceOf("equity.owner_capital")).toBe(capitalBefore + 700);
+    expect(await balanceOf("liability.owner_reimbursable")).toBe(owedBefore + 700);
+    await booksMatch();
   });
 });

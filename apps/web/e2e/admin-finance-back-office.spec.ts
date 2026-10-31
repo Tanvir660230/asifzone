@@ -38,22 +38,27 @@ test.beforeAll(async ({ browser }) => {
   owner = await login(browser, OWNER);
 });
 
-test("needs attention: every alert links to its fix; the month-end checklist covers every step", async () => {
+// Blueprint P1.1 / P1.2 / P1.6: the old Needs attention page forwards to Home, where every finance alert is a queue item.
+test("needs attention: every alert is on Home and links to its fix; Month-end has its own page covering every step", async () => {
   await owner.goto("/admin/finance/attention");
-  await expect(owner.getByRole("heading", { name: "Needs attention" })).toBeVisible(NAV);
-  await expect(owner.getByTestId("alert-counts").or(owner.getByTestId("alerts-empty"))).toBeVisible(NAV);
+  await expect(owner).toHaveURL(/\/admin\/dashboard\?queue=finance/, NAV);
+  await expect(owner.getByTestId("work-queue")).toBeVisible(NAV);
   const { body } = await api(owner, "GET", "/alerts");
   for (const a of body.alerts as Array<{ key: string; href: string }>) {
-    await expect(owner.getByTestId(`alert-${a.key}`).getByRole("link")).toHaveAttribute("href", a.href);
+    await expect(owner.getByTestId(`action-finance-${a.key}`).getByRole("link")).toHaveAttribute("href", a.href);
   }
-  await owner.getByRole("radio", { name: "Month-end close" }).or(owner.getByRole("button", { name: "Month-end close" })).first().click();
+  await owner.goto("/admin/finance/month-end");
+  await expect(owner).toHaveURL(/\/admin\/finance\/month-end/, NAV);
   await expect(owner.getByTestId("month-label")).toBeVisible(NAV);
-  for (const key of ["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "checks"]) {
+  for (const key of ["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "payouts", "ads", "checks"]) {
     await expect(owner.getByTestId(`step-${key}`)).toBeVisible();
   }
   const before = await owner.getByTestId("month-label").innerText();
   await owner.getByRole("button", { name: "Previous month" }).click();
   await expect(owner.getByTestId("month-label")).not.toHaveText(before, NAV);
+  // an old link to the month-end tab lands on the page, month kept
+  await owner.goto("/admin/finance/attention?view=month-end&month=2026-09");
+  await expect(owner).toHaveURL(/\/admin\/finance\/month-end\?month=2026-09/, NAV);
 });
 
 test("budgets & cash: the forecast loads from the books", async () => {
@@ -120,10 +125,54 @@ test("owner & partners: a working partner gets their own accounts and a monthly 
   expect(e.equity.total).toBe(bs.sections.find((s: { key: string }) => s.key === "equity").total);
 });
 
+test("owed back to the owner: an expense he paid to be repaid is a line; Repay owner pays it and says what for (Q-F)", async () => {
+  // an owner-paid expense needs the books started: as the treasury spec does, an opening date and opening balances if not set yet
+  const business = await api(owner, "GET", "/business");
+  expect(business.status).toBe(200);
+  if (!business.body.business.openingDate) expect((await api(owner, "PATCH", "/business", { openingDate: "2026-07-01" })).status).toBe(200);
+  if (business.body.openingBalancesStatus !== "POSTED") {
+    const chart = (await api(owner, "GET", "/accounts")).body.accounts as Array<{ id: string; code: string }>;
+    const petty = await api(owner, "POST", "/financial-accounts", { kind: "CASH", name: `Petty cash ${RUN}` });
+    await api(owner, "PUT", "/opening-balances/lines", { lines: [{ category: "CASH", financialAccountId: petty.body.id, side: "DEBIT", amount: 1000 }, { category: "CAPITAL", accountId: chart.find((x) => x.code === "3100")!.id, side: "CREDIT", amount: 1000 }] });
+    expect((await api(owner, "POST", "/opening-balances/post")).status).toBe(200);
+  }
+  const account = async (body: object) => {
+    const r = await api(owner, "POST", "/financial-accounts", body);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    return r.body.id as string;
+  };
+  const pocket = await account({ kind: "CASH", name: `QA owner pocket ${RUN}` });
+  const bank = await account({ kind: "BANK", name: `QA repay bank ${RUN}` });
+  const accounts = (await api(owner, "GET", "/accounts")).body.accounts as Array<{ id: string; code: string }>;
+  const what = `QA domain renewal ${RUN}`;
+  const csrf = (await owner.context().cookies()).find((c) => c.name === "csrf_token")?.value ?? "";
+  const paid = await owner.request.post(`${API}/api/v1/finance/expenses/owner-paid`, {
+    headers: { "X-CSRF-Token": csrf, "Idempotency-Key": `qa-owner-paid-${RUN}` },
+    data: { cashFinancialAccountId: pocket, expenseAccountId: accounts.find((a) => a.code === "6400")!.id, amount: 1200, description: what, funding: "REIMBURSE" },
+  });
+  expect(paid.status(), await paid.text()).toBe(201);
+
+  await owner.goto("/admin/finance/equity");
+  const section = owner.getByTestId("owed-to-owner");
+  // a table on desktop, cards on a phone: whichever is on screen
+  await expect(section.getByText(what).filter({ visible: true }).first()).toBeVisible(NAV);
+  await section.getByTestId("repay-owner").click();
+  const dialog = owner.getByRole("dialog", { name: "Repay owner" });
+  // only this run's line: untick any other still owed
+  for (const row of await dialog.getByTestId("repay-line").all()) {
+    if (!(await row.textContent())?.includes(what)) await row.getByRole("checkbox").uncheck();
+  }
+  await dialog.getByTestId("repay-from").selectOption(bank);
+  await dialog.getByTestId("repay-save").click();
+  await expect(dialog).toBeHidden(NAV);
+  const lines = (await api(owner, "GET", "/equity/owner/advances")).body.lines as Array<{ description: string; outstanding: number; repaid: number }>;
+  expect(lines.find((l) => l.description === what)).toMatchObject({ repaid: 1200, outstanding: 0 });
+});
+
 test("staff can't see payroll — page and API", async ({ browser }) => {
   const staff = await login(browser, STAFF);
   await staff.goto("/admin/finance/payroll");
-  await expect(staff.getByText("Payroll isn't available to your role")).toBeVisible(NAV);
+  await expect(staff.getByText("You don't have access to Payroll")).toBeVisible(NAV);
   expect((await api(staff, "GET", "/payroll")).status).toBe(403);
   expect((await api(staff, "GET", "/equity")).status).toBe(403);
 });

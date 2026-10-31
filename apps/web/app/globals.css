@@ -101,6 +101,25 @@
 }
 
 @layer components {
+  /* ── Touch ─────────────────────────────────────────────────────────────────────────────────
+     An inline text action (a row's "Count", a table's "Edit") keeps its look, but on a touch screen its
+     hit area grows to at least 44 × 44 px around its centre (docs/DESIGN_SYSTEM.md §6, blueprint P2.2).
+     Nothing moves: the larger area is an invisible pseudo-element. */
+  .tap-target {
+    position: relative;
+  }
+  @media (pointer: coarse) {
+    .tap-target::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+
   /* ── Surfaces ───────────────────────────────────────────────────────────────────────────────
      Glass is used selectively: chrome that floats above content (sticky headers, menus, dialogs,
      toasts, bottom bars). Content cards stay solid for readability. */

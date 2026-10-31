@@ -24,6 +24,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { Loan, LoanRepaymentType } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const STATUS: Record<Loan["status"], { variant: "success" | "warning" | "neutral"; label: string }> = {
   ACTIVE: { variant: "success", label: "active" }, AWAITING_APPROVAL: { variant: "warning", label: "awaiting approval" }, REPAID: { variant: "neutral", label: "repaid" }, CANCELLED: { variant: "neutral", label: "cancelled" },
@@ -62,7 +63,7 @@ export default function LoansPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Landmark} title="Loans aren't available to your role" />
+        <PermissionState icon={Landmark} page="Loans" />
       </div>
     );
   }

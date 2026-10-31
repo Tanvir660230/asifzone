@@ -155,6 +155,7 @@ export const ORDER_QUEUE_IDS = [
   "stuckInTransit",
   "returnOverdue",
   "followUpDue",
+  "codPendingStale",
   "readyToBook",
   "unpaid",
   "cod",
@@ -163,11 +164,13 @@ export const ORDER_QUEUE_IDS = [
   "refundDue",
   "cancelledReturned",
 ] as const;
+/** Owner decision Q6 (blueprint P1.2): a COD order still PENDING this long is a Home item. Nothing is released automatically. */
+export const COD_PENDING_ALERT_HOURS = 48;
 export type OrderQueueId = (typeof ORDER_QUEUE_IDS)[number];
 
 export type OrderQueueFilter = Pick<
   OrderListQuery,
-  "needsAction" | "confirmQueue" | "parcelQueue" | "followUpDue" | "courierBooked" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
+  "needsAction" | "confirmQueue" | "parcelQueue" | "followUpDue" | "codPendingStale" | "courierBooked" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
 >;
 
 /** Confirmed with the customer and not yet with a courier: the day's "Book" step (Order Operations plan, phase 2). */
@@ -189,6 +192,7 @@ export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter
   stuckInTransit: { parcelQueue: "stuckInTransit" },
   returnOverdue: { parcelQueue: "returnOverdue" },
   followUpDue: { followUpDue: "true" },
+  codPendingStale: { codPendingStale: "true" },
   readyToBook: { statusIn: [...READY_TO_BOOK_STATUSES], courierBooked: "false" },
   unpaid: { paymentStatus: "UNPAID" },
   cod: { paymentMethod: "COD" },

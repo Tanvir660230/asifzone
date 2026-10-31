@@ -35,8 +35,9 @@ import { isBusinessOwner } from "./equity.service";
 import { monthEnd, monthOf, monthStart, monthsBetween, shareOf, shareWindow } from "./partner-profit.service";
 
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
-/** Month-end steps that stop a month being shared until they are done. */
-const BLOCKING_STEPS = new Set(["events", "approvals", "bills"]);
+/** Month-end steps that stop a month being shared until they are done. "ads": a month with a day of ad spend missing
+ * cannot be shared (blueprint P-6 / Q16 = A). */
+const BLOCKING_STEPS = new Set(["events", "approvals", "bills", "ads"]);
 
 // ── rates ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 

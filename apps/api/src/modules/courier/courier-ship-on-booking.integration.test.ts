@@ -3,7 +3,7 @@ import { overrideIntegrationsForTests } from "../../config/integration-overrides
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { updateOrderStatus } from "../orders/order.service";
-import { bookOrderWithSteadfast, bookOrdersWithSteadfastBulk } from "./courier.service";
+import { BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS, bookOrderWithSteadfast, bookOrdersWithSteadfastBulk, syncPendingCourierStatuses } from "./courier.service";
 
 // Owner, 2026-10-25 (admin audit): booking a parcel with Steadfast means it's leaving — the order becomes SHIPPED at
 // booking. Before, it stopped at PACKED and nothing ever moved it on (Steadfast reports no pickup), so 124 live orders sat
@@ -69,5 +69,30 @@ describe("booking with Steadfast ships the order", () => {
     expect(res.booked.map((x) => x.orderId).sort()).toEqual([a.id, b.id].sort());
     const rows = await prisma.order.findMany({ where: { id: { in: [a.id, b.id] } }, select: { status: true } });
     expect(rows.map((r) => r.status)).toEqual(["SHIPPED", "SHIPPED"]);
+  });
+});
+
+describe("the courier sweep repairs a booked parcel that never shipped (P0.5)", () => {
+  async function bookedButStuck(bookedAt: Date) {
+    const order = await newOrder();
+    seq++;
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { carrier: "Steadfast", courierConsignmentId: String(seq), trackingNumber: `TRK-R${seq}`, courierStatus: "in_review", courierBookedAt: bookedAt },
+    });
+    return order;
+  }
+
+  it("ships a recent booking left at Pending, through Packed", async () => {
+    const order = await bookedButStuck(new Date());
+    await syncPendingCourierStatuses();
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("SHIPPED");
+    expect((await history(order.id)).slice(-2)).toEqual(["PACKED", "SHIPPED"]);
+  });
+
+  it("leaves a booking older than the repair window alone", async () => {
+    const order = await bookedButStuck(new Date(Date.now() - BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS - 60_000));
+    await syncPendingCourierStatuses();
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING");
   });
 });

@@ -85,10 +85,10 @@ export function SectionSettingsEditor({ level, base, value, onChange }: SectionS
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <div className="flex flex-col">
-                    <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="text-ink-400 hover:text-ink-900 disabled:opacity-25" aria-label={`Move ${s.label} up`}>
+                    <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded text-ink-400 hover:text-ink-900 disabled:opacity-25 [@media(pointer:coarse)]:p-[15px]" aria-label={`Move ${s.label} up`}>
                       <ArrowUp size={14} />
                     </button>
-                    <button type="button" onClick={() => move(i, 1)} disabled={i === effective.length - 1} className="text-ink-400 hover:text-ink-900 disabled:opacity-25" aria-label={`Move ${s.label} down`}>
+                    <button type="button" onClick={() => move(i, 1)} disabled={i === effective.length - 1} className="rounded text-ink-400 hover:text-ink-900 disabled:opacity-25 [@media(pointer:coarse)]:p-[15px]" aria-label={`Move ${s.label} down`}>
                       <ArrowDown size={14} />
                     </button>
                   </div>

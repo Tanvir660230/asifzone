@@ -15,7 +15,6 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatTile } from "@/components/admin/stat-tile";
@@ -26,6 +25,7 @@ import type { MaterialRollRow, StockCheckFinished, StockCheckMaterial, StockCoun
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 const num = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -92,7 +92,7 @@ export default function StockCheckPage() {
   const categories = useMemo(() => byCategory(report.data?.finished ?? []), [report.data]);
   const materials = report.data?.materials ?? [];
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Boxes} title="The stock check isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Boxes} page="the stock check" /></div>;
   const d = report.data;
 
   const exportCsv = () => {
@@ -195,7 +195,7 @@ export default function StockCheckPage() {
                             <TableCell align="right">
                               {one ? (
                                 <CountCell count={one.count} onCount={canRecord ? () => setCounting({ variantId: one.variantId, label: g.product, stock: one.stock, unit: "pcs" }) : undefined} />
-                              ) : g.counted !== null ? <CountValue counted={g.counted} diff={g.countDiff ?? 0} /> : <button type="button" className="whitespace-nowrap text-xs font-medium text-accent hover:underline" onClick={() => setOpen((s) => new Set(s).add(g.productId))} hidden={isOpen}>Count by size</button>}
+                              ) : g.counted !== null ? <CountValue counted={g.counted} diff={g.countDiff ?? 0} /> : <button type="button" className="tap-target whitespace-nowrap text-xs font-medium text-accent hover:underline" onClick={() => setOpen((s) => new Set(s).add(g.productId))} hidden={isOpen}>Count by size</button>}
                             </TableCell>
                           </TableRow>
                           {isOpen && g.variants.map((v) => (
@@ -296,7 +296,7 @@ function CountCell({ count, onCount }: { count: StockCountResult; onCount?: () =
   return (
     <span className="inline-flex flex-col items-end gap-1">
       {count && <CountValue counted={count.counted} diff={count.difference} />}
-      {onCount && <button type="button" onClick={onCount} className="text-xs font-medium text-accent hover:underline">{count ? "Count again" : "Count"}</button>}
+      {onCount && <button type="button" onClick={onCount} className="tap-target text-xs font-medium text-accent hover:underline">{count ? "Count again" : "Count"}</button>}
     </span>
   );
 }

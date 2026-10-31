@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, RotateCcw, X } from "lucide-react";
@@ -62,6 +63,11 @@ export default function AdminReturnRequestsPage() {
   const [compensation, setCompensation] = useState<ReturnCompensation | undefined>(undefined);
   const [exchangeReady, setExchangeReady] = useState(false);
 
+  // Parcels on their way back are Orders › Coming back (Order Operations); the old ?tab=parcels link opens it.
+  const router = useRouter();
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "parcels") router.replace("/admin/orders?queue=comingBack");
+  }, [router]);
   // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link).
   useEffect(() => {
     const s = new URLSearchParams(window.location.search).get("status");

@@ -798,6 +798,12 @@ const surfaceDefinitions = {
       "--glass-alpha": "0.72",
       "--caps-transform": "none",
       "--caps-spread": "0",
+      // ERP UI plan (tab 21 §1) data meaning: one look for a figure that is an estimate (Estimated, Provisional) and one
+      // for a missing value (Cost missing), everywhere. Default to the existing neutral / warning badge pairs.
+      "--data-estimate-bg": "rgb(var(--color-ink-100))",
+      "--data-estimate-fg": "rgb(var(--color-ink-700))",
+      "--data-missing-bg": "rgb(var(--color-warning-100))",
+      "--data-missing-fg": "rgb(var(--color-warning-700))",
     },
     // Calmer corners: cards 16px, controls 10px.
     radii: { sm: "6px", DEFAULT: "8px", md: "10px", lg: "12px", xl: "16px", "2xl": "20px", "3xl": "28px" },

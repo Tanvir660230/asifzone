@@ -52,6 +52,9 @@ import {
 import { notifyReplenished, notifyStockMoved, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { applyCapacity, fillCapacity, fillToOrderInStockIds } from "../../domain/stock/fill-capacity.service";
 import { activeCostingInTx } from "../../domain/finance/costing.service";
+import { variantsWithoutAnyCost } from "../../domain/finance/cost-estimate";
+import { loadCostingState } from "../../domain/finance/cost-resolver";
+import { getCurrency } from "../../domain/config/commerce-settings";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
@@ -1571,6 +1574,17 @@ function recordProductAudit(adminId: string, productId: string, ip: string | und
   }
 }
 
+/** Blueprint P0.2 (owner decision Q3 = A): what a refused publish says — the sizes that would sell with no cost at all. */
+function costMissingMessage(skus: string[]) {
+  return `No cost for ${skus.join(", ")} — enter a cost price (or record a purchase) before publishing, so every sale is booked with a cost`;
+}
+
+/** The publishing guard on one product moving to PUBLISHED from `fromStatus` (cost-estimate.ts decides when it applies). */
+async function assertCostForPublish(productId: string, fromStatus: ProductStatus, db?: Prisma.TransactionClient) {
+  const noCost = await variantsWithoutAnyCost(productId, fromStatus, await getCurrency(), db);
+  if (noCost.length) throw new AppError(409, costMissingMessage(noCost), { code: "PUBLISH_COST_MISSING", skus: noCost });
+}
+
 export async function createProduct(
   input: CreateProductInput,
   adminId: string,
@@ -1608,6 +1622,16 @@ export async function createProduct(
   const { defined, legacy } = splitAttributes(config.fields, submitted ?? {}, new Set());
   await assertCarePresetUsable(productData.carePresetId, null);
   productData.courierNoteRuleIds = await sanitizeCourierNoteRuleIds(productData.courierNoteRuleIds);
+
+  // Blueprint P0.2: a brand-new product published straight away has only its catalog cost to go on (no stock, purchase or
+  // recipe yet) — with costing live under AUTO_ESTIMATE, every tracked size needs one.
+  if (status === "PUBLISHED" && productData.trackInventory !== false) {
+    const state = await loadCostingState();
+    if (state.costingLive && state.costPolicy === "AUTO_ESTIMATE") {
+      const noCost = variants.filter((v) => (v.costPrice ?? productData.costPrice ?? null) === null || Number(v.costPrice ?? productData.costPrice) <= 0).map((v) => v.sku);
+      if (noCost.length) throw new AppError(409, costMissingMessage(noCost), { code: "PUBLISH_COST_MISSING", skus: noCost });
+    }
+  }
 
   const baseSlug = slugify(input.slug || input.name);
   const slug = await ensureUniqueSlug(baseSlug, async (candidate) => {
@@ -1927,6 +1951,8 @@ export async function updateProduct(
 
       // Only a *move* to READY/PUBLISHED is gated: saving an already-live product never re-litigates its completeness.
       if (statusChanged && target && GATED_STATUSES.has(target)) await assertPublishable(tx, id, target);
+      // P0.2 cost guard on the product as this save leaves it (a cost entered in the same save counts)
+      if (statusChanged && target === "PUBLISHED") await assertCostForPublish(id, existing.status, tx);
     });
   } catch (err) {
     // Same race as createProduct — the ensureUniqueSlug check above isn't atomic with the write.
@@ -2046,6 +2072,7 @@ export async function bulkDeleteProducts(ids: string[]) {
  * don't are returned with what they're missing instead of failing the whole batch. */
 export async function bulkUpdateProductStatus(ids: string[], target: ProductStatus, adminId: string, ip?: string) {
   const rows = await prisma.product.findMany({ where: { id: { in: ids } }, include: detailInclude });
+  const currency = target === "PUBLISHED" ? await getCurrency() : "";
   const blocked: { id: string; name: string; missing: string[] }[] = [];
   const movable: typeof rows = [];
 
@@ -2056,6 +2083,13 @@ export async function bulkUpdateProductStatus(ids: string[], target: ProductStat
       const result = completenessOf(presented, config);
       if (result.blockers.length) {
         blocked.push({ id: row.id, name: row.name, missing: result.blockers.map((b) => b.label) });
+        continue;
+      }
+    }
+    if (target === "PUBLISHED") {
+      const noCost = await variantsWithoutAnyCost(row.id, row.status, currency);
+      if (noCost.length) {
+        blocked.push({ id: row.id, name: row.name, missing: [costMissingMessage(noCost)] });
         continue;
       }
     }

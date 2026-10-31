@@ -14,7 +14,6 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
@@ -24,6 +23,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 
@@ -39,7 +39,7 @@ export default function LandedCostsPage() {
   const [cancelling, setCancelling] = useState<booksApi.LandedCost | null>(null);
   const costing = Boolean(business.data?.inventoryCostingActivatedAt);
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Truck} title="Landed costs aren't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Truck} page="Landed costs" /></div>;
   return (
     <div className="space-y-6">
       <ModuleTabs />

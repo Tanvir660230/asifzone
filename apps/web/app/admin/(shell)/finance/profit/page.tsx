@@ -5,12 +5,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { SegmentedControl } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { ProfitDashboard, type ProfitPeriod } from "@/components/admin/finance/profit-dashboard";
@@ -23,6 +23,7 @@ import { formatBookDate, formatPrice } from "@/lib/format";
 import { GRAINS, presetRange, PROFIT_PRESETS } from "@/lib/profit-period";
 import { urlParam } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 const PERIOD_URL = { view: urlParam.enum(PROFIT_PRESETS, "30d"), from: urlParam.date(), to: urlParam.date(), gran: urlParam.optionalEnum(GRAINS) };
@@ -53,13 +54,14 @@ export default function ProfitPage() {
   const opening = business.data?.business.openingDate ?? null;
   const launch = useQuery({ queryKey: booksApi.booksKeys.launch({}), queryFn: () => booksApi.getLaunchReport({}), enabled: allowed && Boolean(opening) });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={TrendingUp} title="Profit isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={TrendingUp} page="Profit" /></div>;
   const r = report.data;
   return (
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader title="Profit" description="What the business kept — today, this week, this month or any days you pick — and the sales, ads and costs behind it." />
       {ready && <ProfitDashboard period={period} onChange={onPeriod} />}
+      {r?.ladder && <ProfitLadder report={r} />}
       <h2 className="pt-4 text-[20px] font-semibold tracking-tight text-fg">By product and order</h2>
       {report.isLoading && <Skeleton className="h-48 w-full" />}
       {report.isError && <Alert variant="danger" title="Profit couldn't be worked out" action={<Button size="sm" variant="outline" onClick={() => report.refetch()}>Retry</Button>}>{getErrorMessage(report.error, "")}</Alert>}
@@ -133,6 +135,36 @@ export default function ProfitPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+/** The books profit ladder (blueprint P2.4, owner decisions Q2 = A, Q15 = A): net sales to net profit in the books' own
+ * figures, stock corrections on their own line, and badges for what the figures still lean on. Book figures only —
+ * Analytics' margins are sales estimates. */
+function ProfitLadder({ report }: { report: booksApi.ProfitReport }) {
+  const c = report.completeness;
+  const sales = report.ladder!.find((s) => s.key === "netSales")?.amount ?? 0;
+  return (
+    <Card className="space-y-3 p-5 sm:p-6" data-testid="profit-ladder">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-[17px] font-semibold tracking-tight text-fg">Books profit</h2>
+          <p className="text-sm text-fg-muted">{formatBookDate(report.period.from)} – {formatBookDate(report.period.to)} · from the books, ending at the income statement&rsquo;s net profit.</p>
+        </div>
+        {c && (
+          <div className="flex flex-wrap gap-1.5" aria-label="How complete these figures are">
+            {c.monthStatus && <Badge variant={c.monthStatus === "CLOSED" ? "success" : "neutral"}>{c.monthStatus === "CLOSED" ? "Month closed" : "Month open"}</Badge>}
+            {c.missingCostLines > 0 ? <Link href="/admin/finance/exceptions" className="rounded-full"><Badge variant="warning">{c.missingCostLines} sale{c.missingCostLines === 1 ? "" : "s"} without a cost</Badge></Link> : <Badge variant="success">Every sale costed</Badge>}
+            {c.estimatedCostLines > 0 && <Badge variant="neutral" title="Booked at an estimated cost (labelled ESTIMATED)">{c.estimatedCostLines} estimated cost{c.estimatedCostLines === 1 ? "" : "s"}</Badge>}
+          </div>
+        )}
+      </div>
+      <dl className="divide-y divide-line-subtle text-sm">
+        {report.ladder!.map((s) => (
+          <Line key={s.key} label={s.label} value={s.amount} strong={s.subtotal || s.key === "netSales"} of={sales} href={s.key === "stockCorrections" ? "/admin/inventory" : s.key === "otherCosts" ? "/admin/finance/statements" : undefined} />
+        ))}
+      </dl>
+    </Card>
   );
 }
 

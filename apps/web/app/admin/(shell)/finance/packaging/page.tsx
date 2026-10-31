@@ -15,7 +15,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
@@ -27,6 +26,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { PackagingOverview, PackingScope } from "@/lib/api/finance-books";
 import { formatBookDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PermissionState } from "@/components/admin/permission-state";
 
 const SCOPE_LABEL: Record<PackingScope, string> = { EVERY_PARCEL: "Every parcel", CATEGORY: "Category", PRODUCT: "Product", VARIANT: "Variant" };
 
@@ -46,7 +46,7 @@ export default function PackagingPage() {
   });
   const toggle = useMutation({ mutationFn: (v: { id: string; on: boolean }) => booksApi.setPackingRuleActive(v.id, v.on), onSuccess: refresh, onError: (e) => toast.error(getErrorMessage(e, "Couldn't change the rule")) });
 
-  if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Package} title="Packaging isn't available to your role" /></div>;
+  if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Package} page="Packaging" /></div>;
   const d = data.data;
   return (
     <div className="space-y-6">

@@ -305,6 +305,9 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/v1/finance/money-map",
   "PUT /api/v1/finance/financial-accounts/:id/custodian",
   "POST /api/v1/finance/expenses/owner-paid",
+  // Owner decision Q-F: what is owed back to the owner, and repaying him
+  "GET /api/v1/finance/equity/owner/advances",
+  "POST /api/v1/finance/equity/owner/repay",
   "GET /api/v1/finance/rate-cards",
   "PUT /api/v1/finance/rate-cards/courier",
   "DELETE /api/v1/finance/rate-cards/courier/:id",
@@ -321,6 +324,9 @@ const OWNER_ONLY_ROUTES = [
   "PATCH /api/v1/finance/ads/campaigns/:id",
   "PUT /api/v1/finance/ads/campaigns/:id/spend",
   "PUT /api/v1/finance/ads/campaigns/:id/period-spend",
+  // blueprint P0.7 (Q-E): archive a campaign, confirm zero-spend days
+  "POST /api/v1/finance/ads/campaigns/:id/archive",
+  "POST /api/v1/finance/ads/campaigns/:id/confirm-zero",
   "POST /api/v1/finance/ads/import-meta",
   "GET /api/v1/finance/prepaid",
   "POST /api/v1/finance/prepaid",
@@ -556,7 +562,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +5: customer confirmation — state, record a call, take next, release, decide (Order Operations Phase 3)
     // +8: parcel scanning — batches, scans, void, confirm, cancel, current, summary (Order Operations Phase 4)
     // +2: the daily courier check — latest run, run now (Order Operations Phase 5)
-    expect(routes).toHaveLength(770);
+    // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
+    expect(routes).toHaveLength(776);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

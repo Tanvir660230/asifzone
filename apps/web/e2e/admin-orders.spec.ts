@@ -211,6 +211,11 @@ test.describe("orders workspace", () => {
     await expect(page.getByRole("button", { name: "All", pressed: true })).toBeVisible();
   });
 
+  test("parcels to receive: the old returns tab link opens Orders › Coming back (one list, P1.5 + Order Operations)", async ({ page }) => {
+    await page.goto("/admin/return-requests?tab=parcels");
+    await expect(page).toHaveURL(/\/admin\/orders\?.*queue=comingBack/);
+  });
+
   test("responsive: cards below xl, no horizontal page scroll", async ({ page }) => {
     // Its own two orders (the lifecycle test deletes the one it made, and "Next order" needs a second): placed through the
     // admin API, removed at the end.

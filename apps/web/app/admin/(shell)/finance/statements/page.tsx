@@ -13,7 +13,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
-import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -22,6 +21,7 @@ import * as financeApi from "@/lib/api/finance";
 import type { StatementSection } from "@/lib/api/finance";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { formatPrice } from "@/lib/format";
+import { PermissionState } from "@/components/admin/permission-state";
 
 type View = "income" | "balance" | "cash" | "trial";
 const VIEWS = [
@@ -60,7 +60,7 @@ export default function StatementsPage() {
     return (
       <div>
         <ModuleTabs />
-        <EmptyState icon={Landmark} title="Statements aren't available to your role" />
+        <PermissionState icon={Landmark} page="Statements" />
       </div>
     );
   }

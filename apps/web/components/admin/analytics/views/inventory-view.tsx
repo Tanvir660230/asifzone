@@ -6,12 +6,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CostAmount } from "@/components/ui/cost-amount";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import { SlowMovingTable } from "@/components/admin/slow-moving-table";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as inventoryApi from "@/lib/api/inventory";
 import * as categoriesApi from "@/lib/api/categories";
-import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { productEditHref } from "@/lib/admin-routes";
 
@@ -142,7 +142,7 @@ export default function InventoryIntelligencePage() {
                       </td>
                       <td className="py-2 pr-4 font-mono text-xs text-ink-500">{v.sku}</td>
                       <td className="py-2 pr-4 text-ink-600">{v.stock}</td>
-                      <td className="py-2 text-ink-800">{formatPrice(v.tiedUpValue)}</td>
+                      <td className="py-2 text-ink-800"><CostAmount value={v.tiedUpValue} basis={v.costBasis} /></td>
                     </tr>
                   ))}
                 </tbody>
