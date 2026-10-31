@@ -144,6 +144,99 @@
   .ui-mode-dark-art {
     display: var(--mode-dark-art);
   }
+  /* ── Money "Liquid Glass" (owner, 2026-10-31) ───────────────────────────────────────────────────────────────
+     Only inside [data-area="finance"] (FinanceGroupFrame): glossy controls, glass cards with a lit top edge, the
+     titanium money card, round action keys and tap-to-choose chips. Values are admin surface tokens (ui-tokens). */
+  /* The Money palette (ui-tokens admin components): graphite actions instead of system blue, one deep money green for
+     "up", a warm off-white canvas behind white cards. The roles take the finance tokens, so every primitive follows. */
+  [data-area="finance"] {
+    --gloss: var(--finance-gloss, 0);
+    --color-accent: var(--finance-accent, 0 102 204);
+    --color-accent-hover: var(--finance-accent-hover, 0 113 227);
+    --color-success-500: var(--finance-money-500, 18 180 145);
+    --color-success-600: var(--finance-money-600, 10 163 130);
+    --color-success-700: var(--finance-money-700, 6 112 90);
+  }
+  [data-surface="admin"]:has([data-area="finance"]) {
+    --color-canvas: var(--finance-canvas, 245 245 247);
+  }
+  /* On the graphite money card, text is light and links are white. */
+  [data-area="finance"] .liquid-pass {
+    --color-fg: var(--pass-fg);
+    --color-fg-muted: var(--pass-fg-muted);
+    --color-accent: var(--pass-fg);
+    /* the cost shares (ink steps) and up/down colours, lifted so they read on graphite */
+    --color-ink-700: 235 235 240;
+    --color-ink-500: 186 186 192;
+    --color-ink-400: 142 142 148;
+    --color-ink-300: 104 104 110;
+    --color-success-500: 52 199 140;
+    --color-success-700: 120 222 176;
+    --color-danger-600: 255 128 118;
+    color: rgb(var(--color-fg));
+  }
+  /* Every plain card in the Store Console is a soft white panel on the warm canvas (no hairline box): the same fill,
+     edge and shadow as .liquid. A storefront preview inside the admin keeps the store's own cards. */
+  [data-surface="admin"] [data-card="default"]:not([data-surface="storefront"] *) {
+    @apply rounded-2xl border-transparent;
+    background: var(--liquid-fill);
+    box-shadow: var(--liquid-shadow);
+  }
+  .liquid {
+    background: var(--liquid-fill, rgb(var(--color-surface)));
+    box-shadow: var(--liquid-shadow, none);
+    @apply rounded-2xl;
+  }
+  a.liquid,
+  button.liquid {
+    @apply transition-shadow duration-base ease-smooth;
+  }
+  a.liquid:hover,
+  button.liquid:hover {
+    box-shadow: var(--liquid-shadow-hover, none);
+  }
+  /* The money card: one soft light streak, still (no animation). */
+  .liquid-pass {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: var(--pass-fill, rgb(var(--color-surface)));
+    box-shadow: var(--pass-shadow, none);
+    @apply rounded-3xl;
+  }
+  .liquid-pass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--pass-sheen, none);
+    pointer-events: none;
+  }
+  .liquid-key {
+    background: var(--key-fill, rgb(var(--color-surface)));
+    box-shadow: var(--key-shadow, none);
+    @apply inline-flex h-14 w-14 items-center justify-center rounded-full text-fg transition-transform duration-fast ease-smooth;
+  }
+  .group:active .liquid-key {
+    transform: scale(0.94);
+  }
+  /* A choice shown as a tappable chip; aria-checked="true" is the picked one. */
+  .liquid-chip {
+    background: var(--liquid-fill, rgb(var(--color-surface)));
+    box-shadow: var(--liquid-shadow, none);
+    @apply inline-flex min-h-11 items-center gap-2 rounded-2xl px-3.5 py-2 text-left text-sm text-fg transition-[box-shadow,background-color] duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50;
+  }
+  .liquid-chip[aria-checked="true"] {
+    background: rgb(var(--color-accent) / 0.08);
+    box-shadow: inset 0 0 0 1.5px rgb(var(--color-accent)), 0 8px 20px -14px rgb(var(--color-accent) / 0.6);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-key,
+    .group:active .liquid-key {
+      transition: none;
+      transform: none;
+    }
+  }
   /* Browsers without backdrop-filter get an opaque surface instead of an unreadable see-through one. */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .glass,
@@ -580,9 +673,10 @@
       display: none;
     }
   }
-  /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). */
+  /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). A display-size field
+     (data-display, e.g. the money amount) is already bigger than 16px, so it keeps its own size. */
   @media (max-width: 767px) {
-    [data-surface="admin"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+    [data-surface="admin"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-display]), select, textarea) {
       font-size: 16px;
     }
     /* The navigation bar's back button (components/admin/mobile-nav-bar.tsx) replaces the page's own "Back to …". */
@@ -1084,4 +1178,17 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* Store Console reading size (owner, 2026-10-31: "easy to read"): the two small steps the admin uses most go up one
+   notch: 12→13px captions and 14→15px body. Tables keep their size so every column still fits; a storefront preview
+   inside the admin keeps the store's own scale. Attribute selectors on purpose: Tailwind
+   @apply copies any rule naming the .text-sm class into every recipe that applies text-sm (.ui-table did). */
+[data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+[data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
 }

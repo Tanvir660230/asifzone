@@ -23,7 +23,8 @@ export const cardVariants = cva("rounded-xl transition-[box-shadow,border-color,
 export interface CardProps extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof cardVariants> {}
 
 export function Card({ className, variant, interactive, ...props }: CardProps) {
-  return <div className={cn(cardVariants({ variant, interactive }), className)} {...props} />;
+  // data-card lets an area restyle its plain cards from tokens (the Money area renders them as liquid glass, globals.css)
+  return <div data-card={variant ?? "default"} className={cn(cardVariants({ variant, interactive }), className)} {...props} />;
 }
 
 /* Padding reads --card-px / --card-py, falling back to the default look; the Store Console sets them tighter on phones

@@ -47,7 +47,7 @@ export default function FinanceOverviewPage() {
         </Alert>
       )}
       {ready && books ? (
-        <details className="group rounded-2xl border border-line-subtle bg-surface px-5 py-4 sm:px-6" data-testid="finance-map-fold">
+        <details className="liquid group px-5 py-4 sm:px-6" data-testid="finance-map-fold">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
             <span>All money and books pages<span className="block text-xs font-normal text-fg-muted">Accounts, bills, payments, the books, profit reports and books setup</span></span>
             <ChevronDown className="h-4 w-4 text-fg-muted transition-transform group-open:rotate-180" aria-hidden />

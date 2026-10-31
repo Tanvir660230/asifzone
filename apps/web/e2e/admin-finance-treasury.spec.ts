@@ -49,12 +49,21 @@ async function toast(page: Page, text: string | RegExp) {
   await expect(page.getByRole("status").filter({ hasText: text, visible: true }).or(page.getByRole("alert").filter({ hasText: text, visible: true })).first()).toBeVisible({ timeout: 15_000 });
 }
 
+/** The open dialog, once it has finished arriving. On a phone it is a sheet sliding up from the bottom; a click while it
+ * still moves can land below its buttons (a slow CI runner can report the sheet "stable" mid-slide). */
+async function sheet(page: Page) {
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  return dialog;
+}
+
 /** Opens a movement dialog from the accounts page and fills it. Account selects take ids; counter accounts their label. */
 async function movement(page: Page, button: string, fill: { from?: string; to?: string; account?: string; direction?: "IN" | "OUT"; counter?: string; date: string; amount: string; description: string; reference?: string; reason?: string }) {
   // Admin V2: the four kinds of movement sit behind one "Record movement" menu
   await page.getByTestId("record-movement").click();
   await page.getByRole("menuitem", { name: button, exact: true }).first().click();
-  const dialog = page.getByRole("dialog");
+  const dialog = await sheet(page);
   if (fill.from) await dialog.locator("#mv-from").selectOption(fill.from);
   if (fill.to) await dialog.locator("#mv-to").selectOption(fill.to);
   if (fill.account) await dialog.locator("#mv-account").selectOption(fill.account);
@@ -95,7 +104,7 @@ test("money accounts: create with details, opening balance waits for a second ow
   await expect(owner.getByRole("heading", { name: "Money accounts" })).toBeVisible(NAV);
 
   await owner.getByRole("button", { name: "New account" }).click();
-  let d = owner.getByRole("dialog");
+  let d = await sheet(owner);
   await d.locator("#fa-kind").selectOption("BANK");
   await d.locator("#fa-name").fill(names.bank);
   await d.locator("#fa-provider").fill("City Bank PLC");
@@ -110,7 +119,7 @@ test("money accounts: create with details, opening balance waits for a second ow
 
   for (const [kind, name] of [["CASH", names.cash], ["MOBILE_WALLET", names.wallet]] as const) {
     await owner.getByRole("button", { name: "New account" }).click();
-    d = owner.getByRole("dialog");
+    d = await sheet(owner);
     await d.locator("#fa-kind").selectOption(kind);
     await d.locator("#fa-name").fill(name);
     if (kind === "MOBILE_WALLET") await d.locator("#fa-reference").fill("01700000000");
@@ -136,7 +145,7 @@ test("money accounts: create with details, opening balance waits for a second ow
   // Edit: branch and approval amount change; type stays fixed.
   await owner.goto(`/admin/finance/accounts/${ids.bank}`);
   await owner.getByTestId("edit-account").click();
-  d = owner.getByRole("dialog");
+  d = await sheet(owner);
   await expect(d.locator("#fa-kind")).toBeDisabled();
   await d.locator("#fa-branch").fill("Banani");
   await d.locator("#fa-threshold").fill("40000");
@@ -227,7 +236,7 @@ test("CSV statement import: mapping, validation, invalid rows, import, duplicate
   await owner.goto(`/admin/finance/accounts/${ids.bank}`);
   await owner.getByRole("tab", { name: "Statement lines" }).click();
   await owner.getByTestId("open-import").click();
-  let d = owner.getByRole("dialog");
+  let d = await sheet(owner);
   await d.locator("#st-file").setInputFiles({ name: "city-aug.csv", mimeType: "text/csv", buffer: Buffer.from(AUGUST) });
 
   // A mapping that names a column the file doesn't have is reported, not guessed.
@@ -250,7 +259,7 @@ test("CSV statement import: mapping, validation, invalid rows, import, duplicate
 
   // The same file again: everything is already there — nothing to import.
   await owner.getByTestId("open-import").click();
-  d = owner.getByRole("dialog");
+  d = await sheet(owner);
   await d.locator("#st-file").setInputFiles({ name: "city-aug.csv", mimeType: "text/csv", buffer: Buffer.from(AUGUST) });
   await d.getByTestId("preview-import").click();
   await expect(d.getByTestId("import-preview")).toContainText("0 new · 4 already imported");
@@ -260,7 +269,7 @@ test("CSV statement import: mapping, validation, invalid rows, import, duplicate
 
   // An overlapping export adds only its new row.
   await owner.getByTestId("open-import").click();
-  d = owner.getByRole("dialog");
+  d = await sheet(owner);
   await d.locator("#st-file").setInputFiles({ name: "city-aug-late.csv", mimeType: "text/csv", buffer: Buffer.from(OVERLAP) });
   await d.getByTestId("preview-import").click();
   await expect(d.getByTestId("import-preview")).toContainText("1 new · 2 already imported");

@@ -58,7 +58,7 @@ export function OwedToOwner({ canRepay }: { canRepay: boolean }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[17px] font-semibold tracking-tight text-fg">Owed back to the owner</h2>
-          <p className="text-sm text-fg-muted">What he paid from his own pocket to be repaid, line by line.</p>
+          <p className="text-sm text-fg-muted">What the owner paid from their own pocket, to be repaid, line by line.</p>
         </div>
         <div className="flex items-center gap-3">
           {q.data && <span className="text-lg font-semibold tabular-nums text-fg" data-testid="owed-total">{formatPrice(q.data.outstanding)}</span>}
@@ -81,7 +81,7 @@ export function OwedToOwner({ canRepay }: { canRepay: boolean }) {
         error={q.error}
         onRetry={() => void q.refetch()}
         cardBelow="md"
-        empty={<EmptyState icon={HandCoins} title="Nothing is owed back to him" description="When the owner pays a purchase or an expense from his own pocket to be repaid, it shows here." />}
+        empty={<EmptyState icon={HandCoins} title="Nothing is owed back to the owner" description="When the owner pays a purchase or an expense from their own pocket to be repaid, it shows here." />}
       />
       {repaying && <RepayDialog lines={open} onClose={() => setRepaying(false)} />}
     </Card>
@@ -126,7 +126,7 @@ function RepayDialog({ lines, onClose }: { lines: OwnerAdvanceLine[]; onClose: (
       open
       onClose={onClose}
       title="Repay owner"
-      description="Pay him back for what he paid from his own pocket. Each line says what this repays."
+      description="Pay the owner back for what they paid from their own pocket. Each line says what this repays."
       widthClassName="max-w-lg"
       footer={
         <>

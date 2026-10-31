@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, ChevronRight, Plus } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Banknote, CalendarCheck, CheckCircle2, ChevronRight, FileText, HandCoins, Landmark, Plus, Receipt, Smartphone, type LucideIcon } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getErrorMessage } from "@/lib/api-client";
@@ -31,15 +30,18 @@ const lastMonths = (today: string, n: number) => {
 const formatPrice = (v: number) => formatExact(Math.round(v));
 const signed = (v: number) => (v < 0 ? `−${formatPrice(-v)}` : formatPrice(v));
 
+type Adding = { kind?: QuickAddKind; partnerId?: string };
+
 /**
- * The owner's home (docs/FINANCE_OWNER_HOME.md): how the month went, where the money is, who is owed what and what
- * needs doing — one call, plain words, every figure linking to the page behind it. Everyday entries start from Add.
+ * The owner's home (docs/FINANCE_OWNER_HOME.md), in the Money "Liquid Glass" look (owner, 2026-10-31): the month on one
+ * titanium card, the everyday entries as round keys (one tap each), the money in Wallet-style cards, then what needs
+ * doing and who is owed what. One call, plain words, every figure linking to the page behind it.
  */
 export function OwnerHome() {
   const [month, setMonth] = useState<string | undefined>(undefined);
-  const [adding, setAdding] = useState<{ kind?: QuickAddKind; partnerId?: string } | null>(null);
+  const [adding, setAdding] = useState<Adding | null>(null);
   const q = useQuery({ queryKey: booksApi.ownerHomeKey(month), queryFn: () => booksApi.getOwnerHome(month) });
-  // The same alerts as Needs attention (shared cache with the sidebar badge): a critical one must never sit behind
+  // The same alerts as Home's work queue (shared cache with the sidebar badge): a critical one must never sit behind
   // "Nothing needs you right now".
   const alerts = useQuery({ queryKey: alertKeys.all, queryFn: getFinanceAlerts });
   const critical = alerts.data?.alerts.filter((a) => a.severity === "critical") ?? [];
@@ -48,12 +50,12 @@ export function OwnerHome() {
   const stockGain = current ? alerts.data?.alerts.find((a) => a.key === "inventory.gains" && (a.amount ?? 0) > 0) : undefined;
 
   return (
-    <div className="space-y-6" data-testid="owner-home">
+    <div className="space-y-7" data-testid="owner-home">
       <div className="flex items-center justify-between gap-3">
         <Select aria-label="Month" className="min-w-0 flex-1 sm:w-auto sm:flex-none" value={month ?? d?.month.month ?? ""} onChange={(e) => setMonth(e.target.value)} disabled={!d}>
           {(d ? lastMonths(d.today, 6) : []).map((m, i) => <option key={m} value={m}>{i === 0 ? `This month (${monthName(m)})` : monthName(m, { month: "long", year: "numeric" })}</option>)}
         </Select>
-        <Button className="shrink-0" onClick={() => setAdding({})} data-testid="owner-add"><Plus className="h-4 w-4" /> Add</Button>
+        <Button className="shrink-0 rounded-full" onClick={() => setAdding({})} data-testid="owner-add"><Plus className="h-4 w-4" /> New</Button>
       </div>
 
       {q.isError && <Alert variant="danger" title="Couldn't load your numbers" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "Try again in a moment.")}</Alert>}
@@ -61,16 +63,20 @@ export function OwnerHome() {
       {!d && !q.isError && <HomeSkeleton />}
 
       {d && (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-          <div className="space-y-6">
-            <MonthStory month={d.month} last={d.lastMonth} current={current} stockGain={stockGain} />
-            <Todo items={d.todo} critical={critical} onPay={(partnerId) => setAdding({ kind: "PAY_PARTNER", partnerId })} />
+        <>
+          <MonthCard month={d.month} last={d.lastMonth} current={current} stockGain={stockGain} />
+          <ActionKeys hasPartners={Boolean(d.people?.partners.length)} onAdd={setAdding} />
+          <div className="grid gap-7 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+            <div className="space-y-7">
+              <Wallet money={d.money} />
+              <Todo items={d.todo} critical={critical} onPay={(partnerId) => setAdding({ kind: "PAY_PARTNER", partnerId })} />
+            </div>
+            <div className="space-y-7">
+              <Money money={d.money} />
+              {d.people && (d.people.owner || d.people.partners.length > 0) && <People people={d.people} onAdd={setAdding} />}
+            </div>
           </div>
-          <div className="space-y-6">
-            <Money money={d.money} />
-            {d.people && <People people={d.people} onAdd={setAdding} />}
-          </div>
-        </div>
+        </>
       )}
 
       {adding && d && <QuickAdd home={d} initial={adding.kind} partnerId={adding.partnerId} onClose={() => setAdding(null)} />}
@@ -80,24 +86,25 @@ export function OwnerHome() {
 
 function HomeSkeleton() {
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-      <Skeleton className="h-80 w-full rounded-2xl" />
-      <div className="space-y-6"><Skeleton className="h-56 w-full rounded-2xl" /><Skeleton className="h-40 w-full rounded-2xl" /></div>
+    <div className="space-y-7" aria-busy="true" aria-label="Loading your numbers">
+      <Skeleton className="h-64 w-full rounded-3xl" />
+      <div className="flex gap-5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-14 rounded-full" />)}</div>
+      <div className="grid gap-7 lg:grid-cols-2"><Skeleton className="h-40 w-full rounded-2xl" /><Skeleton className="h-40 w-full rounded-2xl" /></div>
     </div>
   );
 }
 
-// ── how the month went ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── how the month went: the titanium card ───────────────────────────────────────────────────────────────────────────
 
-/** Where each taka of sales went. The one bold thing on the page. */
-const SHARES: Array<{ key: keyof Pick<OwnerMonth, "goods" | "delivery" | "ads" | "other">; label: string; hint: string; color: string; href: string }> = [
-  { key: "goods", label: "Goods", hint: "what the items sold cost you", color: "bg-ink-700", href: "/admin/finance/profit" },
-  { key: "delivery", label: "Delivery", hint: "Steadfast charges", color: "bg-ink-500", href: "/admin/finance/courier" },
-  { key: "ads", label: "Ads", hint: "Facebook & Instagram", color: "bg-ink-400", href: "/admin/finance/ads" },
-  { key: "other", label: "Other costs", hint: "packaging, hosting, fees", color: "bg-ink-300", href: "/admin/finance/expenses" },
+/** Where each taka of sales went. */
+const SHARES: Array<{ key: keyof Pick<OwnerMonth, "goods" | "delivery" | "ads" | "other">; label: string; color: string; href: string }> = [
+  { key: "goods", label: "Goods", color: "bg-ink-700", href: "/admin/finance/profit" },
+  { key: "delivery", label: "Delivery", color: "bg-ink-500", href: "/admin/finance/courier" },
+  { key: "ads", label: "Ads", color: "bg-ink-400", href: "/admin/finance/ads" },
+  { key: "other", label: "Other costs", color: "bg-ink-300", href: "/admin/finance/expenses" },
 ];
 
-function MonthStory({ month, last, current, stockGain }: { month: OwnerMonth; last: OwnerMonth; current: boolean; stockGain?: FinanceAlert }) {
+function MonthCard({ month, last, current, stockGain }: { month: OwnerMonth; last: OwnerMonth; current: boolean; stockGain?: FinanceAlert }) {
   const loss = month.profit < 0;
   const base = month.sales > 0 ? month.sales : 0;
   const per100 = (v: number) => (base ? Math.round((Math.max(0, v) / base) * 100) : 0);
@@ -105,57 +112,124 @@ function MonthStory({ month, last, current, stockGain }: { month: OwnerMonth; la
   const label = current ? `${monthName(month.month)} so far` : monthName(month.month, { month: "long", year: "numeric" });
 
   return (
-    <Card className="overflow-hidden p-0" data-testid="owner-month">
-      <div className="space-y-1 p-5 sm:p-7">
-        <p className="text-sm text-fg-muted">{label}</p>
-        <p className={cn("text-[2rem] font-semibold leading-tight tracking-tight tabular-nums sm:text-[2.75rem]", loss ? "text-danger-600" : "text-fg")}>
-          {loss ? `${formatPrice(-month.profit)} loss` : `${formatPrice(month.profit)} profit`}
-        </p>
-        <p className="text-[15px] text-fg-muted">
-          from <span className="font-medium text-fg tabular-nums">{formatPrice(month.sales)}</span> in sales.{" "}
-          {last.sales > 0 && <>Last month: <span className="tabular-nums">{formatPrice(Math.abs(last.profit))}</span> {last.profit < 0 ? "loss" : "profit"}.</>}
-        </p>
-        {stockGain && (
-          <Link href={stockGain.href} className="!mt-3 flex items-start gap-2 rounded-xl bg-warning-50 px-3.5 py-3 text-sm text-warning-700 hover:bg-warning-100" data-testid="owner-month-stock-gain">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>
-              This profit includes <span className="font-medium tabular-nums">{formatPrice(stockGain.amount ?? 0)}</span> of stock added without a purchase or a fill. The real profit is lower until that stock is counted again or its purchase is recorded.
-            </span>
-          </Link>
+    <section className="liquid-pass p-6 sm:p-8" aria-label={`${label}: ${loss ? "loss" : "profit"}`} data-testid="owner-month">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-end">
+        <div>
+          <p className="text-[15px] font-medium text-fg-muted">{label}</p>
+          <p className={cn("mt-1 text-[2.5rem] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[3.5rem]", loss ? "text-danger-600" : "text-fg")}>
+            {loss ? `−${formatPrice(-month.profit)}` : formatPrice(month.profit)}
+          </p>
+          <p className="mt-2 text-[15px] text-fg-muted">
+            {loss ? "loss" : "profit"} from <span className="font-medium text-fg tabular-nums">{formatPrice(month.sales)}</span> in sales
+          </p>
+          {last.sales > 0 && (
+            <p className="mt-0.5 text-sm text-fg-muted">Last month <span className="tabular-nums">{formatPrice(Math.abs(last.profit))}</span> {last.profit < 0 ? "loss" : "profit"}</p>
+          )}
+        </div>
+
+        {base > 0 ? (
+          <div>
+            <p className="text-sm font-medium text-fg">Every {formatPrice(100)} you sold</p>
+            <div className="mt-3 flex h-2.5 w-full gap-[3px] overflow-hidden rounded-full" aria-hidden="true">
+              {SHARES.map((s) => per100(month[s.key]) > 0 && <span key={s.key} className={cn("rounded-full", s.color)} style={{ width: `${per100(month[s.key])}%` }} />)}
+              {!loss && profitPer100 > 0 && <span className="rounded-full bg-success-500" style={{ width: `${profitPer100}%` }} />}
+            </div>
+            <ul className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
+              {SHARES.map((s) => (
+                <li key={s.key}>
+                  <Link href={s.href} className="flex min-h-11 items-center gap-2 rounded-lg text-sm hover:text-accent">
+                    <span className={cn("h-2 w-2 shrink-0 rounded-full", s.color)} aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-fg-muted">{s.label}</span>
+                    <span className="tabular-nums text-fg">{formatPrice(per100(month[s.key]))}</span>
+                  </Link>
+                </li>
+              ))}
+              <li className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", loss ? "bg-danger-500" : "bg-success-500")} aria-hidden="true" />
+                <span className="flex-1 text-fg">{loss ? "Lost" : "You keep"}</span>
+                <span className={cn("tabular-nums", loss ? "text-danger-600" : "text-success-700")}>{loss ? `−${formatPrice(-profitPer100)}` : formatPrice(profitPer100)}</span>
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <p className="text-sm text-fg-muted">No sales delivered in this month yet. Profit appears as orders are delivered.</p>
         )}
       </div>
 
-      {base > 0 ? (
-        <div className="space-y-4 border-t border-line-subtle bg-surface-muted/60 p-5 sm:p-7">
-          <p className="text-sm font-medium text-fg">Every {formatPrice(100)} you sold</p>
-          <div className="flex h-3 w-full overflow-hidden rounded-full bg-ink-100" aria-hidden="true">
-            {SHARES.map((s) => <span key={s.key} className={s.color} style={{ width: `${per100(month[s.key])}%` }} />)}
-            {!loss && <span className="bg-success-500" style={{ width: `${Math.max(0, profitPer100)}%` }} />}
-          </div>
-          <ul className="divide-y divide-line-subtle">
-            {SHARES.map((s) => (
-              <li key={s.key}>
-                <Link href={s.href} className="flex items-center gap-3 py-2.5 text-sm hover:text-accent">
-                  <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", s.color)} aria-hidden="true" />
-                  <span className="min-w-0 flex-1"><span className="block text-fg">{s.label}</span><span className="hidden text-xs text-fg-muted sm:block">{s.hint}</span></span>
-                  <span className="w-10 text-right tabular-nums text-fg-muted">{formatPrice(per100(month[s.key]))}</span>
-                  <span className="w-24 text-right tabular-nums text-fg">{formatPrice(month[s.key])}</span>
-                </Link>
-              </li>
-            ))}
-            <li className="flex items-center gap-3 py-2.5 text-sm font-medium">
-              <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", loss ? "bg-danger-500" : "bg-success-500")} aria-hidden="true" />
-              <span className="flex-1 text-fg">{loss ? "Lost" : "You keep"}</span>
-              <span className={cn("w-10 text-right tabular-nums", loss ? "text-danger-600" : "text-success-700")}>{loss ? `−${formatPrice(-profitPer100)}` : formatPrice(profitPer100)}</span>
-              <span className={cn("w-24 text-right tabular-nums", loss ? "text-danger-600" : "text-success-700")}>{signed(month.profit)}</span>
-            </li>
-          </ul>
-          {loss && <p className="text-xs text-fg-muted">Costs were more than sales this month — usually ads or one-time setup costs. A working partner gets nothing for a loss month.</p>}
-        </div>
-      ) : (
-        <p className="border-t border-line-subtle px-5 py-6 text-sm text-fg-muted sm:px-7">No sales delivered in this month yet. Profit appears as orders are delivered.</p>
+      {stockGain && (
+        <Link href={stockGain.href} className="mt-6 flex items-start gap-2 rounded-2xl bg-warning-50/90 px-4 py-3 text-sm text-warning-700 hover:bg-warning-100" data-testid="owner-month-stock-gain">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            This profit includes <span className="font-medium tabular-nums">{formatPrice(stockGain.amount ?? 0)}</span> of stock added without a purchase or a fill. The real profit is lower until that stock is counted again or its purchase is recorded.
+          </span>
+        </Link>
       )}
-    </Card>
+      {loss && <p className="mt-5 text-xs text-fg-muted">Costs were more than sales this month — usually ads or one-time setup costs. A working partner gets nothing for a loss month.</p>}
+    </section>
+  );
+}
+
+// ── one tap for each everyday entry ───────────────────────────────────────────────────────────────────────────────────
+
+function ActionKeys({ hasPartners, onAdd }: { hasPartners: boolean; onAdd: (a: Adding) => void }) {
+  const keys: Array<{ label: string; icon: LucideIcon; kind?: QuickAddKind; href?: string; testId: string }> = [
+    { label: "Expense", icon: Receipt, kind: "EXPENSE", testId: "key-expense" },
+    { label: "Put money in", icon: ArrowDownLeft, kind: "OWNER_IN", testId: "key-owner-in" },
+    { label: "Take money out", icon: ArrowUpRight, kind: "OWNER_OUT", testId: "key-owner-out" },
+    ...(hasPartners ? [{ label: "Pay partner", icon: HandCoins, kind: "PAY_PARTNER" as const, testId: "key-pay-partner" }] : []),
+    { label: "Pay a bill", icon: FileText, href: "/admin/finance/supplier-invoices", testId: "key-bills" },
+    { label: "Close month", icon: CalendarCheck, href: "/admin/finance/month-end", testId: "key-month-end" },
+  ];
+  return (
+    <nav aria-label="Quick actions" className="-mx-1 overflow-x-auto pb-1">
+      <ul className="flex min-w-max gap-2 px-1 sm:min-w-0 sm:flex-wrap sm:gap-x-6 sm:gap-y-3">
+        {keys.map((k) => {
+          const inner = (
+            <>
+              <span className="liquid-key"><k.icon className="h-[22px] w-[22px]" strokeWidth={1.75} aria-hidden="true" /></span>
+              <span className="mt-2 block w-[5.5rem] text-center text-[13px] leading-tight text-fg">{k.label}</span>
+            </>
+          );
+          return (
+            <li key={k.label} className="flex justify-center">
+              {k.href ? (
+                <Link href={k.href} className="group flex flex-col items-center rounded-2xl p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50" data-testid={k.testId}>{inner}</Link>
+              ) : (
+                <button type="button" onClick={() => onAdd({ kind: k.kind })} className="group flex flex-col items-center rounded-2xl p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50" data-testid={k.testId}>{inner}</button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+// ── the money you hold: Wallet cards ──────────────────────────────────────────────────────────────────────────────────
+
+function Wallet({ money }: { money: Home["money"] }) {
+  const cards: Array<{ label: string; value: number; icon: LucideIcon; fill: string; mark: string }> = [
+    { label: "Cash", value: money.withUs.cash, icon: Banknote, fill: "var(--pass-cash)", mark: "var(--mark-cash)" },
+    { label: "Bank", value: money.withUs.bank, icon: Landmark, fill: "var(--pass-bank)", mark: "var(--mark-bank)" },
+    { label: "bKash & Nagad", value: money.withUs.wallets, icon: Smartphone, fill: "var(--pass-wallet)", mark: "var(--mark-wallet)" },
+  ];
+  return (
+    <section aria-labelledby="wallet-title">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 id="wallet-title" className="text-[17px] font-semibold tracking-tight text-fg">Money you hold</h2>
+        <p className="text-[17px] font-semibold tabular-nums text-fg">{formatPrice(money.withUs.total)}</p>
+      </div>
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {cards.map((c) => (
+          <li key={c.label}>
+            <Link href="/admin/finance/accounts" className="liquid flex min-h-[104px] flex-col justify-between p-4" style={{ background: c.fill }}>
+              <span className="flex items-center gap-2.5 text-sm text-fg-muted"><span className="grid h-7 w-7 place-items-center rounded-full text-white" style={{ background: c.mark }} aria-hidden="true"><c.icon className="h-3.5 w-3.5" /></span>{c.label}</span>
+              <span className="text-[22px] font-semibold tracking-tight tabular-nums text-fg">{signed(c.value)}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -172,49 +246,51 @@ function todoText(t: Home["todo"][number]): string {
   }
 }
 
-function Todo({ items, critical, onPay }: { items: Home["todo"]; critical: FinanceAlert[]; onPay: (partnerId: string) => void }) {
+function Todo({ items: all, critical, onPay }: { items: Home["todo"]; critical: FinanceAlert[]; onPay: (partnerId: string) => void }) {
+  const items = critical.some((a) => a.key === "books.not_started") ? all.filter((t) => t.kind !== "BOOKS_NOT_STARTED") : all;
   if (!items.length && !critical.length) {
     return (
-      <p className="flex items-start gap-2 px-1 text-sm text-fg-muted" data-testid="owner-todo-empty">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-600" /> Nothing needs you right now. Sales, Steadfast payouts and partner shares are kept up to date automatically.
+      <p className="liquid flex items-start gap-3 px-5 py-4 text-sm text-fg-muted" data-testid="owner-todo-empty">
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success-600" aria-hidden="true" />
+        <span><span className="block font-medium text-fg">Nothing needs you right now</span>Sales, Steadfast payouts and partner shares are kept up to date automatically.</span>
       </p>
     );
   }
   return (
-    <Card className="p-0" data-testid="owner-todo">
-      <p className="px-5 pt-4 text-sm font-medium text-fg sm:px-6">Needs you</p>
-      <ul className="divide-y divide-line-subtle">
+    <section aria-labelledby="todo-title" data-testid="owner-todo">
+      <h2 id="todo-title" className="mb-3 text-[17px] font-semibold tracking-tight text-fg">Needs you</h2>
+      <ul className="liquid divide-y divide-line-subtle overflow-hidden">
         {critical.map((a) => (
           <li key={a.key}>
-            <Link href={a.href} className="flex items-center gap-3 px-5 py-3.5 text-sm hover:bg-surface-muted sm:px-6" data-testid="owner-todo-critical">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-danger-500" aria-hidden="true" />
+            <Link href={a.href} className="flex min-h-14 items-center gap-3 px-5 py-3 text-sm hover:bg-white/60" data-testid="owner-todo-critical">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-danger-500" aria-hidden="true" />
               <span className="min-w-0 flex-1">
-                <span className="block text-fg">{a.title}{a.amount ? <> · <span className="tabular-nums">{formatPrice(a.amount)}</span></> : null}</span>
+                <span className="block font-medium text-fg">{a.title}{a.amount ? <> · <span className="tabular-nums">{formatPrice(a.amount)}</span></> : null}</span>
                 <span className="block text-xs text-fg-muted">{a.action}</span>
               </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
             </Link>
           </li>
         ))}
         {items.map((t, i) => (
           <li key={`${t.kind}-${i}`}>
             {t.kind === "PAY_PARTNER" ? (
-              <button type="button" onClick={() => onPay(t.partnerId ?? "")} className="flex w-full items-center gap-3 px-5 py-3.5 text-left text-sm hover:bg-surface-muted sm:px-6">
-                <span className="h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden="true" />
+              <div className="flex min-h-14 items-center gap-3 px-5 py-3 text-sm">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-warning-500" aria-hidden="true" />
                 <span className="flex-1 text-fg">{todoText(t)}</span>
-                <span className="font-medium text-accent">Pay</span>
-              </button>
+                <Button size="sm" className="rounded-full" onClick={() => onPay(t.partnerId ?? "")}>Pay</Button>
+              </div>
             ) : (
-              <Link href={t.href} className="flex items-center gap-3 px-5 py-3.5 text-sm hover:bg-surface-muted sm:px-6">
-                <span className="h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden="true" />
+              <Link href={t.href} className="flex min-h-14 items-center gap-3 px-5 py-3 text-sm hover:bg-white/60">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-warning-500" aria-hidden="true" />
                 <span className="flex-1 text-fg">{todoText(t)}</span>
-                <ChevronRight className="h-4 w-4 text-fg-muted" />
+                <ChevronRight className="h-4 w-4 text-fg-muted" aria-hidden="true" />
               </Link>
             )}
           </li>
         ))}
       </ul>
-    </Card>
+    </section>
   );
 }
 
@@ -232,63 +308,65 @@ function Money({ money }: { money: Home["money"] }) {
   const total = rows.reduce((s, r) => s + r.value, 0);
   const owes = money.weOwe.suppliers + money.weOwe.owner + money.weOwe.loans;
   return (
-    <Card className="p-0" data-testid="owner-money">
-      <div className="flex items-baseline justify-between gap-3 px-5 pt-5 sm:px-6">
-        <p className="text-sm font-medium text-fg">Where your money is</p>
-        <p className="text-lg font-semibold tabular-nums text-fg">{formatPrice(total)}</p>
+    <section aria-labelledby="money-title" data-testid="owner-money">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 id="money-title" className="text-[17px] font-semibold tracking-tight text-fg">Where your money is</h2>
+        <p className="text-[17px] font-semibold tabular-nums text-fg">{formatPrice(total)}</p>
       </div>
-      <ul className="mt-2 divide-y divide-line-subtle">
+      <ul className="liquid divide-y divide-line-subtle overflow-hidden">
         {rows.map((r) => (
           <li key={r.label}>
-            <Link href={r.href} className="flex items-center gap-3 px-5 py-3 text-sm hover:bg-surface-muted sm:px-6">
+            <Link href={r.href} className="flex min-h-12 items-center gap-3 px-5 py-2.5 text-sm hover:bg-white/60">
               <span className="flex-1 text-fg">{r.label}{r.hint && <span className="block text-xs text-fg-muted">{r.hint}</span>}</span>
               <span className="tabular-nums text-fg">{formatPrice(r.value)}</span>
-              <ChevronRight className="h-4 w-4 text-fg-muted" />
+              <ChevronRight className="h-4 w-4 text-fg-muted" aria-hidden="true" />
             </Link>
           </li>
         ))}
+        {owes >= 1 && <li className="px-5 py-3 text-sm text-fg-muted">You owe <span className="tabular-nums text-fg">{formatPrice(owes)}</span> to suppliers, the owner or lenders.</li>}
       </ul>
-      {owes >= 1 && <p className="border-t border-line-subtle px-5 py-3 text-sm text-fg-muted sm:px-6">You owe <span className="tabular-nums text-fg">{formatPrice(owes)}</span> to suppliers, the owner or lenders.</p>}
-    </Card>
+    </section>
   );
 }
 
 // ── owner and partners ────────────────────────────────────────────────────────────────────────────────────────────────
 
-function People({ people, onAdd }: { people: NonNullable<Home["people"]>; onAdd: (a: { kind?: QuickAddKind; partnerId?: string }) => void }) {
+function People({ people, onAdd }: { people: NonNullable<Home["people"]>; onAdd: (a: Adding) => void }) {
   const o = people.owner;
   return (
-    <Card className="p-0" data-testid="owner-people">
-      <p className="px-5 pt-5 text-sm font-medium text-fg sm:px-6">Owner &amp; partners</p>
-      {o && (
-        <Link href="/admin/finance/equity" className="block px-5 py-4 hover:bg-surface-muted sm:px-6">
-          <p className="text-[15px] font-medium text-fg">{o.name}</p>
-          <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-            <div><dt className="text-xs text-fg-muted">Net capital</dt><dd className="font-medium tabular-nums text-fg">{signed(o.netCapital)}</dd></div>
-            <div><dt className="text-xs text-fg-muted">Drawings</dt><dd className="font-medium tabular-nums text-fg">{signed(o.drawings)}</dd></div>
-          </dl>
-        </Link>
-      )}
-      <ul className="divide-y divide-line-subtle border-t border-line-subtle">
-        {people.partners.map((p) => (
-          <li key={p.id} className="flex items-center gap-3 px-5 py-4 sm:px-6">
-            <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-medium text-fg">
-                {p.name}{" "}
-                <span className="text-sm font-normal text-fg-muted">{p.status === "LEFT" ? "left" : p.sharePct !== null ? `${p.sharePct}% of profit` : "no profit share now"}</span>
-              </p>
-              <p className="text-sm text-fg-muted">
-                {p.available > 0 ? <>Can be paid now <span className="tabular-nums text-fg">{formatPrice(p.available)}</span></>
-                  : p.paidInAdvance > 0 ? <>Paid <span className="tabular-nums text-fg">{formatPrice(p.paidInAdvance)}</span> in advance</>
-                  : "Nothing to pay now"}
-                {p.pending > 0 && <>. <span className="tabular-nums text-fg">{formatPrice(p.pending)}</span> waiting for approval</>}
-                {p.runningMonth && <>. This month so far <span className="tabular-nums text-fg">{formatPrice(p.runningMonth.shareSoFar)}</span> (estimate)</>}
-              </p>
-            </div>
-            {p.available > 0 && <Button size="sm" onClick={() => onAdd({ kind: "PAY_PARTNER", partnerId: p.id })}>Pay</Button>}
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <section aria-labelledby="people-title" data-testid="owner-people">
+      <h2 id="people-title" className="mb-3 text-[17px] font-semibold tracking-tight text-fg">Owner &amp; partners</h2>
+      <div className="liquid overflow-hidden">
+        {o && (
+          <Link href="/admin/finance/equity" className="block px-5 py-4 hover:bg-white/60">
+            <p className="text-[15px] font-medium text-fg">{o.name}</p>
+            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div><dt className="text-xs text-fg-muted">Net capital</dt><dd className="font-medium tabular-nums text-fg">{signed(o.netCapital)}</dd></div>
+              <div><dt className="text-xs text-fg-muted">Drawings</dt><dd className="font-medium tabular-nums text-fg">{signed(o.drawings)}</dd></div>
+            </dl>
+          </Link>
+        )}
+        <ul className="divide-y divide-line-subtle border-t border-line-subtle">
+          {people.partners.map((p) => (
+            <li key={p.id} className="flex items-center gap-3 px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-medium text-fg">
+                  {p.name}{" "}
+                  <span className="text-sm font-normal text-fg-muted">{p.status === "LEFT" ? "left" : p.sharePct !== null ? `${p.sharePct}% of profit` : "no profit share now"}</span>
+                </p>
+                <p className="text-sm text-fg-muted">
+                  {p.available > 0 ? <>Can be paid now <span className="tabular-nums text-fg">{formatPrice(p.available)}</span></>
+                    : p.paidInAdvance > 0 ? <>Paid <span className="tabular-nums text-fg">{formatPrice(p.paidInAdvance)}</span> in advance</>
+                    : "Nothing to pay now"}
+                  {p.pending > 0 && <>. <span className="tabular-nums text-fg">{formatPrice(p.pending)}</span> waiting for approval</>}
+                  {p.runningMonth && <>. This month so far <span className="tabular-nums text-fg">{formatPrice(p.runningMonth.shareSoFar)}</span> (estimate)</>}
+                </p>
+              </div>
+              {p.available > 0 && <Button size="sm" className="rounded-full" onClick={() => onAdd({ kind: "PAY_PARTNER", partnerId: p.id })}>Pay</Button>}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
