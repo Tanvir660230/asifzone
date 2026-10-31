@@ -214,10 +214,15 @@ test("the stock list filters by status and searches on the server", async ({ pag
   await out.click();
   await expect(out).toHaveAttribute("aria-pressed", "true");
   const rows = list.locator("[data-testid^=stock-row-]");
+  // the previous list stays on screen (aria-busy) until the filtered one arrives
+  const settled = () => expect(list.locator("[aria-busy=true]")).toHaveCount(0, NAV);
+  await settled();
   await expect(list.getByTestId("stock-list-empty").or(rows.first())).toBeVisible(NAV);
   for (const r of await rows.all()) await expect(r).toContainText("Out");
 
   await list.getByTestId("stock-filter-ALL").click();
+  await expect(list.getByTestId("stock-filter-ALL")).toHaveAttribute("aria-pressed", "true");
+  await settled();
   const first = await rows.first().getAttribute("data-testid");
   const sku = first!.replace("stock-row-", "");
   await page.getByTestId("stock-search").fill(sku);

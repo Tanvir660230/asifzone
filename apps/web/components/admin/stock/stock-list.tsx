@@ -122,7 +122,7 @@ export function StockList({ hasFillToOrder, q, selectedId, onOpen }: { hasFillTo
             {q ? <>Nothing matches “{q}”. Try fewer words, or check the kind and status above.</> : status !== "ALL" ? <>Nothing is {STATUS_LABEL[status].toLowerCase()} right now.</> : "No stock-tracked items yet."}
           </p>
         ) : (
-          <ul className={cn("divide-y divide-line-subtle transition-opacity duration-base", list.isPlaceholderData && "opacity-60")}>
+          <ul aria-busy={list.isPlaceholderData || undefined} className={cn("divide-y divide-line-subtle transition-opacity duration-base", list.isPlaceholderData && "opacity-60")}>
             {items.map((i) => (
               <li key={i.variantId}>
                 <button
