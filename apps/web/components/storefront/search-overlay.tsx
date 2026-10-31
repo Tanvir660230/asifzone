@@ -2,11 +2,13 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ChevronRight, Clock, LayoutGrid, Mic, Search, SearchX, X, XCircle } from "lucide-react";
 import type { SearchSuggestionProduct, SearchSuggestions } from "@clothing-brand/shared";
 import { fetchPopularSearches, fetchSearchSuggestions } from "@/lib/api/storefront";
 import { addRecentSearch, clearRecentSearches, getRecentSearches, removeRecentSearch } from "@/lib/recent-searches";
+import { navHref, type NavNode } from "@/lib/nav-links";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useSearchOverlayStore } from "@/store/search-overlay";
@@ -67,7 +69,9 @@ function Completion({ text, query }: { text: string; query: string }) {
   );
 }
 
-export function SearchOverlay() {
+/** `categories`: the store's top categories, offered as a way in when there is nothing to suggest yet (a new store with
+ * no searches, a shopper with no history) instead of an empty sheet. */
+export function SearchOverlay({ categories = [] }: { categories?: NavNode[] }) {
   const router = useRouter();
   const { isOpen, open: openStore, close: closeStore } = useSearchOverlayStore();
   const listId = useId();
@@ -424,6 +428,24 @@ export function SearchOverlay() {
             <div className="flex flex-col items-center px-6 py-14 text-center">
               <Search size={28} className="text-ink-300" aria-hidden />
               <p className="mt-3 text-[15px] text-fg-muted">Search by product, category or colour.</p>
+              {categories.length > 0 && (
+                <nav aria-label="Browse categories" className="mt-8 w-full text-left">
+                  <p className="px-1 pb-2 text-[13px] font-semibold text-fg">Browse</p>
+                  <ul className="flex flex-wrap gap-2">
+                    {categories.slice(0, 10).map((cat) => (
+                      <li key={cat.id}>
+                        <Link
+                          href={navHref(cat)}
+                          onClick={close}
+                          className="inline-flex h-10 items-center rounded-full bg-ink-100/70 px-4 text-[15px] text-fg transition-colors duration-fast ease-smooth hover:bg-ink-200/70"
+                        >
+                          {cat.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              )}
             </div>
           ) : (
             <ul

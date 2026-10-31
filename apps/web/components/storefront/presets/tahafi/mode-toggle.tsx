@@ -60,7 +60,7 @@ export function ModeToggle({ className }: { className: string }) {
         <Icon size={20} aria-hidden="true" />
       </button>
       {open && (
-        <div role="menu" aria-label="Light or dark" className="glass-panel absolute left-0 top-12 z-50 w-56 rounded-[1.125rem] p-1.5 lg:left-auto lg:right-0">
+        <div role="menu" aria-label="Light or dark" className="glass-panel absolute right-0 top-12 z-50 w-56 rounded-[1.125rem] p-1.5">
           {CHOICES.map(({ value, label, icon: ItemIcon }) => (
             <button
               key={value}

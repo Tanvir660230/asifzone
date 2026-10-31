@@ -1,19 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronRight } from "lucide-react";
 import { DEFAULT_TRUST_STRIP_ITEMS, type ImageGalleryConfig } from "@clothing-brand/shared";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { resolveImageUrl } from "@/lib/image-url";
 import { resolveHomepageIcon } from "@/lib/homepage-icons";
+import { TAHAFI_CARD as CARD, TAHAFI_PHOTO_GLASS as PHOTO_GLASS } from "./styles";
 
 /* The tahafi preset's homepage sections (photo cards keep the light theme's colours in either mode, data-surface): the light-glass look — white cards with soft depth on the grey page, large
    radii, glass where something floats on a photograph. Same props and the same admin-authored content as the classic
    sections; never invented copy. */
 
 const SECTION = "mx-auto max-w-7xl px-4 py-[calc(2.25rem*var(--section-rhythm))] sm:px-6 sm:py-[calc(3.5rem*var(--section-rhythm))] lg:px-8";
-const CARD = "rounded-[1.375rem] bg-surface shadow-[var(--panel-shadow)]";
-const PHOTO_GLASS =
-  "border border-white/20 bg-black/30 shadow-[inset_0_1px_0_rgb(255_255_255/0.25)] backdrop-blur-xl backdrop-saturate-150";
 
 function SectionHead({ title, subtitle, link }: { title: string; subtitle?: string | null; link?: { href: string; label: string } }) {
   return (
@@ -23,8 +21,10 @@ function SectionHead({ title, subtitle, link }: { title: string; subtitle?: stri
         {subtitle && <p className="mt-1.5 max-w-prose text-sm text-fg-muted">{subtitle}</p>}
       </div>
       {link && (
-        <Link href={link.href} className="shrink-0 py-2 text-[0.9375rem] font-medium text-[color:var(--nav-hover)] hover:underline">
+        // The same link as the product rails' (product-carousel.tsx): one way to say "see more" on every section.
+        <Link href={link.href} className="group/all inline-flex shrink-0 items-center gap-1.5 py-2 text-sm font-medium text-fg underline-offset-4 hover:underline">
           {link.label}
+          <ArrowRight size={15} aria-hidden="true" className="transition-transform duration-200 ease-smooth group-hover/all:translate-x-0.5" />
         </Link>
       )}
     </div>
@@ -61,7 +61,7 @@ export function TahafiCategoryIndex({ categories, heading, subtitle }: { categor
   if (categories.length === 0) return null;
   return (
     <section className={SECTION}>
-      <SectionHead title={heading || "Shop by category"} subtitle={subtitle} link={{ href: "/search", label: "See all" }} />
+      <SectionHead title={heading || "Shop by category"} subtitle={subtitle} link={{ href: "/search", label: "View all" }} />
       <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:hidden">
         {categories.map((cat) => (
           <li key={cat.id} className="shrink-0">

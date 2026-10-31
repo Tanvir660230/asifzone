@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, CircleSlash, Flame } from "lucide-react";
 import { NO_SIZE_VALUE, isAvailable, variantStockState, type ProductVariant, type VariantDimension } from "@clothing-brand/shared";
 import { cn, isPaleColor } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 
 /** Below this many units a LOW_STOCK variant reads "Only a few left" instead of "Limited stock" — wording only. */
 const CRITICAL_STOCK_THRESHOLD = 3;
@@ -167,6 +168,9 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
   // share an even grid of rows instead. Short sizes (S, M, L …) still fit on one line as pills.
   const sizeCount = options.sizes.length;
   const evenPhoneRows = !hasSizeLabels && sizeCount > 4 && options.sizes.some((s) => s.length > 3);
+  // Tahafi: bare sizes as one iOS-style segmented control (a soft track, the chosen size a glossy ink pill sliding along
+  // it) while they fit on one row; sizes with measurements, or too many to fit, keep the tiles.
+  const segmented = storeLayout() === "tahafi" && !hasSizeLabels && sizeCount >= 2 && sizeCount <= 6 && options.sizes.every((s) => s.length <= 4);
   const phoneColumns = sizeCount % 3 === 0 || sizeCount === 5 ? "grid-cols-3" : "grid-cols-4";
 
   return (
@@ -181,11 +185,13 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
             // Sizes with a measurement ("M · 55cm") sit in an even grid of two-line tiles; bare sizes stay compact pills.
             // pt-2 / gap-y-3: room for the tags that sit on a tile's top edge.
             className={
-              hasSizeLabels
-                ? "grid grid-cols-3 gap-x-2 gap-y-3 pt-2 sm:grid-cols-4"
-                : evenPhoneRows
-                  ? cn("grid gap-x-2 gap-y-3 pt-2 sm:flex sm:flex-wrap", phoneColumns)
-                  : "flex flex-wrap gap-x-2 gap-y-3 pt-2"
+              segmented
+                ? "mt-2 flex w-full gap-0.5 rounded-full bg-ink-900/[0.06] p-1 sm:max-w-md"
+                : hasSizeLabels
+                  ? "grid grid-cols-3 gap-x-2 gap-y-3 pt-2 sm:grid-cols-4"
+                  : evenPhoneRows
+                    ? cn("grid gap-x-2 gap-y-3 pt-2 sm:flex sm:flex-wrap", phoneColumns)
+                    : "flex flex-wrap gap-x-2 gap-y-3 pt-2"
             }
             role="group"
             aria-label={options.sizeLabel}
@@ -198,7 +204,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
               const state = inStock ? sizeState(size) : "out";
               return (
                 // The wrapper carries the edge tag, which the tile's own overflow clipping would cut off.
-                <div key={size} className="relative">
+                <div key={size} className={cn("relative", segmented && "min-w-0 flex-1")}>
                 {/* Chosen, the stock badge below says it — the tag would only repeat it. */}
                 {!isSelected && <SizeTag state={state} />}
                 <motion.button
@@ -213,18 +219,27 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
                     "relative isolate flex w-full items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
-                    hasSizeLabels ? "h-14 flex-col gap-0.5 rounded-xl px-2" : "h-10 min-w-12 rounded-[var(--chip-radius)] px-3",
+                    segmented
+                      ? "h-10 rounded-full px-1"
+                      : hasSizeLabels
+                        ? "h-14 flex-col gap-0.5 rounded-xl px-2"
+                        : "h-10 min-w-12 rounded-[var(--chip-radius)] px-3",
                     isSelected
                       ? cn("border-transparent text-cream-50", !inStock && "text-cream-50/70")
-                      : inStock
-                        ? "border-ink-200 text-ink-900 hover:border-ink-900"
-                        : UNAVAILABLE_PILL,
+                      : segmented
+                        ? cn("border-transparent", inStock ? "text-ink-900 hover:bg-surface/60" : "text-ink-400")
+                        : inStock
+                          ? "border-ink-200 text-ink-900 hover:border-ink-900"
+                          : UNAVAILABLE_PILL,
                   )}
                 >
                   {isSelected && (
                     <motion.span
                       layoutId={`size-pill-${instanceId}`}
-                      className={cn("glossy absolute inset-0 -z-10 bg-ink-900 shadow-sm", hasSizeLabels ? "rounded-xl" : "rounded-[var(--chip-radius)]")}
+                      className={cn(
+                        "glossy absolute inset-0 -z-10 bg-ink-900 shadow-sm",
+                        segmented ? "rounded-full" : hasSizeLabels ? "rounded-xl" : "rounded-[var(--chip-radius)]",
+                      )}
                       transition={{ type: "spring", stiffness: 500, damping: 32 }}
                     />
                   )}

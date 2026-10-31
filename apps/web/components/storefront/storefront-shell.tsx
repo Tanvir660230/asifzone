@@ -61,7 +61,7 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
       </main>
       <StoreFooter categories={tree} settings={settings} socialLinks={links} paymentMethods={methods} />
       <StickyBottomBarSpacer />
-      <SearchOverlay />
+      <SearchOverlay categories={tree} />
       <CartDrawer />
       <AddedToBag />
       <CartReminderBanner />

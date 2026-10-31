@@ -1,6 +1,6 @@
 # Tahafi brand files
 
-Every logo file is drawn from the designer's own outlines (master: `Printable File.eps`, Illustrator, 2026-10-28), in the logo's four colours: olive `#4F5343`, sage `#84857E`, cream `#F2EFEA`, ink `#1C1C1A`.
+Every logo file is drawn from the designer's own outlines (master: `Printable File.eps`, Illustrator, 2026-10-28), in the logo's four colours: olive `#3E4A2F` (Forest Olive, chosen 2026-10-31; the designer's file had `#4F5343`), sage `#84857E`, cream `#F2EFEA`, ink `#1C1C1A`.
 
 | File | Use | Upload in |
 |---|---|---|

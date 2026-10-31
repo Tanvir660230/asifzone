@@ -15,10 +15,13 @@ export const buttonVariants = cva(
         outline: "border border-line-strong bg-surface/60 text-fg hover:border-ink-400 hover:bg-surface",
         ghost: "text-ink-700 hover:bg-ink-900/[0.05] hover:text-fg",
         // Translucent capsule for controls that sit on imagery or glass chrome.
-        glass: "glass border border-white/60 text-fg shadow-glass hover:bg-surface/90",
-        destructive: "glossy bg-danger-600 text-white shadow-sm hover:bg-danger-700 hover:shadow-float",
+        glass: "glass border border-[color:var(--glass-edge-soft)] text-fg shadow-glass hover:bg-surface/90",
+        // The fills read tokens first: a dark palette whose danger/sale 600–700 are light *text* colours sets darker fills
+        // (Tahafi's dark mode), so white type stays readable; elsewhere they fall back to the palette steps.
+        destructive:
+          "glossy bg-[color:var(--danger-fill,rgb(var(--color-danger-600)))] text-white shadow-sm hover:bg-[color:var(--danger-fill-hover,rgb(var(--color-danger-700)))] hover:shadow-float",
         // Promotional CTAs only (apply a coupon, claim a deal) — the brand's single red accent.
-        sale: "glossy bg-sale-500 text-white shadow-sm hover:bg-sale-600 hover:shadow-float",
+        sale: "glossy bg-sale-500 text-white shadow-sm hover:bg-[color:var(--sale-fill-hover,rgb(var(--color-sale-600)))] hover:shadow-float",
         // Inline text action.
         link: "h-auto rounded-md px-0 text-fg underline-offset-4 hover:underline active:scale-100",
         // Legacy name kept for existing call sites; identical to `primary` (the brand has no gold accent).

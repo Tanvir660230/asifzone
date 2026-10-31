@@ -211,7 +211,8 @@ export function ProductReviews({ productId, productName, productType }: { produc
               </div>
             </>
           ) : (
-            <p className="text-sm text-ink-400">No reviews yet — be the first to review {productName}.</p>
+            // Only once the reviews have loaded: while they load, "Loading reviews…" alone says what is happening.
+            !isLoading && <p className="text-sm text-ink-400">No reviews yet — be the first to review {productName}.</p>
           )}
 
           <div className="mt-6">
