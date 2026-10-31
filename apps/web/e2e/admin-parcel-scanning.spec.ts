@@ -158,7 +158,7 @@ test.describe("parcel scanning", () => {
       const [code] = Object.values(markBooked(ids));
       const id = ids[0]!;
       expect((await adminFetch(page, `/api/orders/${id}/status`, "PATCH", { status: "CANCELLED", note: "Customer refused the parcel (Playwright)" })).status).toBe(200);
-      await page.goto("/admin/orders/returns-in");
+      await page.goto("/admin/orders/returns-in?view=batch");
       await expect(page.getByTestId("scan-input")).toBeFocused();
       // Focus knocked off the scan box (a click on the page): the scanner's burst still lands in the box and fires no
       // shortcut ("N" would otherwise open New order).
@@ -176,5 +176,52 @@ test.describe("parcel scanning", () => {
     } finally {
       await cleanup(page, ids);
     }
+  });
+
+  test("receive and inspect: the Steadfast slip opens the parcel with no return request; one confirm restocks once", async ({ page }) => {
+    const ids = await placeOrders(page, 1);
+    try {
+      markBooked(ids);
+      const id = ids[0]!;
+      const booked = (await adminFetch(page, `/api/orders/${id}`, "GET")).body?.order as { courierConsignmentId: string; orderNumber: string; items: Array<{ variantId: string }> };
+      const slip = `003-0102-001-00${booked.courierConsignmentId}`;
+      await page.goto("/admin/orders/returns-in");
+      await expect(page.getByTestId("receive-scan-input")).toBeFocused();
+      await expect(page.getByTestId("scanner-ready")).toHaveAttribute("data-ready", "true");
+      await wedgeScan(page, slip);
+      await expect(page.getByTestId("parcel-card")).toBeVisible();
+      await expect(page.getByTestId("parcel-order-number")).toHaveText(booked.orderNumber);
+      await expect(page.getByTestId("receive-mode")).toHaveAttribute("data-mode", "DECIDE_OUTCOME");
+      // Nothing is written by the scan: no return record, still Shipped.
+      expect(((await adminFetch(page, `/api/orders/${id}`, "GET")).body?.order as { status: string }).status).toBe("SHIPPED");
+
+      await expect(page.getByTestId("confirm-receipt")).toBeDisabled();
+      await page.getByTestId("outcome-full_return").click();
+      await page.getByTestId("all-good").click();
+      // The same parcel scanned again while it is open: a duplicate, the entries are kept.
+      await wedgeScan(page, slip);
+      await expect(page.getByTestId("receive-feedback")).toHaveAttribute("data-tone", "warn");
+      await expect(page.getByTestId("line-accounted").first()).toHaveText("1 / 1");
+      await page.getByTestId("confirm-receipt").click();
+      await expect(page.getByTestId("receive-feedback")).toContainText("received");
+      await expect(page.getByTestId("receive-scan-input")).toBeFocused();
+
+      const order = (await adminFetch(page, `/api/orders/${id}`, "GET")).body?.order as { status: string; items: Array<{ restockedQuantity: number }> };
+      expect(order.status).toBe("CANCELLED");
+      expect(order.items[0]!.restockedQuantity).toBe(1);
+      // Scanned again after the receipt: nothing left to receive, stock unchanged.
+      await wedgeScan(page, slip);
+      await expect(page.getByTestId("receive-mode")).toHaveAttribute("data-mode", "NOTHING");
+      await expect(page.getByTestId("confirm-receipt")).toHaveCount(0);
+    } finally {
+      await cleanup(page, ids);
+    }
+  });
+
+  test("receive and inspect: an unknown code changes nothing and says so", async ({ page }) => {
+    await page.goto("/admin/orders/returns-in");
+    await wedgeScan(page, "003-0102-001-00999999999");
+    await expect(page.getByTestId("unknown-code")).toBeVisible();
+    await expect(page.getByTestId("receive-feedback")).toHaveAttribute("data-tone", "error");
   });
 });

@@ -166,7 +166,8 @@ checked against what Steadfast actually sends.
   the timeline (staff-only). A `cancelled` push's `cod_amount` is the booked COD, not money collected, so it is ignored.
 - **`settleCourierCollected(orderId)`** (payment ledger) records it as the return charge (a `COD` row, purpose
   `RETURN_CHARGE`, idempotencyKey `courier-collected:<orderId>`, one per order). This happens only once the customer
-  **kept nothing**: the order is `RETURNED`, or its partial delivery was reconciled with every unit back. It runs after
+  **kept nothing**: the order is `RETURNED`, its partial delivery was reconciled with every unit back, or it is
+  `CANCELLED` after it was booked (a refused parcel received on the scanner before Steadfast reported it — 2026-10-31). It runs after
   the webhook, after reconciliation, and after a move to `RETURNED`, so the order those happen in doesn't matter. It is
   skipped when staff already recorded courier cash on the order by hand, so money is never counted twice. When the
   customer kept something, the collection pays for what they kept: the order page shows Steadfast's figure, and the

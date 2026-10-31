@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
+import { getOrderExceptionsBoard } from "./order-exceptions";
 import { toCustomerOrder } from "./customer-order-view";
 import { courierNotesForLabels, getCourierNoteView } from "../courier/courier-note";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
@@ -173,6 +174,10 @@ export const permanentlyRemove = asyncHandler(async (req: Request, res: Response
 
 export const stats = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await orderService.getOrderStats());
+});
+
+export const exceptions = asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await getOrderExceptionsBoard());
 });
 
 export const exportCsv = asyncHandler(async (req: Request, res: Response) => {

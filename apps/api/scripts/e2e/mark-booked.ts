@@ -18,11 +18,17 @@ async function main() {
   const ciThrowaway = process.env.GITHUB_ACTIONS === "true" && process.env.RUNNER_ENVIRONMENT === "github-hosted";
   if (db !== "clothing_brand_test" && !ciThrowaway) throw new Error(`mark-booked refuses database "${db}" — run it through scripts/with-test-db.ts`);
   const out: Record<string, string> = {};
+  let n = 0;
   for (const id of process.argv.slice(2)) {
     const order = await prisma.order.findUniqueOrThrow({ where: { id } });
     if (order.status === "PENDING") await changeOrderStatus(id, { status: "CONFIRMED", note: "E2E fixture" });
     const code = order.trackingNumber ?? `E2E${id.slice(-10).toUpperCase()}`;
-    await prisma.order.update({ where: { id }, data: { trackingNumber: code, courierConsignmentId: `e2e-${id}`, courierBookedAt: new Date() } });
+    // Numeric like a real Steadfast consignment id, so its slip barcode (003-0102-001-00<id>) resolves too; and its QR link.
+    const consignment = order.courierConsignmentId ?? `9${Date.now().toString().slice(-8)}${n++}`;
+    await prisma.order.update({
+      where: { id },
+      data: { trackingNumber: code, courierConsignmentId: consignment, courierBookedAt: new Date(), courierTrackingLink: order.courierTrackingLink ?? `https://steadfast.com.bd/tl/E2e${id.slice(-12)}` },
+    });
     const now = await prisma.order.findUniqueOrThrow({ where: { id }, select: { status: true } });
     if (["CONFIRMED", "PROCESSING"].includes(now.status)) await changeOrderStatus(id, { status: "PACKED", note: "E2E fixture" });
     if (["CONFIRMED", "PROCESSING", "PACKED"].includes(now.status)) await changeOrderStatus(id, { status: "SHIPPED", note: "E2E fixture: booked" });

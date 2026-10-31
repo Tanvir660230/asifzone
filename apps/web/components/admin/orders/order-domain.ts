@@ -81,6 +81,8 @@ export function useOrderPermissions() {
      * run (instead of silently disappearing, which read as "bulk booking doesn't exist"). */
     courierNotConnected: holdsCourierPermission && providersLoaded && !courierConfigured,
     returns: can("returns.manage"),
+    /** Record a parcel handed to the rider (scanner or "the rider took these"). */
+    scan: can("parcels.scan"),
     /** Decide on an escalated confirmation (one more try, phone fixed) — owner and manager (phase 3). */
     escalations: can("orders.escalations"),
   };

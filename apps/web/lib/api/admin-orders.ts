@@ -13,6 +13,8 @@ import type {
   ReconcilePartialDeliveryInput,
   ReceiveReturnedParcelInput,
   OrderQueueId,
+  OrderExceptionId,
+  OrderExceptionsBoard,
   ConfirmationDecisionInput,
   ConfirmationOutcome,
   OrderConfirmationState,
@@ -57,6 +59,8 @@ export interface AdminOrderListParams {
   /** Daily-pulse drill-down: orders that reached this step on `opsDate` (both needed). */
   opsEvent?: OrderOpsEvent;
   opsDate?: string;
+  /** Exception Center drill-down (GET /api/orders/exceptions counts the same set). */
+  exception?: OrderExceptionId;
   sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt" | "statusChangedAt";
   sortDir?: "asc" | "desc";
 }
@@ -113,6 +117,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
     query.set("opsEvent", params.opsEvent);
     query.set("opsDate", params.opsDate);
   }
+  if (params.exception) query.set("exception", params.exception);
   if (params.sortBy) query.set("sortBy", params.sortBy);
   if (params.sortDir) query.set("sortDir", params.sortDir);
   return query;
@@ -304,4 +309,9 @@ export function releaseConfirmation(id: string) {
 /** Claim the next order to call (null: nobody is waiting). */
 export function takeNextConfirmation() {
   return apiFetch<{ next: { orderId: string; orderNumber: string } | null }>("/api/orders/confirmation/next", { method: "POST" });
+}
+
+/** The Exception Center's counts (Today's Operations); each opens the list with `?f.exception=<id>`. */
+export function getOrderExceptions({ signal }: FetchSignal = {}) {
+  return apiFetch<OrderExceptionsBoard>("/api/orders/exceptions", { signal });
 }

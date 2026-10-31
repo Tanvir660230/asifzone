@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Phone, PhoneCall, PhoneOff, UserRound, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Phone, PhoneCall, PhoneOff, UserRound, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   CALLBACK_OUTCOMES,
   CONFIRMATION_ESCALATION_LABELS,
@@ -71,6 +72,23 @@ export function CallPanel({ order, perms, commands }: { order: Order; perms: Ord
   const [draft, setDraft] = useState<Draft | null>(null);
   useEffect(() => setDraft(null), [order.id]);
   const { data: me } = useCurrentAdmin();
+  // After a call is saved, the next customer is one tap away — no trip back to the list.
+  const router = useRouter();
+  const [justSaved, setJustSaved] = useState(false);
+  const [takingNext, setTakingNext] = useState(false);
+  useEffect(() => setJustSaved(false), [order.id]);
+  async function nextCustomer() {
+    setTakingNext(true);
+    try {
+      const { next } = await adminOrdersApi.takeNextConfirmation();
+      if (next) router.push(`/admin/orders/${next.orderId}`);
+      else toast.info("Nobody else is waiting for a call");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Couldn't take the next call"));
+    } finally {
+      setTakingNext(false);
+    }
+  }
 
   const onDone = (s: OrderConfirmationState) => {
     queryClient.setQueryData(orderKeys.confirmation(order.id), s);
@@ -85,6 +103,7 @@ export function CallPanel({ order, perms, commands }: { order: Order; perms: Ord
     mutationFn: (input: { outcome: ConfirmationOutcome; note?: string; callbackAt?: string }) => adminOrdersApi.recordConfirmationAttempt(order.id, input),
     onSuccess: (s, input) => {
       onDone(s);
+      setJustSaved(true);
       if (input.outcome === "CONFIRMED") toast.success(`${order.orderNumber} confirmed`);
       else if (input.outcome === "DECLINED") toast.success(`${order.orderNumber} cancelled — ${input.note}`);
       else if (s.escalatedAt) toast.warning(`${order.orderNumber} escalated — an owner or manager decides next`);
@@ -184,6 +203,12 @@ export function CallPanel({ order, perms, commands }: { order: Order; perms: Ord
           )}
 
           {pending && perms.manage && <AssignRow state={state} disabled={busy} onAssign={(assigneeId) => decide.mutate({ action: "assign", assigneeId })} />}
+
+          {justSaved && perms.manage && (
+            <Button variant="outline" className="min-h-[44px] w-full" loading={takingNext} onClick={nextCustomer} data-testid="call-next-customer">
+              Next customer <ArrowRight size={15} aria-hidden="true" />
+            </Button>
+          )}
 
           <AttemptHistory state={state} />
         </div>

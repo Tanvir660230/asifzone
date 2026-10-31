@@ -1,19 +1,20 @@
 import { Prisma } from "@prisma/client";
 import {
   formatDateTime,
-  scanCodeCandidates,
   normalizeScanCode,
   type OrderStatus,
   type ParcelScanBatchView,
   type ParcelScanKind,
   type ParcelScanResult,
   type RecordScanInput,
+  type ScanMatchKind,
 } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { getTimezone } from "../../domain/config/commerce-settings";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
 import { RETURN_EXPECTED_STATUSES } from "../orders/parcel-queues";
+import { resolveOrderCode } from "./parcel-resolve.service";
 
 /**
  * Dispatch and return scanning (Order Operations plan, phase 4). A scan resolves a code to an order and says at once
@@ -46,17 +47,10 @@ const ORDER_SELECT = {
 } satisfies Prisma.OrderSelect;
 type ScanOrder = Prisma.OrderGetPayload<{ select: typeof ORDER_SELECT }>;
 
-/** The order a code names: our label barcode (trackingNumber), the consignment id, or our order number — exact. */
+/** The order a code names exactly (parcel-resolve.service resolveOrderCode): our label barcode, the consignment id, our
+ * order number, Steadfast's QR or label / return-slip barcode, or a code linked by hand. */
 export async function resolveScanCode(raw: string, db: Tx | typeof prisma = prisma): Promise<ScanOrder | null> {
-  for (const c of scanCodeCandidates(raw)) {
-    const order = await db.order.findFirst({
-      where: { OR: [{ trackingNumber: c }, { courierConsignmentId: c }, { orderNumber: c.toUpperCase() }, { orderNumber: c }] },
-      select: ORDER_SELECT,
-      orderBy: { createdAt: "desc" },
-    });
-    if (order) return order;
-  }
-  return null;
+  return (await resolveOrderCode(raw, ORDER_SELECT, db))?.order ?? null;
 }
 
 /** Whether a resolved order may join a batch of this kind, and the message for the operator. */
@@ -111,9 +105,13 @@ export async function recordScan(batchId: string, adminId: string, input: Record
       if (batch.status !== "OPEN") throw new AppError(409, "This batch is closed — start a new one", { code: "BATCH_CLOSED" });
       const kind = batch.kind as ParcelScanKind;
 
-      const found = await resolveScanCode(code, tx);
+      const resolved = await resolveOrderCode(code, { id: true }, tx);
+      const found = resolved?.order ?? null;
+      const resolvedBy: ScanMatchKind | null = resolved?.matchedBy ?? null;
       const write = (data: { orderId?: string | null; result: ParcelScanResult; message: string; discrepancy?: boolean }) =>
-        tx.parcelScanEvent.create({ data: { batchId, kind, clientScanId: input.clientScanId, code, adminId, orderId: data.orderId ?? null, result: data.result, message: data.message, discrepancy: data.discrepancy ?? false } });
+        tx.parcelScanEvent.create({
+          data: { batchId, kind, clientScanId: input.clientScanId, code, adminId, orderId: data.orderId ?? null, result: data.result, message: data.message, discrepancy: data.discrepancy ?? false, resolvedBy },
+        });
 
       if (!found) return (await write({ result: "INVALID", message: `${code} isn't one of our parcel codes — nothing was changed` })).id;
 
@@ -252,6 +250,7 @@ function eventRow(e: Prisma.ParcelScanEventGetPayload<{ include: { order: { sele
     orderNumber: e.order?.orderNumber ?? null,
     customerName: e.order?.customerName ?? null,
     discrepancy: e.discrepancy,
+    resolvedBy: (e.resolvedBy as ScanMatchKind | null) ?? null,
     voided: Boolean(e.voidedAt),
     createdAt: e.createdAt.toISOString(),
   };
@@ -288,4 +287,33 @@ export async function dispatchSummary(dayStart: Date) {
     prisma.order.count({ where: { deletedAt: null, courierBookedAt: { gte: dayStart }, handedOverAt: { not: null } } }),
   ]);
   return { bookedToday: booked, handedOverToday: handedOver };
+}
+
+/**
+ * "The rider took these" without a scanner (docs/WAREHOUSE_OPERATIONS.md §3): the selected orders go through a dispatch
+ * batch of their own — the same per-parcel checks, the same handover facts and audit rows as scanning — named by order
+ * number and marked on the batch as picked from the list, not scanned. A parcel the batch refuses (not booked, already
+ * handed over, cancelled…) is reported and left as it was; nothing is accepted twice, so a retried request is harmless.
+ */
+export async function handOverFromList(adminId: string, orderIds: string[], note?: string) {
+  const orders = await prisma.order.findMany({ where: { id: { in: [...new Set(orderIds)] } }, select: { id: true, orderNumber: true } });
+  if (orders.length === 0) throw AppError.badRequest("None of these orders exist");
+  const batch = await createBatch(adminId, "DISPATCH", ["Picked from the orders list — not scanned", note?.trim()].filter(Boolean).join(" — "));
+  const skipped: Array<{ orderNumber: string; message: string }> = [];
+  for (const o of orders) {
+    const e = await recordScan(batch.id, adminId, { code: o.orderNumber, clientScanId: `ho_${batch.id}_${o.id}`.slice(0, 64) });
+    if (e.result !== "ACCEPTED") skipped.push({ orderNumber: o.orderNumber, message: e.message });
+  }
+  const accepted = orders.length - skipped.length;
+  if (accepted === 0) {
+    await cancelBatch(batch.id);
+    return { handedOver: 0, skipped, batchId: null };
+  }
+  try {
+    await confirmBatch(batch.id, adminId);
+  } catch (err) {
+    await cancelBatch(batch.id).catch(() => undefined);
+    throw err;
+  }
+  return { handedOver: accepted, skipped, batchId: batch.id };
 }

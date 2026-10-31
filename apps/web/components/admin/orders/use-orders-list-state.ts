@@ -8,6 +8,7 @@ import {
   type BdDivision,
   type ListDensity,
   type ListPreferences,
+  type OrderExceptionId,
   type OrderQueueId,
   type OrderStatus,
   type PaymentMethod,
@@ -67,6 +68,7 @@ type OrderFilterFields = {
   to: UrlField<string>;
   "f.ops": UrlField<string>;
   "f.opsDay": UrlField<string>;
+  "f.exception": UrlField<string>;
 };
 
 const ORDERS_URL_SCHEMA = {
@@ -83,7 +85,7 @@ const ORDERS_URL_SCHEMA = {
 const ALIASES = ORDER_FILTER_URL_ALIASES as UrlAliases<typeof ORDERS_URL_SCHEMA>;
 
 /** The filters behind the "Filters" popover (everything except search, status and queue). */
-const MORE_KEYS = ["f.payment", "f.method", "f.courier", "f.delivery", "f.division", "f.district", "from", "to", "f.ops", "f.opsDay"] as const;
+const MORE_KEYS = ["f.payment", "f.method", "f.courier", "f.delivery", "f.division", "f.district", "from", "to", "f.ops", "f.opsDay", "f.exception"] as const;
 
 /**
  * All of the Orders list's view state in one place, persisted in the URL: view (active/trash), search, multi-status, the
@@ -112,6 +114,7 @@ export function useOrdersListState({ mode = "work" }: { mode?: "work" | "history
     dateTo: url.to as string,
     opsEvent: url["f.ops"] as OrderOpsEvent | "",
     opsDate: url["f.opsDay"] as string,
+    exception: url["f.exception"] as OrderExceptionId | "",
   };
   // With no column chosen, the main list shows the latest activity first: an order placed days ago and confirmed or
   // booked today is back at the top. A queue keeps its own (newest-placed-first) order.
@@ -174,12 +177,13 @@ export function useOrdersListState({ mode = "work" }: { mode?: "work" | "history
       dateFrom: more.dateFrom || undefined,
       dateTo: more.dateTo || undefined,
       ...(more.opsEvent && more.opsDate ? { opsEvent: more.opsEvent, opsDate: more.opsDate } : {}),
+      exception: more.exception || undefined,
       sortBy,
       sortDir: sortBy ? sortDir : undefined,
       // The daily work list leaves finished orders out (they are in Order history). A search still finds every order — a
       // scanned tracking code or a customer's phone must land on the order wherever it is — and so does a daily-pulse
       // drill-down, which lists exactly what the pulse counted.
-      scope: history ? "history" : view === "active" && !queue && !url.q && !(more.opsEvent && more.opsDate) ? "active" : undefined,
+      scope: history ? "history" : view === "active" && !queue && !url.q && !(more.opsEvent && more.opsDate) && !more.exception ? "active" : undefined,
     };
     // The queue preset wins over an overlapping manual filter (e.g. "Unpaid" over a payment-status pick).
     return queue ? { ...base, ...(ORDER_QUEUE_FILTERS[queue] as AdminOrderListParams) } : base;

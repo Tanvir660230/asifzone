@@ -48,6 +48,7 @@ import type {
 import { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
 import { opsEventOrderIds } from "../analytics/ops-pulse.service";
+import { exceptionOrderIds } from "./order-exceptions";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
 import { namespace } from "../../config/installation";
@@ -997,7 +998,12 @@ function buildOrderOrderBy(query: OrderListQuery): Prisma.OrderOrderByWithRelati
 export async function listOrders(query: OrderListQuery) {
   const base = buildOrderWhere(query, await orderWhereContext());
   // Daily-pulse drill-down: narrow to exactly the orders the pulse counted for that step and day.
-  const where = query.opsEvent && query.opsDate ? { ...base, id: { in: await opsEventOrderIds(query.opsEvent, query.opsDate) } } : base;
+  const idSets = [
+    ...(query.opsEvent && query.opsDate ? [{ id: { in: await opsEventOrderIds(query.opsEvent, query.opsDate) } }] : []),
+    // An Exception Center item: exactly the orders its count counted (order-exceptions.ts).
+    ...(query.exception ? [{ id: { in: await exceptionOrderIds(query.exception) } }] : []),
+  ];
+  const where = idSets.length > 0 ? { AND: [base, ...idSets] } : base;
   const orderBy = buildOrderOrderBy(query);
 
   // The list table only ever shows order-level fields (number, customer, total, status, date) —
@@ -1249,7 +1255,7 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
  * an admin-entered estimate of their return-leg fee (StoreSetting.courierReturnFeeDhaka/
  * OutsideDhaka), zone-matched the same way shippingFee is at checkout. Only called from the two
  * places that actually log a CourierLossEvent, not on every order lookup. */
-async function getCourierReturnFee(shippingDistrict: string, shippingDivision?: string): Promise<number> {
+export async function getCourierReturnFee(shippingDistrict: string, shippingDivision?: string): Promise<number> {
   const settings = await getSettings();
   // Zone-matched by the same shipping-zone configuration that priced the delivery (no hard-coded geography): the
   // estimate for the seeded "inside Dhaka district" zone, else the outside estimate.
@@ -1286,7 +1292,9 @@ export async function applyOrderTransition(
    * duplicate or late provider push never adds noise (Phase 9). */
   /** `deferShippedSms`: a booking under shippedSmsTrigger = HANDOVER — the "shipped" SMS waits for the handover scan
    * (Order Operations phase 4; the order is flagged and the scan sends it). */
-  actor: { adminId?: string | null; quietNoop?: boolean; deferShippedSms?: boolean } = {},
+  /** `noCustomerSms`: the scanner's receipt of a refused parcel (owner decision D3) — the customer sent it back
+   * themselves, so a "cancelled" SMS would only confuse them. Everything else the transition does still happens. */
+  actor: { adminId?: string | null; quietNoop?: boolean; deferShippedSms?: boolean; noCustomerSms?: boolean } = {},
 ): Promise<OrderTransitionOutcome> {
   const [locked] = await tx.$queryRaw<
     Array<{
@@ -1382,7 +1390,7 @@ export async function applyOrderTransition(
   // The customer's status SMS: an outbox intent committed with the transition, keyed by the history row just written.
   const deferSms = rule.customerSms === "SHIPPED" && actor.deferShippedSms;
   if (deferSms) await tx.order.update({ where: { id: orderId }, data: { shippedSmsDeferred: true } });
-  if (rule.customerSms && !deferSms) {
+  if (rule.customerSms && !deferSms && !actor.noCustomerSms) {
     const historyId = order.statusHistory.at(-1)!.id;
     await recordOutboxEvents(tx as AppTransactionClient, [
       {
@@ -1673,7 +1681,32 @@ export async function deleteOrder(orderId: string, adminId: string) {
  * left untouched rather than guessed at — this only fixes the stock-accuracy gap, not the order's
  * financial record. */
 export async function reconcilePartialDelivery(orderId: string, input: ReconcilePartialDeliveryInput, adminId: string) {
-  const existing = await getOrderById(orderId);
+  const currency = await getCurrency();
+  const courierReturnFee = await getCourierReturnFee((await prisma.order.findUnique({ where: { id: orderId }, select: { shippingDistrict: true } }))?.shippingDistrict ?? "");
+  const { order, keptNothing } = await prisma.$transaction((tx) => reconcilePartialDeliveryInTx(tx, orderId, input, adminId, { currency, courierReturnFee }));
+  // The customer kept nothing: the order is returned (T7 — the return is already recorded, so it adds none; points reverse).
+  // The Returned move also settles what Steadfast reported the rider collected as the return charge (§5b).
+  if (keptNothing) {
+    await changeOrderStatus(orderId, { status: "RETURNED", note: "Partial delivery reconciled — the customer kept nothing, order returned" }, adminId);
+    return getOrderById(orderId);
+  }
+  return order;
+}
+
+/** The body of reconcilePartialDelivery, in the caller's transaction (the scanner's receipt runs it with the inspection,
+ * scan-receive.service). Locks the order and re-reads it under the lock. Does NOT move a kept-nothing order to Returned —
+ * the caller does (`keptNothing`), inside or after its transaction. `courierReturnFee`: read before the transaction. */
+export async function reconcilePartialDeliveryInTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  input: ReconcilePartialDeliveryInput,
+  adminId: string,
+  ctx: { currency: string; courierReturnFee: Prisma.Decimal | number | string },
+) {
+  // Row lock + re-check: two admins reconciling at once must not both count the return.
+  await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+  const existing = await tx.order.findUnique({ where: { id: orderId }, include });
+  if (!existing) throw AppError.notFound("Order not found");
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
   if (existing.status !== "PARTIALLY_DELIVERED") {
     throw AppError.badRequest("Only a partially-delivered order can be reconciled");
@@ -1701,78 +1734,64 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   }
 
   const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
-  const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDistrict) : null;
+  const courierLossFee = returnedEntries.length > 0 ? ctx.courierReturnFee : null;
   // What came back is valued exactly like an item-level return (the order's own allocated pricing), so the payment
   // position charges only what the customer kept (PAYMENT_LEDGER §5c). Nothing is restocked or written off yet.
   const returnLines = returnedEntries.length
-    ? valueItemReturn(existing, { items: returnedEntries.map((e) => ({ orderItemId: e.orderItemId, quantity: e.returnedQuantity, restock: true })) }, await getCurrency()).map(
+    ? valueItemReturn(existing, { items: returnedEntries.map((e) => ({ orderItemId: e.orderItemId, quantity: e.returnedQuantity, restock: true })) }, ctx.currency).map(
         (l) => ({ ...l, restocked: 0, writtenOff: 0 }),
       )
     : [];
   const returnedByItem = new Map(returnedEntries.map((e) => [e.orderItemId, e.returnedQuantity]));
   const keptNothing = existing.items.every((item) => (returnedByItem.get(item.id) ?? 0) >= item.quantity);
 
-  const order = await prisma.$transaction(async (tx) => {
-    // Row lock + re-check: two admins reconciling at once must not both count the return.
-    const [locked] = await tx.$queryRaw<Array<{ partialDeliveryReconciledAt: Date | null }>>`
-      SELECT "partialDeliveryReconciledAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
-    `;
-    if (locked?.partialDeliveryReconciledAt) throw AppError.conflict("This order has already been reconciled");
-
-    if (returnedEntries.length) {
-      await recordReturnDecision(tx, orderId, returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })));
-    }
-
-    if (courierLossFee !== null) {
-      await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
-    }
-
-    const note = returnedEntries.length
-      ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned; they go back into stock when the parcel is received`
-      : "Partial delivery reconciled — customer kept the full shipment";
-
-    // Gives the returned portion its own visible record in the same Return Requests list an admin
-    // already checks for customer-initiated returns, rather than leaving it discoverable only by
-    // reading this order's status history. Auto-approved (not PENDING): there's no review decision left
-    // to make, just a paper trail of what the customer sent back and why — the stock waits for the
-    // parcel. Skipped for the rare pre-findOrCreateGuestCustomer order with no linked
-    // Customer, since ReturnRequest.customerId is required.
-    if (returnedEntries.length > 0 && existing.customerId) {
-      const itemLines = returnedEntries.map((entry) => {
-        const item = itemById.get(entry.orderItemId)!;
-        return `${item.productNameSnapshot}${formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} x${entry.returnedQuantity}`;
-      });
-      await tx.returnRequest.create({
-        data: {
-          orderId,
-          customerId: existing.customerId,
-          type: "RETURN",
-          reason: PARTIAL_DELIVERY_RETURN_REASON,
-          note: itemLines.join(", "),
-          status: "APPROVED",
-          reviewedAt: new Date(),
-          reviewedByAdminId: adminId,
-          lines: returnLines as unknown as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    return tx.order.update({
-      where: { id: orderId },
-      data: {
-        partialDeliveryReconciledAt: new Date(),
-        statusHistory: { create: { status: "PARTIALLY_DELIVERED", note, changedByAdminId: adminId } },
-      },
-      include,
-    });
-  });
-  // The customer kept nothing: the order is returned (T7 — the return is already recorded, so it adds none; points reverse).
-  // The Returned move also settles what Steadfast reported the rider collected as the return charge (§5b).
-  if (keptNothing) {
-    await changeOrderStatus(orderId, { status: "RETURNED", note: "Partial delivery reconciled — the customer kept nothing, order returned" }, adminId);
-    return getOrderById(orderId);
+  if (returnedEntries.length) {
+    await recordReturnDecision(tx, orderId, returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })));
   }
-  return order;
+
+  if (courierLossFee !== null) {
+    await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
+  }
+
+  const note = returnedEntries.length
+    ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned; they go back into stock when the parcel is received`
+    : "Partial delivery reconciled — customer kept the full shipment";
+
+  // Gives the returned portion its own visible record in the same Return Requests list an admin
+  // already checks for customer-initiated returns, rather than leaving it discoverable only by
+  // reading this order's status history. Auto-approved (not PENDING): there's no review decision left
+  // to make, just a paper trail of what the customer sent back and why — the stock waits for the
+  // parcel. Skipped for the rare pre-findOrCreateGuestCustomer order with no linked
+  // Customer, since ReturnRequest.customerId is required.
+  if (returnedEntries.length > 0 && existing.customerId) {
+    const itemLines = returnedEntries.map((entry) => {
+      const item = itemById.get(entry.orderItemId)!;
+      return `${item.productNameSnapshot}${formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} x${entry.returnedQuantity}`;
+    });
+    await tx.returnRequest.create({
+      data: {
+        orderId,
+        customerId: existing.customerId,
+        type: "RETURN",
+        reason: PARTIAL_DELIVERY_RETURN_REASON,
+        note: itemLines.join(", "),
+        status: "APPROVED",
+        reviewedAt: new Date(),
+        reviewedByAdminId: adminId,
+        lines: returnLines as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  const order = await tx.order.update({
+    where: { id: orderId },
+    data: {
+      partialDeliveryReconciledAt: new Date(),
+      statusHistory: { create: { status: "PARTIALLY_DELIVERED", note, changedByAdminId: adminId } },
+    },
+    include,
+  });
+  return { order, keptNothing };
 }
 
 /**
@@ -1802,76 +1821,91 @@ const RETURN_RECEIPT_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERE
 export async function receiveReturnedParcel(
   orderId: string,
   adminId: string,
-  input: { lines?: Array<{ orderItemId: string; quantity: number; damaged?: number; lost?: number }>; note?: string | null; damageNote?: string | null },
+  input: ReceiveReturnedParcelInput,
 ) {
-  const { order, replenished, moved } = await prisma.$transaction(async (tx) => {
-    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null; orderNumber: string; receivedBackAt: Date | null }>>`
-      SELECT status, "deletedAt", "orderNumber", "receivedBackAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
-    `;
-    if (!locked) throw AppError.notFound("Order not found");
-    if (locked.deletedAt) throw AppError.badRequest("Restore this order before making changes");
-    const isCustomerReturn = RETURN_RECEIPT_STATUSES.includes(locked.status);
-    if (locked.status !== "CANCELLED" && !isCustomerReturn) {
-      throw new AppError(409, "Only a cancelled parcel or a recorded customer return can be received back", { code: "NOT_AWAITING_RETURN" });
-    }
-    const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, quantity: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true } });
-    const outstandingOf = (i: (typeof items)[number]) => (isCustomerReturn ? i.returnedQuantity : i.quantity) - i.restockedQuantity;
-    const byId = new Map(items.map((i) => [i.id, i]));
-    if (input.lines && new Set(input.lines.map((l) => l.orderItemId)).size !== input.lines.length) throw AppError.badRequest("Each item can be listed once");
-    for (const l of input.lines ?? []) {
-      const item = byId.get(l.orderItemId);
-      if (!item) throw AppError.badRequest("That item isn't on this order");
-      if ((l.damaged ?? 0) > l.quantity) throw AppError.badRequest("Damaged can't be more than what came back");
-      const outstanding = Math.max(0, outstandingOf(item));
-      if (l.quantity + (l.lost ?? 0) > outstanding) {
-        throw new AppError(400, `Only ${outstanding} unit(s) of this item are still waiting to come back`, { code: "MORE_THAN_OUTSTANDING" });
-      }
-    }
-    const requested = input.lines ? new Map(input.lines.map((l) => [l.orderItemId, l])) : null;
-    const result = await releaseOrderLines(tx, orderId, isCustomerReturn ? "receive" : "release", {
-      adminId,
-      note: input.note?.trim() || "Parcel received back",
-      lines: input.lines?.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity + (l.lost ?? 0) })),
-    });
-    if (!result.released.length) throw new AppError(409, "Nothing is waiting to come back on this order — its stock was already restored", { code: "NOTHING_TO_RECEIVE" });
-
-    const writeOffs: Array<{ variantId: string; quantity: number; unitCostMinor: number | null; reason: "DAMAGED" | "LOST" }> = [];
-    const goodVariants = new Set<string>();
-    let good = 0;
-    let damaged = 0;
-    let lost = 0;
-    for (const r of result.released) {
-      const line = requested?.get(r.orderItemId);
-      const unitCostMinor = byId.get(r.orderItemId)!.unitCostSnapshot;
-      const d = line?.damaged ?? 0;
-      const l = line?.lost ?? 0;
-      if (d) writeOffs.push({ variantId: r.variantId, quantity: d, unitCostMinor, reason: "DAMAGED" });
-      if (l) writeOffs.push({ variantId: r.variantId, quantity: l, unitCostMinor, reason: "LOST" });
-      if (r.quantity - d - l > 0) goodVariants.add(r.variantId);
-      good += r.quantity - d - l;
-      damaged += d;
-      lost += l;
-    }
-    await writeOffParcelUnits(tx, { id: orderId, orderNumber: locked.orderNumber }, writeOffs, { adminId, note: input.damageNote?.trim() || null });
-
-    const stillOut = items.reduce((s, i) => s + Math.max(0, outstandingOf(i)), 0) - result.released.reduce((s, r) => s + r.quantity, 0);
-    const parts = [`${good} good`, damaged ? `${damaged} damaged${input.damageNote?.trim() ? ` (${input.damageNote.trim()})` : ""}` : "", lost ? `${lost} lost by the courier` : "", stillOut ? `${stillOut} still out` : ""];
-    const updated = await tx.order.update({
-      where: { id: orderId },
-      data: {
-        // Inspection implies the parcel is in hand: a receipt not scanned in (Order Operations phase 4) is recorded now.
-        ...(locked.receivedBackAt ? {} : { receivedBackAt: new Date(), receivedBackByAdminId: adminId }),
-        // Nothing left waiting: the parcel leaves the "To inspect" queue.
-        ...(stillOut <= 0 ? { returnInspectedAt: new Date() } : {}),
-        statusHistory: { create: { status: locked.status, note: `Parcel received back — ${parts.filter(Boolean).join(", ")}${input.note?.trim() ? ` (${input.note.trim()})` : ""}`, changedByAdminId: adminId } },
-      },
-      include,
-    });
-    return { order: updated, replenished: result.replenished.filter((v) => goodVariants.has(v)), moved: result.released.map((r) => r.variantId) };
-  });
+  const { order, replenished, moved } = await prisma.$transaction((tx) => inspectReturnedParcelInTx(tx, orderId, adminId, input));
   notifyReplenished(replenished);
   notifyStockMoved(moved);
   return order;
+}
+
+type ReceiveReturnedParcelInput = { lines?: Array<{ orderItemId: string; quantity: number; damaged?: number; lost?: number }>; note?: string | null; damageNote?: string | null };
+
+/** The body of receiveReturnedParcel, in the caller's transaction (the scanner's receipt runs it after deciding the
+ * outcome, scan-receive.service). `allowNothing`: a parcel in hand whose every unit is missing still records the receipt
+ * instead of refusing (NOTHING_TO_RECEIVE) — the scanner checks itself that it isn't a repeat. The caller notifies
+ * `replenished` / `moved` after commit. */
+export async function inspectReturnedParcelInTx(tx: Prisma.TransactionClient, orderId: string, adminId: string, input: ReceiveReturnedParcelInput, opts: { allowNothing?: boolean } = {}) {
+  const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null; orderNumber: string; receivedBackAt: Date | null }>>`
+    SELECT status, "deletedAt", "orderNumber", "receivedBackAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+  `;
+  if (!locked) throw AppError.notFound("Order not found");
+  if (locked.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+  const isCustomerReturn = RETURN_RECEIPT_STATUSES.includes(locked.status);
+  if (locked.status !== "CANCELLED" && !isCustomerReturn) {
+    throw new AppError(409, "Only a cancelled parcel or a recorded customer return can be received back", { code: "NOT_AWAITING_RETURN" });
+  }
+  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, quantity: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true } });
+  const outstandingOf = (i: (typeof items)[number]) => (isCustomerReturn ? i.returnedQuantity : i.quantity) - i.restockedQuantity;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  if (input.lines && new Set(input.lines.map((l) => l.orderItemId)).size !== input.lines.length) throw AppError.badRequest("Each item can be listed once");
+  for (const l of input.lines ?? []) {
+    const item = byId.get(l.orderItemId);
+    if (!item) throw AppError.badRequest("That item isn't on this order");
+    if ((l.damaged ?? 0) > l.quantity) throw AppError.badRequest("Damaged can't be more than what came back");
+    const outstanding = Math.max(0, outstandingOf(item));
+    if (l.quantity + (l.lost ?? 0) > outstanding) {
+      throw new AppError(400, `Only ${outstanding} unit(s) of this item are still waiting to come back`, { code: "MORE_THAN_OUTSTANDING" });
+    }
+  }
+  const requested = input.lines ? new Map(input.lines.map((l) => [l.orderItemId, l])) : null;
+  const result = await releaseOrderLines(tx, orderId, isCustomerReturn ? "receive" : "release", {
+    adminId,
+    note: input.note?.trim() || "Parcel received back",
+    lines: input.lines?.map((l) => ({ orderItemId: l.orderItemId, quantity: l.quantity + (l.lost ?? 0) })),
+  });
+  if (!result.released.length && !opts.allowNothing) throw new AppError(409, "Nothing is waiting to come back on this order — its stock was already restored", { code: "NOTHING_TO_RECEIVE" });
+
+  const writeOffs: Array<{ variantId: string; quantity: number; unitCostMinor: number | null; reason: "DAMAGED" | "LOST"; ref: string }> = [];
+  const goodVariants = new Set<string>();
+  let good = 0;
+  let damaged = 0;
+  let lost = 0;
+  for (const r of result.released) {
+    const line = requested?.get(r.orderItemId);
+    const unitCostMinor = byId.get(r.orderItemId)!.unitCostSnapshot;
+    const d = line?.damaged ?? 0;
+    const l = line?.lost ?? 0;
+    if (d) writeOffs.push({ variantId: r.variantId, quantity: d, unitCostMinor, reason: "DAMAGED", ref: r.orderItemId });
+    if (l) writeOffs.push({ variantId: r.variantId, quantity: l, unitCostMinor, reason: "LOST", ref: r.orderItemId });
+    if (r.quantity - d - l > 0) goodVariants.add(r.variantId);
+    good += r.quantity - d - l;
+    damaged += d;
+    lost += l;
+  }
+  const writeOffMovements = await writeOffParcelUnits(tx, { id: orderId, orderNumber: locked.orderNumber }, writeOffs, { adminId, note: input.damageNote?.trim() || null });
+
+  const stillOut = items.reduce((s, i) => s + Math.max(0, outstandingOf(i)), 0) - result.released.reduce((s, r) => s + r.quantity, 0);
+  const parts = [`${good} good`, damaged ? `${damaged} damaged${input.damageNote?.trim() ? ` (${input.damageNote.trim()})` : ""}` : "", lost ? `${lost} lost by the courier` : "", stillOut ? `${stillOut} still out` : ""];
+  const updated = await tx.order.update({
+    where: { id: orderId },
+    data: {
+      // Inspection implies the parcel is in hand: a receipt not scanned in (Order Operations phase 4) is recorded now.
+      ...(locked.receivedBackAt ? {} : { receivedBackAt: new Date(), receivedBackByAdminId: adminId }),
+      // Nothing left waiting: the parcel leaves the "To inspect" queue.
+      ...(stillOut <= 0 ? { returnInspectedAt: new Date() } : {}),
+      statusHistory: { create: { status: locked.status, note: `Parcel received back — ${parts.filter(Boolean).join(", ")}${input.note?.trim() ? ` (${input.note.trim()})` : ""}`, changedByAdminId: adminId } },
+    },
+    include,
+  });
+  return {
+    order: updated,
+    replenished: result.replenished.filter((v) => goodVariants.has(v)),
+    moved: result.released.map((r) => r.variantId),
+    released: result.released,
+    writeOffMovements,
+    stillOut,
+  };
 }
 
 const PARTIAL_DELIVERY_RETURN_REASON = "Courier partial delivery — rejected by customer";

@@ -2,6 +2,7 @@ import {
   BD_DISTRICTS_BY_DIVISION,
   BD_DIVISIONS,
   COURIER_DELIVERY_STATUSES,
+  ORDER_EXCEPTION_INFO,
   ORDER_QUEUE_IDS,
   orderStatusEnum,
   paymentMethodEnum,
@@ -98,6 +99,14 @@ export const ORDER_FILTERS: readonly FilterDefinition[] = [
     chip: (label) => label,
   },
   { key: "f.opsDay", label: "On day", kind: "date", dependsOn: "f.ops", chip: (label) => `on ${label}` },
+  // Exception Center drill-down (Today's Operations): exactly the orders the exception's count counted.
+  {
+    key: "f.exception",
+    label: "Exception",
+    kind: "select",
+    options: Object.entries(ORDER_EXCEPTION_INFO).map(([value, info]) => ({ value, label: info.label })),
+    chip: (label) => label,
+  },
 ];
 
 /** Deep links that predate the URL-state grammar — the dashboard's Action Center links `?queue=` and `?status=`. */

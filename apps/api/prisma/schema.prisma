@@ -327,6 +327,8 @@ model AdminUser {
   receivedBackOrders     Order[]               @relation("OrderReceivedBackBy")
   parcelScanBatches      ParcelScanBatch[]     @relation("ParcelScanBatchCreatedBy")
   parcelScanEvents       ParcelScanEvent[]     @relation("ParcelScanEventBy")
+  parcelReceipts         ParcelReceipt[]       @relation("ParcelReceiptBy")
+  parcelCodeAliases      ParcelCodeAlias[]     @relation("ParcelCodeAliasBy")
   stockMovements         StockMovement[]
   refundsRequested       Refund[]              @relation("RefundRequestedBy")
   refundsCompleted       Refund[]              @relation("RefundCompletedBy")
@@ -777,6 +779,7 @@ model ProductVariant {
 
   @@unique([productId, size, color])
   @@index([imageId])
+  @@index([barcode])
 }
 
 /// Join row linking a variant to one selected value per admin-defined attribute (e.g. Fabric=Cotton). Size/color stay
@@ -1416,6 +1419,8 @@ model Order {
   /// The "shipped" SMS was held at booking (shippedSmsTrigger = HANDOVER) and goes out at the handover scan.
   shippedSmsDeferred           Boolean    @default(false)
   parcelScanEvents             ParcelScanEvent[]
+  parcelReceipts               ParcelReceipt[]
+  parcelCodeAliases            ParcelCodeAlias[]
 
   @@index([status])
   @@index([customerId])
@@ -1432,6 +1437,7 @@ model Order {
   @@index([courierNextPollAt])
   /// The Orders search's exact match on a scanned/pasted label barcode.
   @@index([trackingNumber])
+  @@index([courierTrackingLink])
   @@index([followUpAt])
   @@index([updatedAt])
 }
@@ -1487,6 +1493,9 @@ model ParcelScanEvent {
   message      String
   /// RETURN: accepted although the courier hasn't reported the parcel coming back.
   discrepancy  Boolean         @default(false)
+  /// How the code named the order (packages/shared parcel-scan.ts ScanMatchKind): ORDER_NUMBER, TRACKING, CONSIGNMENT,
+  /// STEADFAST_LINK, STEADFAST_SLIP, ALIAS. Null for an unknown code and for scans from before it was recorded.
+  resolvedBy   String?
   adminId      String?
   admin        AdminUser?      @relation("ParcelScanEventBy", fields: [adminId], references: [id], onDelete: SetNull)
   /// Removed from its batch before confirming (or the batch was cancelled).
@@ -1495,6 +1504,59 @@ model ParcelScanEvent {
 
   @@index([batchId, createdAt])
   @@index([orderId, kind])
+}
+
+/// A code an operator tied to an order by hand (scanner › unknown code › "this code is that order") — a courier sticker
+/// format we don't decode yet. Stored normalised (upper case); one code names one order, so it never resolves twice.
+model ParcelCodeAlias {
+  id               String     @id @default(cuid())
+  code             String     @unique
+  orderId          String
+  order            Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdByAdminId String?
+  createdBy        AdminUser? @relation("ParcelCodeAliasBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdAt        DateTime   @default(now())
+
+  @@index([orderId])
+}
+
+/// One physical receipt of a parcel back at the shop, confirmed on the scanner (docs/ORDER_OPERATIONS.md "Receive and
+/// inspect"): what the operator found per line, the money the courier handed over, and what the system did with it. The
+/// audit record only — stock moves through releaseOrderLines / writeOffParcelUnits, money through the payment ledger and
+/// status through the order state machine, all in the same transaction. Append-only: a correction is a new row
+/// (correctsReceiptId), never an edit. idempotencyKey makes a retried confirm return the first receipt.
+model ParcelReceipt {
+  id                String          @id @default(cuid())
+  orderId           String
+  order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  adminId           String?
+  admin             AdminUser?      @relation("ParcelReceiptBy", fields: [adminId], references: [id], onDelete: SetNull)
+  /// RECEIPT | CORRECTION
+  kind              String          @default("RECEIPT")
+  /// The code scanned to open the parcel (null when it was opened by search).
+  code              String?
+  idempotencyKey    String          @unique
+  /// RECEIPT: FULL_RETURN (the customer kept nothing) | PARTIAL (kept some) | RETURN (a return decided earlier).
+  outcome           String?
+  statusBefore      OrderStatus
+  statusAfter       OrderStatus
+  /// RECEIPT, per line: { orderItemId, kept, good, damaged, missing, wrong, other, note }; CORRECTION: { orderItemId, from,
+  /// to, quantity }. Both with the stock movement ids written for them.
+  lines             Json
+  expectedCod       Decimal?        @db.Decimal(10, 2)
+  actualCollected   Decimal?        @db.Decimal(10, 2)
+  courierCharge     Decimal?        @db.Decimal(10, 2)
+  /// PARTIAL_DELIVERY | CUSTOMER_REFUSED | COURIER_CHARGE_ONLY | COD_ADJUSTMENT | OTHER — required when money differs.
+  reason            String?
+  note              String?
+  /// The payment rows this receipt recorded (order money and / or the return charge).
+  paymentIds        String[]        @default([])
+  correctsReceiptId String?
+  correctsReceipt   ParcelReceipt?  @relation("ParcelReceiptCorrection", fields: [correctsReceiptId], references: [id], onDelete: Restrict)
+  corrections       ParcelReceipt[] @relation("ParcelReceiptCorrection")
+  createdAt         DateTime        @default(now())
+
+  @@index([orderId, createdAt])
 }
 
 /// The daily courier check (Order Operations phase 5, jobs/courier-automation-cron.ts): one row per store day — a rerun
@@ -6771,4 +6833,46 @@ model StockAutoFillFailure {
 
   @@index([orderId])
   @@index([resolvedAt])
+}
+
+/// Warehouse printing (docs/WAREHOUSE_OPERATIONS.md §3): one row per print of a pick list, packing sheets, courier labels,
+/// product labels or a handover manifest — who printed what, when, and whether it was a reprint. Printing records the
+/// print only: it never changes stock, an order's status, a handover or money. Append-only (a trigger refuses UPDATE and
+/// DELETE). adminId has no FK so the record outlives a removed staff account (adminName keeps the name as printed).
+model PrintRun {
+  id          String         @id @default(cuid())
+  /// PICK_LIST | PACKING_SHEET | COURIER_LABEL | PRODUCT_LABEL | MANIFEST
+  kind        String
+  /// The browser's id for this print — a retried request is answered with the run already recorded.
+  clientRunId String         @unique
+  adminId     String?
+  adminName   String?
+  orderCount  Int            @default(0)
+  unitCount   Int            @default(0)
+  copies      Int            @default(1)
+  /// At least one order (or product) in this run had been printed in this kind before.
+  reprint     Boolean        @default(false)
+  reason      String?
+  createdAt   DateTime       @default(now())
+  items       PrintRunItem[]
+
+  @@index([kind, createdAt])
+}
+
+/// What a print run covered: an order (pick list, packing sheet, courier label, manifest) or a variant (product label).
+/// `reprint` = this order/variant had been printed in this kind before this run. No FKs: history outlives the order.
+model PrintRunItem {
+  id         String   @id @default(cuid())
+  printRunId String
+  printRun   PrintRun @relation(fields: [printRunId], references: [id], onDelete: Restrict)
+  kind       String
+  orderId    String?
+  variantId  String?
+  quantity   Int      @default(1)
+  reprint    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([orderId, kind])
+  @@index([variantId, kind])
+  @@index([printRunId])
 }

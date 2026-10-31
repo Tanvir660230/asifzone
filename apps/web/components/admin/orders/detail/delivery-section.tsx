@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Copy, ExternalLink, PackageX, RefreshCw, Truck, Unlink } from "lucide-react";
-import { CLOSED_ORDER_STATUSES, courierBookingBlocker, formatVariantLabel, type Order } from "@clothing-brand/shared";
+import { CLOSED_ORDER_STATUSES, PARCEL_CONFLICT_LABEL, courierBookingBlocker, describeParcel, formatVariantLabel, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,7 @@ import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { copyToClipboard } from "@/lib/clipboard";
+import { cn } from "@/lib/utils";
 import { courierStatusDescription, formatPrice, formatStoreDateTime, timeAgo } from "@/lib/format";
 import { CourierCell } from "../order-badges";
 import { COURIER_PROVIDER_LABEL, type OrderPermissions } from "../order-domain";
@@ -208,6 +209,45 @@ function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: 
 
 /** 5 — getting the parcel to the customer: the courier booking (book, sync, unlink — through the courier abstraction's
  * endpoints), a manual carrier fallback, partial-delivery reconciliation and the courier-loss ledger. */
+/** Where the parcel physically is (docs/WAREHOUSE_OPERATIONS.md §2): SHIPPED is set at booking, so this says whether it
+ * has actually left, how long it has waited and what to do next — and names facts that disagree. */
+function ParcelStageLine({ order }: { order: Order }) {
+  const unitsExpectedBack = order.items.reduce(
+    (n, i) => n + Math.max(0, (order.status === "CANCELLED" ? i.quantity : i.returnedQuantity) - i.restockedQuantity),
+    0,
+  );
+  const v = describeParcel({
+    status: order.status,
+    courierConsignmentId: order.courierConsignmentId,
+    courierStatus: order.courierStatus,
+    courierSyncError: order.courierSyncError,
+    courierBookedAt: order.courierBookedAt,
+    handedOverAt: order.handedOverAt ?? null,
+    receivedBackAt: order.receivedBackAt ?? null,
+    returnInspectedAt: order.returnInspectedAt ?? null,
+    partialDeliveryReconciledAt: order.partialDeliveryReconciledAt,
+    statusChangedAt: order.statusChangedAt ?? order.updatedAt,
+    unitsExpectedBack,
+  });
+  if (v.stage === "CLOSED") return null;
+  const late = v.overdue || v.priority >= 3;
+  return (
+    <div data-testid="parcel-stage" className={cn("rounded-xl border p-3.5 text-sm", late ? "border-warning-200 bg-warning-50/50" : "border-line-subtle")}>
+      <p className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-medium text-fg">{v.label}</span>
+        {v.since && <span className="text-xs text-fg-subtle">{timeAgo(v.since.toISOString())}</span>}
+      </p>
+      <p className="mt-0.5 text-fg-muted">{v.meaning}</p>
+      {v.nextAction && <p className={cn("mt-1", late ? "font-medium text-warning-800" : "text-fg")}>{v.nextAction}</p>}
+      {v.conflicts.map((c) => (
+        <p key={c} className="mt-1 flex items-start gap-1.5 text-warning-800">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> {PARCEL_CONFLICT_LABEL[c]}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function DeliverySection({
   order,
   commands,
@@ -232,6 +272,7 @@ export function DeliverySection({
   return (
     <DetailSection title="Delivery & courier" icon={Truck} testId="order-delivery">
       <div className="space-y-4">
+        {booked && <ParcelStageLine order={order} />}
         {booked ? (
           <div className="space-y-2 rounded-xl border border-line-subtle bg-surface-muted p-3.5">
             <div className="flex flex-wrap items-center gap-2">

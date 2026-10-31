@@ -184,6 +184,10 @@ export const NAV_NODES: readonly NavNode[] = [
     order: 1,
     keywords: ["exchange", "refund", "returns"],
   },
+  // Warehouse Operations (docs/WAREHOUSE_OPERATIONS.md): the day's work in order + the Exception Center; picking and labels.
+  { id: "orders.today", label: "Today", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/today", capability: "orders.view", order: 0.5, keywords: ["today", "operations", "exceptions", "handover", "unknown", "hold"] },
+  { id: "orders.product-labels", label: "Product labels", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/product-labels", capability: "orders.view", order: 1.8, keywords: ["barcode", "qr", "sticker", "sku", "label", "print"] },
+  { id: "orders.pick-list", label: "Pick list", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/pick-list", capability: "orders.view", order: 3.1, visibility: "hidden" },
   // Order Operations phase 4: scan parcels out to the courier and back in (physical handover / receipt only).
   { id: "orders.dispatch", label: "Dispatch scan", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/dispatch", capability: "parcels.scan", order: 1.5, keywords: ["scan", "barcode", "handover", "courier", "pickup"] },
   { id: "orders.returns-in", label: "Returns in", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/returns-in", capability: "parcels.scan", order: 1.6, keywords: ["scan", "barcode", "return", "received", "parcel back"] },

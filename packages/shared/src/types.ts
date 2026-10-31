@@ -677,6 +677,10 @@ export interface Order {
   courierCollectedAmount?: string | null;
   courierCollectedAt?: string | null;
   partialDeliveryReconciledAt: string | null;
+  /** Physical facts (Order Operations phase 4): handed to the courier, back with us, inspected. Admin reads. */
+  handedOverAt?: string | null;
+  receivedBackAt?: string | null;
+  returnInspectedAt?: string | null;
   followUpAt: string | null;
   callAttempts: number;
   statusHistory: OrderStatusHistoryEntry[];

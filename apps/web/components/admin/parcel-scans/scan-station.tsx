@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Camera, CheckCircle2, CircleSlash, CloudOff, Loader2, ScanLine, X, XCircle } from "lucide-react";
-import { PARCEL_SCAN_RESULT_LABELS, type ParcelScanBatchView, type ParcelScanEventRow, type ParcelScanKind, type ParcelScanResult } from "@clothing-brand/shared";
+import {
+  PARCEL_SCAN_RESULT_LABELS,
+  SCAN_MATCH_LABELS,
+  type ParcelScanBatchView,
+  type ParcelScanEventRow,
+  type ParcelScanKind,
+  type ParcelScanResult,
+  type ParcelView,
+} from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
@@ -15,6 +23,9 @@ import { formatCount, formatStoreTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { invalidateOrderQueries, orderKeys } from "@/components/admin/orders/order-domain";
 import { CameraScanner } from "./camera-scanner";
+import { ParcelHeader, ParcelLinesList } from "./parcel-card";
+import { ScannerBar } from "./scanner-bar";
+import { useScannerSound, type ScannerTone } from "./scanner-sound";
 
 /**
  * A scanning station (Order Operations plan, phase 4): a USB keyboard-wedge scanner types the code and presses Enter into
@@ -53,32 +64,8 @@ const COPY: Record<ParcelScanKind, { title: string; confirm: (n: number) => stri
 
 const RESULT_TONE: Record<ParcelScanResult, "ok" | "warn" | "error"> = { ACCEPTED: "ok", DUPLICATE: "warn", ALREADY_PROCESSED: "warn", INVALID: "error", INELIGIBLE: "error" };
 
-/** A short tone per outcome (and a buzz on phones): one high beep = added, two mid = already done, one low = refused. */
-function useFeedbackSound() {
-  const ctx = useRef<AudioContext | null>(null);
-  return useCallback((tone: "ok" | "warn" | "error") => {
-    try {
-      ctx.current ??= new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      const ac = ctx.current;
-      const beeps = tone === "ok" ? [[1046, 0.09]] : tone === "warn" ? [[660, 0.08], [660, 0.08]] : [[220, 0.28]];
-      let t = ac.currentTime;
-      for (const [freq, dur] of beeps) {
-        const osc = ac.createOscillator();
-        const gain = ac.createGain();
-        osc.frequency.value = freq!;
-        gain.gain.setValueAtTime(0.18, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + dur!);
-        osc.connect(gain).connect(ac.destination);
-        osc.start(t);
-        osc.stop(t + dur!);
-        t += dur! + 0.06;
-      }
-    } catch {
-      // No audio (autoplay policy before the first interaction): colour and text still say it.
-    }
-    navigator.vibrate?.(tone === "ok" ? 40 : tone === "warn" ? [40, 60, 40] : 220);
-  }, []);
-}
+/** The sound for each answer (scanner-sound.ts): recognised, already done, not our code, can't be used here. */
+const RESULT_SOUND: Record<ParcelScanResult, ScannerTone> = { ACCEPTED: "scan", DUPLICATE: "duplicate", ALREADY_PROCESSED: "duplicate", INVALID: "unknown", INELIGIBLE: "invalid" };
 
 function newScanId() {
   return (crypto.randomUUID?.() ?? `${Date.now()}${Math.random()}`).replace(/[^A-Za-z0-9]/g, "").slice(0, 32);
@@ -87,8 +74,17 @@ function newScanId() {
 export function ScanStation({ kind }: { kind: ParcelScanKind }) {
   const copy = COPY[kind];
   const queryClient = useQueryClient();
-  const play = useFeedbackSound();
+  const sound = useScannerSound();
+  const play = sound.play;
   const inputRef = useRef<HTMLInputElement>(null);
+  const [focused, setFocused] = useState(false);
+  const [lastCode, setLastCode] = useState<string | null>(null);
+  // DISPATCH: the last parcel scanned, opened beside the batch — its lines, and an optional content check (scan each
+  // item's SKU; a code that is none of its SKUs goes to the batch as the next parcel).
+  const [peekId, setPeekId] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState<Map<string, number>>(new Map());
+  const { data: peek } = useQuery({ queryKey: ["parcel-peek", peekId], queryFn: () => scansApi.getParcel(peekId!), enabled: kind === "DISPATCH" && Boolean(peekId) });
   const [code, setCode] = useState("");
   const [batch, setBatch] = useState<ParcelScanBatchView | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
@@ -216,9 +212,13 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           setQueue((cur) => cur.filter((p) => p.clientScanId !== next.clientScanId));
           setBatch((cur) => (cur ? { ...cur, events: [event, ...cur.events.filter((e) => e.clientScanId !== event.clientScanId)], accepted: cur.accepted + (event.result === "ACCEPTED" ? 1 : 0) } : cur));
           const tone = RESULT_TONE[event.result];
-          play(tone);
+          play(RESULT_SOUND[event.result]);
           // The message already names the order or the problem; "Added" is said once, for an accepted scan.
           setLast({ tone, text: event.result === "ACCEPTED" ? `Added — ${event.message}` : event.message });
+          if (event.orderId) {
+            setPeekId(event.orderId);
+            setChecked(new Map());
+          }
         } catch (err) {
           const transient = !(err instanceof ApiError) || err.status === 0 || err.status >= 500 || err.status === 429;
           if (transient) {
@@ -235,7 +235,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
             continue;
           }
           setQueue((cur) => cur.map((p) => (p.clientScanId === next.clientScanId ? { ...p, state: "failed", error: getErrorMessage(err, "Refused") } : p)));
-          play("error");
+          play("failed");
           setLast({ tone: "error", text: `${next.code}: ${getErrorMessage(err, "Refused")}` });
         }
       }
@@ -259,9 +259,32 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
   function submit(raw: string) {
     const value = raw.trim();
     if (!value) return;
+    setLastCode(value);
+    if (checkItem(value)) {
+      setCode("");
+      return;
+    }
     setQueue((cur) => [...cur, { clientScanId: newScanId(), code: value, at: new Date().toISOString(), state: "waiting" }]);
     setCode("");
     queueMicrotask(() => void flush());
+  }
+
+  /** DISPATCH content check: a scan of one of the open parcel's own SKUs ticks it (nothing is written). True if it was. */
+  function checkItem(value: string) {
+    if (kind !== "DISPATCH" || !checking || !peek) return false;
+    const line = peek.lines.find((l) => l.sku.toLowerCase() === value.toLowerCase());
+    if (!line) return false;
+    const n = checked.get(line.orderItemId) ?? 0;
+    if (n >= line.ordered) {
+      play("duplicate");
+      setLast({ tone: "warn", text: `All ${line.ordered} × ${line.name} already checked` });
+      return true;
+    }
+    setChecked((m) => new Map(m).set(line.orderItemId, n + 1));
+    const done = peek.lines.every((l) => (l.orderItemId === line.orderItemId ? n + 1 : (checked.get(l.orderItemId) ?? 0)) >= l.ordered);
+    play(done ? "success" : "scan");
+    setLast({ tone: "ok", text: done ? `${peek.orderNumber}: every item checked` : `${line.name}: ${n + 1} of ${line.ordered} checked` });
+    return true;
   }
 
   async function confirm() {
@@ -274,10 +297,12 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
       batchRef.current = null;
       invalidateOrderQueries(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["parcel-scan-summary"] });
+      play("success");
       toast.success(`${done.accepted} parcel${done.accepted === 1 ? "" : "s"} confirmed`);
       // Ready for the next parcel straight away (the scanner types into whatever has focus).
       inputRef.current?.focus();
     } catch (err) {
+      play("failed");
       toast.error(getErrorMessage(err, "Couldn't confirm the batch"));
       if (batch) setBatch(await scansApi.getBatch(batch.id).catch(() => batch));
     } finally {
@@ -324,6 +349,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
 
   return (
     <div className="mt-4 space-y-4">
+      <ScannerBar mode={kind} ready={focused} online={online} lastCode={lastCode} sound={sound.enabled} onSound={sound.setEnabled} />
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {kind === "DISPATCH" && summary && (
           <span className="rounded-full bg-surface px-3 py-1.5 text-fg-muted ring-1 ring-line-subtle" data-testid="dispatch-summary">
@@ -371,6 +397,8 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
               ref={inputRef}
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
               placeholder="Scan, or type a code and press Enter"
               autoComplete="off"
               autoCorrect="off"
@@ -414,6 +442,8 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           </p>
         )}
       </div>
+
+      {kind === "DISPATCH" && peek && <DispatchParcel parcel={peek} checking={checking} checked={checked} onCheck={(on) => { setChecking(on); setChecked(new Map()); }} />}
 
       <section aria-label="Scans in this batch" className="rounded-2xl border border-line-subtle bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle px-4 py-3">
@@ -460,6 +490,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
                     </span>
                     <span className={cn("block truncate text-xs", tone === "ok" ? "text-fg-subtle" : tone === "warn" ? "text-warning-800" : "text-danger-700")}>
                       {e.result === "ACCEPTED" ? (e.discrepancy ? e.message : PARCEL_SCAN_RESULT_LABELS.ACCEPTED) : e.message}
+                      {e.resolvedBy && e.result === "ACCEPTED" ? ` · ${SCAN_MATCH_LABELS[e.resolvedBy]}` : ""}
                     </span>
                   </span>
                   {e.discrepancy && <span className="rounded-full bg-warning-100 px-2 py-0.5 text-[11px] font-medium text-warning-800">Check</span>}
@@ -491,5 +522,28 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         />
       )}
     </div>
+  );
+}
+
+/** The parcel just scanned for dispatch: who it is for, what should be in it, where it stands — and, when switched on, a
+ * content check (scan each item's SKU; the counts must reach what was ordered). The check writes nothing. */
+function DispatchParcel({ parcel, checking, checked, onCheck }: { parcel: ParcelView; checking: boolean; checked: Map<string, number>; onCheck: (on: boolean) => void }) {
+  const total = parcel.lines.reduce((s, l) => s + l.ordered, 0);
+  const done = parcel.lines.reduce((s, l) => s + Math.min(l.ordered, checked.get(l.orderItemId) ?? 0), 0);
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4 sm:p-5" aria-label={`Parcel ${parcel.orderNumber}`} data-testid="dispatch-parcel">
+      <ParcelHeader parcel={parcel} compact />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-fg">
+          {total} item{total === 1 ? "" : "s"}
+          {checking && <span className="font-normal text-fg-muted"> · {done} of {total} checked</span>}
+        </h3>
+        <Button size="sm" variant={checking ? "secondary" : "outline"} onClick={() => onCheck(!checking)} aria-pressed={checking} data-testid="content-check">
+          {checking ? "Stop checking" : "Check contents"}
+        </Button>
+      </div>
+      {checking && <p className="mt-1 text-xs text-fg-muted">Scan each item&apos;s SKU barcode. A code that isn&apos;t one of these items is taken as the next parcel.</p>}
+      <ParcelLinesList parcel={parcel} checked={checking ? checked : undefined} />
+    </section>
   );
 }

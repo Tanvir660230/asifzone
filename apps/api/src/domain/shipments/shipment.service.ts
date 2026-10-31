@@ -391,28 +391,32 @@ const stale = (version: number) => coded(409, "SHIPMENT_STALE", "Someone changed
 
 /** One save of a leg's money record (PATCH /api/shipments/:id/costs). */
 export async function updateShipmentCosts(id: string, input: ShipmentCostUpdateInput, actor: ShipmentActor) {
-  await prisma.$transaction(async (tx) => {
-    const cur = await lockedLeg(tx, id);
-    const { fields, needsReason, needsVerify } = await nextFields(tx, cur, input, actor);
-    const changes = diff(cur as unknown as Record<string, unknown>, fields as Record<string, unknown>);
-    if (!Object.keys(changes).length) return; // nothing new — a replayed save is harmless
-    if (input.version !== cur.version) throw stale(cur.version);
-    if (needsVerify && !actor.canVerify) throw coded(403, "VERIFY_PERMISSION", VERIFY_ONLY);
-    if (needsReason && !input.reason) throw coded(400, "REASON_REQUIRED", "Give a reason — this changes a verified figure or a reconciled record");
-    const merged = { ...cur, ...fields };
-    await tx.shipment.update({ where: { id }, data: { ...fields, version: { increment: 1 }, ...derivedColumns(merged) } });
-    await recordShipmentEvent(tx, {
-      shipmentId: id,
-      action: fields.reconciledAt === null && cur.reconciledAt ? "REOPENED" : "UPDATED",
-      changes,
-      reason: input.reason ?? null,
-      note: input.note ?? null,
-      source: [fields.chargeStatus !== undefined || fields.actualCharge !== undefined ? (input.chargeSource ?? cur.chargeSource) : null, fields.contributionStatus !== undefined ? (input.contributionSource ?? cur.contributionSource) : null].filter(Boolean).join(" · ") || null,
-      reference: [input.chargeReference, input.contributionReference].filter(Boolean).join(" · ") || null,
-      adminId: actor.adminId,
-    });
-  });
+  await prisma.$transaction((tx) => updateShipmentCostsInTx(tx, id, input, actor));
   return loadLeg(id);
+}
+
+/** The body of updateShipmentCosts, in the caller's transaction (the scanner's parcel receipt enters the courier's charge
+ * with the receipt). `version` is checked as for a save from the leg's page. */
+export async function updateShipmentCostsInTx(tx: Prisma.TransactionClient, id: string, input: ShipmentCostUpdateInput, actor: ShipmentActor) {
+  const cur = await lockedLeg(tx, id);
+  const { fields, needsReason, needsVerify } = await nextFields(tx, cur, input, actor);
+  const changes = diff(cur as unknown as Record<string, unknown>, fields as Record<string, unknown>);
+  if (!Object.keys(changes).length) return; // nothing new — a replayed save is harmless
+  if (input.version !== cur.version) throw stale(cur.version);
+  if (needsVerify && !actor.canVerify) throw coded(403, "VERIFY_PERMISSION", VERIFY_ONLY);
+  if (needsReason && !input.reason) throw coded(400, "REASON_REQUIRED", "Give a reason — this changes a verified figure or a reconciled record");
+  const merged = { ...cur, ...fields };
+  await tx.shipment.update({ where: { id }, data: { ...fields, version: { increment: 1 }, ...derivedColumns(merged) } });
+  await recordShipmentEvent(tx, {
+    shipmentId: id,
+    action: fields.reconciledAt === null && cur.reconciledAt ? "REOPENED" : "UPDATED",
+    changes,
+    reason: input.reason ?? null,
+    note: input.note ?? null,
+    source: [fields.chargeStatus !== undefined || fields.actualCharge !== undefined ? (input.chargeSource ?? cur.chargeSource) : null, fields.contributionStatus !== undefined ? (input.contributionSource ?? cur.contributionSource) : null].filter(Boolean).join(" · ") || null,
+    reference: [input.chargeReference, input.contributionReference].filter(Boolean).join(" · ") || null,
+    adminId: actor.adminId,
+  });
 }
 
 /** Closes the record (courier_costs.verify): only when nothing is left to decide (shared reconcileBlocker). */

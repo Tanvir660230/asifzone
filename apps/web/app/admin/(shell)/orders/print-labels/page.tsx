@@ -25,6 +25,7 @@ import { PrintLabelPreview } from "@/components/orders/print-label-preview";
 import { PrintLabelOptions, type PrintOptions, type CaptureState, type FitReport } from "@/components/orders/print-label-options";
 import { loadStoredPrintPrefs, saveStoredPrintPrefs } from "@/lib/label-print-prefs";
 import { ordersListHref } from "@/lib/admin/orders-return";
+import { useLabelPrintLog } from "@/components/orders/use-label-print-log";
 
 function buildFilename(orderCount: number): string {
   const now = new Date();
@@ -288,20 +289,26 @@ export default function PrintLabelsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only `copies` should trigger this rebuild
   }, [options.copies]);
 
+  // Every print (or saved PDF) of real labels goes in the print log — after the paper, never before it.
+  const { logPrint, dialog: reprintDialog } = useLabelPrintLog();
+
   function handlePrintAllPages() {
     if (pages.length === 0) return;
     printPdf(assemblePdf(pages, imagesByOrderId, offset));
+    logPrint(selectedOrders.map((o) => o.id), options.copies);
   }
 
   function handlePrintCurrentPage() {
     const page = pages[currentPageIndex];
     if (!page) return;
     printPdf(assembleSinglePagePdf(page, imagesByOrderId, offset));
+    logPrint([...new Set(page.slots.map((s) => s.orderId))], 1);
   }
 
   function handleDownload() {
     if (pages.length === 0) return;
     downloadPdf(assemblePdf(pages, imagesByOrderId, offset), buildFilename(selectedOrders.length));
+    logPrint(selectedOrders.map((o) => o.id), options.copies);
   }
 
   if (ids === null || (ids.length > 0 && isLoading)) {
@@ -332,6 +339,7 @@ export default function PrintLabelsPage() {
 
   return (
     <div className="min-h-screen bg-ink-50/60">
+      {reprintDialog}
       {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx: this floats over the
           scrolling label list, and translucency there let row text visibly bleed/cut through the
           bar's bottom edge as it scrolled underneath. */}
