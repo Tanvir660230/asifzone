@@ -18,7 +18,9 @@ COPY packages packages
 COPY apps/api apps/api
 RUN pnpm --filter @clothing-brand/shared build
 RUN pnpm --filter api prisma:generate
-RUN pnpm --filter api build
+# The app only (tsconfig.build.json leaves the tests out); Prisma's generated types alone need ~1.8 GB to type-check, so the
+# build gets a little headroom over Node's default heap on the 4 GB VPS (2026-10-31: out of memory at ~2 GB).
+RUN NODE_OPTIONS=--max-old-space-size=2304 pnpm --filter api build
 
 FROM base AS runner
 ENV NODE_ENV=production

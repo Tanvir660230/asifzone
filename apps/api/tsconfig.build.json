@@ -1,0 +1,7 @@
+{
+  // The production build (Dockerfile, `pnpm --filter api build`): the app only. Tests and their fixtures are type-checked
+  // by CI with tsconfig.json (tsc --noEmit) and run by vitest — compiling them into dist made the image build run out of
+  // memory on the VPS (2026-10-31) and shipped test code nobody runs.
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/*.test.ts", "src/test-fixtures.ts"]
+}
