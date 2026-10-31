@@ -25,6 +25,7 @@ import * as financeApi from "@/lib/api/finance";
 import type { Loan, LoanRepaymentType } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
 
 const STATUS: Record<Loan["status"], { variant: "success" | "warning" | "neutral"; label: string }> = {
   ACTIVE: { variant: "success", label: "active" }, AWAITING_APPROVAL: { variant: "warning", label: "awaiting approval" }, REPAID: { variant: "neutral", label: "repaid" }, CANCELLED: { variant: "neutral", label: "cancelled" },
@@ -154,7 +155,7 @@ function LoanModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   const [rate, setRate] = useState("");
   const [term, setTerm] = useState("12");
   const [type, setType] = useState<LoanRepaymentType>("ANNUITY");
-  const [drawn, setDrawn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [drawn, setDrawn] = useState(() => todayLocal());
   const [firstDue, setFirstDue] = useState("");
   const [accountId, setAccountId] = useState("");
   const [reference, setReference] = useState("");
@@ -196,7 +197,7 @@ function LoanModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
 function RepayModal({ loan, onClose, onDone }: { loan: Loan; onClose: () => void; onDone: () => void }) {
   const paying = usePayingAccounts();
   const [amount, setAmount] = useState(loan.nextInstalment ? String(loan.nextInstalment.payment) : "");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayLocal());
   const [accountId, setAccountId] = useState(loan.financialAccount.id);
   const [reference, setReference] = useState("");
   const [key] = useState(newKey);

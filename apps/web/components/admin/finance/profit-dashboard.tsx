@@ -136,7 +136,7 @@ function Hero({ totals, prior, compareWith, label }: { totals: ProfitTotals; pri
   const loss = totals.profit < 0;
   const diff = prior ? Math.round(totals.profit - prior.profit) : null;
   return (
-    <Card className="p-5 sm:p-7" data-testid="profit-hero">
+    <div className="liquid-pass p-5 sm:p-7" data-testid="profit-hero">
       <p className="text-sm text-fg-muted">{label}</p>
       <p className={cn("mt-1 text-[2rem] font-semibold leading-tight tracking-tight tabular-nums sm:text-[2.75rem]", loss ? "text-danger-600" : "text-fg")}>
         {loss ? `${money(-totals.profit)} loss` : `${money(totals.profit)} profit`}
@@ -153,7 +153,7 @@ function Hero({ totals, prior, compareWith, label }: { totals: ProfitTotals; pri
       )}
       {diff !== null && diff !== 0 && <Delta className="mt-3" diff={diff} good="up" text={`${diff > 0 ? "more" : "less"} than ${compareWith}`} />}
       {diff === 0 && <p className="mt-3 text-sm text-fg-muted">The same as {compareWith}.</p>}
-    </Card>
+    </div>
   );
 }
 

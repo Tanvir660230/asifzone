@@ -27,6 +27,7 @@ import * as financeApi from "@/lib/api/finance";
 import type { DepreciationMethod, FixedAsset } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
 
 /** Fixed assets (docs/FINANCE_FIXED_ASSETS.md): what the business owns and uses for years — cost, depreciation month by
  * month, book value — and the monthly run that books it. The register always equals the fixed-asset accounts. */
@@ -156,7 +157,7 @@ function AssetModal({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   const assetAccounts = useMemo(() => (chart.data?.accounts ?? []).filter((a) => a.type === "ASSET" && a.isPostable && a.isActive && a.normalBalance === "DEBIT" && a.code.startsWith("18")), [chart.data]);
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayLocal());
   const [cost, setCost] = useState("");
   const [residual, setResidual] = useState("");
   const [life, setLife] = useState("36");
@@ -211,7 +212,7 @@ function AssetModal({ onClose, onDone }: { onClose: () => void; onDone: () => vo
 function DisposeModal({ asset, onClose, onDone }: { asset: FixedAsset; onClose: () => void; onDone: () => void }) {
   const money = useQuery({ queryKey: ["finance", "financial-accounts"], queryFn: financeApi.listFinancialAccounts });
   const paying = (money.data?.financialAccounts ?? []).filter((a) => a.isActive && ["CASH", "BANK", "MOBILE_WALLET"].includes(a.kind));
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayLocal());
   const [proceeds, setProceeds] = useState("");
   const [accountId, setAccountId] = useState("");
   const [reason, setReason] = useState("");

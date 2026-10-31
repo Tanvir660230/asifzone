@@ -25,6 +25,7 @@ import * as financeApi from "@/lib/api/finance";
 import type { ChartAccount, JournalEntry } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
 
 const KIND_LABEL: Record<JournalEntry["kind"], string> = { MANUAL: "Manual", OPENING_BALANCE: "Opening balances", EVENT: "Automatic", REVERSAL: "Reversal", CORRECTION: "Correction", TREASURY: "Money movement", ADJUSTMENT: "Adjustment" };
 
@@ -142,7 +143,7 @@ const cents = (v: string) => (v.trim() ? Math.round(Number(v) * 100) : 0);
  * required; saving reverses the original and posts the correction in one step. */
 function JournalModal({ accounts, canPost, correcting, onClose, onDone }: { accounts: ChartAccount[]; canPost: boolean; correcting?: JournalEntry; onClose: () => void; onDone: () => void }) {
   const postable = accounts.filter((a) => a.isPostable && a.isActive && !a.restricted);
-  const [date, setDate] = useState(() => correcting?.entryDate ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => correcting?.entryDate ?? todayLocal());
   const [description, setDescription] = useState(() => (correcting ? `Correction of #${correcting.number}: ${correcting.description}`.slice(0, 300) : ""));
   const [reference, setReference] = useState(() => correcting?.reference ?? "");
   const [reason, setReason] = useState("");
