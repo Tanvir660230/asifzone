@@ -809,14 +809,29 @@ const surfaceDefinitions = {
       "--liquid-fill": "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.80) 100%)",
       "--liquid-shadow": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04), 0 14px 34px -18px rgba(20,24,40,0.28)",
       "--liquid-shadow-hover": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.09), 0 2px 4px rgba(0,0,0,0.05), 0 20px 40px -18px rgba(20,24,40,0.34)",
-      // The money card: brushed white titanium (Apple Card), with one soft light streak across it.
-      "--pass-fill": "linear-gradient(140deg, #ffffff 0%, #f1f2f5 38%, #e6e8ed 62%, #f8f8fa 100%)",
-      "--pass-sheen": "linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.75) 46%, rgba(255,255,255,0) 60%)",
-      "--pass-shadow": "inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.04), 0 0 0 0.5px rgba(0,0,0,0.08), 0 30px 60px -28px rgba(20,24,40,0.40), 0 8px 18px -10px rgba(20,24,40,0.18)",
-      // Wallet cards per kind of money account (tinted glass, dark text stays AA on every tint).
-      "--pass-cash": "linear-gradient(150deg, #f3fbf6 0%, #dff3e7 100%)",
-      "--pass-bank": "linear-gradient(150deg, #f2f7fd 0%, #dbe8f8 100%)",
-      "--pass-wallet": "linear-gradient(150deg, #fbf3f8 0%, #f3dfeb 100%)",
+      // The Money palette: neutrals almost everywhere, colour only where it means something. Graphite actions (no
+      // system blue) and one deep money green for "up" — RGB channels, so the role variables can take them.
+      "--finance-canvas": "246 245 242",
+      "--finance-accent": "28 28 30",
+      "--finance-accent-hover": "58 58 60",
+      "--finance-money-500": "22 128 95",
+      "--finance-money-600": "14 107 80",
+      "--finance-money-700": "10 86 64",
+      // The money card: deep graphite, the one dark thing on the screen, with a faint light streak across it.
+      "--pass-fill": "linear-gradient(150deg, #2c2c2e 0%, #1c1c1e 55%, #141415 100%)",
+      "--pass-sheen": "linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.07) 46%, rgba(255,255,255,0) 60%)",
+      "--pass-shadow": "inset 0 1px 0 rgba(255,255,255,0.10), 0 0 0 0.5px rgba(0,0,0,0.30), 0 30px 60px -28px rgba(20,20,22,0.55), 0 8px 18px -10px rgba(20,20,22,0.30)",
+      // Text on the money card (RGB channels): white, and a soft grey for the small print.
+      "--pass-fg": "255 255 255",
+      "--pass-fg-muted": "174 174 178",
+      // Wallet cards: one white material — the kind shows in a small mark, not a pastel tint.
+      "--pass-cash": "#ffffff",
+      "--pass-bank": "#ffffff",
+      "--pass-wallet": "#ffffff",
+      // The small round mark on each wallet card: money green, graphite, and bKash's own pink for mobile wallets.
+      "--mark-cash": "#16805f",
+      "--mark-bank": "#1c1c1e",
+      "--mark-wallet": "#e2136e",
       // An action key's icon well (round, glossy).
       "--key-fill": "linear-gradient(180deg, #ffffff 0%, #eef0f4 100%)",
       "--key-shadow": "inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.05), 0 0 0 0.5px rgba(0,0,0,0.08), 0 8px 18px -8px rgba(20,24,40,0.30)",

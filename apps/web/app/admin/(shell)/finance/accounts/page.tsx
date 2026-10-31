@@ -133,7 +133,8 @@ export default function FinanceAccountsPage() {
                   <TableCell align="right" className={a.currentBalance < 0 ? "font-semibold tabular-nums text-danger-700" : "font-semibold tabular-nums"}>{formatPrice(a.currentBalance)}</TableCell>
                   <TableCell className="whitespace-nowrap text-ink-500">{a.lastReconciledThrough ? formatBookDate(a.lastReconciledThrough) : "never"}</TableCell>
                   <TableCell>
-                    <Badge variant={a.isActive ? "success" : "neutral"}>{a.isActive ? "Active" : "Inactive"}</Badge>
+                    {/* only the exception is marked: an account that is switched off */}
+                    {!a.isActive && <Badge variant="neutral">Inactive</Badge>}
                     {a.pendingMovements > 0 && <Badge variant="warning" className="ml-1">{a.pendingMovements} pending</Badge>}
                   </TableCell>
                 </TableRow>

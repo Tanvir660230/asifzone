@@ -140,8 +140,33 @@
   /* ── Money "Liquid Glass" (owner, 2026-10-31) ───────────────────────────────────────────────────────────────
      Only inside [data-area="finance"] (FinanceGroupFrame): glossy controls, glass cards with a lit top edge, the
      titanium money card, round action keys and tap-to-choose chips. Values are admin surface tokens (ui-tokens). */
+  /* The Money palette (ui-tokens admin components): graphite actions instead of system blue, one deep money green for
+     "up", a warm off-white canvas behind white cards. The roles take the finance tokens, so every primitive follows. */
   [data-area="finance"] {
     --gloss: var(--finance-gloss, 0);
+    --color-accent: var(--finance-accent, 0 102 204);
+    --color-accent-hover: var(--finance-accent-hover, 0 113 227);
+    --color-success-500: var(--finance-money-500, 18 180 145);
+    --color-success-600: var(--finance-money-600, 10 163 130);
+    --color-success-700: var(--finance-money-700, 6 112 90);
+  }
+  [data-surface="admin"]:has([data-area="finance"]) {
+    --color-canvas: var(--finance-canvas, 245 245 247);
+  }
+  /* On the graphite money card, text is light and links are white. */
+  [data-area="finance"] .liquid-pass {
+    --color-fg: var(--pass-fg);
+    --color-fg-muted: var(--pass-fg-muted);
+    --color-accent: var(--pass-fg);
+    /* the cost shares (ink steps) and up/down colours, lifted so they read on graphite */
+    --color-ink-700: 235 235 240;
+    --color-ink-500: 186 186 192;
+    --color-ink-400: 142 142 148;
+    --color-ink-300: 104 104 110;
+    --color-success-500: 52 199 140;
+    --color-success-700: 120 222 176;
+    --color-danger-600: 255 128 118;
+    color: rgb(var(--color-fg));
   }
   /* Every plain card on a Money page is a liquid panel: the same fill, edge and shadow as .liquid. */
   [data-area="finance"] [data-card="default"] {

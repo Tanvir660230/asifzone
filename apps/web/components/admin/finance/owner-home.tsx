@@ -208,10 +208,10 @@ function ActionKeys({ hasPartners, onAdd }: { hasPartners: boolean; onAdd: (a: A
 // ── the money you hold: Wallet cards ──────────────────────────────────────────────────────────────────────────────────
 
 function Wallet({ money }: { money: Home["money"] }) {
-  const cards: Array<{ label: string; value: number; icon: LucideIcon; fill: string }> = [
-    { label: "Cash", value: money.withUs.cash, icon: Banknote, fill: "var(--pass-cash)" },
-    { label: "Bank", value: money.withUs.bank, icon: Landmark, fill: "var(--pass-bank)" },
-    { label: "bKash & Nagad", value: money.withUs.wallets, icon: Smartphone, fill: "var(--pass-wallet)" },
+  const cards: Array<{ label: string; value: number; icon: LucideIcon; fill: string; mark: string }> = [
+    { label: "Cash", value: money.withUs.cash, icon: Banknote, fill: "var(--pass-cash)", mark: "var(--mark-cash)" },
+    { label: "Bank", value: money.withUs.bank, icon: Landmark, fill: "var(--pass-bank)", mark: "var(--mark-bank)" },
+    { label: "bKash & Nagad", value: money.withUs.wallets, icon: Smartphone, fill: "var(--pass-wallet)", mark: "var(--mark-wallet)" },
   ];
   return (
     <section aria-labelledby="wallet-title">
@@ -223,7 +223,7 @@ function Wallet({ money }: { money: Home["money"] }) {
         {cards.map((c) => (
           <li key={c.label}>
             <Link href="/admin/finance/accounts" className="liquid flex min-h-[104px] flex-col justify-between p-4" style={{ background: c.fill }}>
-              <span className="flex items-center gap-2 text-sm text-fg-muted"><c.icon className="h-4 w-4" aria-hidden="true" />{c.label}</span>
+              <span className="flex items-center gap-2.5 text-sm text-fg-muted"><span className="grid h-7 w-7 place-items-center rounded-full text-white" style={{ background: c.mark }} aria-hidden="true"><c.icon className="h-3.5 w-3.5" /></span>{c.label}</span>
               <span className="text-[22px] font-semibold tracking-tight tabular-nums text-fg">{signed(c.value)}</span>
             </Link>
           </li>
