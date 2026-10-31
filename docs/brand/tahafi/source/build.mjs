@@ -13,7 +13,7 @@ const sharp = require(path.resolve(here, "../../../../apps/api/node_modules/shar
 const logo = JSON.parse(readFileSync(path.join(here, "logo-paths.json"), "utf8"));
 
 // The designer's colour sheet (RGB values).
-const OLIVE = "#4F5343";
+const OLIVE = "#3E4A2F";
 const CREAM = "#F2EFEA";
 const INK = "#1C1C1A";
 

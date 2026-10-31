@@ -18,7 +18,7 @@ ink "canopy / hang-tag" catalogue — because the colours fought the photographs
 | Cards, the photo stage, inputs | white (`cream-50`) | soft depth (`--panel-shadow`, `--card-frame-shadow`), radius 22px |
 | Secondary grounds (footer, light bands) | `#EBEBE8` (`cream-200`) | every band renders light (`band: "light"`) |
 | Text, primary actions | ink `#1C1C1A` | actions glossy (`--gloss: 1`), pill shaped |
-| The one accent | the logo's olive `#4F5343` (`sale`) | links, the bag count, sale tags, icon tiles on `#EEF0E8` |
+| The one accent | the logo's olive `#3E4A2F`, Forest Olive (`sale`) | links, the bag count, sale tags, icon tiles on `#EDF0E6` |
 | Glass | `.glass` / `.glass-panel` (globals.css) | the header, the dock, controls floating on photographs |
 
 **Dark mode** (option B, `tahafi.dark`): page `#0F0F0E`, cards `#1C1C1A`, text `#F4F4F2`, light glossy actions, the

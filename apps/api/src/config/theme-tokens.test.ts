@@ -131,7 +131,7 @@ describe("brand themes", () => {
     expect(t["--color-cream-50"]).toBe("255 255 255"); // white cards
     expect(t["--color-ink-900"]).toBe("28 28 26"); // ink #1C1C1A
     expect(t["--color-accent"]).toBe("28 28 26"); // glossy ink actions
-    expect(t["--color-sale-500"]).toBe("79 83 67"); // olive #4F5343 — the sale tag, never red
+    expect(t["--color-sale-500"]).toBe("62 74 47"); // Forest Olive #3E4A2F — the sale tag, never red
     expect(t["--gloss"]).toBe("1");
     expect(t["--font-display-family"]).toBe("var(--font-geist)");
     expect(t["--font-body-family"]).toBe("var(--font-geist)");

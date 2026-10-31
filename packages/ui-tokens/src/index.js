@@ -537,7 +537,7 @@ const themeDefinitions = {
   },
   // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). The owner's direction (2026-10-31): the feel of
   // a new iPhone — light, clear and glossy. A soft grey page (#F4F4F2), white cards for the photographs, ink #1C1C1A for
-  // type and for the glossy primary actions, olive #4F5343 (the logo's colour) as the one accent: the logo, links, the bag
+  // type and for the glossy primary actions, olive #3E4A2F, Forest Olive (the logo's colour) as the one accent: the logo, links, the bag
   // count, a sale. Glass (blurred, translucent white) for the header, the dock and controls floating on photographs.
   // Geist throughout, set firm; large continuous radii. Its own layout preset (`tahafi`).
   tahafi: {
@@ -559,8 +559,8 @@ const themeDefinitions = {
       },
       // 50 = white cards and the photo stage; 100 = the page; 200 = secondary grounds (the footer, wells).
       cream: { 50: "#ffffff", 100: "#f4f4f2", 200: "#ebebe8", 300: "#e0e0dc" },
-      // A sale is olive with white type (8.0:1) — the logo's colour, never red.
-      sale: { 50: "#eef0e8", 500: "#4f5343", 600: "#3f4335" },
+      // A sale is olive with white type (9.4:1) — the logo's colour, never red.
+      sale: { 50: "#edf0e6", 500: "#3e4a2f", 600: "#323c25" },
     },
     radii: { sm: "8px", DEFAULT: "12px", md: "14px", lg: "18px", xl: "22px", "2xl": "26px", "3xl": "32px" },
     fontVariables: {
@@ -588,11 +588,11 @@ const themeDefinitions = {
       "--fab-radius": "9999px",
       "--line-item-radius": "var(--radius-lg)",
       "--stepper-radius": "9999px",
-      "--nav-hover": "rgb(79 83 67)",
-      "--nav-underline": "rgb(79 83 67)",
+      "--nav-hover": "rgb(62 74 47)",
+      "--nav-underline": "rgb(62 74 47)",
       "--tag-thread": "rgb(198 198 192)",
       "--icon-stroke": "1.75",
-      "--band-accent": "rgb(79 83 67)",
+      "--band-accent": "rgb(62 74 47)",
       "--badge-note-bg": "rgb(255 255 255 / 0.92)",
       "--badge-note-fg": "rgb(28 28 26)",
       "--media-scrim": "rgb(0 0 0 / 0.35)",
@@ -651,7 +651,7 @@ const themeDefinitions = {
     bandComponents: {
       "--hero-cta-fill": "rgb(28 28 26)",
       "--hero-cta-text": "rgb(255 255 255)",
-      "--band-accent": "rgb(79 83 67)",
+      "--band-accent": "rgb(62 74 47)",
     },
     // The dark colour mode (option B of the mockup): the shopper's phone or computer setting, or their own choice
     // (presets/tahafi/mode-toggle.tsx). Near-black page, charcoal cards, light text, light glossy actions; the olive stays
@@ -673,8 +673,8 @@ const themeDefinitions = {
         },
         // 50 = the cards, 100 = the page, 200 = secondary grounds.
         cream: { 50: "#1c1c1a", 100: "#0f0f0e", 200: "#232321", 300: "#2c2c29" },
-        // The olive tag stays (white on it 8.0:1); olive as text or icon is the light olive (9.6:1 on the page).
-        sale: { 50: "#262a1e", 500: "#4f5343", 600: "#c3cba8" },
+        // The olive tag stays (white on it 9.4:1); olive as text or icon is the light olive (9.6:1 on the page).
+        sale: { 50: "#262a1e", 500: "#3e4a2f", 600: "#c3cba8" },
         // Status colours for a dark page: deep tints behind light text (the "In stock" pill, a form error), so nothing
         // glows. Danger 600 is the error text (4.9:1 on a card).
         success: { 50: "#132620", 100: "#173328", 200: "#1f4a3a", 500: "#2fc9a3", 600: "#4fd6b3", 700: "#8ee6cf" },
@@ -694,10 +694,10 @@ const themeDefinitions = {
         "--glass-edge": "rgb(255 255 255 / 0.12)",
         "--glass-edge-soft": "rgb(255 255 255 / 0.1)",
         // Fills behind white type (components/ui/button.tsx): danger/sale 600–700 are light text colours here, so the
-        // red button and the olive hover get their own deep fills (white on them 5.3, 6.4 and 6.3:1).
+        // red button and the olive hover get their own deep fills (white on them 5.3, 6.4 and 6.9:1).
         "--danger-fill": "rgb(190 64 56)",
         "--danger-fill-hover": "rgb(170 54 47)",
-        "--sale-fill-hover": "rgb(93 98 80)",
+        "--sale-fill-hover": "rgb(80 95 61)",
         "--header-shadow": "0 1px 0 0 rgb(255 255 255 / 0.06)",
         "--panel-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
         "--card-frame-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
