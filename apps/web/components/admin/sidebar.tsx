@@ -163,7 +163,7 @@ export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileO
       {/* Desktop: static, collapsible sidebar */}
       <aside
         className={cn(
-          "hidden h-dvh shrink-0 flex-col border-r border-ink-900/[0.08] bg-cream-200/70 text-fg backdrop-blur-xl transition-[width] duration-slow ease-smooth lg:flex",
+          "hidden h-dvh shrink-0 flex-col border-r border-ink-900/[0.06] bg-surface text-fg transition-[width] duration-slow ease-smooth lg:flex",
           collapsed ? "w-sidebar-collapsed" : "w-sidebar",
         )}
       >
@@ -199,8 +199,8 @@ const rowClass = (active: boolean, collapse: boolean) =>
     "group relative flex transition-colors duration-fast ease-smooth",
     // Collapsed: a tile per module — icon with a short label under it (a navigation rail), so the rail still reads
     // without hovering, not a squeezed text row.
-    collapse ? "h-12 w-full flex-col items-center justify-center gap-1 rounded-xl px-1" : "h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px]",
-    active ? "bg-ink-900/[0.07] font-semibold text-fg" : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-fg",
+    collapse ? "h-12 w-full flex-col items-center justify-center gap-1 rounded-xl px-1" : "h-9 items-center gap-2.5 rounded-xl px-3 text-[14.5px]",
+    active ? "bg-ink-100 font-semibold text-fg" : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-fg",
   );
 
 /** One module: its link (the module's index route), and — when it's the active module — its pages, one level deep.

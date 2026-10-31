@@ -847,30 +847,34 @@ const DEFAULT_THEME = "default";
 const surfaceDefinitions = {
   admin: {
     palette: {
+      // Owner, 2026-10-31 ("clear, easy to read, beautiful"): warm neutrals, a grey with a faint warm bias instead of the
+      // cool blue-grey, so white cards sit on a soft paper canvas. The text steps keep their measured contrast.
       ink: {
-        50: "#fbfbfd",
-        100: "#f5f5f7",
-        200: "#e8e8ed",
-        300: "#d2d2d7",
+        50: "#fafaf8",
+        100: "#f3f2ef",
+        200: "#e6e4df",
+        300: "#d1cec7",
         // P9 a11y (WCAG AA 4.5:1 for small text on white, the canvas #f5f5f7 AND the sidebar #efeff2): Apple's #86868b /
         // #6e6e73 measured 3.2–4.4:1 there, so the two text greys are a step darker.
         400: "#6a6a6f", // tertiary text — 5.4 / 4.9 / 4.7:1 (placeholders, hints, captions)
         500: "#5e5e63", // secondary text — 6.5 / 5.9 / 5.6:1
-        600: "#515154",
-        700: "#3a3a3c",
-        800: "#2c2c2e",
-        900: "#1d1d1f",
-        950: "#111113",
+        600: "#4c4b4d",
+        700: "#363537",
+        800: "#29292a",
+        900: "#1c1c1e",
+        950: "#111112",
       },
-      cream: { 50: "#ffffff", 100: "#f5f5f7", 200: "#ececf0", 300: "#dedee3" },
-      // Badge text on its pale fill ("Active"): #087d64 was 4.2:1 on success-100.
-      success: { 700: "#06705a" },
+      cream: { 50: "#ffffff", 100: "#f6f5f2", 200: "#efede8", 300: "#e2dfd8" },
+      // One deep emerald for "good" (paid, delivered, profit) instead of a bright teal beside the primary colour.
+      success: { 50: "#ecf6f1", 100: "#d4ecdf", 500: "#16805f", 600: "#0e6b50", 700: "#0a5640" },
       // Small warning text ("Unpaid", hints): #a66c1f was 4.0:1 on the canvas.
       warning: { 600: "#96611b" },
     },
     // Roles given a color of their own instead of a palette step. Blueprint V2 DR-3: Apple blue. P9 a11y: Apple's link blue
     // #0066cc (5.6:1 under white text, 5.1:1 as text on the canvas) — #0071e3 was 4.3:1 as link text on the canvas.
-    roles: { accent: "#0066cc", "accent-hover": "#0071e3", "accent-fg": "#ffffff" },
+    // Owner, 2026-10-31: graphite primary actions replace the system blue. Colour is kept for meaning (good, warning,
+    // problem), so the one dark button on a screen is always the next step.
+    roles: { accent: "#1c1c1e", "accent-hover": "#3a3a3c", "accent-fg": "#ffffff" },
     fontVariables: {
       // San Francisco on Apple devices, the app's sans face everywhere else. No serif titles in the admin.
       "--font-body-family": "-apple-system, BlinkMacSystemFont, var(--font-sans)",
@@ -887,6 +891,39 @@ const surfaceDefinitions = {
       // for a missing value (Cost missing), everywhere. Default to the existing neutral / warning badge pairs.
       "--data-estimate-bg": "rgb(var(--color-ink-100))",
       "--data-estimate-fg": "rgb(var(--color-ink-700))",
+      // Money (finance) "Liquid Glass" — owner, 2026-10-31: the finance area alone gets an iPhone-style glossy feel; the
+      // rest of the admin stays flat. Recipes .liquid, .liquid-pass, .liquid-key and .liquid-chip (globals.css) read these
+      // inside [data-area="finance"], which also turns the shared button gloss on.
+      "--finance-gloss": "0.75",
+      "--liquid-fill": "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.80) 100%)",
+      "--liquid-shadow": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04), 0 14px 34px -18px rgba(20,24,40,0.28)",
+      "--liquid-shadow-hover": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.09), 0 2px 4px rgba(0,0,0,0.05), 0 20px 40px -18px rgba(20,24,40,0.34)",
+      // The Money palette: neutrals almost everywhere, colour only where it means something. Graphite actions (no
+      // system blue) and one deep money green for "up" — RGB channels, so the role variables can take them.
+      "--finance-canvas": "246 245 242",
+      "--finance-accent": "28 28 30",
+      "--finance-accent-hover": "58 58 60",
+      "--finance-money-500": "22 128 95",
+      "--finance-money-600": "14 107 80",
+      "--finance-money-700": "10 86 64",
+      // The money card: deep graphite, the one dark thing on the screen, with a faint light streak across it.
+      "--pass-fill": "linear-gradient(150deg, #2c2c2e 0%, #1c1c1e 55%, #141415 100%)",
+      "--pass-sheen": "linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.07) 46%, rgba(255,255,255,0) 60%)",
+      "--pass-shadow": "inset 0 1px 0 rgba(255,255,255,0.10), 0 0 0 0.5px rgba(0,0,0,0.30), 0 30px 60px -28px rgba(20,20,22,0.55), 0 8px 18px -10px rgba(20,20,22,0.30)",
+      // Text on the money card (RGB channels): white, and a soft grey for the small print.
+      "--pass-fg": "255 255 255",
+      "--pass-fg-muted": "174 174 178",
+      // Wallet cards: one white material — the kind shows in a small mark, not a pastel tint.
+      "--pass-cash": "#ffffff",
+      "--pass-bank": "#ffffff",
+      "--pass-wallet": "#ffffff",
+      // The small round mark on each wallet card: money green, graphite, and bKash's own pink for mobile wallets.
+      "--mark-cash": "#16805f",
+      "--mark-bank": "#1c1c1e",
+      "--mark-wallet": "#e2136e",
+      // An action key's icon well (round, glossy).
+      "--key-fill": "linear-gradient(180deg, #ffffff 0%, #eef0f4 100%)",
+      "--key-shadow": "inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.05), 0 0 0 0.5px rgba(0,0,0,0.08), 0 8px 18px -8px rgba(20,24,40,0.30)",
       "--data-missing-bg": "rgb(var(--color-warning-100))",
       "--data-missing-fg": "rgb(var(--color-warning-700))",
     },
@@ -902,7 +939,7 @@ const surfaceDefinitions = {
       glass: "0 0 0 0.5px rgba(0,0,0,0.08), 0 12px 32px -12px rgba(0,0,0,0.18)",
       "glass-lg": "0 0 0 0.5px rgba(0,0,0,0.10), 0 28px 64px -18px rgba(0,0,0,0.30)",
       inset: "0 0 #0000", // flat fields (a literal "none" would break Tailwind's composed box-shadow list)
-      glow: "0 0 0 4px rgba(0,102,204,0.18)",
+      glow: "0 0 0 4px rgba(28,28,30,0.16)",
     },
     // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
     density: { sidebar: "248px", "sidebar-collapsed": "84px", header: "64px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },

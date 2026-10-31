@@ -25,6 +25,8 @@ import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour }
 import { formatPrice } from "@/lib/format";
 import { ExpenseImportModal, NewCategoryModal } from "@/components/admin/finance/expense-import";
 import { PermissionState } from "@/components/admin/permission-state";
+import { todayLocal } from "@/lib/datetime-local";
+import { AccountChips, AmountInput, ChoiceChips, EVERYDAY_COSTS } from "@/components/admin/finance/glass";
 
 const PERIOD_BADGE: Record<CommitmentPeriod["status"], { variant: "success" | "warning" | "danger" | "neutral"; label: string }> = {
   PAID: { variant: "success", label: "paid" }, AWAITING_APPROVAL: { variant: "warning", label: "awaiting approval" }, OVERDUE: { variant: "danger", label: "overdue" }, DUE: { variant: "neutral", label: "due" },
@@ -39,7 +41,7 @@ export default function ExpensesPage() {
   const { can, ready } = useCapabilities();
   const queryClient = useQueryClient();
   const allowed = can("finance.view");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
   const [recording, setRecording] = useState<{ commitment?: Commitment; period?: CommitmentPeriod } | null>(null);
@@ -73,7 +75,7 @@ export default function ExpensesPage() {
             <Button size="sm" variant="outline" onClick={() => setImporting(true)} data-testid="import-expenses">From a file</Button>
             {can("finance.configure") && <Button size="sm" variant="outline" onClick={() => setNewCategory(true)} data-testid="new-category">New category</Button>}
             <Button size="sm" variant="outline" onClick={() => setNewCommitment(true)} data-testid="new-commitment">Recurring cost</Button>
-            <Button size="sm" onClick={() => setRecording({})} data-testid="record-expense"><Plus className="h-4 w-4" /> Record expense</Button>
+            <Button size="sm" className="order-first sm:order-last" onClick={() => setRecording({})} data-testid="record-expense"><Plus className="h-4 w-4" /> Record expense</Button>
           </div>
         )}
       />
@@ -130,20 +132,20 @@ export default function ExpensesPage() {
         {list.isLoading && <Skeleton className="h-32 w-full" />}
         {list.isError && <Alert variant="danger" title="Expenses couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
         {list.data && (list.data.expenses.length ? (
-          <Card className="divide-y divide-line p-0 text-sm">
+          <div className="liquid divide-y divide-line overflow-hidden text-sm">
             {list.data.expenses.map((e) => (
-              <div key={e.id} className="flex flex-wrap items-start justify-between gap-2 px-4 py-2.5" data-testid="expense-row">
-                <span className="min-w-0">
+              <div key={e.id} className="flex items-start justify-between gap-3 px-4 py-3" data-testid="expense-row">
+                <span className="min-w-0 flex-1">
                   <span className="text-ink-900">{e.description}</span>
                   <span className="block text-xs text-ink-500">{e.number} · {e.expenseDate} · {e.expenseAccount.code} {e.expenseAccount.name}{e.paidFrom ? ` · from ${e.paidFrom.name}` : ""}{e.payee ? ` · ${e.payee}` : ""}</span>
                 </span>
-                <span className="text-right">
+                <span className="shrink-0 text-right">
                   <span className={e.status === "POSTED" ? "font-medium tabular-nums text-ink-900" : "tabular-nums text-ink-500 line-through"}>{formatPrice(e.amount)}</span>
                   <span className="block text-xs text-ink-500">{e.costBehaviour === "FIXED" ? "fixed" : "variable"} · {STATUS_LABEL[e.status] ?? e.status}</span>
                 </span>
               </div>
             ))}
-          </Card>
+          </div>
         ) : (
           <EmptyState icon={Receipt} title="No expenses in this period" description="Record what the business pays for — rent, packaging, ads." />
         ))}
@@ -171,7 +173,7 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
   const [accountId, setAccountId] = useState(c?.expenseAccount.id ?? "");
   const [amount, setAmount] = useState(c ? String(c.amount) : "");
   const [fromId, setFromId] = useState(c?.financialAccount?.id ?? "");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayLocal());
   const [behaviour, setBehaviour] = useState<CostBehaviour>(c?.costBehaviour ?? "VARIABLE");
   const [description, setDescription] = useState(c && preset.period ? `${c.name} — ${preset.period.periodKey}` : "");
   const [payee, setPayee] = useState(c?.payee ?? "");
@@ -179,6 +181,11 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
   // Owner's books §2: paid from the owner's own pocket — owed back to them, or added as their capital.
   const [pocket, setPocket] = useState<"" | "REIMBURSE" | "CAPITAL">("");
   const [key] = useState(newKey);
+  // the everyday kinds first; the rest (and whichever is picked) one tap away
+  const [allKinds, setAllKinds] = useState(false);
+  const everyday = expense.filter((a) => EVERYDAY_COSTS.includes(a.code)).sort((a, b) => EVERYDAY_COSTS.indexOf(a.code) - EVERYDAY_COSTS.indexOf(b.code));
+  const kinds = allKinds || !everyday.length ? expense : [...everyday, ...expense.filter((a) => a.id === accountId && !EVERYDAY_COSTS.includes(a.code))];
+  const moreKinds = expense.length - kinds.length;
   const value = Number(amount);
   const cashAccounts = paying.filter((a) => a.kind === "CASH");
   const valid = Boolean(accountId) && Boolean(fromId) && value > 0 && (Boolean(c) || description.trim().length > 0) && (!pocket || cashAccounts.some((a) => a.id === fromId));
@@ -195,40 +202,34 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
   return (
     <Modal open onClose={onClose} title={c ? `Pay ${c.name}${preset.period ? ` — ${preset.period.periodKey}` : ""}` : "Record an expense"} description="The money leaves the account you choose now. Large payments wait for approval." widthClassName="max-w-lg"
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate()} data-testid="confirm-expense">Pay {value > 0 ? formatPrice(value) : ""}</Button></>}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field htmlFor="ex-acc" label="Expense" required className="sm:col-span-2">
-          <Select id="ex-acc" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            <option value="">Choose…</option>
-            {expense.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
-          </Select>
-        </Field>
-        <Field htmlFor="ex-amount" label="Amount" required><Input id="ex-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-        <Field htmlFor="ex-date" label="Date"><Input id="ex-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <div data-area="finance" className="space-y-5">
+        <AmountInput id="ex-amount" value={amount} onChange={setAmount} autoFocus={!c} />
+        <div>
+          <ChoiceChips label="What kind of expense?" hint="It decides where it shows in profit." value={accountId} onChange={setAccountId} options={kinds.map((a) => ({ value: a.id, label: a.name }))} testId="ex-acc" />
+          {moreKinds > 0 && <Button type="button" size="sm" variant="ghost" className="mt-1 -ml-2" onClick={() => setAllKinds(true)} data-testid="ex-more-kinds">Show {moreKinds} more kinds</Button>}
+        </div>
         {!c && (
-          <Field htmlFor="ex-pocket" label="Whose money" className="sm:col-span-2" hint={pocket ? "It passes through the cash account you choose — the owner's money in, the expense out" : undefined}>
-            <Select id="ex-pocket" value={pocket} onChange={(e) => { setPocket(e.target.value as "" | "REIMBURSE" | "CAPITAL"); setFromId(""); }} data-testid="expense-pocket">
-              <option value="">The business’s</option>
-              <option value="REIMBURSE">The owner’s own pocket — repay later</option>
-              <option value="CAPITAL">The owner’s own pocket — keep it in the business</option>
-            </Select>
-          </Field>
+          <ChoiceChips
+            label="Whose money?"
+            hint={pocket ? "It passes through the cash account you choose — the owner's money in, the expense out" : undefined}
+            value={pocket || "BUSINESS"}
+            onChange={(v) => { setPocket(v === "BUSINESS" ? "" : v); setFromId(""); }}
+            options={[
+              { value: "BUSINESS", label: "The business’s" },
+              { value: "REIMBURSE", label: "The owner’s — repay later" },
+              { value: "CAPITAL", label: "The owner’s — keep it in" },
+            ]}
+            testId="expense-pocket"
+          />
         )}
-        <Field htmlFor="ex-from-acc" label={pocket ? "Through cash account" : "Paid from"} required>
-          <Select id="ex-from-acc" value={fromId} onChange={(e) => setFromId(e.target.value)}>
-            <option value="">Choose…</option>
-            {(pocket ? cashAccounts : paying).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </Select>
-        </Field>
-        <Field htmlFor="ex-beh" label="Cost behaviour" hint="Fixed costs don't change with sales">
-          <Select id="ex-beh" value={behaviour} onChange={(e) => setBehaviour(e.target.value as CostBehaviour)}>
-            <option value="VARIABLE">Variable</option>
-            <option value="FIXED">Fixed</option>
-          </Select>
-        </Field>
-        <Field htmlFor="ex-desc" label="Description" required={!c} className="sm:col-span-2"><Input id="ex-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} /></Field>
-        <Field htmlFor="ex-payee" label="Paid to"><Input id="ex-payee" value={payee} onChange={(e) => setPayee(e.target.value)} maxLength={200} /></Field>
-        <Field htmlFor="ex-ref" label="Reference" hint="Receipt or cheque number"><Input id="ex-ref" value={reference} onChange={(e) => setReference(e.target.value)} maxLength={120} /></Field>
-        {paying.length === 0 && <Alert variant="warning" title="No cash, bank or wallet account yet" className="sm:col-span-2">Add one in Finance → Money → Money accounts.</Alert>}
+        <AccountChips label={pocket ? "Through cash account" : "Paid from"} accounts={pocket ? cashAccounts : paying} value={fromId} onChange={setFromId} empty="No cash, bank or wallet account yet — add one in Money › Accounts & cash." testId="ex-from-acc" />
+        <ChoiceChips label="Does it change with sales?" value={behaviour} onChange={setBehaviour} options={[{ value: "VARIABLE", label: "Yes — variable" }, { value: "FIXED", label: "No — fixed" }]} testId="ex-beh" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field htmlFor="ex-desc" label="What was it?" required={!c} className="sm:col-span-2"><Input id="ex-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} placeholder="e.g. 200 bubble poly bags" /></Field>
+          <Field htmlFor="ex-date" label="Date"><Input id="ex-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          <Field htmlFor="ex-payee" label="Paid to"><Input id="ex-payee" value={payee} onChange={(e) => setPayee(e.target.value)} maxLength={200} /></Field>
+          <Field htmlFor="ex-ref" label="Receipt or cheque number" className="sm:col-span-2"><Input id="ex-ref" value={reference} onChange={(e) => setReference(e.target.value)} maxLength={120} /></Field>
+        </div>
       </div>
     </Modal>
   );
@@ -241,7 +242,7 @@ function CommitmentModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [amount, setAmount] = useState("");
   const [frequency, setFrequency] = useState<CommitmentFrequency>("MONTHLY");
   const [day, setDay] = useState("1");
-  const [start, setStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [start, setStart] = useState(() => todayLocal());
   const [behaviour, setBehaviour] = useState<CostBehaviour>("FIXED");
   const [fromId, setFromId] = useState("");
   const [payee, setPayee] = useState("");
@@ -293,10 +294,10 @@ function CommitmentModal({ onClose, onDone }: { onClose: () => void; onDone: () 
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <Card className="p-4">
+    <div className="liquid p-4">
       <dt className="text-sm text-ink-600">{label}</dt>
-      <dd className="text-lg font-semibold tabular-nums text-ink-900">{value}</dd>
+      <dd className="text-xl font-semibold tabular-nums tracking-tight text-ink-900">{value}</dd>
       {hint && <dd className="text-xs text-ink-500">{hint}</dd>}
-    </Card>
+    </div>
   );
 }
