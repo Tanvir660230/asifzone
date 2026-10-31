@@ -168,8 +168,9 @@
     --color-danger-600: 255 128 118;
     color: rgb(var(--color-fg));
   }
-  /* Every plain card on a Money page is a liquid panel: the same fill, edge and shadow as .liquid. */
-  [data-area="finance"] [data-card="default"] {
+  /* Every plain card in the Store Console is a soft white panel on the warm canvas (no hairline box): the same fill,
+     edge and shadow as .liquid. A storefront preview inside the admin keeps the store's own cards. */
+  [data-surface="admin"] [data-card="default"]:not([data-surface="storefront"] *) {
     @apply rounded-2xl border-transparent;
     background: var(--liquid-fill);
     box-shadow: var(--liquid-shadow);
@@ -1129,4 +1130,17 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* Store Console reading size (owner, 2026-10-31: "easy to read"): the two small steps the admin uses most go up one
+   notch: 12→13px captions and 14→15px body. Tables keep their size so every column still fits; a storefront preview
+   inside the admin keeps the store's own scale. Attribute selectors on purpose: Tailwind
+   @apply copies any rule naming the .text-sm class into every recipe that applies text-sm (.ui-table did). */
+[data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+[data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
 }
