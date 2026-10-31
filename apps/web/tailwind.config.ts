@@ -110,6 +110,21 @@ const config: Config = {
           addBase({ [`:root[data-brand="${id}"] .ui-band-inverse[data-tone="${tone}"]`]: theme.toneVariables[tone] });
         }
       }
+      // A theme's dark colour mode: the shopper's own choice (`data-mode="dark"`, presets/tahafi/mode-toggle.tsx) or, with no
+      // choice made, their device's setting. Storefront pages only (`:has([data-storefront])`): the admin, and any panel it
+      // opens, stay light. Emitted after the band rules, with higher specificity, so the bands follow the mode.
+      for (const [id, theme] of Object.entries(tokens.themes)) {
+        if (!Object.keys(theme.darkModeVariables).length) continue;
+        const chosen = `:root[data-brand="${id}"][data-mode="dark"]:has([data-storefront])`;
+        const system = `:root[data-brand="${id}"]:not([data-mode="light"]):has([data-storefront])`;
+        addBase({ [chosen]: theme.darkModeVariables, [`${chosen} .ui-band-inverse`]: theme.darkModeBandVariables });
+        addBase({
+          "@media (prefers-color-scheme: dark)": {
+            [system]: theme.darkModeVariables,
+            [`${system} .ui-band-inverse`]: theme.darkModeBandVariables,
+          },
+        });
+      }
       // Surfaces re-declare the whole variable set on their own element, so the admin never inherits a brand theme.
       addBase({ '[data-surface="admin"]': tokens.surfaces.admin.cssVariables });
       // A store-look region inside the admin: base tokens, then the active brand theme on the same element (higher

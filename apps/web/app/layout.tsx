@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Geist, Inter, Instrument_Sans, Instrument_Serif, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
@@ -13,6 +13,7 @@ import { RuntimeConfig } from "@/components/runtime-config";
 import { resolveThemeId, themeColorHex } from "@/lib/theme";
 import { storeLayout } from "@/lib/theme-layout";
 import { DESIGN_STYLE_ELEMENT_ID, designCss } from "@/lib/design-css";
+import { COLOR_MODE_COOKIE, parseColorMode } from "@/lib/color-mode";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { AdPixels } from "@/components/analytics/ad-pixels";
@@ -154,11 +155,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);
   const themeId = resolveThemeId(runtime.theme);
+  // The shopper's own light/dark choice (a theme with a dark colour mode, presets/tahafi/mode-toggle.tsx); none = their
+  // device's setting. Read here so the first paint is already right.
+  const colorMode = parseColorMode((await cookies()).get(COLOR_MODE_COOKIE)?.value);
 
   return (
     <html
       lang="en"
       data-brand={themeId}
+      data-mode={colorMode ?? undefined}
       className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${instrumentSerif.variable} ${geist.variable} ${notoSansBengali.variable} ${takaSign.variable}`}
     >
       <body>

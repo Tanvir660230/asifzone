@@ -135,7 +135,14 @@
   /* A complete floating glass panel: translucent fill, hairline light edge, lit top highlight, soft
      depth. Used by menus, popovers, dialogs, toasts. */
   .glass-panel {
-    @apply border border-white/70 bg-surface/85 shadow-glass ring-1 ring-ink-900/[0.04] backdrop-blur-2xl backdrop-saturate-150;
+    @apply border border-[color:var(--glass-edge)] bg-surface/85 shadow-glass ring-1 ring-ink-900/[0.04] backdrop-blur-2xl backdrop-saturate-150;
+  }
+  /* Artwork made for the light page or the dark one (a theme's colour modes): the logo in the header, for one. */
+  .ui-mode-light-art {
+    display: var(--mode-light-art);
+  }
+  .ui-mode-dark-art {
+    display: var(--mode-dark-art);
   }
   /* Browsers without backdrop-filter get an opaque surface instead of an unreadable see-through one. */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -359,6 +366,47 @@
      by the component. */
   .ui-hang-tag {
     clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
+  }
+
+  /* A header whose buttons float over the page on phones (presets/tahafi/header.tsx): on a tab page it is see-through at
+     the top — the home page's photograph runs up under it — and turns to glass once the page scrolls (HeaderShell sets
+     data-scrolled); on a page inside a tab (the navigation bar is showing) it is glass from the start. */
+  @media (max-width: 1023.98px) {
+    .ui-site-header:not([data-scrolled]) .ui-header-float {
+      background-color: transparent;
+      border-color: transparent;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    body:has([data-nav-bar]) .ui-site-header .ui-header-float {
+      background-color: rgb(var(--color-surface) / var(--glass-alpha));
+      border-color: rgb(var(--color-ink-900) / 0.06);
+      -webkit-backdrop-filter: blur(24px) saturate(1.5);
+      backdrop-filter: blur(24px) saturate(1.5);
+    }
+  }
+
+  /* The tahafi loader (presets/tahafi/loader.tsx): the logo's two diamonds take turns. */
+  .ui-diamond-turn > :nth-child(1) {
+    animation: diamond-turn 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  .ui-diamond-turn > :nth-child(2) {
+    animation: diamond-turn 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.7s infinite;
+  }
+  @keyframes diamond-turn {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-diamond-turn > * {
+      animation: none !important;
+      opacity: 1;
+    }
   }
 
   /* Pointed (two-centred) arch — the mihrab preset's frame for photography (components/storefront/presets/mihrab/arch.tsx).

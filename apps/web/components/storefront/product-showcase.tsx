@@ -15,6 +15,9 @@ import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { DeliveryEstimate } from "@/components/storefront/delivery-estimate";
 import { ShareButton } from "@/components/storefront/share-button";
 import { WhatsAppOrderButton } from "@/components/storefront/whatsapp-order-button";
+import { InfoCard } from "@/components/storefront/presets/tahafi/info-card";
+import { storeLayout } from "@/lib/theme-layout";
+import { cn } from "@/lib/utils";
 import { Money } from "@/components/ui/money";
 import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
 import type { SpecAccordionItem } from "@/lib/product-specs";
@@ -105,14 +108,25 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
     ...(selection.color ? [{ label: dimensionLabel("color", "Color"), value: selection.color }] : []),
   ];
 
+  // The policy lines besides delivery (the delivery box gives that one).
+  const otherPolicies = policyLines.filter((l) => l.kind !== "delivery");
+  const tagged = storeLayout() === "tahafi";
+
   return (
     <div className="grid grid-cols-1 gap-5 sm:gap-8 lg:mt-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
       {/* From 1024px the gallery stays in view while the details beside it scroll past. */}
-      <div className="lg:sticky lg:top-[calc(var(--sticky-top)+1.5rem)] lg:self-start lg:transition-[top] lg:duration-slow lg:ease-smooth">
+      <div
+        className={cn(
+          "lg:sticky lg:top-[calc(var(--sticky-top)+1.5rem)] lg:self-start lg:transition-[top] lg:duration-slow lg:ease-smooth",
+          // Tahafi on phones: the photograph runs edge to edge, up to the header.
+          tagged && "-mx-4 -mt-6 sm:mx-0 sm:mt-0",
+        )}
+      >
         <ProductGallery images={galleryImages} productName={product.name} />
       </div>
 
-      <div>
+      {/* Tahafi on phones: the details rise over the photograph's lower edge on a sheet with rounded top corners. */}
+      <div className={cn(tagged && "relative z-10 -mx-4 -mt-12 rounded-t-[1.75rem] bg-canvas px-4 pt-6 sm:mx-0 sm:mt-0 sm:rounded-none sm:bg-transparent sm:px-0 sm:pt-0")}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-xs ui-caps text-ink-400">
@@ -195,23 +209,47 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           </div>
         )}
 
-        <div className="mt-8">
-          <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
-        </div>
+        {tagged ? (
+          // Tahafi: the delivery dates and the store's promises on one white card, each promise on a tinted icon tile.
+          <InfoCard className="mt-6">
+            <DeliveryEstimate bare fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
+            {otherPolicies.length > 0 && (
+              <ul className="mt-4 space-y-2.5 border-t border-line-subtle pt-4 text-[0.9375rem] text-fg">
+                {otherPolicies.map(({ kind, label }) => {
+                  const Icon = POLICY_ICON[kind];
+                  return (
+                    <li key={kind} className="flex items-center gap-3">
+                      <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] bg-sale-50 text-sale-600">
+                        <Icon size={17} />
+                      </span>
+                      {label}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </InfoCard>
+        ) : (
+          <>
+            <div className="mt-8">
+              <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
+            </div>
 
-        {/* The delivery box above already gives the delivery time and fee, so the delivery policy line would say it again. */}
-        {policyLines.some((l) => l.kind !== "delivery") && (
-          <ul className="mt-6 space-y-3">
-            {policyLines.filter((l) => l.kind !== "delivery").map(({ kind, label }) => {
-              const Icon = POLICY_ICON[kind];
-              return (
-                <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">
-                  <Icon size={18} className="shrink-0 text-ink-900" aria-hidden="true" />
-                  {label}
-                </li>
-              );
-            })}
-          </ul>
+            {/* The delivery box above already gives the delivery time and fee, so the delivery policy line would say it again. */}
+            {otherPolicies.length > 0 && (
+              <ul className="mt-6 space-y-3">
+                {otherPolicies.map(({ kind, label }) => {
+                  const Icon = POLICY_ICON[kind];
+                  return (
+                    <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">
+                      <Icon size={18} className="shrink-0 text-ink-900" aria-hidden="true" />
+                      {label}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
 
         <ProductAccordion items={accordionItems} />

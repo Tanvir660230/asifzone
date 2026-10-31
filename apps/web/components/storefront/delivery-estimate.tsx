@@ -13,13 +13,15 @@ interface DeliveryEstimateProps {
   fees?: { insideDhaka: string; elsewhere: string };
   /** The product ships free (shown instead of the fee). */
   freeDelivery?: boolean;
+  /** Inside a card of the caller's own (Tahafi's info card): no box or icon of its own. */
+  bare?: boolean;
 }
 
 /** "Order today, arrives Tue 14 - Wed 15 Oct inside Dhaka, Thu 16 - Sat 18 Oct elsewhere", each with its delivery fee: the
  * same estimate the checkout shows once a district is chosen (shared `estimateDelivery`), given up front on the product
  * page. Dates are worked out after mount, from the viewer's today, so the server's clock never disagrees with the page;
  * the rows keep their height meanwhile, so nothing shifts when they fill in. */
-export function DeliveryEstimate({ fees, freeDelivery = false }: DeliveryEstimateProps) {
+export function DeliveryEstimate({ fees, freeDelivery = false, bare = false }: DeliveryEstimateProps) {
   const [lines, setLines] = useState<{ inside: string; outside: string } | null>(null);
 
   useEffect(() => {
@@ -41,8 +43,8 @@ export function DeliveryEstimate({ fees, freeDelivery = false }: DeliveryEstimat
   ];
 
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-surface-muted px-4 py-3.5" data-testid="delivery-estimate">
-      <CalendarClock size={18} className="mt-0.5 shrink-0 text-ink-900" aria-hidden="true" />
+    <div className={bare ? "flex items-start" : "flex items-start gap-3 rounded-xl bg-surface-muted px-4 py-3.5"} data-testid="delivery-estimate">
+      {!bare && <CalendarClock size={18} className="mt-0.5 shrink-0 text-ink-900" aria-hidden="true" />}
       <div className="min-w-0 flex-1 text-sm leading-5">
         <p className="font-medium text-ink-900">Order today, estimated delivery</p>
         {/* One row per area: the area and its fee on the left, the dates on the right; narrow enough for a phone. */}

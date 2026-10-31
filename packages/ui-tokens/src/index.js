@@ -302,6 +302,12 @@ const componentTokens = {
   "--card-media-aspect": "1 / 1",
   // The thread a preset's hang-tag hangs from (Tahafi's hero).
   "--tag-thread": "rgb(var(--color-ink-300))",
+  // The lit edge of a floating glass panel (globals.css .glass-panel); a dark colour mode dims it.
+  "--glass-edge": "rgb(255 255 255 / 0.7)",
+  // Artwork made for the light page or for the dark one (.ui-mode-light-art / .ui-mode-dark-art, e.g. the header logo):
+  // which one shows. A theme's dark colour mode swaps them.
+  "--mode-light-art": "contents",
+  "--mode-dark-art": "none",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -527,94 +533,100 @@ const themeDefinitions = {
     // Inside the navy sections: the mid tones the dark palette uses for text, re-valued light enough for navy.
     darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
   },
-  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). Olive-black (#1E211B) for type, olive
-  // (#3E4A33) for actions, warm cream (#F4F0E8) page, sand (#E9E2D2) wells, brass (#A8843C) only for small marks (nav
-  // underline, badges, accents on dark), terracotta (#B4492F) for promotions. Instrument Serif titles over Geist; its own
-  // layout preset (`tahafi`): the brand's hang-tag carries the hero's featured price.
+  // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). The owner's direction (2026-10-31): the feel of
+  // a new iPhone — light, clear and glossy. A soft grey page (#F4F4F2), white cards for the photographs, ink #1C1C1A for
+  // type and for the glossy primary actions, olive #4F5343 (the logo's colour) as the one accent: the logo, links, the bag
+  // count, a sale. Glass (blurred, translucent white) for the header, the dock and controls floating on photographs.
+  // Geist throughout, set firm; large continuous radii. Its own layout preset (`tahafi`).
   tahafi: {
-    label: "Tahafi (olive · cream · brass)",
+    label: "Tahafi (light glass · ink · olive)",
     layout: "tahafi",
     palette: {
       ink: {
-        50: "#efeadf", // subtle fills
-        100: "#e7e1d4", // subtle hairlines
-        200: "#ddd6c8", // warm border (lines, inputs)
-        300: "#cfc6b4", // strong line
-        400: "#5f6357", // tertiary text (struck prices, hints) — 5.4:1 on cream, 4.7:1 on sand
-        500: "#575b50", // secondary text — 6.1:1 on cream
-        600: "#3b3f36",
-        700: "#2a2e25", // body text
-        800: "#303a27", // olive, deeper: hover of olive actions
-        900: "#1e211b", // olive-black: headings, text — 14.6:1 on cream
-        950: "#1e211b", // the dark sections and footer
+        50: "#efefec", // subtle fills
+        100: "#e7e7e3", // hairlines
+        200: "#dcdcd7", // borders (inputs, dividers)
+        300: "#c6c6c0", // strong line
+        400: "#686863", // tertiary text (hints, struck prices) — 5.0:1 on the page, 5.6:1 on white
+        500: "#585853", // secondary text — 6.4:1 on the page
+        600: "#42423e",
+        700: "#2c2c29", // body text
+        800: "#3a3a36", // hover of ink actions
+        900: "#1c1c1a", // headings, primary actions — 15.6:1 on the page
+        950: "#1c1c1a",
       },
-      // 100 = the cream page; 200 = sand wells behind product photos.
-      cream: { 50: "#fbf9f5", 100: "#f4f0e8", 200: "#e9e2d2", 300: "#ddd4c0" },
-      // Terracotta, the one promotional accent: 5.6:1 under the light badge text, 5.0:1 as text on cream.
-      sale: { 50: "#f6e6e1", 500: "#b4492f", 600: "#963b26" },
+      // 50 = white cards and the photo stage; 100 = the page; 200 = secondary grounds (the footer, wells).
+      cream: { 50: "#ffffff", 100: "#f4f4f2", 200: "#ebebe8", 300: "#e0e0dc" },
+      // A sale is olive with white type (8.0:1) — the logo's colour, never red.
+      sale: { 50: "#eef0e8", 500: "#4f5343", 600: "#3f4335" },
     },
-    radii: { sm: "2px", DEFAULT: "3px", md: "4px", lg: "6px", xl: "8px", "2xl": "10px", "3xl": "14px" },
+    radii: { sm: "8px", DEFAULT: "12px", md: "14px", lg: "18px", xl: "22px", "2xl": "26px", "3xl": "32px" },
     fontVariables: {
       "--font-body-family": "var(--font-geist)",
-      "--font-display-family": "var(--font-instrument-serif)",
-      "--font-display-weight": "400",
-      "--font-display-tracking": "-0.01em",
-      "--eyebrow-weight": "500",
+      "--font-display-family": "var(--font-geist)",
+      "--font-display-weight": "650",
+      "--font-display-tracking": "-0.022em",
+      "--eyebrow-weight": "600",
     },
     components: {
-      // Olive actions (9.9:1 under cream text) — the role, not a palette step, so text stays olive-black.
-      "--color-accent": "62 74 51",
-      "--color-accent-hover": "48 58 39",
-      "--accent-hover": "rgb(48 58 39)",
-      // Sentence case everywhere: no tracked-out capitals.
+      "--color-accent": "28 28 26",
+      "--color-accent-hover": "58 58 54",
+      "--accent-hover": "rgb(58 58 54)",
       "--caps-transform": "none",
       "--caps-spread": "0",
       "--eyebrow-transform": "none",
       "--eyebrow-spread": "0",
-      "--gloss": "0",
-      "--glass-alpha": "0.95",
-      "--header-shadow": "0 1px 0 0 rgb(var(--color-ink-200))",
-      "--nav-hover": "rgb(62 74 51)",
-      "--nav-underline": "rgb(168 132 60)",
-      "--tag-thread": "rgb(168 132 60)",
-      "--icon-stroke": "1.5",
-      "--band-accent": "rgb(200 184 154)",
-      "--badge-note-bg": "rgb(168 132 60)",
-      "--badge-note-fg": "rgb(30 33 27)",
-      "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
-      // Product cards: the photograph on sand, 4:5, no frame and no lift.
-      "--card-media-aspect": "4 / 5",
+      // Filled controls carry the sheen; chrome is glass.
+      "--gloss": "1",
+      "--glass-alpha": "0.72",
+      "--header-shadow": "0 1px 0 0 rgb(28 28 26 / 0.06)",
+      "--control-radius": "9999px",
+      "--chip-radius": "var(--radius-default)",
+      "--swatch-radius": "9999px",
+      "--fab-radius": "9999px",
+      "--line-item-radius": "var(--radius-lg)",
+      "--stepper-radius": "9999px",
+      "--nav-hover": "rgb(79 83 67)",
+      "--nav-underline": "rgb(79 83 67)",
+      "--tag-thread": "rgb(198 198 192)",
+      "--icon-stroke": "1.75",
+      "--band-accent": "rgb(79 83 67)",
+      "--badge-note-bg": "rgb(255 255 255 / 0.92)",
+      "--badge-note-fg": "rgb(28 28 26)",
+      "--media-scrim": "rgb(0 0 0 / 0.35)",
+      "--hero-cta-fill": "rgb(28 28 26)",
+      "--hero-cta-text": "rgb(255 255 255)",
+      // Product cards: the photograph on white, square, inside a soft white card.
+      "--card-media-aspect": "1 / 1",
       "--card-lift": "0",
       "--card-frame-border": "transparent",
-      "--card-frame-shadow": "none",
-      "--card-frame-shadow-hover": "none",
+      "--card-frame-shadow": "0 1px 2px rgb(28 28 26 / 0.05), 0 10px 24px -16px rgb(28 28 26 / 0.22)",
+      "--card-frame-shadow-hover": "0 2px 4px rgb(28 28 26 / 0.06), 0 16px 32px -16px rgb(28 28 26 / 0.28)",
       "--card-image-zoom": "1.03",
-      "--card-title-tracking": "0",
+      "--card-title-tracking": "-0.005em",
       "--card-tier-display": "none",
       "--product-tier-display": "none",
-      "--panel-border": "rgb(var(--color-ink-200))",
-      "--panel-shadow": "none",
-      "--line-item-radius": "var(--radius-md)",
-      // The serif runs large: it is narrow and light.
-      "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
-      "--product-title-size": "clamp(2.125rem, 1.75rem + 1.2vw, 2.875rem)",
-      "--product-title-leading": "1.02",
-      "--product-title-weight": "400",
-      "--product-title-tracking": "-0.01em",
-      "--section-title-size": "2rem",
-      "--section-title-leading": "1.05",
-      "--section-title-size-sm": "2.75rem",
-      "--section-title-leading-sm": "1",
-      "--section-rhythm": "1.15",
-      "--page-title-size": "2.5rem",
-      "--page-title-leading": "1.02",
-      "--page-title-size-sm": "3.5rem",
-      "--page-title-leading-sm": "1",
-      "--section-heading-size": "2.125rem",
-      "--section-heading-leading": "1.05",
-      "--section-heading-size-sm": "3rem",
-      "--section-heading-leading-sm": "1",
-      // Editorial hero: left-aligned copy beside a tall photograph from 1024px.
+      "--panel-border": "transparent",
+      "--panel-shadow": "0 1px 2px rgb(28 28 26 / 0.05), 0 10px 24px -18px rgb(28 28 26 / 0.2)",
+      "--tile-media-radius": "var(--radius-2xl)",
+      "--product-title-family": "var(--font-geist), var(--font-taka), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
+      "--product-title-size": "clamp(1.625rem, 1.4rem + 0.8vw, 2.125rem)",
+      "--product-title-leading": "1.1",
+      "--product-title-weight": "650",
+      "--product-title-tracking": "-0.022em",
+      "--section-title-size": "1.5rem",
+      "--section-title-leading": "1.15",
+      "--section-title-size-sm": "1.875rem",
+      "--section-title-leading-sm": "1.1",
+      "--section-rhythm": "1",
+      "--page-title-size": "2rem",
+      "--page-title-leading": "1.08",
+      "--page-title-size-sm": "2.75rem",
+      "--page-title-leading-sm": "1.05",
+      "--section-heading-size": "1.75rem",
+      "--section-heading-leading": "1.1",
+      "--section-heading-size-sm": "2.25rem",
+      "--section-heading-leading-sm": "1.08",
       "--hero-align": "left",
       "--hero-layout-lg": "grid",
       "--hero-media-aspect-lg": "4 / 5",
@@ -622,23 +634,72 @@ const themeDefinitions = {
       "--hero-copy-pad-lg": "2rem",
       "--hero-media-offset-lg": "0",
       "--hero-secondary-ring": "transparent",
-      "--hero-primary-mr": "1.25rem",
+      "--hero-primary-mr": "0.75rem",
       "--hero-secondary-ml": "0px",
-      "--tile-caption-padding": "1.125rem",
       "--story-media-max-w": "64rem",
-      "--story-media-h-sm": "28rem",
-      "--sheet-radius": "1rem",
+      "--story-media-h-sm": "26rem",
+      "--sheet-radius": "1.75rem",
+      // The floating glass dock (presets/tahafi/dock.tsx): its 3.875rem row plus the gap below it.
+      "--dock-tab-bar": "4.75rem",
     },
-    // The hero and the brand story render on cream; the footer, flash sale and promo bands stay olive-black.
-    lightBands: ["hero", "story"],
-    bandSurface: "cream-100",
+    // Every section designed on the dark palette renders light: one calm, bright page from top to bottom.
+    band: "light",
+    bandSurface: "cream-200",
     bandComponents: {
-      "--hero-cta-fill": "rgb(62 74 51)",
-      "--hero-cta-text": "rgb(244 240 232)",
-      "--band-accent": "rgb(62 74 51)",
+      "--hero-cta-fill": "rgb(28 28 26)",
+      "--hero-cta-text": "rgb(255 255 255)",
+      "--band-accent": "rgb(79 83 67)",
     },
-    // Inside the dark sections: sand and warm greys for the secondary text.
-    darkBandPalette: { ink: { 300: "#dcd5c6", 400: "#c8b89a", 500: "#a9a493" } },
+    // The dark colour mode (option B of the mockup): the shopper's phone or computer setting, or their own choice
+    // (presets/tahafi/mode-toggle.tsx). Near-black page, charcoal cards, light text, light glossy actions; the olive stays
+    // for tags and turns light (#C3CBA8) where it is text. Storefront only — the admin is always light.
+    dark: {
+      palette: {
+        ink: {
+          50: "#262624", // subtle fills
+          100: "#2c2c29", // hairlines
+          200: "#3a3a36", // borders
+          300: "#4c4c47", // strong line
+          400: "#9d9d97", // tertiary text — 6.9:1 on the page, 6.1:1 on a card
+          500: "#b4b4ae", // secondary text — 8.9:1 on the page
+          600: "#cfcfc9",
+          700: "#e4e4df", // body text
+          800: "#ececE8",
+          900: "#f4f4f2", // headings — 17.6:1 on the page
+          950: "#ffffff",
+        },
+        // 50 = the cards, 100 = the page, 200 = secondary grounds.
+        cream: { 50: "#1c1c1a", 100: "#0f0f0e", 200: "#232321", 300: "#2c2c29" },
+        // The olive tag stays (white on it 8.0:1); olive as text or icon is the light olive (9.6:1 on the page).
+        sale: { 50: "#262a1e", 500: "#4f5343", 600: "#c3cba8" },
+      },
+      components: {
+        "color-scheme": "dark",
+        "--color-accent": "244 244 242",
+        "--color-accent-hover": "214 214 208",
+        "--accent-hover": "rgb(214 214 208)",
+        "--nav-hover": "rgb(195 203 168)",
+        "--nav-underline": "rgb(195 203 168)",
+        "--band-accent": "rgb(195 203 168)",
+        "--glass-alpha": "0.62",
+        "--glass-edge": "rgb(255 255 255 / 0.12)",
+        "--header-shadow": "0 1px 0 0 rgb(255 255 255 / 0.06)",
+        "--panel-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
+        "--card-frame-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
+        "--card-frame-shadow-hover": "inset 0 0 0 1px rgb(255 255 255 / 0.12)",
+        "--badge-note-bg": "rgb(28 28 26 / 0.9)",
+        "--badge-note-fg": "rgb(244 244 242)",
+        "--hero-cta-fill": "rgb(244 244 242)",
+        "--hero-cta-text": "rgb(28 28 26)",
+        "--mode-light-art": "none",
+        "--mode-dark-art": "contents",
+      },
+      // The sections designed dark (footer, flash sale …) render dark here: the light theme's own values, with the grey
+      // text steps lifted for a dark ground (8.0 and 5.5:1 on #1C1C1A).
+      bandPalette: { ink: { 400: "#b0b0aa", 500: "#8f8f89" } },
+      // …and their accent the light olive, as on the page (the light mode's olive is too dark on charcoal).
+      bandComponents: { "--band-accent": "rgb(195 203 168)" },
+    },
   },
 };
 
@@ -678,6 +739,27 @@ function referenceVariables() {
     if (value.startsWith("var(--color-")) variables[name] = value;
   }
   return variables;
+}
+
+/** A theme's dark colour mode on :root: its dark palette and component values. */
+function darkModeVariables(dark) {
+  const variables = {};
+  for (const [scale, steps] of Object.entries(dark.palette ?? {})) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  return { ...variables, ...dark.components };
+}
+
+/** Inside the sections designed on the dark palette, in a theme's dark colour mode: they render dark — the theme's light
+ * palette as the base design intended it, with `dark.bandPalette` re-valued for the dark ground. */
+function darkModeBandVariables(definition) {
+  const variables = {};
+  const scales = { ...definition.palette };
+  for (const [scale, steps] of Object.entries(definition.dark.bandPalette ?? {})) scales[scale] = { ...scales[scale], ...steps };
+  for (const [scale, steps] of Object.entries(scales)) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  return { ...variables, ...referenceVariables(), "--band-dark-art": "contents", "--band-light-art": "none", ...definition.dark.bandComponents };
 }
 
 /** Palette steps a theme re-values inside the sections that stay dark (`darkBandPalette`). */
@@ -743,6 +825,9 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
     darkBandVariables: darkBand(definition),
     // A band whose tone the store chose per section (Storefront Studio → Style → Tone, `data-tone` on the band).
     toneVariables: { light: { ...lightBand(definition), ...definition.bandComponents }, dark: darkTone(definition) },
+    // The theme's dark colour mode, if it has one (storefront only; tailwind.config.ts emits it).
+    darkModeVariables: definition.dark ? darkModeVariables(definition.dark) : {},
+    darkModeBandVariables: definition.dark ? darkModeBandVariables(definition) : {},
   };
 }
 const DEFAULT_THEME = "default";

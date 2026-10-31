@@ -6,13 +6,13 @@ A brand theme has two halves. **Tokens** (packages/ui-tokens `themeDefinitions`)
 |---|---|---|
 | `classic` | Asif Zone (base design) | — |
 | `mihrab` | Nasihamart | header, footer, product card, loader, hero, trust row, carousels, category arches, flash sale |
-| `tahafi` | Tahafi | hero (hang-tag); everything else is `classic` re-valued by tokens |
+| `tahafi` | Tahafi | header and dock (light glass), product card, loader, hero (Today card), trust card, category cards, lookbook, product-page info card, order-confirmation card |
 
 ## Adding a preset
 
 1. Add its id to `StoreLayout` and `LAYOUTS` in `apps/web/lib/theme-layout.ts`, and set `layout` on the theme in ui-tokens.
 2. Put its components in `presets/<id>/`. Wrap the classic component where you can (Tahafi's hero passes `mediaOverlay` to the classic `Hero`) instead of copying it.
-3. Branch at the existing switch points: `store-chrome.tsx` (header and footer), `product-card.tsx`, `brand-loader.tsx`, and `home/home-section.tsx` (homepage sections).
+3. Branch at the existing switch points: `store-chrome.tsx` (header, footer and the phone tab bar), `product-card.tsx`, `brand-loader.tsx`, and `home/home-section.tsx` (homepage sections).
 4. In the Studio, `components/admin/studio/section-fields.ts`: a field restricted with `presets: [...]` must list every preset that renders it. A preset that composes a section the classic way needs `classic` fields too.
 5. Keep the other stores pixel-identical. Default values of any new token reproduce the base design.
 6. Check both themes at 1440px and 375px.
