@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { getErrorMessage } from "@/lib/api-client";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { listAdmins } from "@/lib/auth";
@@ -69,6 +70,7 @@ export function CallPanel({ order, perms, commands }: { order: Order; perms: Ord
   });
   const [draft, setDraft] = useState<Draft | null>(null);
   useEffect(() => setDraft(null), [order.id]);
+  const { data: me } = useCurrentAdmin();
 
   const onDone = (s: OrderConfirmationState) => {
     queryClient.setQueryData(orderKeys.confirmation(order.id), s);
@@ -115,7 +117,9 @@ export function CallPanel({ order, perms, commands }: { order: Order; perms: Ord
   }
 
   const escalated = Boolean(state && (state.escalatedAt || state.staleEscalated));
-  const claimedByOther = state?.claimedBy && !draft ? state.claimedBy : null;
+  // Only a colleague's live claim locks the outcome buttons — never the operator's own ("Take next call" claims the order
+  // for whoever took it; the server refuses only another operator's claim too).
+  const claimedByOther = state?.claimedBy && !draft && state.claimedBy.id !== me?.admin.id ? state.claimedBy : null;
   const busy = record.isPending || decide.isPending;
 
   return (
