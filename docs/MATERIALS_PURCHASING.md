@@ -50,12 +50,39 @@ item and 50 on another; nothing converts between materials).
 
 ## §4 Ordered, not yet arrived
 
-See the plan; documented here when built.
+The purchase form asks **Has it arrived?** (only for people with `purchasing.manage`, once costing is live).
+
+- **No, ordered** — `POST /stock/orders` makes a purchase order with the same lines (stock or purchase units, discount; no
+  damaged units, no extras, no payment). No stock moves. It is approved at once when the person holds `purchasing.approve`,
+  otherwise it waits SUBMITTED for an approver (Finance › Purchase orders). Its lines keep the purchase-unit snapshot and
+  discount like a receipt. The Idempotency-Key rides in the order's delivery terms (`stock-order:<key>`) under an advisory
+  lock, so a retry or double tap returns the same order.
+- **Expected deliveries** — `GET /stock/orders/expected`: submitted, approved and part-received orders, oldest first, per
+  item ordered / received / rejected / still to come (stock units, with the purchase unit). Shown on Stock while any exist.
+- **Receive** — `POST /stock/orders/:id/deliveries`: per item good and damaged units. Good units are spread over the item's
+  order lines by what each still waits for (beyond the order's tolerance an approver confirms on Finance › Purchase orders,
+  as always); damaged units are rejected. The receipt is posted at the order's price. The bill is made now (optionally paid
+  from a cash box, bank or wallet) or later (the receipt waits in GRNI and Finance › Bills); transport paid with the
+  delivery is a landed cost over that receipt (by value or quantity). Every document carries `stock-delivery:<key>:<step>`,
+  so a retry carries on from the step that failed and never writes twice.
+- **Close short** — the existing close on Finance › Purchase orders ends an order whose rest will never come.
 
 ## §5 Packaging
 
-See the plan; documented here when built.
+- **One consumption point per material.** Recipe materials leave stock at the fill; packing-rule materials when the courier
+  is booked. A packing rule (create, or switching one back on) that would take a material the product's approved recipe
+  already takes is refused (`409 PACKING_RULE_IN_RECIPE`); approving a recipe that takes a material an active packing rule
+  takes for that product is refused (`409 RECIPE_MATERIAL_IN_PACKING_RULE`). A rule for one size only clashes with a recipe
+  line for every size or for that size.
+- **Packaging on the product** — `GET /stock/products/:id/packaging` lists every rule that reaches a product (its own, a
+  size, its category, every parcel). The product's kit panel shows them and adds or switches off the product's own and
+  per-size rules (tupi packet + sticker per unit; polybag, hangtag per unit; a size sticker per size).
+- **Wasted** — `POST /stock/waste` (materials only, `inventory.adjust`, idempotent): a DAMAGED movement out at the moving
+  average with the reason typed. A loss at or over the count-loss approval threshold is the owner's to record.
 
 ## §6 Material usage report
 
-See the plan; documented here when built.
+`GET /stock/reports/material-usage?month=YYYY-MM` (read-only, `inventory.read`; Stock › Material usage): per material —
+opening, bought, sent back, used in fills, what the month's closed fills planned from their recipes, packed, wasted, count
+differences, other (order returns), closing. Opening and closing come from today's stock less later movements, so the row
+always adds up. Flags: more used than the recipes say, count loss, count gain, waste.
