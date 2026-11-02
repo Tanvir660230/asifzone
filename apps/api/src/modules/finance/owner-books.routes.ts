@@ -42,6 +42,8 @@ import {
   financeAutopilotSchema,
   ownerHomeQuerySchema,
   stockPurchaseSchema,
+  stockOrderSchema,
+  stockDeliverySchema,
   ownerRepaySchema,
   purchaseDuplicateCheckSchema,
   stockPurchaseListQuerySchema,
@@ -81,6 +83,9 @@ import * as profit from "../../domain/finance/profit.service";
 import * as claims from "../../domain/finance/courier-claims.service";
 import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
 import * as stockPurchases from "../../domain/stock/purchase.service";
+import * as stockOrders from "../../domain/stock/order.service";
+import { recordWaste, stockWasteSchema } from "../../domain/stock/waste.service";
+import { materialUsage } from "../../domain/stock/material-usage.service";
 import * as stockCounts from "../../domain/stock/count.service";
 import { correctStockValues } from "../../domain/finance/stock-value-correction.service";
 import { setStockPolicy, stockHub } from "../../domain/stock/stock-hub.service";
@@ -247,6 +252,25 @@ ownerBooksRouter.get("/stock/purchases/:id", requirePermission("purchasing.read"
 ownerBooksRouter.post("/stock/purchases/duplicate-check", requirePermission("purchasing.receive"), validate(purchaseDuplicateCheckSchema), asyncHandler(async (req, res) => res.json(await stockPurchases.checkPurchaseDuplicates(req.body))));
 ownerBooksRouter.post("/stock/purchases", requirePermission("purchasing.receive"), validate(stockPurchaseSchema), asyncHandler(async (req, res) => {
   const r = await stockPurchases.recordPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+// docs/MATERIALS_PURCHASING.md §4: ordered, not yet arrived — a purchase order (no stock, no money), the orders still to
+// arrive, and a delivery against one (receipt; the bill now or later; extras). Idempotent by the Idempotency-Key.
+// docs/MATERIALS_PURCHASING.md §5: material broken outside a fill (idempotent), and the packing rules a product's parcels take.
+ownerBooksRouter.post("/stock/waste", requirePermission("inventory.adjust"), validate(stockWasteSchema), asyncHandler(async (req, res) => {
+  const r = await recordWaste(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+ownerBooksRouter.get("/stock/products/:id/packaging", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await packaging.packagingForProduct(id(req)))));
+// docs/MATERIALS_PURCHASING.md §6: where each material went in a month (read-only).
+ownerBooksRouter.get("/stock/reports/material-usage", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await materialUsage(String(req.query.month ?? "")))));
+ownerBooksRouter.get("/stock/orders/expected", requirePermission("purchasing.read"), asyncHandler(async (_req, res) => res.json(await stockOrders.listExpected())));
+ownerBooksRouter.post("/stock/orders", requirePermission("purchasing.manage"), validate(stockOrderSchema), asyncHandler(async (req, res) => {
+  const r = await stockOrders.orderStockPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+ownerBooksRouter.post("/stock/orders/:id/deliveries", requirePermission("purchasing.receive"), validate(stockDeliverySchema), asyncHandler(async (req, res) => {
+  const r = await stockOrders.receiveDelivery(id(req), req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 // A purchase stuck mid-way: the remaining steps, from the same or (nothing paid yet) another account. Idempotent.

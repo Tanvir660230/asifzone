@@ -179,7 +179,16 @@ const goodsReceiptLineSchema = z
     qtyRejected: z.coerce.number().int().min(0).max(1_000_000).default(0),
     /** A receipt without an order only: the actual unit cost. */
     unitCost: financeAmountSchema.optional().nullable(),
+    /** A receipt without an order only (docs/MATERIALS_PURCHASING.md §2–3): what was bought — the item's purchase unit, its
+     * size and how many of it — and the price before discount per stock unit with this line's discount. Informational. */
+    purchaseUnitId: id.optional().nullable(),
+    purchaseUnitLabel: z.string().trim().min(1).max(24).optional().nullable(),
+    purchaseUnitFactor: z.number().positive().max(1_000_000).optional().nullable(),
+    purchaseQty: z.number().min(0).max(1_000_000).optional().nullable(),
+    grossUnitPrice: z.number().min(0).max(1_000_000_000).optional().nullable(),
+    discountAmount: financeAmountSchema.optional().nullable(),
   })
+  .refine((l) => (l.purchaseUnitId == null) === (l.purchaseUnitLabel == null) && (l.purchaseUnitId == null) === (l.purchaseUnitFactor == null) && (l.purchaseUnitId == null) === (l.purchaseQty == null), "A purchase unit comes with its label, size and quantity")
   .refine((l) => l.qtyAccepted + l.qtyRejected > 0, "Receive or reject at least one unit")
   .refine((l) => Boolean(l.purchaseOrderLineId) !== Boolean(l.variantId), "A line is either an order line or (without an order) a variant");
 

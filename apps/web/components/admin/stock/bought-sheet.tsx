@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { useDiscardGuard } from "@/components/ui/discard-guard";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { Table } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -35,13 +36,29 @@ const DEFAULT_SUPPLIER = "Local market";
 
 /** Something that can be bought: one variant, or a product whose colours × sizes are entered as a grid. */
 interface Choice { id: string; label: string; detail: string; variants: StockItem[]; grid: boolean }
-/** `buy`: a material entered in how it was bought (2 litres) — `qty` then holds it converted to the stock unit (2000 ml). */
-interface Line { key: string; choice: Choice; qty: Record<string, string>; amount: string; buy?: { label: string; factor: number; qty: string } }
+/** `buy`: a material entered in how it was bought (2 litres) — `qty` then holds it converted to the stock unit (2000 ml), or
+ * "" when that isn't a whole number of stock units (`buy.inexact` says what it came to). `discount` and `damaged` (stock units,
+ * single items only) are optional (docs/MATERIALS_PURCHASING.md §3). */
+interface Line {
+  key: string;
+  choice: Choice;
+  qty: Record<string, string>;
+  amount: string;
+  discount?: string;
+  damaged?: string;
+  buy?: { unitId: string; label: string; factor: number; qty: string; inexact?: { exact: number; below: number; above: number } };
+}
 interface Extra { key: string; description: string; amount: string }
 
 const toMinor = (v: string) => Math.round(Number(v) * 100);
 const amountOk = (v: string) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) > 0 && /^\d+(\.\d{1,2})?$/.test(v.trim());
 const qtyOf = (v: string | undefined) => (v && /^\d+$/.test(v.trim()) ? Number(v) : 0);
+const discountOk = (v: string | undefined) => !v?.trim() || (/^\d+(\.\d{1,2})?$/.test(v.trim()) && Number.isFinite(Number(v)));
+/** Stock units in `qty` of a unit of `factor`, exactly as the server works it out — or null when not a whole number. */
+function stockUnitsOf(qty: number, factor: number): number | null {
+  const scaled = BigInt(Math.round(qty * 10_000)) * BigInt(Math.round(factor * 10_000));
+  return scaled % 100_000_000n === 0n ? Number(scaled / 100_000_000n) : null;
+}
 let seq = 0;
 const nextKey = () => `l${++seq}`;
 
@@ -92,8 +109,12 @@ function startLines(choices: Choice[], start: BoughtStart | undefined): Line[] {
   return out;
 }
 
-export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; start?: BoughtStart; onClose: () => void }) {
+export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, canOrder = false, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; canOrder?: boolean; start?: BoughtStart; onClose: () => void }) {
   const qc = useQueryClient();
+  // docs/MATERIALS_PURCHASING.md §4: "No, ordered" makes a purchase order that waits on Expected — no stock, no money yet
+  const [arrived, setArrived] = useState<"yes" | "ordered">("yes");
+  const ordering = arrived === "ordered";
+  const [expectedDate, setExpectedDate] = useState("");
   // Blueprint P1.4 (owner decision Q-F): before stock costing is live the purchase is recorded in simple mode — stock in,
   // catalog cost set from it unless unticked, the money kept with the purchase and nothing booked.
   const simple = !overview.costingActive;
@@ -119,6 +140,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   const [date, setDate] = useState(todayLocal());
   const [paidFrom, setPaidFrom] = useState("");
   const [documentTotal, setDocumentTotal] = useState("");
+  const [extrasMethod, setExtrasMethod] = useState<"VALUE" | "QUANTITY">("VALUE");
   const [problem, setProblem] = useState<StockProblem | null>(null);
   const [tried, setTried] = useState(false);
   // Last look before anything is written: every colour / size and the total, against the bill (inventory recovery F-c).
@@ -138,16 +160,25 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   };
   const update = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
-  // Each line's quantity, goods total and share of the extras (by value), for the per-unit preview.
-  const totals = lines.map((l) => ({ qty: l.choice.variants.reduce((s, v) => s + qtyOf(l.qty[v.variantId]), 0), minor: amountOk(l.amount) ? toMinor(l.amount) : 0 }));
+  // Each line's quantity arrived, good units (arrived − damaged), goods total and share of the extras, for the per-unit preview.
+  const totals = lines.map((l) => {
+    const qty = l.choice.variants.reduce((s, v) => s + qtyOf(l.qty[v.variantId]), 0);
+    return { qty, good: qty - qtyOf(l.damaged), minor: amountOk(l.amount) ? toMinor(l.amount) : 0 };
+  });
+  const goodUnits = totals.reduce((s, t) => s + Math.max(0, t.good), 0);
   const goodsMinor = totals.reduce((s, t) => s + t.minor, 0);
   const extrasMinor = extras.reduce((s, e) => s + (amountOk(e.amount) ? toMinor(e.amount) : 0), 0);
   const totalMinor = goodsMinor + extrasMinor;
 
   const lineErrors = lines.map((l, i) => {
+    const unit = l.choice.variants[0]!.unit;
+    if (l.buy?.inexact) return `${l.buy.qty} ${l.buy.label} = ${l.buy.inexact.exact.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${unit}. Stock is counted in whole ${unit} — enter ${num(l.buy.inexact.below)} or ${num(l.buy.inexact.above)} ${unit} instead.`;
     if (!totals[i]!.qty) return l.choice.grid ? "Enter how many of at least one colour and size" : "Enter how many";
+    if (l.damaged?.trim() && !/^\d+$/.test(l.damaged.trim())) return "Damaged: a whole number";
+    if (totals[i]!.good < 1) return "At least one must have arrived in good condition";
     if (!amountOk(l.amount)) return "Enter what you paid for these, in all";
-    if (totals[i]!.minor < totals[i]!.qty) return "The total is too small for that many";
+    if (!discountOk(l.discount)) return "Discount: an amount like 40 or 40.50";
+    if (totals[i]!.minor < totals[i]!.good) return "The total is too small for that many";
     return null;
   });
   const extraErrors = extras.map((e) => (!e.description.trim() ? "Say what it was" : !amountOk(e.amount) ? "Enter the amount" : null));
@@ -161,12 +192,14 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   const documentError = !documentUnits
     ? "Enter the total units printed on the bill or receipt"
     : lines.length && Math.abs(documentUnits - unitsEntered) > 1e-6 ? `The items add up to ${num(unitsEntered)}, the bill says ${num(documentUnits)} — check each line` : null;
-  const valid = lines.length > 0 && lineErrors.every((e) => !e) && extraErrors.every((e) => !e) && !supplierError && !documentError && Boolean(paidFrom) && date <= todayLocal();
+  const valid = lines.length > 0 && lineErrors.every((e) => !e) && (ordering || extraErrors.every((e) => !e)) && !supplierError && !documentError && (ordering || Boolean(paidFrom)) && date <= todayLocal()
+    && (!ordering || !expectedDate || expectedDate >= date) && (!ordering || lines.every((l) => !qtyOf(l.damaged)));
   // what will be received, one row per colour / size — shown before saving
   const arriving = lines.flatMap((l) => l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0).map((v) => ({
     id: v.variantId,
     label: l.choice.grid ? `${l.choice.label} · ${[colorOf(v), sizeOf(v)].filter(Boolean).join(" ") || v.sku}` : l.choice.label,
-    qty: qtyOf(l.qty[v.variantId]),
+    qty: qtyOf(l.qty[v.variantId]) - (l.choice.grid ? 0 : qtyOf(l.damaged)),
+    damaged: l.choice.grid ? 0 : qtyOf(l.damaged),
     unit: l.choice.grid ? "pcs" : v.unit,
   })));
 
@@ -177,9 +210,19 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     lines: lines.flatMap((l, i) => {
       const vs = l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0);
       const amounts = spread(totals[i]!.minor, vs.map((v) => qtyOf(l.qty[v.variantId])));
-      return vs.map((v, k) => ({ variantId: v.variantId, quantity: qtyOf(l.qty[v.variantId]), amount: amounts[k]! / 100 }));
+      const discountMinor = l.discount?.trim() ? toMinor(l.discount) : 0;
+      const discounts = spread(discountMinor, vs.map((v) => qtyOf(l.qty[v.variantId])));
+      return vs.map((v, k) => ({
+        variantId: v.variantId,
+        // bought in a purchase unit: the server converts (and refuses a fraction of a stock unit)
+        ...(l.buy ? { purchaseUnitId: l.buy.unitId, purchaseQty: Number(l.buy.qty) } : { quantity: qtyOf(l.qty[v.variantId]) }),
+        amount: amounts[k]! / 100,
+        ...(discountMinor ? { discount: discounts[k]! / 100 } : {}),
+        ...(!l.choice.grid && qtyOf(l.damaged) ? { damaged: qtyOf(l.damaged) } : {}),
+      }));
     }),
     extras: extras.map((e) => ({ description: e.description.trim(), amount: Number(e.amount) })),
+    ...(extras.length ? { extrasMethod } : {}),
     paidFrom: paidFrom === OWNER ? { ownerPocket: true, funding: "CAPITAL" } : paidFrom === OWNER_REPAY ? { ownerPocket: true, funding: "REIMBURSE" } : { financialAccountId: paidFrom },
     duplicateReason: duplicateReason.trim() || null,
     ...(simple ? { updateCatalogCost } : {}),
@@ -195,14 +238,20 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   const duplicates = duplicatesQ.data?.matches ?? [];
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async (): Promise<{ text: string }> => {
       const b = body();
+      if (ordering) {
+        const o: stockApi.OrderBody = { date: b.date, supplierName: b.supplierName, documentTotal: b.documentTotal, expectedDate: expectedDate || null, lines: b.lines };
+        const r = await stockApi.recordStockOrder(o, idempotencyKeyFor(formId, o));
+        return { text: r.replayed ? "Already ordered — nothing was added twice" : `Ordered (${r.order.number}) — it waits under Expected deliveries${r.order.status === "SUBMITTED" ? " until an approver approves it" : ""}` };
+      }
       // One key per open form: a retry of the same purchase replays it; a changed purchase is a new one.
-      return stockApi.recordStockPurchase(b, idempotencyKeyFor(formId, b));
+      const r = await stockApi.recordStockPurchase(b, idempotencyKeyFor(formId, b));
+      return { text: r.replayed ? "Already recorded — nothing was added twice" : r.purchase.mode === "SIMPLE" ? "Purchase recorded — the stock is in; the money goes into the books when they start" : `Purchase recorded${r.purchase.receipt?.number ? ` (${r.purchase.receipt.number})` : ""}` };
     },
     onSuccess: (r) => {
       settleIdempotencyKey(formId);
-      toast.success(r.replayed ? "Already recorded — nothing was added twice" : r.purchase.mode === "SIMPLE" ? "Purchase recorded — the stock is in; the money goes into the books when they start" : `Purchase recorded${r.purchase.receipt?.number ? ` (${r.purchase.receipt.number})` : ""}`);
+      toast.success(r.text);
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
       void qc.invalidateQueries({ queryKey: ["finance"] });
       onClose();
@@ -240,8 +289,8 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     <Modal
       open
       onClose={guard.requestClose}
-      title="Received goods"
-      description="What arrived, what you paid and who paid it."
+      title={ordering ? "Ordered goods" : "Received goods"}
+      description={ordering ? "What you ordered and its price. Stock goes up when it arrives." : "What arrived, what you paid and who paid it."}
       widthClassName="max-w-3xl"
       footer={guard.prompt ?? (
         <>
@@ -249,12 +298,18 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
           {reviewing
             ? <Button type="button" variant="outline" onClick={() => setReviewing(false)} disabled={save.isPending} data-testid="bought-edit">Edit</Button>
             : <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>}
-          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? "Confirm and record" : "Review purchase"}</Button>
+          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? (ordering ? "Confirm order" : "Confirm and record") : ordering ? "Review order" : "Review purchase"}</Button>
         </>
       )}
     >
       <form id="stock-bought-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
         {problem && <div ref={errorRef}><ProblemAlert problem={problem} /></div>}
+        {canOrder && !simple && !reviewing && (
+          <div className="space-y-1.5">
+            <p className="ui-label" aria-hidden="true">Has it arrived?</p>
+            <SegmentedControl<"yes" | "ordered"> aria-label="Has it arrived?" size="md" value={arrived} onChange={(v) => setArrived(v)} options={[{ value: "yes", label: "Yes, it's here", testId: "bought-arrived-yes" }, { value: "ordered", label: "No, ordered", testId: "bought-arrived-ordered" }]} />
+          </div>
+        )}
         {simple && (
           <div data-testid="bought-simple">
             <Alert variant="info" title="Stock costing hasn't started on this store">
@@ -277,14 +332,14 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
               <tbody>
                 {arriving.map((a) => (
                   <tr key={a.id} data-testid="bought-review-row">
-                    <td className="py-1.5 pr-3 text-fg">{a.label}</td>
+                    <td className="py-1.5 pr-3 text-fg">{a.label}{a.damaged > 0 && <span className="block text-xs text-fg-muted">{num(a.damaged)} {a.unit} damaged — not put in stock</span>}</td>
                     <td className="py-1.5 text-right tabular-nums text-fg">{num(a.qty)} {a.unit}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t border-line-subtle">
-                  <th scope="row" className="pt-2 text-left font-medium text-fg">Total · matches the bill</th>
+                  <th scope="row" className="pt-2 text-left font-medium text-fg">On the bill · matches</th>
                   <td className="pt-2 text-right font-semibold tabular-nums text-fg" data-testid="bought-review-total">{num(unitsEntered)}</td>
                 </tr>
               </tfoot>
@@ -316,8 +371,10 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
               line={l}
               qty={totals[i]!.qty}
               minor={totals[i]!.minor}
-              extrasShare={goodsMinor ? (extrasMinor * totals[i]!.minor) / goodsMinor : 0}
+              good={totals[i]!.good}
+              extrasShare={extrasMethod === "QUANTITY" ? (goodUnits ? (extrasMinor * Math.max(0, totals[i]!.good)) / goodUnits : 0) : goodsMinor ? (extrasMinor * totals[i]!.minor) / goodsMinor : 0}
               lastEach={lastEachOf(l)}
+              ordering={ordering}
               error={tried ? lineErrors[i] : null}
               onChange={(patch) => update(l.key, patch)}
               onRemove={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
@@ -348,15 +405,16 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
           </div>
         </section>
 
-        <section aria-labelledby="bought-extras" className="space-y-3">
+        <section aria-labelledby="bought-extras" className={cn("space-y-3", ordering && "hidden")}>
           <div className="flex items-center justify-between gap-3">
             <h3 id="bought-extras" className="text-sm font-medium text-fg">Extra costs <span className="font-normal text-fg-muted">(transport, customs…)</span></h3>
             <Button type="button" variant="ghost" size="sm" onClick={() => setExtras((x) => [...x, { key: nextKey(), description: "", amount: "" }])} data-testid="bought-add-extra"><Plus className="h-4 w-4" aria-hidden="true" /> Add</Button>
           </div>
           {extras.length === 0 ? (
-            <p className="text-sm text-fg-muted">None. An extra cost is spread over the items by value, so their cost per unit includes it.</p>
+            <p className="text-sm text-fg-muted">None. An extra cost is spread over the items, so their cost per unit includes it.</p>
           ) : (
-            extras.map((x, i) => (
+            <>
+            {extras.map((x, i) => (
               <div key={x.key} className="grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] items-start gap-2">
                 <Field htmlFor={`bx-d-${x.key}`} label={<span className="sr-only">What it was</span>} error={tried && extraErrors[i] === "Say what it was" ? extraErrors[i] : undefined}>
                   <Input id={`bx-d-${x.key}`} value={x.description} placeholder="e.g. Transport…" autoComplete="off" maxLength={120} onChange={(e) => setExtras((xs) => xs.map((y) => (y.key === x.key ? { ...y, description: e.target.value } : y)))} />
@@ -366,7 +424,16 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
                 </Field>
                 <IconButton aria-label="Remove this extra cost" size="sm" className="mt-1" onClick={() => setExtras((xs) => xs.filter((y) => y.key !== x.key))}><X size={16} /></IconButton>
               </div>
-            ))
+            ))}
+            {lines.length > 1 && (
+              <Field htmlFor="bought-extras-method" label="Share it out" hint={extrasMethod === "VALUE" ? "Dearer items carry more of it." : "Every unit carries the same — fair for transport of bulky, cheap items."}>
+                <Select id="bought-extras-method" value={extrasMethod} onChange={(e) => setExtrasMethod(e.target.value as "VALUE" | "QUANTITY")} className="sm:max-w-60" data-testid="bought-extras-method">
+                  <option value="VALUE">By what each item cost</option>
+                  <option value="QUANTITY">By how many units</option>
+                </Select>
+              </Field>
+            )}
+            </>
           )}
         </section>
 
@@ -383,16 +450,21 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
             label="Units on the bill"
             required
             className="sm:col-span-2"
-            hint={documentError && tried ? undefined : `Typed from the supplier's bill or receipt. The items above add up to ${num(unitsEntered)}.`}
+            hint={documentError && tried ? undefined : `Typed from the supplier's bill, as it counts them (10 litre = 10). The items above add up to ${num(unitsEntered)}.`}
             error={tried ? documentError : undefined}
           >
-            <Input id="bought-document-total" inputMode="numeric" className="tabular-nums sm:max-w-40" value={documentTotal} onChange={(e) => setDocumentTotal(e.target.value)} data-testid="bought-document-total" />
+            <Input id="bought-document-total" inputMode="decimal" className="tabular-nums sm:max-w-40" value={documentTotal} onChange={(e) => setDocumentTotal(e.target.value)} data-testid="bought-document-total" />
           </Field>
+          {ordering && (
+            <Field htmlFor="bought-expected" label="Expected by" hint="Optional." error={tried && expectedDate && expectedDate < date ? "After the order date" : undefined}>
+              <Input id="bought-expected" type="date" value={expectedDate} min={date} onChange={(e) => setExpectedDate(e.target.value)} data-testid="bought-expected" />
+            </Field>
+          )}
           <Field
             htmlFor="bought-paid-from"
             label="Paid from"
             required
-            className="sm:col-span-2"
+            className={cn("sm:col-span-2", ordering && "hidden")}
             error={tried && !paidFrom ? "Choose who paid" : undefined}
             hint={
               shortOf ? <span className="text-warning-700">{shortOf.name} holds {formatPrice(shortOf.currentBalance)}; this needs {formatPrice(totalMinor / 100)}.</span>
@@ -429,7 +501,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
 }
 
 /** How many, in the stock unit or one of the material's purchase units (litre, dozen): the stock quantity is the bought
- * quantity × the unit's size, rounded to a whole stock unit, and shown under the field. */
+ * quantity × the unit's size, shown under the field — a result that isn't a whole stock unit is flagged, never rounded. */
 function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id: string; onChange: (p: Partial<Line>) => void }) {
   const v0 = line.choice.variants[0]!;
   const units = v0.purchaseUnits;
@@ -438,8 +510,11 @@ function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id
     const u = units.find((x) => x.label === label);
     if (!u) return { buy: undefined, qty: { [v0.variantId]: raw } };
     const n = Number(raw);
-    const stock = /^\d+(\.\d{1,4})?$/.test(raw.trim()) && n > 0 ? String(Math.round(n * u.factor)) : "";
-    return { buy: { label: u.label, factor: u.factor, qty: raw }, qty: { [v0.variantId]: stock } };
+    const valid = /^\d+(\.\d{1,4})?$/.test(raw.trim()) && n > 0;
+    const whole = valid ? stockUnitsOf(n, u.factor) : null;
+    const exact = Math.round(n * u.factor * 10_000) / 10_000;
+    const inexact = valid && whole === null ? { exact, below: Math.floor(exact), above: Math.ceil(exact) } : undefined;
+    return { buy: { unitId: u.id, label: u.label, factor: u.factor, qty: raw, inexact }, qty: { [v0.variantId]: whole === null ? "" : String(whole) } };
   };
   const shown = line.buy ? line.buy.qty : line.qty[v0.variantId] ?? "";
   const stockQty = qtyOf(line.qty[v0.variantId]);
@@ -454,7 +529,7 @@ function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id
           {units.map((u) => <option key={u.label} value={u.label}>{u.label}</option>)}
         </Select>
       </div>
-      {line.buy && <p className="mt-1 text-xs text-fg-muted tabular-nums" data-testid="bought-into-stock">{stockQty ? `= ${num(stockQty)} ${unit} into stock` : `1 ${line.buy.label} = ${num(line.buy.factor)} ${unit}`}</p>}
+      {line.buy && <p className="mt-1 text-xs text-fg-muted tabular-nums" data-testid="bought-into-stock">{stockQty ? `= ${num(stockQty)} ${unit} into stock` : `1 ${line.buy.label} = ${line.buy.factor.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${unit}`}</p>}
     </div>
   );
 }
@@ -462,13 +537,15 @@ function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id
 /** A unit price this much above the last one is worth a second look (a typo, or a real rise) — never a block. */
 const PRICE_JUMP = 0.2;
 
-function BoughtLine({ line, qty, minor, extrasShare, lastEach, error, onChange, onRemove }: { line: Line; qty: number; minor: number; extrasShare: number; lastEach: number | null; error: string | null | undefined; onChange: (p: Partial<Line>) => void; onRemove: () => void }) {
+function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, error, onChange, onRemove }: { line: Line; qty: number; good: number; minor: number; extrasShare: number; lastEach: number | null; ordering: boolean; error: string | null | undefined; onChange: (p: Partial<Line>) => void; onRemove: () => void }) {
   const { choice } = line;
   const v0 = choice.variants[0]!;
   const unit = choice.grid ? "pcs" : v0.unit;
-  const each = qty && minor ? minor / 100 / qty : null;
+  // what a good unit cost: broken ones arrived but aren't stocked, so the good ones carry the line total
+  const each = qty && good > 0 && minor ? minor / 100 / good : null;
   const jump = each !== null && lastEach ? each / lastEach - 1 : null;
-  const withExtras = qty && minor && extrasShare ? (minor + extrasShare) / 100 / qty : null;
+  const withExtras = good > 0 && minor && extrasShare ? (minor + extrasShare) / 100 / good : null;
+  const [more, setMore] = useState(Boolean(line.discount?.trim() || line.damaged?.trim()));
   const per = unit === "pcs" ? "each" : `per ${unit}`;
   const id = `bl-${line.key}`;
   return (
@@ -478,20 +555,20 @@ function BoughtLine({ line, qty, minor, extrasShare, lastEach, error, onChange, 
         <IconButton aria-label={`Remove ${choice.label}`} size="sm" className="-mr-1 -mt-1" onClick={onRemove}><X size={16} /></IconButton>
       </div>
       {choice.grid && <QtyGrid line={line} onChange={onChange} />}
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[8rem_10rem_minmax(0,1fr)] sm:items-end">
+      <div className={cn("mt-3 grid grid-cols-2 gap-3 sm:items-end", v0.purchaseUnits.length && !choice.grid ? "sm:grid-cols-[13rem_10rem_minmax(0,1fr)]" : "sm:grid-cols-[8rem_10rem_minmax(0,1fr)]")}>
         {choice.grid ? (
           <div className="min-w-0">
             <p className="ui-label">How many</p>
             <p className="flex h-10 items-center tabular-nums text-fg">{num(qty)} pcs</p>
           </div>
         ) : v0.purchaseUnits.length ? (
-          <BuyUnitQty line={line} unit={unit} onChange={onChange} id={id} />
+          <div className="col-span-2 sm:col-span-1"><BuyUnitQty line={line} unit={unit} onChange={onChange} id={id} /></div>
         ) : (
           <Field htmlFor={`${id}-q`} label={`How many (${unit})`}>
             <Input id={`${id}-q`} inputMode="numeric" className="tabular-nums" value={line.qty[v0.variantId] ?? ""} onChange={(e) => onChange({ qty: { [v0.variantId]: e.target.value } })} data-testid="bought-qty" />
           </Field>
         )}
-        <Field htmlFor={`${id}-a`} label={`Paid in all (${storeCurrencySymbol()})`}>
+        <Field htmlFor={`${id}-a`} label={`Paid in all (${storeCurrencySymbol()})`} hint={line.discount?.trim() ? "After the discount" : undefined}>
           <Input id={`${id}-a`} inputMode="decimal" className="tabular-nums" value={line.amount} onChange={(e) => onChange({ amount: e.target.value })} data-testid="bought-amount" />
         </Field>
         <p className="col-span-2 text-sm text-fg-muted sm:col-span-1 sm:pb-2.5" aria-live="polite" data-testid="bought-per-unit">
@@ -504,6 +581,22 @@ function BoughtLine({ line, qty, minor, extrasShare, lastEach, error, onChange, 
           {lastEach !== null && <span className="block text-xs text-fg-muted" data-testid="bought-last-price">Last time {formatPrice(lastEach)} {per}</span>}
         </p>
       </div>
+      {more ? (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[8rem_10rem]" data-testid="bought-more">
+          <Field htmlFor={`${id}-disc`} label={`Discount (${storeCurrencySymbol()})`}>
+            <Input id={`${id}-disc`} inputMode="decimal" className="tabular-nums" value={line.discount ?? ""} onChange={(e) => onChange({ discount: e.target.value })} data-testid="bought-discount" />
+          </Field>
+          {!choice.grid && !ordering && (
+            <Field htmlFor={`${id}-dmg`} label={`Arrived damaged (${unit})`}>
+              <Input id={`${id}-dmg`} inputMode="numeric" className="tabular-nums" value={line.damaged ?? ""} onChange={(e) => onChange({ damaged: e.target.value })} data-testid="bought-damaged" />
+            </Field>
+          )}
+        </div>
+      ) : (
+        <Button type="button" variant="ghost" size="sm" className="-ml-2 mt-2" onClick={() => setMore(true)} data-testid="bought-more-toggle">
+          <Plus className="h-4 w-4" aria-hidden="true" /> {choice.grid || ordering ? "Discount" : "Discount or damaged"}
+        </Button>
+      )}
       {jump !== null && jump > PRICE_JUMP && (
         <p className="mt-2 text-sm text-warning-700" role="status" data-testid="bought-price-check">
           {Math.round(jump * 100)}% more than last time. Check the amount is the total paid for all of them.

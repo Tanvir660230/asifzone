@@ -65,12 +65,23 @@ export function classify(i: Classifiable): StockStatus {
   return "OK";
 }
 
-export function suggestReorder(i: { usedPerDay: number | null; available: number; leadTimeDays: number; coverDays: number; today: string }): { suggested: number; orderBy: string } | null {
-  if (!i.usedPerDay || i.usedPerDay <= 0) return null;
+/** An item that would be OK is LOW once at or below its own reorder point (docs/MATERIALS_PURCHASING.md §1). */
+export function belowReorderPoint(status: StockStatus, available: number, reorderPoint: number | null | undefined): StockStatus {
+  return status === "OK" && reorderPoint != null && available <= reorderPoint ? "LOW" : status;
+}
+
+export function suggestReorder(i: { usedPerDay: number | null; available: number; leadTimeDays: number; coverDays: number; today: string; reorderPoint?: number | null; safetyStock?: number | null }): { suggested: number; orderBy: string } | null {
+  const safety = i.safetyStock ?? 0;
+  // docs/MATERIALS_PURCHASING.md §1: at or below the item's own reorder point it is to buy today, used lately or not
+  const atPoint = i.reorderPoint != null && i.available <= i.reorderPoint;
+  if (!i.usedPerDay || i.usedPerDay <= 0) {
+    if (!atPoint) return null;
+    return { suggested: Math.max(1, i.reorderPoint! + safety - i.available), orderBy: i.today };
+  }
   // owed bottles may already claim more than is on the shelf (available < 0): that shortfall is part of what to buy
-  const suggested = Math.max(0, Math.ceil(i.usedPerDay * (i.leadTimeDays + i.coverDays) - 1e-9 - i.available));
-  const lasts = Math.floor(Math.max(0, i.available) / i.usedPerDay);
-  return { suggested, orderBy: addDays(i.today, Math.max(0, lasts - i.leadTimeDays)) };
+  const suggested = Math.max(0, Math.ceil(i.usedPerDay * (i.leadTimeDays + i.coverDays) + safety - 1e-9 - i.available));
+  const lasts = Math.floor(Math.max(0, i.available - safety) / i.usedPerDay);
+  return { suggested, orderBy: atPoint ? i.today : addDays(i.today, Math.max(0, lasts - i.leadTimeDays)) };
 }
 
 const STATUS_ORDER: Record<StockStatus, number> = { NEEDS_FILL: 0, OUT: 1, LOW: 2, OK: 3, EMPTY: 4 };
@@ -181,10 +192,10 @@ async function computeStockItems(viewer: { canSeeCost: boolean }): Promise<AllSt
     return {
       ...i,
       label: itemLabel(i, i.group),
-      status: classify(i),
+      status: belowReorderPoint(classify(i), available, s.reorderPoint),
       canSell: canSellOf(i),
       limitedBy: limit ? { variantId: limit, name: byId.get(limit)?.productName ?? "" } : null,
-      reorder: i.group === "FILL_TO_ORDER" ? null : suggestReorder({ usedPerDay: i.usedPerDay, available, leadTimeDays: s.leadTimeDays, coverDays: s.coverDays, today }),
+      reorder: i.group === "FILL_TO_ORDER" ? null : suggestReorder({ usedPerDay: i.usedPerDay, available, leadTimeDays: s.leadTimeDays, coverDays: s.coverDays, today, reorderPoint: s.reorderPoint, safetyStock: s.safetyStock }),
       settings: s,
       imageUrl: images.get(i.variantId) ?? null,
     };

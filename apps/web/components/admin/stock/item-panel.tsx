@@ -11,7 +11,8 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/lib/api-client";
-import { stockKeys } from "@/lib/api/stock";
+import { recordStockWaste, stockKeys } from "@/lib/api/stock";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { listSuppliers, purchasingKeys } from "@/lib/api/purchasing";
 import { setItemSettings, type StockListItem } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
@@ -66,6 +67,8 @@ function ItemDetail({ item, showCost, canAdjust, actions }: { item: StockListIte
   const unit = item.unit === "pcs" ? "" : ` ${spacedUnit(item.unit)}`;
   const attar = item.group === "FILL_TO_ORDER";
   const { onTrace, onPolicy } = actions;
+  const [wasting, setWasting] = useState(false);
+  const canWaste = canAdjust && item.group === "MATERIAL" && item.stock > 0;
   const next = item.status === "NEEDS_FILL" && actions.onFill
     ? <Button onClick={actions.onFill} data-testid="stock-item-fill">Mark {num(item.policy?.owed ?? 0)} filled</Button>
     : (item.status === "OUT" || item.status === "LOW") && !attar && actions.onReorder
@@ -73,12 +76,14 @@ function ItemDetail({ item, showCost, canAdjust, actions }: { item: StockListIte
       : null;
   return (
       <div className="space-y-6" data-testid="stock-item-panel">
-        {(next || actions.onCount) && (
+        {(next || actions.onCount || canWaste) && (
           <div className="flex flex-wrap gap-2">
             {next}
             {actions.onCount && <Button variant="outline" onClick={actions.onCount} data-testid="stock-item-count">Count it</Button>}
+            {canWaste && <Button variant="ghost" onClick={() => setWasting(true)} data-testid="stock-item-waste">Wasted</Button>}
           </div>
         )}
+        {wasting && <WasteDialog item={item} unit={unit.trim() || "pcs"} onClose={() => setWasting(false)} />}
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line-subtle">
           <Figure label={attar ? "Filled" : "In stock"} value={`${num(Math.max(0, item.stock))}${unit}`} />
           <Figure label="On orders" value={num(item.reserved)} />
@@ -104,6 +109,42 @@ function ItemDetail({ item, showCost, canAdjust, actions }: { item: StockListIte
   );
 }
 
+/** Material broken or spoiled outside a fill (docs/MATERIALS_PURCHASING.md §5): out of stock as damaged, with what happened. */
+function WasteDialog({ item, unit, onClose }: { item: StockListItem; unit: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const formId = useState(() => `stock-waste:${item.variantId}:${Date.now().toString(36)}`)[0];
+  const [qty, setQty] = useState("");
+  const [note, setNote] = useState("");
+  const n = /^\d+$/.test(qty.trim()) ? Number(qty) : 0;
+  const valid = n >= 1 && n <= item.stock && note.trim().length >= 3;
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { variantId: item.variantId, quantity: n, note: note.trim() };
+      return recordStockWaste(body, idempotencyKeyFor(formId, body));
+    },
+    onSuccess: (r) => {
+      settleIdempotencyKey(formId);
+      toast.success(r.replayed ? "Already recorded" : `${num(n)} ${unit} recorded as wasted`);
+      void qc.invalidateQueries({ queryKey: stockKeys.all });
+      onClose();
+    },
+    onError: (e) => toast.error(getErrorMessage(e, "That couldn't be recorded")),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Wasted ${item.productName}`} description="Broken, spoiled or torn — it leaves stock as a loss." widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate()} data-testid="waste-save">Record</Button></>}>
+      <div className="space-y-4">
+        <Field htmlFor="waste-qty" label={`How many (${unit})`} error={n > item.stock ? `Only ${num(item.stock)} in stock` : undefined}>
+          <Input id="waste-qty" inputMode="numeric" className="tabular-nums sm:max-w-40" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="waste-qty" />
+        </Field>
+        <Field htmlFor="waste-note" label="What happened" required>
+          <Input id="waste-note" value={note} maxLength={300} placeholder="e.g. cracked while packing" onChange={(e) => setNote(e.target.value)} data-testid="waste-note" />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 function Figure({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="bg-surface px-3 py-2.5">
@@ -118,14 +159,19 @@ function ReorderSettings({ item, canAdjust, unit }: { item: StockListItem; canAd
   const [supplier, setSupplier] = useState(item.settings.preferredSupplierId ?? "");
   const [lead, setLead] = useState(String(item.settings.leadTimeDays));
   const [cover, setCover] = useState(String(item.settings.coverDays));
+  const [point, setPoint] = useState(item.settings.reorderPoint == null ? "" : String(item.settings.reorderPoint));
+  const [safety, setSafety] = useState(item.settings.safetyStock == null ? "" : String(item.settings.safetyStock));
+  const pointN = point.trim() === "" ? null : Number(point);
+  const safetyN = safety.trim() === "" ? null : Number(safety);
   const suppliers = useQuery({ queryKey: purchasingKeys.suppliers({ status: "ACTIVE", pageSize: 200 }), queryFn: () => listSuppliers({ status: "ACTIVE", pageSize: 200 }), enabled: canAdjust });
   const leadN = Number(lead);
   const coverN = Number(cover);
   const leadBad = !Number.isInteger(leadN) || leadN < 0 || leadN > 120;
   const coverBad = !Number.isInteger(coverN) || coverN < 7 || coverN > 180;
-  const changed = supplier !== (item.settings.preferredSupplierId ?? "") || leadN !== item.settings.leadTimeDays || coverN !== item.settings.coverDays;
+  const changed = supplier !== (item.settings.preferredSupplierId ?? "") || leadN !== item.settings.leadTimeDays || coverN !== item.settings.coverDays
+    || pointN !== (item.settings.reorderPoint ?? null) || safetyN !== (item.settings.safetyStock ?? null);
   const save = useMutation({
-    mutationFn: () => setItemSettings(item.variantId, { preferredSupplierId: supplier || null, leadTimeDays: leadN, coverDays: coverN }),
+    mutationFn: () => setItemSettings(item.variantId, { preferredSupplierId: supplier || null, leadTimeDays: leadN, coverDays: coverN, reorderPoint: pointN, safetyStock: safetyN }),
     onSuccess: () => {
       toast.success("Reorder settings saved");
       void qc.invalidateQueries({ queryKey: stockKeys.all });
@@ -162,6 +208,12 @@ function ReorderSettings({ item, canAdjust, unit }: { item: StockListItem; canAd
             </Field>
             <Field htmlFor="item-cover" label="Days of stock to keep" error={coverBad ? "7 to 180 days" : undefined}>
               <Input id="item-cover" inputMode="numeric" value={cover} onChange={(e) => setCover(e.target.value.replace(/\D/g, ""))} data-testid="item-cover" />
+            </Field>
+            <Field htmlFor="item-point" label={`Reorder at (${unit.trim() || "pcs"})`} hint="Optional. At or below this it shows as low.">
+              <Input id="item-point" inputMode="numeric" value={point} placeholder="Not set" onChange={(e) => setPoint(e.target.value.replace(/\D/g, ""))} data-testid="item-reorder-point" />
+            </Field>
+            <Field htmlFor="item-safety" label={`Always keep (${unit.trim() || "pcs"})`} hint="Optional. Added on top of every reorder.">
+              <Input id="item-safety" inputMode="numeric" value={safety} placeholder="0" onChange={(e) => setSafety(e.target.value.replace(/\D/g, ""))} data-testid="item-safety-stock" />
             </Field>
           </div>
           <Button type="submit" variant="outline" disabled={!changed || leadBad || coverBad} loading={save.isPending} data-testid="item-settings-save">Save settings</Button>

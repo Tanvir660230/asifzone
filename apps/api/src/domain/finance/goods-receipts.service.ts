@@ -65,6 +65,9 @@ export function goodsReceiptDto(r: GrnRow, cur: string) {
       name: `${l.variant.product.name} — ${l.variant.size} / ${l.variant.color}`,
       qtyAccepted: l.qtyAccepted,
       qtyRejected: l.qtyRejected,
+      boughtAs: l.purchaseUnitLabel && l.purchaseQty !== null ? { label: l.purchaseUnitLabel, factor: Number(l.purchaseUnitFactor), qty: Number(l.purchaseQty) } : null,
+      grossUnitPrice: l.grossUnitPrice === null ? null : Number(l.grossUnitPrice),
+      discount: l.discountAmount === null ? null : toMajorNumber(toMinor(l.discountAmount, cur), cur),
       unitCost: toMajorNumber(toMinor(l.unitCost, cur), cur),
       value: toMajorNumber(toMinor(l.value, cur), cur),
       stockMovementId: l.stockMovementId,
@@ -109,22 +112,35 @@ export async function createGoodsReceipt(input: GoodsReceiptCreateInput, actor: 
         seen.add(pol.id);
         if (l.unitCost != null) throw financeError(400, "RECEIPT_COST_FROM_ORDER", `Line ${i + 1}: the cost of an ordered line comes from the order`);
         const unit = unitCostWithTax(toMinor(pol.unitPrice, cur), pol.taxCode ? { rate: pol.taxCode.rate, recoverablePct: pol.taxCode.recoverablePct } : null);
-        return { lineNo: i + 1, purchaseOrderLineId: pol.id, variantId: pol.variantId!, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyRejected, unitCost: toDecimal(unit, cur), value: toDecimal(unit * l.qtyAccepted, cur) };
+        // what was bought comes from the order line: its unit and size, and this delivery's share in that unit
+        const factor = pol.purchaseUnitFactor === null ? null : Number(pol.purchaseUnitFactor);
+        return {
+          lineNo: i + 1, purchaseOrderLineId: pol.id, variantId: pol.variantId!, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyRejected, unitCost: toDecimal(unit, cur), value: toDecimal(unit * l.qtyAccepted, cur),
+          ...(factor ? { purchaseUnitId: pol.purchaseUnitId, purchaseUnitLabel: pol.purchaseUnitLabel, purchaseUnitFactor: pol.purchaseUnitFactor, purchaseQty: Math.round(((l.qtyAccepted + l.qtyRejected) / factor) * 10_000) / 10_000 } : {}),
+          ...(pol.grossUnitPrice !== null ? { grossUnitPrice: pol.grossUnitPrice } : {}),
+        };
       });
     } else {
       const s = await tx.supplier.findFirst({ where: { id: input.supplierId!, businessId: business.id } });
       if (!s) throw financeError(404, "SUPPLIER_NOT_FOUND", "Supplier not found");
       if (s.status === "INACTIVE") throw financeError(409, "SUPPLIER_NOT_ACTIVE", `${s.displayName} is inactive`);
       supplierId = s.id;
-      const variants = await tx.productVariant.findMany({ where: { id: { in: input.lines.map((l) => l.variantId!) } }, select: { id: true, sku: true, product: { select: { trackInventory: true } } } });
+      const variants = await tx.productVariant.findMany({ where: { id: { in: input.lines.map((l) => l.variantId!) } }, select: { id: true, sku: true, productId: true, product: { select: { trackInventory: true } } } });
       const byId = new Map(variants.map((v) => [v.id, v]));
+      const unitIds = input.lines.map((l) => l.purchaseUnitId).filter((x): x is string => Boolean(x));
+      const units = new Set((unitIds.length ? await tx.materialPurchaseUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true, productId: true } }) : []).map((u) => `${u.productId}:${u.id}`));
       rows = input.lines.map((l, i) => {
         const v = byId.get(l.variantId!);
         if (!v) throw financeError(400, "VARIANT_NOT_FOUND", `Line ${i + 1}: variant not found`);
         if (!v.product.trackInventory) throw financeError(400, "PURCHASE_UNTRACKED", `Line ${i + 1}: ${v.sku} isn't stock-tracked — purchased goods must be`);
         if (l.unitCost == null) throw financeError(400, "RECEIPT_COST_REQUIRED", `Line ${i + 1}: a receipt without an order states the actual unit cost`);
         const unit = toMinor(l.unitCost, cur);
-        return { lineNo: i + 1, variantId: v.id, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyRejected, unitCost: toDecimal(unit, cur), value: toDecimal(unit * l.qtyAccepted, cur) };
+        if (l.purchaseUnitId && !units.has(`${v.productId}:${l.purchaseUnitId}`)) throw financeError(400, "PURCHASE_UNIT_NOT_FOUND", `Line ${i + 1}: that unit isn't one ${v.sku} is bought in`);
+        return {
+          lineNo: i + 1, variantId: v.id, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyRejected, unitCost: toDecimal(unit, cur), value: toDecimal(unit * l.qtyAccepted, cur),
+          purchaseUnitId: l.purchaseUnitId ?? null, purchaseUnitLabel: l.purchaseUnitLabel ?? null, purchaseUnitFactor: l.purchaseUnitFactor ?? null, purchaseQty: l.purchaseQty ?? null,
+          grossUnitPrice: l.grossUnitPrice ?? null, discountAmount: l.discountAmount == null ? null : toDecimal(toMinor(l.discountAmount, cur), cur),
+        };
       });
     }
     // Blueprint P0.3: does this look like a purchase already entered? Stored as a warning; never refuses.

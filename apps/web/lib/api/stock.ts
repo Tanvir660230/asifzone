@@ -32,7 +32,7 @@ export interface StockItem {
   /** Materials only: RAW (oil — by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
   materialKind: "RAW" | "PACKAGING" | null;
   /** Materials only: how it is bought — one `label` (litre, dozen) is `factor` stock units. */
-  purchaseUnits: Array<{ label: string; factor: number }>;
+  purchaseUnits: Array<{ id: string; label: string; factor: number }>;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -59,7 +59,8 @@ export interface StockPurchase {
   supplier: { id: string | null; name: string };
   reference: string | null;
   note: string | null;
-  lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number | null; unitCost: number | null }>;
+  /** quantity = good units into stock; damaged = arrived broken (not stocked); buy = how it was bought when not in the stock unit. */
+  lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number | null; unitCost: number | null; damaged?: number; discount?: number | null; buy?: { label: string; factor: number; qty: number } | null }>;
   extrasLines: Array<{ description: string; amount: number | null }>;
   goods: number | null;
   extras: number | null;
@@ -89,10 +90,14 @@ export interface PurchaseBody {
   supplierName?: string | null;
   reference?: string | null;
   note?: string | null;
-  lines: Array<{ variantId: string; quantity: number; amount: number }>;
-  /** Total units on the supplier's bill — the lines must add up to it. */
+  /** In the stock unit (`quantity`), or in one of the item's purchase units (`purchaseUnitId` + `purchaseQty`); `amount` is
+   * what was paid for the line after `discount`; `damaged` stock units arrived broken (docs/MATERIALS_PURCHASING.md §2–3). */
+  lines: Array<{ variantId: string; quantity?: number; purchaseUnitId?: string; purchaseQty?: number; amount: number; discount?: number | null; damaged?: number }>;
+  /** Total quantity on the supplier's bill, in the bill's own units (10 litre counts 10) — the lines must add up to it. */
   documentTotal: number;
   extras: Array<{ description: string; amount: number }>;
+  /** How the extras are spread over the items: by value (default) or by quantity. */
+  extrasMethod?: "VALUE" | "QUANTITY";
   paidFrom: PaidFrom;
   /** Why it is recorded anyway when it looks like a purchase already entered (blueprint P0.3). */
   duplicateReason?: string | null;
@@ -124,6 +129,7 @@ export const stockKeys = {
   all: ["stock-hub"] as const,
   overview: () => ["stock-hub", "overview"] as const,
   purchases: () => ["stock-hub", "purchases"] as const,
+  expected: () => ["stock-hub", "expected"] as const,
   trace: (variantId: string) => ["stock-hub", "trace", variantId] as const,
   stocking: (productId: string) => ["stock-hub", "stocking", productId] as const,
 };
@@ -133,6 +139,33 @@ export const listStockPurchases = (limit = 20) => apiFetch<{ purchases: StockPur
 export const recordStockPurchase = (body: PurchaseBody, idempotencyKey: string) => apiFetch<PurchaseResult>(`${BASE}/purchases`, { method: "POST", body, idempotencyKey });
 export const checkPurchaseDuplicates = (body: { supplierName: string | null; date?: string; lines: Array<{ variantId: string; amount: number }> }) =>
   apiFetch<{ matches: DuplicatePurchaseMatch[] }>(`${BASE}/purchases/duplicate-check`, { method: "POST", body: { ...body, supplierName: body.supplierName ?? "Local market" } });
+/** docs/MATERIALS_PURCHASING.md §4: an order still to arrive, per item in stock units. */
+export interface ExpectedOrder {
+  id: string;
+  number: string;
+  status: "SUBMITTED" | "APPROVED" | "PARTIALLY_RECEIVED" | string;
+  supplier: { id: string; name: string };
+  orderDate: string;
+  expectedDate: string | null;
+  note: string | null;
+  total: number;
+  lines: Array<{ variantId: string; name: string; unit: string; ordered: number; received: number; rejected: number; remaining: number; boughtAs: { label: string; factor: number } | null }>;
+  remaining: number;
+}
+export type OrderBody = Omit<PurchaseBody, "paidFrom" | "extras" | "extrasMethod" | "updateCatalogCost" | "duplicateReason"> & { expectedDate?: string | null };
+export interface DeliveryBody {
+  date?: string;
+  supplierRef?: string | null;
+  lines: Array<{ variantId: string; good: number; damaged: number }>;
+  bill: "NOW" | "LATER";
+  paidFromAccountId?: string | null;
+  extras: Array<{ description: string; amount: number }>;
+  extrasMethod?: "VALUE" | "QUANTITY";
+}
+export const listExpectedOrders = () => apiFetch<{ orders: ExpectedOrder[] }>(`${BASE}/orders/expected`);
+export const recordStockOrder = (body: OrderBody, idempotencyKey: string) => apiFetch<{ replayed: boolean; order: ExpectedOrder }>(`${BASE}/orders`, { method: "POST", body, idempotencyKey });
+export const receiveStockDelivery = (orderId: string, body: DeliveryBody, idempotencyKey: string) =>
+  apiFetch<{ replayed: boolean; receiptNumber: string | null; invoiceId: string | null; order: ExpectedOrder }>(`${BASE}/orders/${orderId}/deliveries`, { method: "POST", body, idempotencyKey });
 export const finishStockPurchase = (id: string, body: { paidFrom?: PaidFrom }) => apiFetch<PurchaseResult>(`${BASE}/purchases/${id}/finish`, { method: "POST", body });
 export const recordStockCount = (body: CountBody, idempotencyKey: string) => apiFetch<CountResult>(`${BASE}/counts`, { method: "POST", body, idempotencyKey });
 
@@ -291,7 +324,7 @@ export function describeStockError(err: unknown, fallbackTitle: string): StockPr
 export const CHECKED_BEFORE_WRITING = new Set([
   "COSTING_NOT_ACTIVE", "COSTING_NOW_ACTIVE", "INSUFFICIENT_FUNDS", "SUPPLIER_ON_HOLD", "BEFORE_OPENING_DATE", "PERIOD_CLOSED", "PERIOD_SOFT_CLOSED", "OPENING_DATE_NOT_SET",
   "STOCK_PURCHASE_PERMISSION", "PAYMENT_SOURCE_KIND", "FINANCIAL_ACCOUNT_NOT_FOUND", "PURCHASE_IN_FUTURE", "PURCHASE_LINE_AMOUNT", "PURCHASE_UNTRACKED",
-  "VARIANT_NOT_FOUND", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS", "FILL_SHORT", "NO_RECIPE", "FILL_MATERIAL_NOT_IN_RECIPE",
+  "VARIANT_NOT_FOUND", "PURCHASE_UNIT_NOT_FOUND", "PURCHASE_UNIT_NOT_WHOLE", "PURCHASE_ALL_DAMAGED", "PURCHASE_LINE_QUANTITY", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS", "FILL_SHORT", "NO_RECIPE", "FILL_MATERIAL_NOT_IN_RECIPE",
 ]);
 
 export const PENDING_STEP_LABEL: Record<PurchaseStep, string> = {
@@ -328,3 +361,22 @@ export interface ProductKit {
   sizes: Array<{ variantId: string; sku: string; label: string; stock: number; soldPerDay: number | null; recipe: { bomId: string; version: number } | null; components: KitComponent[]; canSell: number | null; runsOutFirst: { variantId: string; name: string } | null; kitCost: number | null }>;
 }
 export const getProductKit = (productId: string) => apiFetch<ProductKit>(`${BASE}/products/${productId}/kit`);
+/** docs/MATERIALS_PURCHASING.md §5: the packing rules a product's parcels take. */
+export interface ProductPackagingRule {
+  id: string;
+  scope: "EVERY_PARCEL" | "CATEGORY" | "PRODUCT" | "VARIANT";
+  isActive: boolean;
+  quantity: number;
+  per: "UNIT" | "PARCEL";
+  notes: string | null;
+  appliesTo: string;
+  material: { variantId: string; sku: string; name: string; unit: string };
+}
+export const getProductPackaging = (productId: string) => apiFetch<{ rules: ProductPackagingRule[] }>(`${BASE}/products/${productId}/packaging`);
+/** docs/MATERIALS_PURCHASING.md §6: where each material went in a month. */
+export type UsageFlag = "OVER_RECIPE" | "COUNT_LOSS" | "COUNT_GAIN" | "WASTE";
+export interface MaterialUsageRow { variantId: string; name: string; unit: string; materialType: string | null; opening: number; received: number; returned: number; usedInFills: number; recipeSays: number; packaging: number; wasted: number; counted: number; other: number; closing: number; flags: UsageFlag[] }
+export const getMaterialUsage = (month: string) => apiFetch<{ month: string; from: string; to: string; rows: MaterialUsageRow[] }>(`${BASE}/reports/material-usage?month=${encodeURIComponent(month)}`);
+/** docs/MATERIALS_PURCHASING.md §5: material broken outside a fill. */
+export const recordStockWaste = (body: { variantId: string; quantity: number; note: string }, idempotencyKey: string) =>
+  apiFetch<{ replayed: boolean; movementId: string; value: number | null }>(`${BASE}/waste`, { method: "POST", body, idempotencyKey });

@@ -160,6 +160,17 @@ export async function createPurchaseOrder(input: PurchaseOrderCreateInput, actor
   });
 }
 
+/**
+ * What was bought on an order line (docs/MATERIALS_PURCHASING.md §2–3): the purchase-unit snapshot and the discount — set by
+ * Stock › Ordered right after it creates the order. Informational only (the order's price is unitPrice); a draft only.
+ */
+export async function setPurchaseOrderLineBought(lineId: string, data: { purchaseUnitId?: string; purchaseUnitLabel?: string; purchaseUnitFactor?: number; purchaseQty?: number; grossUnitPrice?: number; discountAmount?: number }) {
+  const line = await prisma.purchaseOrderLine.findUnique({ where: { id: lineId }, select: { purchaseOrder: { select: { status: true } } } });
+  if (!line) throw financeError(404, "PO_LINE_NOT_FOUND", "Order line not found");
+  if (line.purchaseOrder.status !== "DRAFT") throw financeError(409, "PO_NOT_DRAFT", "Only a draft order's lines are changed");
+  await prisma.purchaseOrderLine.update({ where: { id: lineId }, data });
+}
+
 /** A draft only: header fields, and the lines replaced as a whole when sent. */
 export async function updatePurchaseOrder(id: string, input: PurchaseOrderUpdateInput, actor: FinanceActor) {
   const { business } = await getFinanceContext();

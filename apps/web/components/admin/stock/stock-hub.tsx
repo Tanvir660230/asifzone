@@ -28,6 +28,7 @@ import { formatBookDate, formatPrice, formatPriceWhole } from "@/lib/format";
 import { ApprovalSheet } from "./approval-sheet";
 import { BatchFillSheet } from "./batch-fill-sheet";
 import { BoughtSheet, type BoughtStart } from "./bought-sheet";
+import { ExpectedOrders } from "./expected-orders";
 import { ReorderSheet } from "./reorder-sheet";
 import { CountedSheet } from "./counted-sheet";
 import { FilledSheet } from "./filled-sheet";
@@ -236,6 +237,7 @@ export function StockHub() {
                   } : {}}
                 />
               )}
+              {!search.trim() && live && can("purchasing.view") && <ExpectedOrders canReceive={can("purchasing.receive")} canPay={can("finance.transact")} />}
               <StockList hasFillToOrder={groupOf("FILL_TO_ORDER").length > 0} q={debouncedSearch} selectedId={wide ? itemOf?.variantId ?? null : null} onOpen={setItemOf} />
             </div>
             {/* the side column: the item being looked at, else what happened */}
@@ -250,7 +252,7 @@ export function StockHub() {
         </>
       ) : null}
 
-      {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} canEditCatalog={can("catalog.manage")} start={boughtStart ?? undefined} onClose={() => { setSheet(null); setBoughtStart(null); }} />}
+      {data && sheet === "bought" && <BoughtSheet overview={data} purchases={purchases} canOwnerMoney={can("finance.sensitive")} canEditCatalog={can("catalog.manage")} canOrder={can("purchasing.manage")} start={boughtStart ?? undefined} onClose={() => { setSheet(null); setBoughtStart(null); }} />}
       {sheet === "reorder" && today.data?.reorder && (
         <ReorderSheet reorder={today.data.reorder} today={today.data.today} onRecord={(s) => { setBoughtStart(s); setSheet("bought"); }} onClose={() => setSheet(null)} />
       )}
