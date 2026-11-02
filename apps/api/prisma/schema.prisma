@@ -35,6 +35,13 @@ enum ProductKind {
   MATERIAL
 }
 
+/// What a material is used as (Product.materialType).
+enum MaterialType {
+  RAW
+  PACKAGING
+  CONSUMABLE
+}
+
 enum ProductStatus {
   DRAFT
   READY
@@ -286,18 +293,18 @@ enum HomepageSectionType {
 }
 
 model AdminUser {
-  id                     String                @id @default(cuid())
+  id                     String                     @id @default(cuid())
   name                   String
-  email                  String                @unique
+  email                  String                     @unique
   passwordHash           String
   /// Google "sub" claim, set only when this admin has signed in with Google at least once. Google
   /// sign-in never creates an AdminUser on its own — it only links onto one that an OWNER already
   /// invited by matching email, so this stays null for accounts that have never used it.
-  googleId               String?               @unique
+  googleId               String?                    @unique
   /// Least privilege by default (P0-02): an OWNER is only ever created by naming the role explicitly — the seed's first
   /// owner, an invite an OWNER issued with role OWNER, or an OWNER promoting someone.
-  role                   AdminRole             @default(STAFF)
-  isActive               Boolean               @default(true)
+  role                   AdminRole                  @default(STAFF)
+  isActive               Boolean                    @default(true)
   /// 2-step sign-in (modules/auth/two-step.service.ts): the authenticator secret, sealed (lib/secret-box.ts) and bound to
   /// this admin. Set during setup; it only takes effect once `totpEnabledAt` is set by a confirmed code.
   totpSecret             String?
@@ -305,44 +312,44 @@ model AdminUser {
   /// The last code step used — a code (and any older one) is refused the second time.
   totpLastStep           Int?
   /// sha256 of each unused recovery code; one is removed when it is used.
-  totpRecoveryHashes     String[]              @default([])
+  totpRecoveryHashes     String[]                   @default([])
   /// Wrong codes in a row; 5 locks the 2nd step for 15 minutes (on top of the per-IP login limit).
-  totpFailures           Int                   @default(0)
+  totpFailures           Int                        @default(0)
   totpLockedUntil        DateTime?
   /// Display preferences per list (density, page size, hidden columns), keyed by list key — e.g. { "orders": {...} }.
   /// Shape: listPreferencesSchema in @clothing-brand/shared. Null = every list at its defaults.
   listPreferences        Json?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
   refreshTokens          RefreshToken[]
   auditLogs              AuditLog[]
   statusChanges          OrderStatusHistory[]
   reviewedReturnRequests ReturnRequest[]
   sentInvites            AdminInvite[]
-  deletedOrders          Order[]               @relation("OrderDeletedBy")
-  confirmationAssigned   Order[]               @relation("OrderConfirmationAssignee")
-  confirmationClaims     Order[]               @relation("OrderConfirmationClaimedBy")
+  deletedOrders          Order[]                    @relation("OrderDeletedBy")
+  confirmationAssigned   Order[]                    @relation("OrderConfirmationAssignee")
+  confirmationClaims     Order[]                    @relation("OrderConfirmationClaimedBy")
   confirmationAttempts   OrderConfirmationAttempt[] @relation("OrderConfirmationAttemptBy")
-  handedOverOrders       Order[]               @relation("OrderHandedOverBy")
-  receivedBackOrders     Order[]               @relation("OrderReceivedBackBy")
-  parcelScanBatches      ParcelScanBatch[]     @relation("ParcelScanBatchCreatedBy")
-  parcelScanEvents       ParcelScanEvent[]     @relation("ParcelScanEventBy")
-  parcelReceipts         ParcelReceipt[]       @relation("ParcelReceiptBy")
-  parcelCodeAliases      ParcelCodeAlias[]     @relation("ParcelCodeAliasBy")
+  handedOverOrders       Order[]                    @relation("OrderHandedOverBy")
+  receivedBackOrders     Order[]                    @relation("OrderReceivedBackBy")
+  parcelScanBatches      ParcelScanBatch[]          @relation("ParcelScanBatchCreatedBy")
+  parcelScanEvents       ParcelScanEvent[]          @relation("ParcelScanEventBy")
+  parcelReceipts         ParcelReceipt[]            @relation("ParcelReceiptBy")
+  parcelCodeAliases      ParcelCodeAlias[]          @relation("ParcelCodeAliasBy")
   stockMovements         StockMovement[]
-  refundsRequested       Refund[]              @relation("RefundRequestedBy")
-  refundsCompleted       Refund[]              @relation("RefundCompletedBy")
-  paymentsRecorded       Payment[]             @relation("PaymentRecordedBy")
+  refundsRequested       Refund[]                   @relation("RefundRequestedBy")
+  refundsCompleted       Refund[]                   @relation("RefundCompletedBy")
+  paymentsRecorded       Payment[]                  @relation("PaymentRecordedBy")
   creditEntries          CustomerCreditEntry[]
   orderModifications     OrderModification[]
-  paymentLinksCreated    PaymentLink[]         @relation("PaymentLinkCreatedBy")
-  paymentLinksCancelled  PaymentLink[]         @relation("PaymentLinkCancelledBy")
+  paymentLinksCreated    PaymentLink[]              @relation("PaymentLinkCreatedBy")
+  paymentLinksCancelled  PaymentLink[]              @relation("PaymentLinkCancelledBy")
   notificationReads      NotificationRead[]
   savedViews             SavedView[]
   aiProposals            AiProposal[]
   conversationReplies    ConversationMessage[]
-  assignedConversations  Conversation[]        @relation("ConversationAssignee")
-  custodyAccounts        FinancialAccount[]    @relation("FinancialAccountCustodian")
+  assignedConversations  Conversation[]             @relation("ConversationAssignee")
+  custodyAccounts        FinancialAccount[]         @relation("FinancialAccountCustodian")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -511,6 +518,9 @@ model Product {
   /// Manufacturing (docs/MANUFACTURING.md): FINISHED goods are sold; MATERIAL items (fabric, thread, labels, packaging) are
   /// stock-tracked inputs that are never sold — the database keeps them unpublished and inactive.
   kind               ProductKind              @default(FINISHED)
+  /// Materials only (docs/MATERIALS_PURCHASING.md §1): raw, packaging or consumable — for lists and reports. Null for finished
+  /// goods (CHECK) and for a material nobody has typed yet.
+  materialType       MaterialType?
   /// The unit every stock quantity of a material is counted in (cm, g, pcs, …) — stock stays a whole number of it.
   stockUnit          String?
   /// Ships free: the canonical quote waives shipping when EVERY line of the cart is a free-delivery product (one normal
@@ -1375,8 +1385,8 @@ model Order {
   deletedByAdminId String?
   deletedByAdmin   AdminUser? @relation("OrderDeletedBy", fields: [deletedByAdminId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
   /// When the order last moved to a new status (placed, confirmed, booked → Packed, shipped, …). Set by the database
   /// trigger "Order_status_changed_at" on every status change, whatever code path made it — never written by the app.
   /// The Orders list's default order, so an order confirmed or booked today comes back to the top even if it was
@@ -1387,15 +1397,15 @@ model Order {
   /// PENDING until a call confirms or a person cancels; each call is an OrderConfirmationAttempt.
   confirmationAttempts         OrderConfirmationAttempt[]
   /// Unanswered calls (no answer / off / busy) since the phone was last changed — toward the retry limit.
-  confirmationUnreached        Int        @default(0)
+  confirmationUnreached        Int                        @default(0)
   /// Tries granted past the limit by an owner/manager's "one more try".
-  confirmationExtraAttempts    Int        @default(0)
+  confirmationExtraAttempts    Int                        @default(0)
   /// The operator these calls are assigned to (shown to them first).
   confirmationAssigneeId       String?
-  confirmationAssignee         AdminUser? @relation("OrderConfirmationAssignee", fields: [confirmationAssigneeId], references: [id], onDelete: SetNull)
+  confirmationAssignee         AdminUser?                 @relation("OrderConfirmationAssignee", fields: [confirmationAssigneeId], references: [id], onDelete: SetNull)
   /// "Take next call": who is on this call, since when — a claim lapses after 15 minutes.
   confirmationClaimedById      String?
-  confirmationClaimedBy        AdminUser? @relation("OrderConfirmationClaimedBy", fields: [confirmationClaimedById], references: [id], onDelete: SetNull)
+  confirmationClaimedBy        AdminUser?                 @relation("OrderConfirmationClaimedBy", fields: [confirmationClaimedById], references: [id], onDelete: SetNull)
   confirmationClaimedAt        DateTime?
   /// In the Escalated queue since, and why (UNREACHED_LIMIT / WRONG_NUMBER). Age-based escalation is a query rule.
   confirmationEscalatedAt      DateTime?
@@ -1406,21 +1416,21 @@ model Order {
   /// Parcel scanning (Order Operations phase 4, modules/parcel-scans). Physical facts only — no stock, money or status:
   /// handed to the courier (dispatch scan), physically back with us (return scan or a manual "received"), and inspected
   /// (the existing receive step, the only one that restocks). Booking (courierBookedAt) is a separate, earlier fact.
-  handedOverAt                 DateTime?
-  handedOverByAdminId          String?
-  handedOverBy                 AdminUser? @relation("OrderHandedOverBy", fields: [handedOverByAdminId], references: [id], onDelete: SetNull)
-  handedOverBatchId            String?
-  receivedBackAt               DateTime?
-  receivedBackByAdminId        String?
-  receivedBackBy               AdminUser? @relation("OrderReceivedBackBy", fields: [receivedBackByAdminId], references: [id], onDelete: SetNull)
-  receivedBackBatchId          String?
+  handedOverAt          DateTime?
+  handedOverByAdminId   String?
+  handedOverBy          AdminUser?        @relation("OrderHandedOverBy", fields: [handedOverByAdminId], references: [id], onDelete: SetNull)
+  handedOverBatchId     String?
+  receivedBackAt        DateTime?
+  receivedBackByAdminId String?
+  receivedBackBy        AdminUser?        @relation("OrderReceivedBackBy", fields: [receivedBackByAdminId], references: [id], onDelete: SetNull)
+  receivedBackBatchId   String?
   /// Set when inspection has dealt with every unit that came back (nothing left waiting).
-  returnInspectedAt            DateTime?
+  returnInspectedAt     DateTime?
   /// The "shipped" SMS was held at booking (shippedSmsTrigger = HANDOVER) and goes out at the handover scan.
-  shippedSmsDeferred           Boolean    @default(false)
-  parcelScanEvents             ParcelScanEvent[]
-  parcelReceipts               ParcelReceipt[]
-  parcelCodeAliases            ParcelCodeAlias[]
+  shippedSmsDeferred    Boolean           @default(false)
+  parcelScanEvents      ParcelScanEvent[]
+  parcelReceipts        ParcelReceipt[]
+  parcelCodeAliases     ParcelCodeAlias[]
 
   @@index([status])
   @@index([customerId])
@@ -3870,26 +3880,26 @@ model AdCampaign {
 
 /// One day's ACTUAL spend of a campaign, in the books' currency (the platform's own figure and rate kept beside it).
 model AdSpendDay {
-  id               String     @id @default(cuid())
-  campaignId       String
-  campaign         AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  date             DateTime   @db.Date
+  id                     String     @id @default(cuid())
+  campaignId             String
+  campaign               AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  date                   DateTime   @db.Date
   /// META_API, MANUAL, CSV, or PERIOD (a period total shared over its days without their own figure).
-  source           String
-  amount           Decimal    @db.Decimal(18, 2)
-  originalAmount   Decimal?   @db.Decimal(18, 2)
-  originalCurrency String?    @db.VarChar(3)
-  fxRate           Decimal?   @db.Decimal(18, 6)
-  impressions      Int?
-  clicks           Int?
-  purchases        Int?
+  source                 String
+  amount                 Decimal    @db.Decimal(18, 2)
+  originalAmount         Decimal?   @db.Decimal(18, 2)
+  originalCurrency       String?    @db.VarChar(3)
+  fxRate                 Decimal?   @db.Decimal(18, 6)
+  impressions            Int?
+  clicks                 Int?
+  purchases              Int?
   /// Owner decision Q-E: a day with no spend counts as recorded only once a person confirms the zero (finance.post +
   /// reason). Zero rows from imports (CSV, PERIOD, the API) stay unconfirmed until then.
   confirmedZeroAt        DateTime?
   confirmedZeroByAdminId String?
   confirmedZeroReason    String?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
 
   @@unique([campaignId, date])
   @@index([date])
@@ -4440,48 +4450,48 @@ enum BankReconciliationStatus {
 /// a transfer between two financial accounts, an explicit adjustment, or an account's opening funding. Its ledger effect
 /// is its journal (kind TREASURY), posted by journal.service; a reversal is a second journal. Immutable except its status.
 model TreasuryMovement {
-  id                     String                 @id @default(cuid())
+  id                     String                   @id @default(cuid())
   businessId             String
-  business               FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business               FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
   /// The brand of the account(s) moved (transfers never cross brands).
   brandId                String?
   kind                   TreasuryMovementKind
   status                 TreasuryMovementStatus
   /// ADJUSTMENT only: money IN to or OUT of the account.
   direction              TreasuryDirection?
-  movementDate           DateTime               @db.Date
-  amount                 Decimal                @db.Decimal(18, 2)
-  currency               String                 @db.VarChar(3)
+  movementDate           DateTime                 @db.Date
+  amount                 Decimal                  @db.Decimal(18, 2)
+  currency               String                   @db.VarChar(3)
   fromFinancialAccountId String?
-  fromAccount            FinancialAccount?      @relation("TreasuryFrom", fields: [fromFinancialAccountId], references: [id], onDelete: Restrict)
+  fromAccount            FinancialAccount?        @relation("TreasuryFrom", fields: [fromFinancialAccountId], references: [id], onDelete: Restrict)
   toFinancialAccountId   String?
-  toAccount              FinancialAccount?      @relation("TreasuryTo", fields: [toFinancialAccountId], references: [id], onDelete: Restrict)
+  toAccount              FinancialAccount?        @relation("TreasuryTo", fields: [toFinancialAccountId], references: [id], onDelete: Restrict)
   /// Deposits, withdrawals, adjustments, opening funding: the other side of the journal (capital, drawings, a loan, …).
   counterAccountId       String?
-  counterAccount         LedgerAccount?         @relation("TreasuryCounterAccount", fields: [counterAccountId], references: [id], onDelete: Restrict)
+  counterAccount         LedgerAccount?           @relation("TreasuryCounterAccount", fields: [counterAccountId], references: [id], onDelete: Restrict)
   /// SUPPLIER_PAYMENT / SUPPLIER_REFUND only: the supplier paid or refunding (the party of its payables line).
   supplierId             String?
-  supplier               Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplier               Supplier?                @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   /// SUPPLIER_REFUND only — exactly one: the advance payment, or the credit note, the money refunds.
   refundOfPaymentId      String?
-  refundOfPayment        TreasuryMovement?      @relation("SupplierRefundOfPayment", fields: [refundOfPaymentId], references: [id], onDelete: Restrict)
-  refunds                TreasuryMovement[]     @relation("SupplierRefundOfPayment")
+  refundOfPayment        TreasuryMovement?        @relation("SupplierRefundOfPayment", fields: [refundOfPaymentId], references: [id], onDelete: Restrict)
+  refunds                TreasuryMovement[]       @relation("SupplierRefundOfPayment")
   refundOfCreditNoteId   String?
-  refundOfCreditNote     SupplierInvoice?       @relation("SupplierRefundOfCredit", fields: [refundOfCreditNoteId], references: [id], onDelete: Restrict)
+  refundOfCreditNote     SupplierInvoice?         @relation("SupplierRefundOfCredit", fields: [refundOfCreditNoteId], references: [id], onDelete: Restrict)
   reference              String?
   description            String
   reason                 String?
   idempotencyKey         String
   fingerprint            String
-  journalEntryId         String?                @unique
-  journalEntry           JournalEntry?          @relation("TreasuryJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
-  reversalJournalEntryId String?                @unique
-  reversalJournalEntry   JournalEntry?          @relation("TreasuryReversalJournal", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
+  journalEntryId         String?                  @unique
+  journalEntry           JournalEntry?            @relation("TreasuryJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntryId String?                  @unique
+  reversalJournalEntry   JournalEntry?            @relation("TreasuryReversalJournal", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
   /// An adjustment that resolves a statement line (reconciliation), and the run it was made in.
   bankTransactionId      String?
-  bankTransaction        BankTransaction?       @relation(fields: [bankTransactionId], references: [id], onDelete: Restrict)
+  bankTransaction        BankTransaction?         @relation(fields: [bankTransactionId], references: [id], onDelete: Restrict)
   reconciliationId       String?
-  reconciliation         BankReconciliation?    @relation(fields: [reconciliationId], references: [id], onDelete: Restrict)
+  reconciliation         BankReconciliation?      @relation(fields: [reconciliationId], references: [id], onDelete: Restrict)
   requestedByAdminId     String?
   approvedByAdminId      String?
   approvedAt             DateTime?
@@ -4493,22 +4503,22 @@ model TreasuryMovement {
   reversalReason         String?
   /// Owner's books §2: a handover into cash someone else holds waits for THAT person to confirm they received it.
   receiverAdminId        String?
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
   cashCount              CashCount?
   prepaidCost            PrepaidCost?
   landedCost             LandedCost?
   matches                BankTransactionMatch[]
   supplierAllocations    SupplierAllocation[]
-  ownerAdvance           OwnerAdvance?          @relation("OwnerAdvanceFunding")
+  ownerAdvance           OwnerAdvance?            @relation("OwnerAdvanceFunding")
   ownerAdvanceRepayments OwnerAdvanceAllocation[] @relation("OwnerAdvanceRepayment")
   expense                Expense?
-  loanDrawdown           Loan?                  @relation("LoanDrawdown")
-  loanRepaymentPrincipal LoanRepayment?         @relation("RepaymentPrincipal")
-  loanRepaymentInterest  LoanRepayment?         @relation("RepaymentInterest")
-  payslipPayments        PayslipPayment[]       @relation("PayslipPaymentMovement")
-  payrollRemittance      PayrollRemittance?     @relation("PayrollRemittanceMovement")
-  fixedAssetDisposal     FixedAsset?            @relation("FixedAssetDisposalProceeds")
+  loanDrawdown           Loan?                    @relation("LoanDrawdown")
+  loanRepaymentPrincipal LoanRepayment?           @relation("RepaymentPrincipal")
+  loanRepaymentInterest  LoanRepayment?           @relation("RepaymentInterest")
+  payslipPayments        PayslipPayment[]         @relation("PayslipPaymentMovement")
+  payrollRemittance      PayrollRemittance?       @relation("PayrollRemittanceMovement")
+  fixedAssetDisposal     FixedAsset?              @relation("FixedAssetDisposalProceeds")
 
   @@unique([businessId, idempotencyKey])
   @@index([fromFinancialAccountId, movementDate])
@@ -5129,31 +5139,42 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLine {
-  id               String                @id @default(cuid())
-  purchaseOrderId  String
-  purchaseOrder    PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
-  lineNo           Int
-  lineType         PurchaseLineType
-  variantId        String?
-  variant          ProductVariant?       @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  id                 String                @id @default(cuid())
+  purchaseOrderId    String
+  purchaseOrder      PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  lineNo             Int
+  lineType           PurchaseLineType
+  variantId          String?
+  variant            ProductVariant?       @relation(fields: [variantId], references: [id], onDelete: Restrict)
   /// SKU / description as ordered (the catalog may change; the order is history).
-  sku              String?
-  description      String
-  expenseAccountId String?
-  expenseAccount   LedgerAccount?        @relation(fields: [expenseAccountId], references: [id], onDelete: Restrict)
-  qtyOrdered       Int
+  sku                String?
+  description        String
+  expenseAccountId   String?
+  expenseAccount     LedgerAccount?        @relation(fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  qtyOrdered         Int
   /// Net of discount, per unit, document currency.
-  unitPrice        Decimal               @db.Decimal(18, 2)
-  taxCodeId        String?
-  taxCode          TaxCode?              @relation(fields: [taxCodeId], references: [id], onDelete: Restrict)
+  unitPrice          Decimal               @db.Decimal(18, 2)
+  taxCodeId          String?
+  taxCode            TaxCode?              @relation(fields: [taxCodeId], references: [id], onDelete: Restrict)
   /// Derived (trigger) from posted, not-reversed goods-receipt lines.
-  qtyReceived      Int                   @default(0)
+  qtyReceived        Int                   @default(0)
   /// Derived (trigger) from shipped supplier-return lines that reference a receipt line of this order line.
-  qtyReturned      Int                   @default(0)
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  receiptLines     GoodsReceiptLine[]
-  invoiceLines     SupplierInvoiceLine[]
+  qtyReturned        Int                   @default(0)
+  /// docs/MATERIALS_PURCHASING.md §2: what was bought, as on the bill — the unit (snapshot of its label and size then) and how
+  /// many of it. Null when bought in the stock unit. Informational: stock and value come from the stock-unit quantity.
+  purchaseUnitId     String?
+  purchaseUnit       MaterialPurchaseUnit? @relation(fields: [purchaseUnitId], references: [id], onDelete: Restrict)
+  purchaseUnitLabel  String?
+  purchaseUnitFactor Decimal?              @db.Decimal(14, 4)
+  purchaseQty        Decimal?              @db.Decimal(18, 4)
+  /// docs/MATERIALS_PURCHASING.md §3: price before the supplier's discount (per stock unit) and this line's discount — price
+  /// history only; the net (unitCost / unitPrice) is what stock is valued at.
+  grossUnitPrice     Decimal?              @db.Decimal(18, 6)
+  discountAmount     Decimal?              @db.Decimal(18, 2)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  receiptLines       GoodsReceiptLine[]
+  invoiceLines       SupplierInvoiceLine[]
 
   @@unique([purchaseOrderId, lineNo])
 }
@@ -5221,6 +5242,17 @@ model GoodsReceiptLine {
   value               Decimal               @db.Decimal(18, 2)
   stockMovementId     String?               @unique
   reversalMovementId  String?               @unique
+  /// docs/MATERIALS_PURCHASING.md §2: what was bought, as on the bill — the unit (snapshot of its label and size then) and how
+  /// many of it. Null when bought in the stock unit. Informational: stock and value come from the stock-unit quantity.
+  purchaseUnitId      String?
+  purchaseUnit        MaterialPurchaseUnit? @relation(fields: [purchaseUnitId], references: [id], onDelete: Restrict)
+  purchaseUnitLabel   String?
+  purchaseUnitFactor  Decimal?              @db.Decimal(14, 4)
+  purchaseQty         Decimal?              @db.Decimal(18, 4)
+  /// docs/MATERIALS_PURCHASING.md §3: price before the supplier's discount (per stock unit) and this line's discount — price
+  /// history only; the net (unitCost / unitPrice) is what stock is valued at.
+  grossUnitPrice      Decimal?              @db.Decimal(18, 6)
+  discountAmount      Decimal?              @db.Decimal(18, 2)
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   returnLines         PurchaseReturnLine[]
@@ -6513,14 +6545,19 @@ model CostProfileLine {
 }
 
 model MaterialPurchaseUnit {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  label     String
+  id                 String              @id @default(cuid())
+  productId          String
+  product            Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label              String
   /// Stock units in one of these (1000 for a litre of ml); up to 4 decimals (a tola is 11.6638 g).
-  factor    Decimal  @db.Decimal(14, 4)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
+  factor             Decimal             @db.Decimal(14, 4)
+  sortOrder          Int                 @default(0)
+  createdAt          DateTime            @default(now())
+  /// docs/MATERIALS_PURCHASING.md §2: a unit a purchase has used is never deleted or re-sized — it is archived (left out of
+  /// the pickers) and its receipts keep naming it.
+  archivedAt         DateTime?
+  receiptLines       GoodsReceiptLine[]
+  purchaseOrderLines PurchaseOrderLine[]
 
   @@unique([productId, label])
 }
@@ -6776,6 +6813,10 @@ model StockItemSetting {
   preferredSupplier   Supplier?      @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
   leadTimeDays        Int            @default(3)
   coverDays           Int            @default(30)
+  /// docs/MATERIALS_PURCHASING.md §1: optional reorder figures in stock units — at or below reorderPoint the item is to
+  /// buy; safetyStock is kept on top of what lead time uses. Null = the days-of-cover rule alone.
+  reorderPoint        Int?
+  safetyStock         Int?
   updatedByAdminId    String?
   updatedAt           DateTime       @updatedAt
 }

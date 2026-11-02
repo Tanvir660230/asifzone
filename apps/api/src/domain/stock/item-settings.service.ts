@@ -16,8 +16,8 @@ export type ItemSettings = StockItemSettings;
 const DEFAULTS: ItemSettings = { ...STOCK_ITEM_DEFAULTS };
 
 export async function getItemSettings(variantIds: string[]): Promise<Map<string, ItemSettings>> {
-  const rows = await prisma.stockItemSetting.findMany({ where: { variantId: { in: variantIds } }, select: { variantId: true, preferredSupplierId: true, leadTimeDays: true, coverDays: true } });
-  const byId = new Map(rows.map((r) => [r.variantId, { preferredSupplierId: r.preferredSupplierId, leadTimeDays: r.leadTimeDays, coverDays: r.coverDays }]));
+  const rows = await prisma.stockItemSetting.findMany({ where: { variantId: { in: variantIds } }, select: { variantId: true, preferredSupplierId: true, leadTimeDays: true, coverDays: true, reorderPoint: true, safetyStock: true } });
+  const byId = new Map(rows.map((r) => [r.variantId, { preferredSupplierId: r.preferredSupplierId, leadTimeDays: r.leadTimeDays, coverDays: r.coverDays, reorderPoint: r.reorderPoint, safetyStock: r.safetyStock }]));
   return new Map(variantIds.map((id) => [id, byId.get(id) ?? DEFAULTS]));
 }
 
@@ -37,8 +37,10 @@ export async function setItemSettings(variantId: string, raw: StockItemSettingsI
   const adminId = actor.type === "ADMIN" ? actor.adminId : null;
   const data = { ...input, updatedByAdminId: adminId };
   await prisma.stockItemSetting.upsert({ where: { variantId }, create: { variantId, ...data }, update: data });
-  recordAudit({ adminId, action: "stock.item_settings_changed", entityType: "product_variants", entityId: variantId, ipAddress: null, metadata: { sku: variant.sku, before, after: input } });
-  return input;
+  // reorder figures left out stay as they were (older clients send only supplier, lead time and cover)
+  const after: ItemSettings = { ...input, reorderPoint: input.reorderPoint === undefined ? before.reorderPoint : input.reorderPoint, safetyStock: input.safetyStock === undefined ? before.safetyStock : input.safetyStock };
+  recordAudit({ adminId, action: "stock.item_settings_changed", entityType: "product_variants", entityId: variantId, ipAddress: null, metadata: { sku: variant.sku, before, after } });
+  return after;
 }
 
 export interface LastPrice {

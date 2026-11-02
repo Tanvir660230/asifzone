@@ -60,7 +60,7 @@ describe("item settings", () => {
 
   it("S-2: set then get round-trips", async () => {
     const saved = await setItemSettings(variant, { preferredSupplierId: supplierId, leadTimeDays: 5, coverDays: 45 }, OWNER);
-    expect(saved).toEqual({ preferredSupplierId: supplierId, leadTimeDays: 5, coverDays: 45 });
+    expect(saved).toEqual({ preferredSupplierId: supplierId, leadTimeDays: 5, coverDays: 45, reorderPoint: null, safetyStock: null });
     expect((await getItemSettings([variant])).get(variant)).toEqual(saved);
   });
 

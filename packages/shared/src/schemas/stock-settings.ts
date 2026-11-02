@@ -4,13 +4,16 @@
  */
 import { z } from "zod";
 
-export const STOCK_ITEM_DEFAULTS = { preferredSupplierId: null, leadTimeDays: 3, coverDays: 30 } as const;
+export const STOCK_ITEM_DEFAULTS = { preferredSupplierId: null, leadTimeDays: 3, coverDays: 30, reorderPoint: null, safetyStock: null } as const;
 
 export const stockItemSettingsSchema = z
   .object({
     preferredSupplierId: z.string().trim().min(1).max(64).nullable(),
     leadTimeDays: z.number().int("Whole days").min(0).max(120, "At most 120 days"),
     coverDays: z.number().int("Whole days").min(7, "At least 7 days").max(180, "At most 180 days"),
+    /** docs/MATERIALS_PURCHASING.md §1: optional, in stock units; left out = unchanged, null = cleared. */
+    reorderPoint: z.number().int("Whole stock units").min(0).max(100_000_000).nullable().optional(),
+    safetyStock: z.number().int("Whole stock units").min(0).max(100_000_000).nullable().optional(),
   })
   .strict();
 

@@ -57,7 +57,7 @@ export interface StockHubItem {
   /** Materials only: RAW (oil, by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
   materialKind: "RAW" | "PACKAGING" | null;
   /** Materials only: how it is bought — one `label` (litre, dozen) is `factor` stock units; Received goods converts. */
-  purchaseUnits: Array<{ label: string; factor: number }>;
+  purchaseUnits: Array<{ id: string; label: string; factor: number }>;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -72,7 +72,7 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
     where: { product: { deletedAt: null, trackInventory: true }, OR: [{ isActive: true }, { stock: { not: 0 } }] },
     select: {
       id: true, sku: true, size: true, color: true, stock: true, createdAt: true, stockPolicy: true,
-      product: { select: { id: true, name: true, kind: true, stockUnit: true, fillToOrder: true, stockPolicy: true, backorderLimit: true, purchaseUnits: { select: { label: true, factor: true }, orderBy: { sortOrder: "asc" } } } },
+      product: { select: { id: true, name: true, kind: true, stockUnit: true, fillToOrder: true, stockPolicy: true, backorderLimit: true, purchaseUnits: { where: { archivedAt: null }, select: { id: true, label: true, factor: true }, orderBy: { sortOrder: "asc" } } } },
       costState: { select: { avgUnitCost: true, value: true } },
     },
     orderBy: [{ product: { name: "asc" } }, { sortOrder: "asc" }, { sku: "asc" }],
@@ -113,7 +113,7 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
       variantId: v.id, productId: v.product.id, sku: v.sku, name: variantLabel(v), productName: v.product.name, size: v.size, color: v.color, unit: unitOf(v.product),
       stock: v.stock, reserved: waiting, expectedOnShelf: expectedOnShelf(v.stock, waiting), makeable,
       materialKind: key === "MATERIAL" ? materialRole(unitOf(v.product)) : null,
-      purchaseUnits: key === "MATERIAL" ? v.product.purchaseUnits.map((u) => ({ label: u.label, factor: Number(u.factor) })) : [],
+      purchaseUnits: key === "MATERIAL" ? v.product.purchaseUnits.map((u) => ({ id: u.id, label: u.label, factor: Number(u.factor) })) : [],
       policy: key === "FILL_TO_ORDER" ? { policy: v.stockPolicy ?? v.product.stockPolicy, overridden: v.stockPolicy !== null, backorderLimit: v.product.backorderLimit, owed: Math.max(0, -v.stock) } : null,
       avgCost: viewer.canSeeCost && v.costState?.avgUnitCost != null ? Number(v.costState.avgUnitCost) : null,
       value: valueMinor === null ? null : toMajorNumber(valueMinor, cur),

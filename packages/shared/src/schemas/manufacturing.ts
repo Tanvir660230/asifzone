@@ -23,8 +23,14 @@ const materialVariantSchema = z.object({
   spec: z.string().trim().max(60).default("Standard"),
   color: optionalText(60),
 });
+/** What a material is used as (docs/MATERIALS_PURCHASING.md §1). */
+export const MATERIAL_TYPES = ["RAW", "PACKAGING", "CONSUMABLE"] as const;
+export type MaterialTypeValue = (typeof MATERIAL_TYPES)[number];
 export const materialCreateSchema = z.object({
   name: z.string().trim().min(2).max(160),
+  materialType: z.enum(MATERIAL_TYPES).nullable().optional(),
+  /** A material with the same name already exists (MATERIAL_DUPLICATE): create it anyway, saying why. */
+  duplicateReason: optionalText(300),
   stockUnit: z.string().trim().min(1).max(16),
   description: optionalText(2000),
   referenceCost: financeAmountSchema.nullable().optional(),
@@ -33,12 +39,15 @@ export const materialCreateSchema = z.object({
 export const materialUpdateSchema = z
   .object({
     name: z.string().trim().min(2).max(160).optional(),
+    materialType: z.enum(MATERIAL_TYPES).nullable().optional(),
     stockUnit: z.string().trim().min(1).max(16).optional(),
     // left out = unchanged (optionalText would turn a missing description into null and clear it on every edit)
     description: z.string().trim().max(2000).nullable().optional(),
     referenceCost: financeAmountSchema.nullable().optional(),
     addVariants: z.array(materialVariantSchema).max(100).optional(),
-    /** How it is bought — replaces the list: one `label` (litre, dozen, tola) is `factor` stock units, ≤ 4 decimals. */
+    /** How it is bought — the full list of units on offer: one `label` (litre, dozen, tola) is `factor` stock units, ≤ 4
+     * decimals. A unit left out is deleted, or archived when a purchase used it; a used unit's size never changes (add a new
+     * label instead). Sending an archived label again brings it back (docs/MATERIALS_PURCHASING.md §2). */
     purchaseUnits: z
       .array(z.object({ label: z.string().trim().min(1).max(24), factor: z.number().positive().max(1_000_000).refine((f) => Math.abs(Math.round(f * 10_000) - f * 10_000) < 1e-6, "At most 4 decimals") }))
       .max(10)

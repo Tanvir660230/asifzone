@@ -13,8 +13,13 @@
  *                     chooses per purchase; credit liability.owner_reimbursable, as an owner-paid expense does)
  *                                                                                            partner-profit.service ownerMoney
  *   5. payment        the bill paid from that account                                           supplier-payments.service
- *   6. extras         transport, customs… one landed cost spread over the receipt by value,
+ *   6. extras         transport, customs… one landed cost spread over the receipt by value or by quantity,
  *                     paid from the same account                                                landed-costs.service
+ *
+ * What arrived is given in the stock unit or in one of the item's purchase units (10 litre, 5 bundles): the server converts
+ * it and refuses a quantity that isn't a whole number of stock units (docs/MATERIALS_PURCHASING.md §2). The receipt keeps
+ * what was bought (unit, its size then, how many), the price before the supplier's discount and the discount; units that
+ * arrived damaged are rejected on the receipt — never stock — and the line total is spread over the good ones (§3).
  *
  * A line total that isn't a whole number of the smallest currency unit per item (৳1,000 for 3) is received as two lines
  * (2 × 333.33 + 1 × 333.34), so stock, bill and payment are exactly what was paid.
@@ -34,6 +39,7 @@
  * catalog cost set from it unless the person unticks that, and the money kept as a pending record — nothing is posted to
  * the ledger (no receipt, bill, payment or landed cost) until the books take it over.
  */
+import { type ExtrasMethod } from "@clothing-brand/shared";
 import { monthPeriod, goodsReceiptCreateSchema, stockPurchaseFinishSchema, stockPurchaseSchema, supplierCreateSchema, supplierInvoiceCreateSchema, type PurchaseDuplicateCheckInput, type StockPurchaseFinishInput, type StockPurchaseInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { actorCan, type FinanceActor } from "../finance/finance-audit";
@@ -74,8 +80,12 @@ interface PurchaseSteps {
     reference: string | null;
     note: string | null;
     duplicateReason?: string | null;
-    lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number }>;
+    /** quantity = good units into stock (stock unit); damaged = arrived but rejected; buy = how it was bought when not in the
+     * stock unit. damaged, discount and buy are absent on purchases saved before docs/MATERIALS_PURCHASING.md. */
+    lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number; damaged?: number; discount?: number | null; buy?: BoughtAs | null }>;
     extras: Array<{ description: string; amount: number }>;
+    /** How the extras are spread (absent = by value, as before). */
+    extrasMethod?: ExtrasMethod;
     paidFrom: PaidFrom;
   };
   goods: number;
@@ -107,6 +117,25 @@ export type PurchaseStep = "supplier" | "receipt" | "invoice" | "funding" | "pay
 
 const tag = (key: string, step: string) => `stock-purchase:${key}:${step}`;
 
+/** How a line was bought when not in the stock unit: the unit, its size when bought and how many of it. */
+export interface BoughtAs { unitId: string; label: string; factor: number; qty: number }
+
+/**
+ * Stock units in `qty` of a unit of `factor` (both at most 4 decimals), exactly — or null when that isn't a whole number.
+ * Worked in integers (ten-thousandths × ten-thousandths) so 2.5 litre × 1000 never meets a binary fraction.
+ */
+export function stockUnitsOf(qty: number, factor: number): number | null {
+  const scaled = BigInt(Math.round(qty * 10_000)) * BigInt(Math.round(factor * 10_000));
+  const SCALE = 100_000_000n;
+  return scaled % SCALE === 0n ? Number(scaled / SCALE) : null;
+}
+
+/** The whole stock units nearest an inexact conversion, for the refusal ("17 or 18 g"). */
+const nearestWhole = (qty: number, factor: number) => {
+  const exact = (Math.round(qty * 10_000) * Math.round(factor * 10_000)) / 100_000_000;
+  return { exact: Math.round(exact * 10_000) / 10_000, below: Math.floor(exact), above: Math.ceil(exact) };
+};
+
 /** Splits a line total into receipt lines whose unit costs are whole minor units and add up to exactly the total. */
 export function exactLines(quantity: number, amountMinor: number): Array<{ qty: number; unitMinor: number }> {
   const base = Math.floor(amountMinor / quantity);
@@ -114,6 +143,34 @@ export function exactLines(quantity: number, amountMinor: number): Array<{ qty: 
   if (!rest) return [{ qty: quantity, unitMinor: base }];
   return [{ qty: quantity - rest, unitMinor: base }, { qty: rest, unitMinor: base + 1 }];
 }
+
+/**
+ * The receipt lines of one purchase line: its good units at exact unit costs (exactLines), the damaged units rejected on the
+ * first, and on each what was bought (unit, size, how many of it — that line's share), the price before discount per stock
+ * unit and its share of the discount.
+ */
+export function receiptLinesOf(l: PurchaseSteps["request"]["lines"][number], cur: string) {
+  const rows = exactLines(l.quantity, toMinor(l.amount, cur));
+  const damaged = l.damaged ?? 0;
+  const arrived = l.quantity + damaged;
+  const discountMinor = l.discount ? toMinor(l.discount, cur) : 0;
+  const discounts = spreadByWeight(discountMinor, rows.map((r) => r.qty));
+  const gross = l.discount != null ? Math.round(((toMinor(l.amount, cur) + discountMinor) / arrived) * 10_000) / (10_000 * 10 ** minorDigits(cur)) : null;
+  return rows.map((x, k) => {
+    const rejected = k === 0 ? damaged : 0;
+    return {
+      variantId: l.variantId,
+      qtyAccepted: x.qty,
+      qtyRejected: rejected,
+      unitCost: toMajorNumber(x.unitMinor, cur),
+      ...(l.buy ? { purchaseUnitId: l.buy.unitId, purchaseUnitLabel: l.buy.label, purchaseUnitFactor: l.buy.factor, purchaseQty: Math.round(((x.qty + rejected) / l.buy.factor) * 10_000) / 10_000 } : {}),
+      ...(l.discount != null ? { grossUnitPrice: gross, discountAmount: toMajorNumber(discounts[k]!, cur) } : {}),
+    };
+  });
+}
+
+/** Decimal places of the currency's smallest unit (2 for ৳). */
+const minorDigits = (cur: string) => Math.round(Math.log10(toMinor(1, cur)));
 
 /** The step an unfinished purchase waits on (null once complete). */
 export function pendingStep(s: PurchaseSteps, complete: boolean): PurchaseStep | null {
@@ -265,21 +322,52 @@ async function assertCostingLive(businessId: string) {
 
 type ParsedPurchase = ReturnType<typeof stockPurchaseSchema.parse>;
 
-/** Every line is a live, stock-tracked item with at least the smallest coin per unit. The items, by id. */
+/**
+ * Every line is a live, stock-tracked item with at least the smallest coin per good unit; a purchase unit is one of that
+ * item's live units and converts to whole stock units; damaged units leave at least one good one. Returns the items by id
+ * and the lines as stored: `quantity` = good units into stock.
+ */
 async function checkedLines(input: ParsedPurchase, cur: string) {
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: input.lines.map((l) => l.variantId) } },
-    select: { id: true, size: true, color: true, costPrice: true, product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, deletedAt: true } } },
+    select: {
+      id: true, size: true, color: true, costPrice: true,
+      product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, deletedAt: true, purchaseUnits: { select: { id: true, label: true, factor: true, archivedAt: true } } } },
+    },
   });
   const byId = new Map(variants.map((v) => [v.id, v]));
+  const lines: PurchaseSteps["request"]["lines"] = [];
   for (const [i, l] of input.lines.entries()) {
     const v = byId.get(l.variantId);
     if (!v || v.product.deletedAt) throw financeError(400, "VARIANT_NOT_FOUND", `Line ${i + 1}: item not found`);
     if (!v.product.trackInventory) throw financeError(400, "PURCHASE_UNTRACKED", `Line ${i + 1}: ${variantLabel(v)} isn't stock-tracked`);
-    if (toMinor(l.amount, cur) < l.quantity) throw financeError(400, "PURCHASE_LINE_AMOUNT", `Line ${i + 1}: the total is less than the smallest coin per unit`);
+    const unit = unitOf(v.product);
+    let arrived = l.quantity ?? 0;
+    let buy: BoughtAs | null = null;
+    if (l.purchaseUnitId) {
+      const u = v.product.purchaseUnits.find((x) => x.id === l.purchaseUnitId);
+      if (!u || u.archivedAt) throw financeError(400, "PURCHASE_UNIT_NOT_FOUND", `Line ${i + 1}: that unit isn't one ${variantLabel(v)} is bought in`);
+      const factor = Number(u.factor);
+      const units = stockUnitsOf(l.purchaseQty!, factor);
+      if (units === null) {
+        const n = nearestWhole(l.purchaseQty!, factor);
+        throw financeError(400, "PURCHASE_UNIT_NOT_WHOLE", `Line ${i + 1}: ${l.purchaseQty} ${u.label} = ${n.exact} ${unit} — stock is counted in whole ${unit}; enter ${n.below} or ${n.above} ${unit} instead`, { line: i + 1, exact: n.exact, below: n.below, above: n.above });
+      }
+      arrived = units;
+      buy = { unitId: u.id, label: u.label, factor, qty: l.purchaseQty! };
+    }
+    if (arrived < 1) throw financeError(400, "PURCHASE_LINE_QUANTITY", `Line ${i + 1}: at least one ${unit}`);
+    const good = arrived - l.damaged;
+    if (good < 1) throw financeError(400, "PURCHASE_ALL_DAMAGED", `Line ${i + 1}: ${l.damaged} damaged of ${arrived} ${unit} — at least one good ${unit} is received (send the rest back to the supplier)`);
+    if (toMinor(l.amount, cur) < good) throw financeError(400, "PURCHASE_LINE_AMOUNT", `Line ${i + 1}: the total is less than the smallest coin per unit`);
+    lines.push({ variantId: l.variantId, name: variantLabel(v), unit, quantity: good, amount: l.amount, damaged: l.damaged, discount: l.discount ?? null, buy });
   }
-  return byId;
+  return { byId, lines };
 }
+
+/** The share of the extras for each line (minor units): by what the line cost, or by how many units it brought. */
+const extrasShares = (extrasMinor: number, lines: PurchaseSteps["request"]["lines"], method: ExtrasMethod | undefined, cur: string) =>
+  spreadByWeight(extrasMinor, lines.map((l) => (method === "QUANTITY" ? l.quantity : toMinor(l.amount, cur))));
 
 /** Splits `totalMinor` over shares proportional to `weights` (largest remainder), so the parts add up exactly. */
 export function spreadByWeight(totalMinor: number, weights: number[]): number[] {
@@ -312,7 +400,7 @@ async function recordSimplePurchase(input: ParsedPurchase, actor: FinanceActor, 
   const cur = business.baseCurrency;
   const today = businessToday(business);
   if (input.date && input.date > today) throw financeError(400, "PURCHASE_IN_FUTURE", "A purchase records goods already received");
-  const byId = await checkedLines(input, cur);
+  const { lines: checked } = await checkedLines(input, cur);
 
   const fingerprint = fingerprintOf(input);
   const existing = await findEntry(business.id, "PURCHASE", key);
@@ -332,11 +420,8 @@ async function recordSimplePurchase(input: ParsedPurchase, actor: FinanceActor, 
     mode: "SIMPLE",
     request: {
       supplierName, reference: input.reference, note: input.note, duplicateReason: input.duplicateReason ?? null,
-      lines: input.lines.map((l) => {
-        const v = byId.get(l.variantId)!;
-        return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), quantity: l.quantity, amount: l.amount };
-      }),
-      extras: input.extras, paidFrom,
+      lines: checked,
+      extras: input.extras, extrasMethod: input.extrasMethod, paidFrom,
     },
     goods: toMajorNumber(goodsMinor, cur), extras: toMajorNumber(extrasMinor, cur), total: toMajorNumber(goodsMinor + extrasMinor, cur),
     updateCatalogCost,
@@ -350,7 +435,7 @@ async function recordSimplePurchase(input: ParsedPurchase, actor: FinanceActor, 
 
   const adminId = actor.type === "ADMIN" ? actor.adminId : null;
   const lines = steps.request.lines;
-  const shares = spreadByWeight(toMinor(steps.extras, cur), lines.map((l) => toMinor(l.amount, cur)));
+  const shares = extrasShares(toMinor(steps.extras, cur), lines, steps.request.extrasMethod, cur);
   const moved: AdjustResult[] = [];
   let stocked: PurchaseSteps;
   try {
@@ -393,7 +478,7 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
   const cur = business.baseCurrency;
   const today = businessToday(business);
   if (input.date && input.date > today) throw financeError(400, "PURCHASE_IN_FUTURE", "A purchase records goods already received");
-  const byId = await checkedLines(input, cur);
+  const { lines: checked } = await checkedLines(input, cur);
 
   const fingerprint = fingerprintOf(input);
   const existing = await findEntry(business.id, "PURCHASE", key);
@@ -426,11 +511,8 @@ export async function recordPurchase(raw: StockPurchaseInput, actor: FinanceActo
   const initial: PurchaseSteps = {
     request: {
       supplierName, reference: input.reference, note: input.note, duplicateReason: input.duplicateReason ?? null,
-      lines: input.lines.map((l) => {
-        const v = byId.get(l.variantId)!;
-        return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), quantity: l.quantity, amount: l.amount };
-      }),
-      extras: input.extras, paidFrom,
+      lines: checked,
+      extras: input.extras, extrasMethod: input.extrasMethod, paidFrom,
     },
     goods: toMajorNumber(goodsMinor, cur), extras: toMajorNumber(extrasMinor, cur), total: toMajorNumber(goodsMinor + extrasMinor, cur),
   };
@@ -529,7 +611,7 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
         () => prisma.goodsReceipt.findFirst({ where: { businessId: business.id, evidence: tag(key, "receipt"), status: { not: "REVERSED" } }, select: { id: true } }),
         () => createGoodsReceipt(goodsReceiptCreateSchema.parse({
           supplierId: steps.supplierId, receiptDate: date, supplierRef: req.reference, notes: req.note, evidence: tag(key, "receipt"), directReason: PURCHASE_REASON, duplicateReason: req.duplicateReason ?? null,
-          lines: req.lines.flatMap((l) => exactLines(l.quantity, toMinor(l.amount, cur)).map((x) => ({ variantId: l.variantId, qtyAccepted: x.qty, unitCost: toMajorNumber(x.unitMinor, cur) }))),
+          lines: req.lines.flatMap((l) => receiptLinesOf(l, cur)),
         }), actor),
       );
       await save();
@@ -590,7 +672,7 @@ async function runSteps(lease: Lease, entry: { id: string; steps: unknown; entry
       await renewLease(lease);
       steps.landedCostId = req.extras.length
         ? (await createLandedCost({
-          costDate: date, description: req.extras.map((e) => e.description).join(", ").slice(0, 300), payee: null, amount: steps.extras, method: "VALUE",
+          costDate: date, description: req.extras.map((e) => e.description).join(", ").slice(0, 300), payee: null, amount: steps.extras, method: req.extrasMethod ?? "VALUE",
           goodsReceiptIds: [steps.receiptId], fromFinancialAccountId: req.paidFrom.financialAccountId, reference: steps.receiptNumber ?? null,
         }, actor, tag(key, "extras"))).landedCost.id
         : null;

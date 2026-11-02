@@ -8,6 +8,7 @@
  * number of the material's stock unit (cm, g, pcs…), so the inventory engine's integer stock is exact.
  */
 import type { Prisma } from "@prisma/client";
+import type { MaterialTypeValue } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { recordFinanceAudit, type FinanceActor } from "../finance/finance-audit";
 import { getFinanceContext } from "../finance/finance-context";
@@ -23,6 +24,9 @@ export interface MaterialVariantInput {
 
 export interface MaterialCreateInput {
   name: string;
+  materialType?: MaterialTypeValue | null;
+  /** Why it is created although a material of the same name exists (MATERIAL_DUPLICATE). */
+  duplicateReason?: string | null;
   stockUnit: string;
   description?: string | null;
   /** A typed reference cost per stock unit — a planning aid; the valuation uses received costs. */
@@ -31,9 +35,9 @@ export interface MaterialCreateInput {
 }
 
 const MATERIAL_SELECT = {
-  id: true, name: true, slug: true, stockUnit: true, description: true, costPrice: true, deletedAt: true, createdAt: true,
+  id: true, name: true, slug: true, stockUnit: true, description: true, costPrice: true, deletedAt: true, createdAt: true, materialType: true,
   variants: { select: { id: true, sku: true, size: true, color: true, stock: true, isActive: true }, orderBy: { sku: "asc" } },
-  purchaseUnits: { select: { label: true, factor: true }, orderBy: { sortOrder: "asc" } },
+  purchaseUnits: { where: { archivedAt: null }, select: { id: true, label: true, factor: true }, orderBy: { sortOrder: "asc" } },
 } satisfies Prisma.ProductSelect;
 type MaterialRow = Prisma.ProductGetPayload<{ select: typeof MATERIAL_SELECT }>;
 
@@ -42,13 +46,26 @@ function materialDto(m: MaterialRow, cur: string, costs: Map<string, { avg: numb
     id: m.id,
     name: m.name,
     stockUnit: m.stockUnit,
+    materialType: m.materialType,
     description: m.description,
     referenceCost: m.costPrice === null ? null : toMajorNumber(toMinor(m.costPrice, cur), cur),
     archived: m.deletedAt !== null,
     /** How it is bought: one `label` is `factor` stock units (a litre is 1,000 ml). */
-    purchaseUnits: m.purchaseUnits.map((u) => ({ label: u.label, factor: Number(u.factor) })),
+    purchaseUnits: m.purchaseUnits.map((u) => ({ id: u.id, label: u.label, factor: Number(u.factor) })),
     variants: m.variants.map((v) => ({ id: v.id, sku: v.sku, spec: v.size, color: v.color, stock: v.stock, averageCost: costs.get(v.id)?.avg ?? null, value: costs.get(v.id)?.value ?? null })),
   };
+}
+
+/** A name as people mean it (docs/MATERIALS_PURCHASING.md §1): case, spaces and punctuation don't count — "Attar Sticker",
+ * "attar-sticker" and "ATTAR  STICKER." are one material. Letters of every script (Bangla included) and digits are kept. */
+export const materialNameKey = (name: string) => name.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Materials, live or archived, whose name means the same as `name` (excluding `exceptId`). */
+async function sameNamedMaterials(tx: Prisma.TransactionClient, name: string, exceptId?: string) {
+  const key = materialNameKey(name);
+  if (!key) return [];
+  const rows = await tx.product.findMany({ where: { kind: "MATERIAL", ...(exceptId ? { id: { not: exceptId } } : {}) }, select: { id: true, name: true, stockUnit: true, deletedAt: true } });
+  return rows.filter((r) => materialNameKey(r.name) === key).map((r) => ({ id: r.id, name: r.name, stockUnit: r.stockUnit, archived: r.deletedAt !== null }));
 }
 
 const slugOf = (name: string) => `material-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60)}-${Date.now().toString(36)}`;
@@ -65,17 +82,22 @@ export async function createMaterial(input: MaterialCreateInput, actor: FinanceA
   return financeTransaction(async (tx) => {
     const taken = await tx.productVariant.findMany({ where: { sku: { in: input.variants.map((v) => v.sku) } }, select: { sku: true } });
     if (taken.length) throw financeError(409, "SKU_TAKEN", `SKU already used: ${taken.map((t) => t.sku).join(", ")}`);
+    // The same material under a second name splits its stock in two (docs/MATERIALS_PURCHASING.md §1): asked, not refused.
+    const twins = await sameNamedMaterials(tx, input.name);
+    if (twins.length && !input.duplicateReason?.trim()) {
+      throw financeError(409, "MATERIAL_DUPLICATE", `${twins.map((t) => `“${t.name}”${t.archived ? " (archived)" : ""}`).join(", ")} already exists — use it, or say why this is a different material`, { matches: twins });
+    }
     const categoryId = await materialsCategoryInTx(tx);
     const created = await tx.product.create({
       data: {
-        name: input.name, slug: slugOf(input.name), description: input.description ?? "", categoryId, basePrice: 0,
+        name: input.name, slug: slugOf(input.name), description: input.description ?? "", categoryId, basePrice: 0, materialType: input.materialType ?? null,
         costPrice: input.referenceCost == null ? null : toDecimal(toMinor(input.referenceCost, cur), cur),
         kind: "MATERIAL", stockUnit: input.stockUnit.trim(), status: "DRAFT", isActive: false, trackInventory: true,
         variants: { create: input.variants.map((v, i) => ({ sku: v.sku, size: v.spec || "Standard", color: v.color ?? "", stock: 0, isActive: true, sortOrder: i })) },
       },
       select: MATERIAL_SELECT,
     });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.create", entityType: "Product", entityId: created.id, after: { name: created.name, stockUnit: created.stockUnit, variants: created.variants.map((v) => v.sku) } });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.create", entityType: "Product", entityId: created.id, after: { name: created.name, stockUnit: created.stockUnit, materialType: created.materialType, variants: created.variants.map((v) => v.sku), ...(twins.length ? { duplicateOf: twins.map((t) => t.id), duplicateReason: input.duplicateReason } : {}) } });
     return redact(materialDto(created, cur, new Map()), opts.canSeeCost);
   });
 }
@@ -87,16 +109,19 @@ export interface MaterialVariantRename {
   color?: string;
 }
 
-export async function updateMaterial(id: string, input: { name?: string; stockUnit?: string; description?: string | null; referenceCost?: number | null; addVariants?: MaterialVariantInput[]; variants?: MaterialVariantRename[]; purchaseUnits?: Array<{ label: string; factor: number }> }, actor: FinanceActor, opts: { canSeeCost: boolean }) {
+export async function updateMaterial(id: string, input: { name?: string; materialType?: MaterialTypeValue | null; stockUnit?: string; description?: string | null; referenceCost?: number | null; addVariants?: MaterialVariantInput[]; variants?: MaterialVariantRename[]; purchaseUnits?: Array<{ label: string; factor: number }> }, actor: FinanceActor, opts: { canSeeCost: boolean }) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   if (input.stockUnit !== undefined) checkUnit(input.stockUnit);
   return financeTransaction(async (tx) => {
     const before = await tx.product.findFirst({ where: { id, kind: "MATERIAL" }, select: MATERIAL_SELECT });
     if (!before) throw financeError(404, "MATERIAL_NOT_FOUND", "Material not found");
-    // Changing the unit of a material that already has stock would silently re-mean every quantity — refused.
-    if (input.stockUnit !== undefined && input.stockUnit.trim() !== before.stockUnit && before.variants.some((v) => v.stock !== 0)) {
-      throw financeError(409, "MATERIAL_UNIT_IN_USE", "This material has stock — its stock unit can't change");
+    // Changing the unit of a material that has ever moved would silently re-mean every quantity in its history (an oil at 0 ml
+    // switched to litres) — refused once any movement exists (docs/MATERIALS_PURCHASING.md §2).
+    if (input.stockUnit !== undefined && input.stockUnit.trim() !== before.stockUnit) {
+      const ids = before.variants.map((v) => v.id);
+      if (before.variants.some((v) => v.stock !== 0)) throw financeError(409, "MATERIAL_UNIT_IN_USE", "This material has stock — its stock unit can't change");
+      if (await tx.stockMovement.count({ where: { variantId: { in: ids } } })) throw financeError(409, "MATERIAL_UNIT_IN_USE", "This material has stock history — its stock unit can't change (create a new material)");
     }
     // A rename keeps the size (its stock, history and every recipe line that names it); only the words change.
     const renamed: string[] = [];
@@ -115,24 +140,57 @@ export async function updateMaterial(id: string, input: { name?: string; stockUn
       if (taken.length) throw financeError(409, "SKU_TAKEN", `SKU already used: ${taken.map((t) => t.sku).join(", ")}`);
       await tx.productVariant.createMany({ data: input.addVariants.map((v, i) => ({ productId: id, sku: v.sku, size: v.spec || "Standard", color: v.color ?? "", stock: 0, sortOrder: before.variants.length + i })) });
     }
-    // How it is bought (litre, dozen, tola…) — the list is replaced as a whole; it only converts what Received goods records.
-    if (input.purchaseUnits) {
-      const unit = (input.stockUnit ?? before.stockUnit ?? "").trim().toLowerCase();
-      if (input.purchaseUnits.some((u) => u.label.trim().toLowerCase() === unit)) throw financeError(400, "PURCHASE_UNIT_IS_STOCK_UNIT", `${unit} is already the stock unit`);
-      await tx.materialPurchaseUnit.deleteMany({ where: { productId: id } });
-      if (input.purchaseUnits.length) await tx.materialPurchaseUnit.createMany({ data: input.purchaseUnits.map((u, i) => ({ productId: id, label: u.label.trim(), factor: u.factor, sortOrder: i })) });
-    }
+    // How it is bought (litre, dozen, tola…): the list sent is the units on offer (docs/MATERIALS_PURCHASING.md §2). A unit a
+    // purchase or order used is history — never deleted (archived when left out) and never re-sized; an unused one is free.
+    let unitChanges: string[] = [];
+    if (input.purchaseUnits) unitChanges = await reconcilePurchaseUnits(tx, id, (input.stockUnit ?? before.stockUnit ?? "").trim().toLowerCase(), input.purchaseUnits);
     const after = await tx.product.update({
       where: { id },
       data: {
-        name: input.name, description: input.description === undefined ? undefined : input.description ?? "", stockUnit: input.stockUnit?.trim(),
+        name: input.name, materialType: input.materialType, description: input.description === undefined ? undefined : input.description ?? "", stockUnit: input.stockUnit?.trim(),
         costPrice: input.referenceCost === undefined ? undefined : input.referenceCost === null ? null : toDecimal(toMinor(input.referenceCost, cur), cur),
       },
       select: MATERIAL_SELECT,
     });
-    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.update", entityType: "Product", entityId: id, before: { name: before.name, stockUnit: before.stockUnit }, after: { name: after.name, stockUnit: after.stockUnit, added: input.addVariants?.map((v) => v.sku) ?? [], renamed, purchaseUnits: input.purchaseUnits?.map((u) => `${u.label}=${u.factor}`) } });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "material.update", entityType: "Product", entityId: id, before: { name: before.name, stockUnit: before.stockUnit }, after: { name: after.name, stockUnit: after.stockUnit, materialType: after.materialType, added: input.addVariants?.map((v) => v.sku) ?? [], renamed, purchaseUnits: input.purchaseUnits?.map((u) => `${u.label}=${u.factor}`), unitChanges } });
     return redact(materialDto(after, cur, new Map()), opts.canSeeCost);
   });
+}
+
+/** Makes the material's live purchase units the list sent; returns what changed ("archived litre", "added bundle"). */
+async function reconcilePurchaseUnits(tx: Prisma.TransactionClient, productId: string, stockUnit: string, wanted: Array<{ label: string; factor: number }>) {
+  if (wanted.some((u) => u.label.trim().toLowerCase() === stockUnit)) throw financeError(400, "PURCHASE_UNIT_IS_STOCK_UNIT", `${stockUnit} is already the stock unit`);
+  const existing = await tx.materialPurchaseUnit.findMany({ where: { productId }, select: { id: true, label: true, factor: true, archivedAt: true, _count: { select: { receiptLines: true, purchaseOrderLines: true } } } });
+  const used = (u: (typeof existing)[number]) => u._count.receiptLines + u._count.purchaseOrderLines > 0;
+  const byLabel = new Map(existing.map((u) => [u.label.toLowerCase(), u]));
+  const keep = new Set<string>();
+  const changes: string[] = [];
+  for (const [i, w] of wanted.entries()) {
+    const label = w.label.trim();
+    const u = byLabel.get(label.toLowerCase());
+    if (!u) {
+      await tx.materialPurchaseUnit.create({ data: { productId, label, factor: w.factor, sortOrder: i } });
+      changes.push(`added ${label}=${w.factor}`);
+      continue;
+    }
+    keep.add(u.id);
+    const resized = Number(u.factor) !== w.factor;
+    if (resized && used(u)) throw financeError(409, "PURCHASE_UNIT_IN_USE", `“${u.label}” was used on purchases as ${Number(u.factor)} — its size can't change; add it under a new name (e.g. “${u.label} of ${w.factor}”)`);
+    await tx.materialPurchaseUnit.update({ where: { id: u.id }, data: { label, factor: w.factor, sortOrder: i, archivedAt: null } });
+    if (resized) changes.push(`resized ${label} ${Number(u.factor)}→${w.factor}`);
+    if (u.archivedAt) changes.push(`restored ${label}`);
+  }
+  for (const u of existing) {
+    if (keep.has(u.id) || u.archivedAt) continue;
+    if (used(u)) {
+      await tx.materialPurchaseUnit.update({ where: { id: u.id }, data: { archivedAt: new Date() } });
+      changes.push(`archived ${u.label}`);
+    } else {
+      await tx.materialPurchaseUnit.delete({ where: { id: u.id } });
+      changes.push(`removed ${u.label}`);
+    }
+  }
+  return changes;
 }
 
 /**

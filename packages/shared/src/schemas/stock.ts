@@ -16,6 +16,32 @@ export const STOCK_PURCHASE_MAX_TOTAL = 10_000_000_000;
 const positive = financeAmountSchema.refine((v) => v > 0, "Amount must be more than zero").refine((v) => v <= STOCK_PURCHASE_MAX_AMOUNT, "At most 1,000,000,000");
 const quantity = z.number().int("Whole units (stock units: ml, pcs…)").min(1).max(1_000_000);
 const onceEach = (lines: Array<{ variantId: string }>) => new Set(lines.map((l) => l.variantId)).size === lines.length;
+/** A quantity in a purchase unit (2.5 litre, 1.5 tola): more than 0, at most 4 decimals. */
+const fourDecimals = (v: number) => Math.abs(Math.round(v * 10_000) - v * 10_000) < 1e-6;
+const purchaseQty = z.number().positive("More than zero").max(1_000_000).refine(fourDecimals, "At most 4 decimals");
+/** Ten-thousandths, so bill quantities add up exactly (2.5 + 0.1 litre). */
+const tenThousandths = (v: number) => Math.round(v * 10_000);
+const nonNegative = financeAmountSchema.refine((v) => v >= 0, "Not below zero").refine((v) => v <= STOCK_PURCHASE_MAX_AMOUNT, "At most 1,000,000,000");
+/** How extras (transport, loading…) are spread over the items: by what each line cost, or by how many units it brought. */
+export const EXTRAS_METHODS = ["VALUE", "QUANTITY"] as const;
+export type ExtrasMethod = (typeof EXTRAS_METHODS)[number];
+/** One purchase line (docs/MATERIALS_PURCHASING.md §2–3): how many arrived — in the stock unit (`quantity`), or in one of the
+ * item's purchase units (`purchaseUnitId` + `purchaseQty`, converted on the server) — what was paid for the line after the
+ * supplier's discount (`amount`), the discount itself, and how many stock units of it arrived damaged (never stocked). */
+export const stockPurchaseLineSchema = z
+  .object({
+    variantId: id,
+    quantity: quantity.optional().nullable(),
+    purchaseUnitId: id.optional().nullable(),
+    purchaseQty: purchaseQty.optional().nullable(),
+    amount: positive,
+    discount: nonNegative.optional().nullable(),
+    damaged: z.number().int("Whole stock units").min(0).max(1_000_000).default(0),
+  })
+  .refine((l) => (l.quantity != null) !== (l.purchaseUnitId != null), { message: "Give the quantity in the stock unit, or a purchase unit and how many of it", path: ["quantity"] })
+  .refine((l) => (l.purchaseUnitId == null) === (l.purchaseQty == null), { message: "How many of the purchase unit?", path: ["purchaseQty"] });
+/** The line's quantity as the bill shows it (purchase units when bought in one). */
+export const billQuantityOf = (l: { quantity?: number | null; purchaseQty?: number | null }) => l.purchaseQty ?? l.quantity ?? 0;
 const materialOnce = (lines: Array<{ materialVariantId: string }>) => new Set(lines.map((l) => l.materialVariantId)).size === lines.length;
 /** Who pays: a money account (cash, bank, wallet) or the owner's own money (owner-only). For the owner's money, owner
  * decision Q14 = B: `funding` says whether it is owed back to the owner (REIMBURSE) or added as capital (CAPITAL, the
@@ -32,11 +58,13 @@ export const stockPurchaseSchema = z
     note: optionalText(500),
     /** Why it was entered anyway when it looked like a purchase already recorded (blueprint P0.3) — optional. */
     duplicateReason: optionalText(500),
-    lines: z.array(z.object({ variantId: id, quantity, amount: positive })).min(1).max(100).refine(onceEach, "Each item once — add the quantities together"),
-    /** Total units on the supplier's invoice or receipt, typed from the document: the lines must add up to it, so a size
-     * typed into the wrong row or a missing size is caught before anything is written (inventory recovery F-c). */
-    documentTotal: z.number().int().min(1).max(100_000_000),
+    lines: z.array(stockPurchaseLineSchema).min(1).max(100).refine(onceEach, "Each item once — add the quantities together"),
+    /** Total quantity on the supplier's invoice or receipt, in the units the bill uses (10 litre counts 10, not 10,000 ml),
+     * typed from the document: the lines must add up to it, so a size typed into the wrong row or a missing size is caught
+     * before anything is written (inventory recovery F-c; docs/MATERIALS_PURCHASING.md §2). */
+    documentTotal: z.number().positive().max(100_000_000).refine(fourDecimals, "At most 4 decimals"),
     extras: z.array(z.object({ description: z.string().trim().min(1).max(120), amount: positive })).max(20).default([]),
+    extrasMethod: z.enum(EXTRAS_METHODS).default("VALUE"),
     paidFrom,
     /** Before stock costing is live (blueprint P1.4, owner decision Q-F): set each item's catalog cost from this purchase.
      * Omitted = yes. Ignored once costing is live (the purchase is booked and the average cost moves instead). */
@@ -44,9 +72,9 @@ export const stockPurchaseSchema = z
   })
   .refine((p) => [...p.lines, ...p.extras].reduce((s, x) => s + x.amount, 0) <= STOCK_PURCHASE_MAX_TOTAL, { message: "A purchase is at most 10,000,000,000 in all", path: ["lines"] })
   .superRefine((p, ctx) => {
-    const entered = p.lines.reduce((s, l) => s + l.quantity, 0);
-    if (entered !== p.documentTotal) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentTotal"], message: `The lines add up to ${entered} units but the document says ${p.documentTotal} — check each size before saving` });
+    const entered = p.lines.reduce((s, l) => s + tenThousandths(billQuantityOf(l)), 0);
+    if (entered !== tenThousandths(p.documentTotal)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentTotal"], message: `The lines add up to ${entered / 10_000} but the document says ${p.documentTotal} — check each size before saving` });
     }
   });
 export type StockPurchaseInput = z.input<typeof stockPurchaseSchema>;
