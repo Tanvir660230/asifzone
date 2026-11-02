@@ -16,7 +16,7 @@ import { approveCutover, draftCutover, postCutover } from "../finance/inventory-
 import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.service";
 import { createMaterial, listMaterials, materialNameKey, updateMaterial } from "../manufacturing/materials.service";
 import { belowReorderPoint, suggestReorder } from "./stock-items.service";
-import { stockUnitsOf } from "./purchase.service";
+import { checkPurchaseDuplicates, stockUnitsOf } from "./purchase.service";
 import { approveBom, createBom } from "../manufacturing/boms.service";
 import { createPackingRule, packagingForProduct, setPackingRuleActive } from "../finance/packaging.service";
 
@@ -396,5 +396,19 @@ describe("material usage report", () => {
     expect(row.opening + row.received - row.returned - row.usedInFills - row.packaging - row.wasted + row.counted + row.other).toBe(row.closing);
     expect(row.materialType).toBe("PACKAGING");
     await expect(materialUsage("2026-13")).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe("already in stock without a purchase", () => {
+  it("stickers found by a count, then the same stickers entered as bought: the check warns", async () => {
+    const before = await stock(sticker.variantId);
+    const count = await api().post("/stock/counts", { lines: [{ variantId: sticker.variantId, counted: before + 600, reason: "FOUND" }] }, `count-found-${RUN}`);
+    expect(count.status, JSON.stringify(count.body)).toBeLessThan(300);
+    const { business } = await getFinanceContext();
+    const r = await checkPurchaseDuplicates({ supplierName: "Local market", date: businessToday(business), lines: [{ variantId: sticker.variantId, amount: 600, quantity: 1000 }] });
+    expect(r.matches.find((m) => m.kind === "STOCK_ADDED")).toMatchObject({ itemOverlap: 1 });
+    // far more than was added: not this batch
+    const big = await checkPurchaseDuplicates({ supplierName: "Local market", lines: [{ variantId: sticker.variantId, amount: 6000, quantity: 10_000 }] });
+    expect(big.matches.some((m) => m.kind === "STOCK_ADDED")).toBe(false);
   });
 });

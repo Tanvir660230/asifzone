@@ -132,7 +132,8 @@ export const purchaseDuplicateCheckSchema = z
     supplierId: id.optional().nullable(),
     supplierName: z.string().trim().max(120).optional().nullable(),
     date: businessDate.optional(),
-    lines: z.array(z.object({ variantId: id, amount: z.number().min(0).max(STOCK_PURCHASE_MAX_TOTAL) })).min(1).max(200),
+    /** quantity (stock units) is optional: with it, stock added without a purchase must cover half of what is bought. */
+    lines: z.array(z.object({ variantId: id, amount: z.number().min(0).max(STOCK_PURCHASE_MAX_TOTAL), quantity: z.number().int().min(0).max(100_000_000).optional().nullable() })).min(1).max(200),
   })
   .refine((p) => Boolean(p.supplierId) || Boolean(p.supplierName), "Name the supplier");
 export type PurchaseDuplicateCheckInput = z.input<typeof purchaseDuplicateCheckSchema>;
