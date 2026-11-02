@@ -19,7 +19,7 @@ import { actorCan, type FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { businessDateOf, financeError, toMajorNumber, toMinor } from "../finance/finance-values";
 import { createSupplier } from "../finance/suppliers.service";
-import { approvePurchaseOrder, createPurchaseOrder, docNumber, submitPurchaseOrder } from "../finance/purchase-orders.service";
+import { approvePurchaseOrder, createPurchaseOrder, docNumber, setPurchaseOrderLineBought, submitPurchaseOrder } from "../finance/purchase-orders.service";
 import { createGoodsReceipt, postGoodsReceipt } from "../finance/goods-receipts.service";
 import { createSupplierInvoice, postSupplierInvoice } from "../finance/supplier-invoices.service";
 import { paySupplier } from "../finance/supplier-payments.service";
@@ -79,12 +79,9 @@ export async function orderStockPurchase(raw: StockOrderInput, actor: FinanceAct
       const k = seen.get(l.variantId) ?? 0;
       seen.set(l.variantId, k + 1);
       if (!l.buy && l.discount == null) continue;
-      await prisma.purchaseOrderLine.update({
-        where: { id: pol.id },
-        data: {
+      await setPurchaseOrderLineBought(pol.id, {
           ...(l.buy ? { purchaseUnitId: l.buy.unitId, purchaseUnitLabel: l.buy.label, purchaseUnitFactor: l.buy.factor, purchaseQty: Math.round((pol.qtyOrdered / l.buy.factor) * 10_000) / 10_000 } : {}),
           ...(l.discount != null ? { grossUnitPrice: (toMinor(l.amount, cur) + toMinor(l.discount, cur)) / l.quantity / toMinor(1, cur), discountAmount: toMajorNumber(discounts.get(l.variantId)![k]!, cur) } : {}),
-        },
       });
     }
     await submitPurchaseOrder(po.id, actor);

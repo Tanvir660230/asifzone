@@ -34,7 +34,7 @@ describe("purchase units", () => {
   it("are saved as a list per material, never the stock unit itself, and shown with it", async () => {
     const oil = await material("Oil", "ml", 0);
     const saved = await updateMaterial(oil.id, { purchaseUnits: [{ label: "litre", factor: 1000 }, { label: "tola", factor: 11.6638 }] }, OWNER, SEE);
-    expect(saved.purchaseUnits).toEqual([{ label: "litre", factor: 1000 }, { label: "tola", factor: 11.6638 }]);
+    expect(saved.purchaseUnits).toEqual([{ id: expect.any(String), label: "litre", factor: 1000 }, { id: expect.any(String), label: "tola", factor: 11.6638 }]);
     expect((await listMaterials({ q: `Vitest PH Oil ${RUN}` }, SEE)).materials[0]!.purchaseUnits).toHaveLength(2);
     await expect(updateMaterial(oil.id, { purchaseUnits: [{ label: "ML", factor: 1 }] }, OWNER, SEE)).rejects.toMatchObject({ statusCode: 400 });
     // replaced as a whole; an edit without them leaves them (and the description) alone

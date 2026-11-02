@@ -74,7 +74,7 @@ export const stockPurchaseSchema = z
   .superRefine((p, ctx) => {
     const entered = p.lines.reduce((s, l) => s + tenThousandths(billQuantityOf(l)), 0);
     if (entered !== tenThousandths(p.documentTotal)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentTotal"], message: `The lines add up to ${entered / 10_000} but the document says ${p.documentTotal} — check each size before saving` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentTotal"], message: `The lines add up to ${entered / 10_000} units but the document says ${p.documentTotal} — check each size before saving` });
     }
   });
 export type StockPurchaseInput = z.input<typeof stockPurchaseSchema>;
