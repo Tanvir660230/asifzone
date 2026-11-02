@@ -172,7 +172,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
 
   const lineErrors = lines.map((l, i) => {
     const unit = l.choice.variants[0]!.unit;
-    if (l.buy?.inexact) return `${l.buy.qty} ${l.buy.label} = ${num(l.buy.inexact.exact)} ${unit}. Stock is counted in whole ${unit} — enter ${num(l.buy.inexact.below)} or ${num(l.buy.inexact.above)} ${unit} instead.`;
+    if (l.buy?.inexact) return `${l.buy.qty} ${l.buy.label} = ${l.buy.inexact.exact.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${unit}. Stock is counted in whole ${unit} — enter ${num(l.buy.inexact.below)} or ${num(l.buy.inexact.above)} ${unit} instead.`;
     if (!totals[i]!.qty) return l.choice.grid ? "Enter how many of at least one colour and size" : "Enter how many";
     if (l.damaged?.trim() && !/^\d+$/.test(l.damaged.trim())) return "Damaged: a whole number";
     if (totals[i]!.good < 1) return "At least one must have arrived in good condition";
@@ -529,7 +529,7 @@ function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id
           {units.map((u) => <option key={u.label} value={u.label}>{u.label}</option>)}
         </Select>
       </div>
-      {line.buy && <p className="mt-1 text-xs text-fg-muted tabular-nums" data-testid="bought-into-stock">{stockQty ? `= ${num(stockQty)} ${unit} into stock` : `1 ${line.buy.label} = ${num(line.buy.factor)} ${unit}`}</p>}
+      {line.buy && <p className="mt-1 text-xs text-fg-muted tabular-nums" data-testid="bought-into-stock">{stockQty ? `= ${num(stockQty)} ${unit} into stock` : `1 ${line.buy.label} = ${line.buy.factor.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${unit}`}</p>}
     </div>
   );
 }
@@ -555,14 +555,14 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, e
         <IconButton aria-label={`Remove ${choice.label}`} size="sm" className="-mr-1 -mt-1" onClick={onRemove}><X size={16} /></IconButton>
       </div>
       {choice.grid && <QtyGrid line={line} onChange={onChange} />}
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[8rem_10rem_minmax(0,1fr)] sm:items-end">
+      <div className={cn("mt-3 grid grid-cols-2 gap-3 sm:items-end", v0.purchaseUnits.length && !choice.grid ? "sm:grid-cols-[13rem_10rem_minmax(0,1fr)]" : "sm:grid-cols-[8rem_10rem_minmax(0,1fr)]")}>
         {choice.grid ? (
           <div className="min-w-0">
             <p className="ui-label">How many</p>
             <p className="flex h-10 items-center tabular-nums text-fg">{num(qty)} pcs</p>
           </div>
         ) : v0.purchaseUnits.length ? (
-          <BuyUnitQty line={line} unit={unit} onChange={onChange} id={id} />
+          <div className="col-span-2 sm:col-span-1"><BuyUnitQty line={line} unit={unit} onChange={onChange} id={id} /></div>
         ) : (
           <Field htmlFor={`${id}-q`} label={`How many (${unit})`}>
             <Input id={`${id}-q`} inputMode="numeric" className="tabular-nums" value={line.qty[v0.variantId] ?? ""} onChange={(e) => onChange({ qty: { [v0.variantId]: e.target.value } })} data-testid="bought-qty" />
