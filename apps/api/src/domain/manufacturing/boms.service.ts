@@ -8,6 +8,7 @@
 import type { BillOfMaterials, MaterialSupplier, Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { actorCan, recordFinanceAudit, type FinanceActor } from "../finance/finance-audit";
+import { assertNoPackingOverlap } from "../finance/packaging.service";
 import { getFinanceContext } from "../finance/finance-context";
 import { financeError } from "../finance/finance-values";
 import { financeTransaction } from "../finance/finance-tx";
@@ -158,6 +159,9 @@ export async function approveBom(id: string, actor: FinanceActor) {
     if (!actorCan(actor, "manufacturing.approve")) throw financeError(403, "FORBIDDEN", "Approving a bill of materials needs manufacturing.approve");
     if (before.status !== "DRAFT") throw financeError(409, "BOM_NOT_DRAFT", "Only a draft bill of materials is approved");
     if (!before.lines.length) throw financeError(409, "BOM_EMPTY", "Add at least one material");
+    // docs/MATERIALS_PURCHASING.md §5: a material is taken at one point only — not by this recipe and a packing rule too
+    const product = await tx.product.findUniqueOrThrow({ where: { id: before.productId }, select: { id: true, categoryId: true } });
+    await assertNoPackingOverlap(tx as never, product, before.lines.map((l) => ({ materialVariantId: l.materialVariantId, finishedVariantId: l.finishedVariantId })));
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`mfg-bom:${before.productId}`}))`;
     const now = new Date();
     const replaced = await tx.billOfMaterials.findMany({ where: { productId: before.productId, status: "APPROVED", id: { not: id } }, select: { id: true, version: true } });

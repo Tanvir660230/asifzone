@@ -51,9 +51,61 @@ async function validRule(input: PackingRuleInput) {
   if (input.scope === "VARIANT" && !(await prisma.productVariant.count({ where: { id: input.scopeId! } }))) throw financeError(404, "VARIANT_NOT_FOUND", "Variant not found");
 }
 
+type Db = Pick<typeof prisma, "billOfMaterialsLine" | "packingRule" | "product" | "productVariant">;
+
+/** The products (with the size, when the rule names one) a rule reaches — null for every parcel. */
+async function productsReached(db: Db, scope: PackingRuleScope, scopeId: string | null): Promise<{ productIds: string[]; variantId: string | null } | null> {
+  if (scope === "EVERY_PARCEL") return null;
+  if (scope === "PRODUCT") return { productIds: [scopeId!], variantId: null };
+  if (scope === "VARIANT") {
+    const v = await db.productVariant.findUnique({ where: { id: scopeId! }, select: { productId: true } });
+    return { productIds: v ? [v.productId] : [], variantId: scopeId };
+  }
+  const ps = await db.product.findMany({ where: { categoryId: scopeId!, deletedAt: null }, select: { id: true } });
+  return { productIds: ps.map((p) => p.id), variantId: null };
+}
+
+/**
+ * One consumption point per material (docs/MATERIALS_PURCHASING.md §5): a material in a product's approved recipe leaves
+ * stock when that product is filled, so a packing rule taking it again for the same product would count it twice. Refused,
+ * naming the recipe.
+ */
+export async function assertNoRecipeOverlap(db: Db, rule: { scope: PackingRuleScope; scopeId: string | null; materialVariantId: string }) {
+  const reached = await productsReached(db, rule.scope, rule.scopeId);
+  const lines = await db.billOfMaterialsLine.findMany({
+    where: {
+      materialVariantId: rule.materialVariantId,
+      bom: { status: "APPROVED", ...(reached ? { productId: { in: reached.productIds } } : {}) },
+      ...(reached?.variantId ? { OR: [{ finishedVariantId: null }, { finishedVariantId: reached.variantId }] } : {}),
+    },
+    select: { bom: { select: { version: true, product: { select: { name: true } } } }, materialVariant: { select: { product: { select: { name: true } } } } },
+    take: 5,
+  });
+  if (!lines.length) return;
+  const recipes = [...new Set(lines.map((l) => `${l.bom.product.name} v${l.bom.version}`))].join(", ");
+  throw financeError(409, "PACKING_RULE_IN_RECIPE", `${lines[0]!.materialVariant.product.name} is already in the approved recipe of ${recipes} — it leaves stock when that is filled; a packing rule would take it a second time`);
+}
+
+/** The other way round, when a recipe is approved: no active packing rule may take one of its materials for its product. */
+export async function assertNoPackingOverlap(db: Db, product: { id: string; categoryId: string }, lines: Array<{ materialVariantId: string; finishedVariantId: string | null }>) {
+  const variants = await db.productVariant.findMany({ where: { productId: product.id }, select: { id: true } });
+  const rules = await db.packingRule.findMany({
+    where: {
+      isActive: true,
+      materialVariantId: { in: lines.map((l) => l.materialVariantId) },
+      OR: [{ scope: "EVERY_PARCEL" }, { scope: "CATEGORY", scopeId: product.categoryId }, { scope: "PRODUCT", scopeId: product.id }, { scope: "VARIANT", scopeId: { in: variants.map((v) => v.id) } }],
+    },
+    select: { scope: true, scopeId: true, materialVariantId: true, materialVariant: { select: { product: { select: { name: true } } } } },
+  });
+  // a rule for one size only clashes with a line for every size or for that size
+  const clash = rules.find((r) => lines.some((l) => l.materialVariantId === r.materialVariantId && (r.scope !== "VARIANT" || l.finishedVariantId === null || l.finishedVariantId === r.scopeId)));
+  if (clash) throw financeError(409, "RECIPE_MATERIAL_IN_PACKING_RULE", `${clash.materialVariant.product.name} is already taken by an active packing rule for this product — turn that rule off, or leave it out of the recipe, so it isn't counted twice`);
+}
+
 export async function createPackingRule(input: PackingRuleInput, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   await validRule(input);
+  if (input.isActive ?? true) await assertNoRecipeOverlap(prisma, { scope: input.scope, scopeId: input.scopeId ?? null, materialVariantId: input.materialVariantId });
   return financeTransaction(async (tx) => {
     await ensureOwnerBooksSetupInTx(tx, business, actor);
     const rule = await tx.packingRule.create({ data: { scope: input.scope, scopeId: input.scopeId ?? null, materialVariantId: input.materialVariantId, quantity: input.quantity, per: input.per ?? "PARCEL", isActive: input.isActive ?? true, notes: input.notes ?? null } });
@@ -68,10 +120,33 @@ export async function setPackingRuleActive(id: string, isActive: boolean, actor:
   return financeTransaction(async (tx) => {
     const before = await tx.packingRule.findUnique({ where: { id } });
     if (!before) throw financeError(404, "RULE_NOT_FOUND", "Packing rule not found");
+    if (isActive && !before.isActive) await assertNoRecipeOverlap(tx as unknown as Db, before);
     const after = await tx.packingRule.update({ where: { id }, data: { isActive } });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "packing_rule.update", entityType: "PackingRule", entityId: id, before, after });
     return after;
   });
+}
+
+/**
+ * The packaging a product's parcels take (docs/MATERIALS_PURCHASING.md §5): every packing rule that reaches it — its own,
+ * one of its sizes, its category, every parcel — active and switched off, newest first. For the product's kit panel.
+ */
+export async function packagingForProduct(productId: string) {
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, categoryId: true, variants: { select: { id: true, size: true, color: true } } } });
+  if (!product) throw financeError(404, "PRODUCT_NOT_FOUND", "Product not found");
+  const sizes = new Map(product.variants.map((v) => [v.id, [v.size, v.color].filter(Boolean).join(" ")]));
+  const rules = await prisma.packingRule.findMany({
+    where: { OR: [{ scope: "EVERY_PARCEL" }, { scope: "CATEGORY", scopeId: product.categoryId }, { scope: "PRODUCT", scopeId: product.id }, { scope: "VARIANT", scopeId: { in: [...sizes.keys()] } }] },
+    select: { id: true, scope: true, scopeId: true, quantity: true, per: true, isActive: true, notes: true, createdAt: true, materialVariant: { select: { id: true, sku: true, product: { select: { name: true, stockUnit: true } } } } },
+    orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+  });
+  return {
+    rules: rules.map((r) => ({
+      id: r.id, scope: r.scope, isActive: r.isActive, quantity: r.quantity, per: r.per, notes: r.notes,
+      appliesTo: r.scope === "EVERY_PARCEL" ? "Every parcel" : r.scope === "CATEGORY" ? "Its category" : r.scope === "PRODUCT" ? "This product" : `Size ${sizes.get(r.scopeId!) ?? ""}`.trim(),
+      material: { variantId: r.materialVariant.id, sku: r.materialVariant.sku, name: r.materialVariant.product.name, unit: r.materialVariant.product.stockUnit ?? "pcs" },
+    })),
+  };
 }
 
 const SHIPPED = ["SHIPPED", "DELIVERED", "PARTIALLY_DELIVERED", "RETURNED"] as const;

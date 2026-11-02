@@ -361,3 +361,18 @@ export interface ProductKit {
   sizes: Array<{ variantId: string; sku: string; label: string; stock: number; soldPerDay: number | null; recipe: { bomId: string; version: number } | null; components: KitComponent[]; canSell: number | null; runsOutFirst: { variantId: string; name: string } | null; kitCost: number | null }>;
 }
 export const getProductKit = (productId: string) => apiFetch<ProductKit>(`${BASE}/products/${productId}/kit`);
+/** docs/MATERIALS_PURCHASING.md §5: the packing rules a product's parcels take. */
+export interface ProductPackagingRule {
+  id: string;
+  scope: "EVERY_PARCEL" | "CATEGORY" | "PRODUCT" | "VARIANT";
+  isActive: boolean;
+  quantity: number;
+  per: "UNIT" | "PARCEL";
+  notes: string | null;
+  appliesTo: string;
+  material: { variantId: string; sku: string; name: string; unit: string };
+}
+export const getProductPackaging = (productId: string) => apiFetch<{ rules: ProductPackagingRule[] }>(`${BASE}/products/${productId}/packaging`);
+/** docs/MATERIALS_PURCHASING.md §5: material broken outside a fill. */
+export const recordStockWaste = (body: { variantId: string; quantity: number; note: string }, idempotencyKey: string) =>
+  apiFetch<{ replayed: boolean; movementId: string; value: number | null }>(`${BASE}/waste`, { method: "POST", body, idempotencyKey });

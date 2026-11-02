@@ -16,6 +16,8 @@ import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.s
 import { createMaterial, listMaterials, materialNameKey, updateMaterial } from "../manufacturing/materials.service";
 import { belowReorderPoint, suggestReorder } from "./stock-items.service";
 import { stockUnitsOf } from "./purchase.service";
+import { approveBom, createBom } from "../manufacturing/boms.service";
+import { createPackingRule, packagingForProduct, setPackingRuleActive } from "../finance/packaging.service";
 
 // docs/MATERIALS_PURCHASING.md: materials (type, duplicate names, purchase units kept as history) and the purchase form's
 // purchase units converted on the server, units on the bill in bill units, discount, damaged on arrival and extras by quantity.
@@ -78,6 +80,8 @@ afterAll(async () => {
   await purgeFinanceTables();
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET LOCAL finance.maintenance_purge = 'on'`);
+    await tx.$executeRawUnsafe(`DELETE FROM "PackingRule" WHERE "materialVariantId" IN (SELECT v.id FROM "ProductVariant" v JOIN "Product" p ON p.id = v."productId" WHERE p.kind = 'MATERIAL' AND p.name LIKE 'Vitest %')`);
+    await tx.$executeRawUnsafe(`DELETE FROM "BillOfMaterialsLine" WHERE "materialVariantId" IN (SELECT v.id FROM "ProductVariant" v JOIN "Product" p ON p.id = v."productId" WHERE p.kind = 'MATERIAL' AND p.name LIKE 'Vitest %')`);
     await tx.$executeRawUnsafe(`DELETE FROM "StockMovement" WHERE "variantId" IN (SELECT v.id FROM "ProductVariant" v JOIN "Product" p ON p.id = v."productId" WHERE p.kind = 'MATERIAL' AND p.name LIKE 'Vitest %')`);
     await tx.$executeRawUnsafe(`DELETE FROM "MaterialPurchaseUnit" WHERE "productId" IN (SELECT id FROM "Product" WHERE kind = 'MATERIAL' AND name LIKE 'Vitest %')`);
     await tx.$executeRawUnsafe(`DELETE FROM "ProductVariant" WHERE "productId" IN (SELECT id FROM "Product" WHERE kind = 'MATERIAL' AND name LIKE 'Vitest %')`);
@@ -324,5 +328,56 @@ describe("ordered, then delivered in parts", () => {
     const o = await order();
     const r = await post("/stock/orders", { ...o, lines: [{ ...o.lines[1]!, damaged: 1 }], documentTotal: 500 }, "order-damaged");
     expect(r.status).toBe(400);
+  });
+});
+
+describe("packaging: one consumption point per material", () => {
+  let product: Awaited<ReturnType<typeof createStockedProduct>>;
+
+  it("a material in the approved recipe can't also be taken by a packing rule for that product; another material can", async () => {
+    product = await createStockedProduct({ stocks: [0, 0], basePrice: 900 });
+    const [small, large] = product.variants;
+    const bom = await createBom({ productId: product.product.id, lines: [
+      { materialVariantId: sticker.variantId, qtyPerUnit: "1" },
+      { materialVariantId: bottle.variantId, finishedVariantId: small!.id, qtyPerUnit: "1" },
+    ] as never }, OWNER);
+    await approveBom(bom.id, OWNER);
+    await expect(createPackingRule({ scope: "PRODUCT", scopeId: product.product.id, materialVariantId: sticker.variantId, quantity: 1, per: "UNIT" }, OWNER)).rejects.toMatchObject({ statusCode: 409, details: { code: "PACKING_RULE_IN_RECIPE" } });
+    await expect(createPackingRule({ scope: "VARIANT", scopeId: small!.id, materialVariantId: bottle.variantId, quantity: 1, per: "UNIT" }, OWNER)).rejects.toMatchObject({ details: { code: "PACKING_RULE_IN_RECIPE" } });
+    // the bottle is in the recipe for the small size only: a rule for the large size takes it once
+    const ok = await createPackingRule({ scope: "VARIANT", scopeId: large!.id, materialVariantId: bottle.variantId, quantity: 1, per: "UNIT" }, OWNER);
+    const list = await packagingForProduct(product.product.id);
+    expect(list.rules.find((r) => r.id === ok.id)).toMatchObject({ isActive: true, per: "UNIT", material: { variantId: bottle.variantId } });
+    await setPackingRuleActive(ok.id, false, OWNER);
+  });
+
+  it("a recipe taking a material an active packing rule already takes for the product is refused at approval", async () => {
+    const p = await createStockedProduct({ stocks: [0], basePrice: 500 });
+    const rule = await createPackingRule({ scope: "PRODUCT", scopeId: p.product.id, materialVariantId: musk.variantId, quantity: 1, per: "UNIT" }, OWNER);
+    const bom = await createBom({ productId: p.product.id, lines: [{ materialVariantId: musk.variantId, qtyPerUnit: "2" }] as never }, OWNER);
+    await expect(approveBom(bom.id, OWNER)).rejects.toMatchObject({ statusCode: 409, details: { code: "RECIPE_MATERIAL_IN_PACKING_RULE" } });
+    await setPackingRuleActive(rule.id, false, OWNER);
+    await approveBom(bom.id, OWNER);
+    // switching the rule back on now clashes with the recipe
+    await expect(setPackingRuleActive(rule.id, true, OWNER)).rejects.toMatchObject({ details: { code: "PACKING_RULE_IN_RECIPE" } });
+  });
+});
+
+describe("wasted", () => {
+  it("broken bottles leave stock as damaged, once per key, with the reason; only materials", async () => {
+    const before = await stock(bottle.variantId);
+    const r = await api().post("/stock/waste", { variantId: bottle.variantId, quantity: 3, note: "Cracked while packing" }, `waste-1-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(await stock(bottle.variantId)).toBe(before - 3);
+    const mv = await prisma.stockMovement.findUniqueOrThrow({ where: { id: r.body.movementId } });
+    expect(mv).toMatchObject({ reason: "DAMAGED", change: -3, note: "Wasted: Cracked while packing" });
+    const again = await api().post("/stock/waste", { variantId: bottle.variantId, quantity: 3, note: "Cracked while packing" }, `waste-1-${RUN}`);
+    expect(again.status).toBe(200);
+    expect(await stock(bottle.variantId)).toBe(before - 3);
+    const p = await createStockedProduct({ stocks: [5] });
+    const notMaterial = await api().post("/stock/waste", { variantId: p.variants[0]!.id, quantity: 1, note: "Torn" }, `waste-2-${RUN}`);
+    expect(notMaterial.status).toBe(400);
+    const noReason = await api().post("/stock/waste", { variantId: bottle.variantId, quantity: 1, note: "" }, `waste-3-${RUN}`);
+    expect(noReason.status).toBe(400);
   });
 });

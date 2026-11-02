@@ -14,6 +14,7 @@ import * as stockApi from "@/lib/api/stock";
 import type { KitComponent } from "@/lib/api/stock";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PackagingBlock } from "./packaging-block";
 
 const num = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 const SOURCE: Record<KitComponent["source"], string> = { RECIPE: "Recipe", ITEM: "The item", PACKING: "Packing", ROLL: "Roll" };
@@ -77,6 +78,7 @@ export function KitPanel({ productId }: { productId: string }) {
           ))}
         </ul>
       </div>
+      <PackagingBlock productId={productId} sizes={kit.sizes.map((s) => ({ variantId: s.variantId, label: s.label }))} />
       <p className="text-xs text-fg-muted">
         Change what goes in: {size.recipe ? <Link href="/admin/manufacturing/boms" className="font-medium text-accent hover:underline">recipe v{size.recipe.version}</Link> : <Link href="/admin/manufacturing/boms" className="font-medium text-accent hover:underline">add a recipe</Link>} ·{" "}
         <Link href="/admin/finance/packaging" className="font-medium text-accent hover:underline">packing rules</Link> · rolls on <Link href="/admin/finance/stock-check" className="font-medium text-accent hover:underline">Stock check</Link>.
