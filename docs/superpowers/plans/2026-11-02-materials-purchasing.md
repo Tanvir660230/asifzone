@@ -70,3 +70,4 @@ https://claude.ai/artifact/TTnGEdbuS5KpiyPJLL3No2 — sections referenced below 
 - 2026-11-02: P1+P2 web done: bought-sheet (unit id sent, inexact flagged, discount/damaged, extras share method), materials page (type, filter, duplicate prompt), item panel (reorder at / always keep). Next: P3 Ordered + Expected.
 - 2026-11-03: P3 API done (order.service.ts; POST /stock/orders, GET /stock/orders/expected, POST /stock/orders/:id/deliveries; 17 tests pass; role matrix 790). Next: P3 web (Bought sheet 'arrived?' switch + Expected list + delivery sheet).
 - 2026-11-03: P3 web done (bought-sheet arrived/ordered switch, expected-orders.tsx with DeliverySheet). Next: P4 packaging.
+- 2026-11-03: P4 done (overlap guard both ways, POST /stock/waste, GET /stock/products/:id/packaging, packaging-block.tsx in KitPanel, Wasted dialog in item panel; 20 tests). Next: P5 usage report; role matrix needs +2 (waste, packaging) +1 (usage).

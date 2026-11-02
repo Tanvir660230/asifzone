@@ -6,7 +6,8 @@ import { prisma } from "../../config/prisma";
 import { signAccessToken } from "../../lib/jwt";
 import { cleanupFixtures, createStockedProduct, ownerId, purgeFinanceTables, RUN } from "../../test-fixtures";
 import type { FinanceActor } from "../finance/finance-audit";
-import { getFinanceContext } from "../finance/finance-context";
+import { businessToday, getFinanceContext } from "../finance/finance-context";
+import { materialUsage } from "./material-usage.service";
 import { ensureCommerceAccounting } from "../finance/commerce-setup.service";
 import { ensurePurchasingAccounting } from "../finance/purchasing-setup.service";
 import { updateBusinessSettings } from "../finance/chart.service";
@@ -379,5 +380,21 @@ describe("wasted", () => {
     expect(notMaterial.status).toBe(400);
     const noReason = await api().post("/stock/waste", { variantId: bottle.variantId, quantity: 1, note: "" }, `waste-3-${RUN}`);
     expect(noReason.status).toBe(400);
+  });
+});
+
+describe("material usage report", () => {
+  it("explains this month's bottles: opening + received − used − wasted = closing, waste flagged", async () => {
+    const { business } = await getFinanceContext();
+    const month = businessToday(business).slice(0, 7);
+    const r = await materialUsage(month);
+    const row = r.rows.find((x) => x.variantId === bottle.variantId)!;
+    expect(row.closing).toBe(await stock(bottle.variantId));
+    expect(row.opening).toBe(0);
+    expect(row.wasted).toBe(3);
+    expect(row.flags).toContain("WASTE");
+    expect(row.opening + row.received - row.returned - row.usedInFills - row.packaging - row.wasted + row.counted + row.other).toBe(row.closing);
+    expect(row.materialType).toBe("PACKAGING");
+    await expect(materialUsage("2026-13")).rejects.toMatchObject({ statusCode: 400 });
   });
 });

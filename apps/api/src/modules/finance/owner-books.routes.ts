@@ -85,6 +85,7 @@ import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.se
 import * as stockPurchases from "../../domain/stock/purchase.service";
 import * as stockOrders from "../../domain/stock/order.service";
 import { recordWaste, stockWasteSchema } from "../../domain/stock/waste.service";
+import { materialUsage } from "../../domain/stock/material-usage.service";
 import * as stockCounts from "../../domain/stock/count.service";
 import { correctStockValues } from "../../domain/finance/stock-value-correction.service";
 import { setStockPolicy, stockHub } from "../../domain/stock/stock-hub.service";
@@ -261,6 +262,8 @@ ownerBooksRouter.post("/stock/waste", requirePermission("inventory.adjust"), val
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 ownerBooksRouter.get("/stock/products/:id/packaging", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await packaging.packagingForProduct(id(req)))));
+// docs/MATERIALS_PURCHASING.md §6: where each material went in a month (read-only).
+ownerBooksRouter.get("/stock/reports/material-usage", requirePermission("inventory.read"), asyncHandler(async (req, res) => res.json(await materialUsage(String(req.query.month ?? "")))));
 ownerBooksRouter.get("/stock/orders/expected", requirePermission("purchasing.read"), asyncHandler(async (_req, res) => res.json(await stockOrders.listExpected())));
 ownerBooksRouter.post("/stock/orders", requirePermission("purchasing.manage"), validate(stockOrderSchema), asyncHandler(async (req, res) => {
   const r = await stockOrders.orderStockPurchase(req.body, await actorOf(req), idempotencyKeyOf(req));
