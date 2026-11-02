@@ -13,6 +13,8 @@ const qs = (params: Record<string, string | number | undefined | null>) => {
 export type ProductionOrderStatus = "DRAFT" | "APPROVED" | "IN_PRODUCTION" | "PARTIALLY_RECEIVED" | "RECEIVED" | "CLOSED" | "CANCELLED";
 export type BomStatus = "DRAFT" | "APPROVED" | "ARCHIVED";
 export type MaterialSupplier = "BUSINESS" | "PRODUCER";
+export type MaterialType = "RAW" | "PACKAGING" | "CONSUMABLE";
+export const MATERIAL_TYPE_LABEL: Record<MaterialType, string> = { RAW: "Raw material", PACKAGING: "Packaging", CONSUMABLE: "Consumable" };
 export type CostGroup = "MATERIAL" | "LABOUR" | "EXTERNAL_SERVICE" | "OVERHEAD" | "OTHER";
 
 export interface Material {
@@ -22,8 +24,10 @@ export interface Material {
   description: string;
   referenceCost: number | null;
   archived: boolean;
+  /** Raw, packaging or consumable (docs/MATERIALS_PURCHASING.md §1); null until someone sets it. */
+  materialType: MaterialType | null;
   /** How it is bought — one `label` (litre, dozen, tola) is `factor` stock units. */
-  purchaseUnits: Array<{ label: string; factor: number }>;
+  purchaseUnits: Array<{ id?: string; label: string; factor: number }>;
   variants: Array<{ id: string; sku: string; spec: string; color: string; stock: number; averageCost: number | null; value: number | null }>;
 }
 export interface BomLine {

@@ -15,6 +15,9 @@ export interface ItemSettings {
   preferredSupplierId: string | null;
   leadTimeDays: number;
   coverDays: number;
+  /** Optional, in stock units (docs/MATERIALS_PURCHASING.md §1): at or below it the item is to buy; null = not set. */
+  reorderPoint?: number | null;
+  safetyStock?: number | null;
 }
 
 export interface StockListItem extends StockItem {

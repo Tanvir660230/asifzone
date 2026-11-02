@@ -23,7 +23,7 @@ https://claude.ai/artifact/TTnGEdbuS5KpiyPJLL3No2 — sections referenced below 
 
 ## Phases (one commit group each; tick when done + verified)
 
-### P1 — purchase units on the server (§6.1, D2, D3) — API DONE 2026-11-02 (commit below); web form pending
+### P1 + P2 — DONE (API + web) 2026-11-02; UI screenshots still to take at the end
 - [ ] Migration: `MaterialPurchaseUnit.archivedAt`; `GoodsReceiptLine` + `PurchaseOrderLine`: `purchaseUnitId?`, `purchaseUnitLabel?`, `purchaseUnitFactor?`, `purchaseQty?`
 - [ ] materials.service: purchase units edited by id (add / archive / restore), never deleted once used; stock unit locked after first movement
 - [ ] stockPurchaseSchema lines: `purchaseUnitId?` + `purchaseQty?` (server converts; refuses non-whole result with nearest options); `documentTotal` counted in bill units
@@ -67,3 +67,4 @@ https://claude.ai/artifact/TTnGEdbuS5KpiyPJLL3No2 — sections referenced below 
 - 2026-11-02: plan approved; worktree created.
 - 2026-11-02: P1+P2 API done: migration 20261209100000_materials_purchasing; materials.service (type, duplicate check, unit reconcile, unit lock); purchase.service (server conversion, damaged, discount, extrasMethod); goods receipt snapshot; reorder point. Test: src/domain/stock/materials-purchasing.integration.test.ts (13 pass). Next: web (bought-sheet, materials page, item settings), then P3.
 - Resume recipe: `pnpm install`, `pnpm --filter @clothing-brand/shared build`, test DB materials_test (`DATABASE_URL=postgresql://postgres@localhost:5432/materials_test?schema=public npx prisma migrate deploy` in apps/api). Edits were applied with node scripts in the session scratchpad; nothing depends on them.
+- 2026-11-02: P1+P2 web done: bought-sheet (unit id sent, inexact flagged, discount/damaged, extras share method), materials page (type, filter, duplicate prompt), item panel (reorder at / always keep). Next: P3 Ordered + Expected.

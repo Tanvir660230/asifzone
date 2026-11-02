@@ -16,6 +16,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { SearchInput } from "@/components/ui/search-input";
+import { Select } from "@/components/ui/select";
 import { Table, TableCell, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -23,7 +24,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
-import { getErrorMessage } from "@/lib/api-client";
+import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,17 @@ import { formatUnitCost } from "@/components/admin/manufacturing/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 const SKU_RE = /^[A-Za-z0-9][A-Za-z0-9._-]+$/;
+const TYPES = Object.keys(mfg.MATERIAL_TYPE_LABEL) as mfg.MaterialType[];
+
+/** Raw material / packaging / consumable — "Not set" until someone chooses (docs/MATERIALS_PURCHASING.md §1). */
+function TypeSelect({ id, value, onChange }: { id: string; value: mfg.MaterialType | ""; onChange: (v: mfg.MaterialType | "") => void }) {
+  return (
+    <Select id={id} value={value} onChange={(e) => onChange(e.target.value as mfg.MaterialType | "")} data-testid="material-type">
+      <option value="">Not set</option>
+      {TYPES.map((t) => <option key={t} value={t}>{mfg.MATERIAL_TYPE_LABEL[t]}</option>)}
+    </Select>
+  );
+}
 
 /** Materials (docs/MANUFACTURING.md §3): oil, bottles, boxes, fabric, trims, labels and packaging production uses. They are
  * stock like any item — bought on Stock › Received goods, counted, issued to fills and production — but never sold.
@@ -40,6 +52,7 @@ export default function MaterialsPage() {
   const allowed = can("manufacturing.view");
   const [q, setQ] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [type, setType] = useState<mfg.MaterialType | "">("");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<mfg.Material | null>(null);
   const query = { q: q.trim() || undefined, includeArchived: showArchived || undefined };
@@ -58,7 +71,7 @@ export default function MaterialsPage() {
       </div>
     );
   }
-  const materials = list.data?.materials ?? [];
+  const materials = (list.data?.materials ?? []).filter((m) => !type || m.materialType === type);
   return (
     <div className="space-y-6">
       <ModuleTabs />
@@ -68,7 +81,13 @@ export default function MaterialsPage() {
         action={canManage && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-material"><Plus className="h-4 w-4" /> New material</Button>}
       />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SearchInput value={q} onChange={setQ} placeholder="Search name or SKU" wrapperClassName="w-full sm:w-72" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={q} onChange={setQ} placeholder="Search name or SKU" wrapperClassName="w-full sm:w-72" />
+          <Select aria-label="Type" value={type} onChange={(e) => setType(e.target.value as mfg.MaterialType | "")} className="sm:w-48" data-testid="material-type-filter">
+            <option value="">All types</option>
+            {TYPES.map((t) => <option key={t} value={t}>{mfg.MATERIAL_TYPE_LABEL[t]}</option>)}
+          </Select>
+        </div>
         <label className="flex min-h-11 items-center gap-2 text-sm text-ink-700">
           <Checkbox checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} data-testid="show-archived" />
           Show archived
@@ -97,6 +116,7 @@ export default function MaterialsPage() {
                       {i === 0 ? (
                         <span className="flex flex-wrap items-center gap-2 font-medium text-ink-900">
                           {m.name}
+                          {m.materialType && <Badge variant="neutral" data-testid="material-type-badge">{mfg.MATERIAL_TYPE_LABEL[m.materialType]}</Badge>}
                           {m.archived && <Badge variant="neutral">Archived</Badge>}
                         </span>
                       ) : <span className="sr-only">{m.name}</span>}
@@ -122,8 +142,8 @@ export default function MaterialsPage() {
         {list.isSuccess && materials.length === 0 && (
           <EmptyState
             icon={Layers}
-            title={q.trim() ? "No material matches" : "No materials yet"}
-            description={q.trim() ? "Try another name or SKU." : "Add the oil, bottles, boxes and packaging your products are made from."}
+            title={q.trim() || type ? "No material matches" : "No materials yet"}
+            description={q.trim() || type ? "Try another name, SKU or type." : "Add the oil, bottles, boxes and packaging your products are made from."}
           />
         )}
       </Card>
@@ -137,20 +157,44 @@ function MaterialModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("pcs");
+  const [type, setType] = useState<mfg.MaterialType | "">("");
   const [variants, setVariants] = useState([{ key: 1, sku: "", spec: "Standard", color: "" }]);
-  const valid = name.trim().length >= 2 && unit.trim() && variants.every((v) => SKU_RE.test(v.sku.trim()));
+  // a material of the same name already exists: shown, and saving again needs a reason (docs/MATERIALS_PURCHASING.md §1)
+  const [twins, setTwins] = useState<Array<{ id: string; name: string; stockUnit: string | null; archived: boolean }> | null>(null);
+  const [reason, setReason] = useState("");
+  const valid = name.trim().length >= 2 && unit.trim() && variants.every((v) => SKU_RE.test(v.sku.trim())) && (!twins || reason.trim().length >= 3);
   const save = useMutation({
-    mutationFn: () => mfg.createMaterial({ name: name.trim(), stockUnit: unit.trim(), variants: variants.map((v) => ({ sku: v.sku.trim(), spec: v.spec.trim() || "Standard", color: v.color.trim() || null })) }),
+    mutationFn: () => mfg.createMaterial({ name: name.trim(), stockUnit: unit.trim(), materialType: type || null, ...(twins ? { duplicateReason: reason.trim() } : {}), variants: variants.map((v) => ({ sku: v.sku.trim(), spec: v.spec.trim() || "Standard", color: v.color.trim() || null })) }),
     onSuccess: (m) => { void queryClient.invalidateQueries({ queryKey: mfg.manufacturingKeys.all }); toast.success(`${m.name} added`); onClose(); },
-    onError: (err) => toast.error(getErrorMessage(err, "The material couldn't be saved")),
+    onError: (err) => {
+      const d = err instanceof ApiError ? (err.details as { code?: string; matches?: typeof twins } | undefined) : undefined;
+      if (d?.code === "MATERIAL_DUPLICATE" && d.matches) return setTwins(d.matches);
+      toast.error(getErrorMessage(err, "The material couldn't be saved"));
+    },
   });
   return (
     <Modal open onClose={onClose} title="New material" description="Stock is counted in whole stock units — pick the smallest unit you use (ml rather than litre, cm rather than m)." widthClassName="max-w-2xl" footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate()} data-testid="save-material">Save</Button></>}>
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-          <Field htmlFor="mat-name" label="Name" required><Input id="mat-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={160} placeholder="Attar oil — AMBER" /></Field>
+          <Field htmlFor="mat-name" label="Name" required><Input id="mat-name" value={name} onChange={(e) => { setName(e.target.value); setTwins(null); }} maxLength={160} placeholder="Attar oil — AMBER" /></Field>
           <Field htmlFor="mat-unit" label="Stock unit" required><Input id="mat-unit" value={unit} onChange={(e) => setUnit(e.target.value)} maxLength={16} placeholder="ml, g, pcs" /></Field>
         </div>
+        <Field htmlFor="mat-type" label="Type" hint="Packaging: bottles, boxes, stickers, polybags. Raw: oil, fabric. Consumable: tape, glue." className="sm:max-w-xs">
+          <TypeSelect id="mat-type" value={type} onChange={setType} />
+        </Field>
+        {twins && (
+          <div data-testid="material-duplicate">
+            <Alert variant="warning" title="A material with this name already exists">
+              <ul className="mt-1 space-y-0.5">
+                {twins.map((t) => <li key={t.id}>{t.name}{t.stockUnit ? ` (${t.stockUnit})` : ""}{t.archived ? " — archived" : ""}</li>)}
+              </ul>
+              <p className="mt-2">Buying the same thing under two names splits its stock. Use the one above{twins.some((t) => t.archived) ? " (restore it if archived)" : ""}, or say why this one is different.</p>
+              <Field htmlFor="mat-dup-reason" label="Why it is a different material" className="mt-2 text-fg">
+                <Input id="mat-dup-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. a round sticker, not the square one" data-testid="material-duplicate-reason" />
+              </Field>
+            </Alert>
+          </div>
+        )}
         <Alert variant="info">It starts at 0. Add stock with Received goods (Stock › Received goods), valued at what you paid.</Alert>
         <SizeRows rows={variants} onChange={setVariants} />
         <Button size="sm" variant="outline" onClick={() => setVariants((vs) => [...vs, { key: Math.max(...vs.map((x) => x.key)) + 1, sku: "", spec: "Standard", color: "" }])}><Plus className="h-4 w-4" /> Size</Button>
@@ -184,6 +228,7 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
   const { confirm, dialog } = useConfirmDialog();
   const [name, setName] = useState(material.name);
   const [unit, setUnit] = useState(material.stockUnit ?? "");
+  const [type, setType] = useState<mfg.MaterialType | "">(material.materialType ?? "");
   const [description, setDescription] = useState(material.description ?? "");
   const [refCost, setRefCost] = useState(material.referenceCost === null ? "" : String(material.referenceCost));
   const [rows, setRows] = useState<SizeRow[]>(material.variants.map((v, i) => ({ key: i + 1, id: v.id, sku: v.sku, spec: v.spec, color: v.color, stock: v.stock })));
@@ -207,6 +252,7 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
       return mfg.updateMaterial(material.id, {
         ...(name.trim() !== material.name ? { name: name.trim() } : {}),
         ...(unit.trim() !== (material.stockUnit ?? "") ? { stockUnit: unit.trim() } : {}),
+        ...((type || null) !== material.materialType ? { materialType: type || null } : {}),
         ...(description.trim() !== (material.description ?? "") ? { description: description.trim() || null } : {}),
         ...(showCost && refNumber !== material.referenceCost ? { referenceCost: refNumber } : {}),
         ...(renames.length ? { variants: renames } : {}),
@@ -228,7 +274,7 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
     if (ok) archive.mutate();
   }
   // nothing changed → nothing to send (the API refuses an empty change)
-  const dirty = name.trim() !== material.name || unit.trim() !== (material.stockUnit ?? "") || description.trim() !== (material.description ?? "") || (showCost && refNumber !== material.referenceCost)
+  const dirty = name.trim() !== material.name || unit.trim() !== (material.stockUnit ?? "") || (type || null) !== material.materialType || description.trim() !== (material.description ?? "") || (showCost && refNumber !== material.referenceCost)
     || unitsChanged || rows.some((r) => !r.id) || rows.some((r) => { const was = material.variants.find((v) => v.id === r.id); return was && (r.sku.trim() !== was.sku || r.spec.trim() !== was.spec || r.color.trim() !== was.color); });
 
   return (
@@ -250,10 +296,13 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
           <Field htmlFor="edit-mat-name" label="Name" required><Input id="edit-mat-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={160} /></Field>
-          <Field htmlFor="edit-mat-unit" label="Stock unit" required hint={hasStock ? "Locked while it has stock" : undefined}>
+          <Field htmlFor="edit-mat-unit" label="Stock unit" required hint={hasStock ? "Locked while it has stock" : "Locked once it has been bought or used"}>
             <Input id="edit-mat-unit" value={unit} onChange={(e) => setUnit(e.target.value)} maxLength={16} disabled={hasStock} />
           </Field>
         </div>
+        <Field htmlFor="edit-mat-type" label="Type" className="sm:max-w-xs">
+          <TypeSelect id="edit-mat-type" value={type} onChange={setType} />
+        </Field>
         {showCost && (
           <Field htmlFor="edit-mat-ref" label={`Reference cost per ${unit || "unit"}`} hint="Used only until the first purchase gives it a real average.">
             <Input id="edit-mat-ref" inputMode="decimal" value={refCost} onChange={(e) => setRefCost(e.target.value)} placeholder="e.g. 38" className="sm:w-48" />
@@ -267,7 +316,7 @@ function EditMaterialModal({ material, showCost, onClose }: { material: mfg.Mate
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-ink-900">You buy it as</p>
-          <p className="text-xs text-ink-600">Received goods lets you enter it in these and turns it into {unit || "the stock unit"} — e.g. 1 litre = 1000 ml, 1 dozen = 12 pcs.</p>
+          <p className="text-xs text-ink-600">Received goods lets you enter it in these and turns it into {unit || "the stock unit"} — e.g. 1 litre = 1000 ml, 1 dozen = 12 pcs. A unit already used on a purchase keeps its size: to change it, add a new name.</p>
           {units.map((u, i) => (
             <div key={u.key} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-end gap-2" data-testid="purchase-unit-row">
               <Field htmlFor={`pu-label-${u.key}`} label={i === 0 ? "Unit" : undefined}><Input id={`pu-label-${u.key}`} aria-label={`Purchase unit ${i + 1}`} value={u.label} maxLength={24} placeholder="litre" onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, label: e.target.value } : x)))} /></Field>

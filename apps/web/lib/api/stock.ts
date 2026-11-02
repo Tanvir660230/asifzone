@@ -32,7 +32,7 @@ export interface StockItem {
   /** Materials only: RAW (oil — by volume or weight) or PACKAGING (bottles, boxes, stickers, poly — in pieces). */
   materialKind: "RAW" | "PACKAGING" | null;
   /** Materials only: how it is bought — one `label` (litre, dozen) is `factor` stock units. */
-  purchaseUnits: Array<{ label: string; factor: number }>;
+  purchaseUnits: Array<{ id: string; label: string; factor: number }>;
   avgCost: number | null;
   value: number | null;
   usedPerDay: number | null;
@@ -59,7 +59,8 @@ export interface StockPurchase {
   supplier: { id: string | null; name: string };
   reference: string | null;
   note: string | null;
-  lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number | null; unitCost: number | null }>;
+  /** quantity = good units into stock; damaged = arrived broken (not stocked); buy = how it was bought when not in the stock unit. */
+  lines: Array<{ variantId: string; name: string; unit: string; quantity: number; amount: number | null; unitCost: number | null; damaged?: number; discount?: number | null; buy?: { label: string; factor: number; qty: number } | null }>;
   extrasLines: Array<{ description: string; amount: number | null }>;
   goods: number | null;
   extras: number | null;
@@ -89,10 +90,14 @@ export interface PurchaseBody {
   supplierName?: string | null;
   reference?: string | null;
   note?: string | null;
-  lines: Array<{ variantId: string; quantity: number; amount: number }>;
-  /** Total units on the supplier's bill — the lines must add up to it. */
+  /** In the stock unit (`quantity`), or in one of the item's purchase units (`purchaseUnitId` + `purchaseQty`); `amount` is
+   * what was paid for the line after `discount`; `damaged` stock units arrived broken (docs/MATERIALS_PURCHASING.md §2–3). */
+  lines: Array<{ variantId: string; quantity?: number; purchaseUnitId?: string; purchaseQty?: number; amount: number; discount?: number | null; damaged?: number }>;
+  /** Total quantity on the supplier's bill, in the bill's own units (10 litre counts 10) — the lines must add up to it. */
   documentTotal: number;
   extras: Array<{ description: string; amount: number }>;
+  /** How the extras are spread over the items: by value (default) or by quantity. */
+  extrasMethod?: "VALUE" | "QUANTITY";
   paidFrom: PaidFrom;
   /** Why it is recorded anyway when it looks like a purchase already entered (blueprint P0.3). */
   duplicateReason?: string | null;
@@ -291,7 +296,7 @@ export function describeStockError(err: unknown, fallbackTitle: string): StockPr
 export const CHECKED_BEFORE_WRITING = new Set([
   "COSTING_NOT_ACTIVE", "COSTING_NOW_ACTIVE", "INSUFFICIENT_FUNDS", "SUPPLIER_ON_HOLD", "BEFORE_OPENING_DATE", "PERIOD_CLOSED", "PERIOD_SOFT_CLOSED", "OPENING_DATE_NOT_SET",
   "STOCK_PURCHASE_PERMISSION", "PAYMENT_SOURCE_KIND", "FINANCIAL_ACCOUNT_NOT_FOUND", "PURCHASE_IN_FUTURE", "PURCHASE_LINE_AMOUNT", "PURCHASE_UNTRACKED",
-  "VARIANT_NOT_FOUND", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS", "FILL_SHORT", "NO_RECIPE", "FILL_MATERIAL_NOT_IN_RECIPE",
+  "VARIANT_NOT_FOUND", "PURCHASE_UNIT_NOT_FOUND", "PURCHASE_UNIT_NOT_WHOLE", "PURCHASE_ALL_DAMAGED", "PURCHASE_LINE_QUANTITY", "OWNER_POCKET_UNUSABLE", "IDEMPOTENCY_KEY_REUSED", "STOCK_ENTRY_IN_PROGRESS", "FILL_SHORT", "NO_RECIPE", "FILL_MATERIAL_NOT_IN_RECIPE",
 ]);
 
 export const PENDING_STEP_LABEL: Record<PurchaseStep, string> = {
