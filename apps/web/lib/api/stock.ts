@@ -129,6 +129,7 @@ export const stockKeys = {
   all: ["stock-hub"] as const,
   overview: () => ["stock-hub", "overview"] as const,
   purchases: () => ["stock-hub", "purchases"] as const,
+  expected: () => ["stock-hub", "expected"] as const,
   trace: (variantId: string) => ["stock-hub", "trace", variantId] as const,
   stocking: (productId: string) => ["stock-hub", "stocking", productId] as const,
 };
@@ -138,6 +139,33 @@ export const listStockPurchases = (limit = 20) => apiFetch<{ purchases: StockPur
 export const recordStockPurchase = (body: PurchaseBody, idempotencyKey: string) => apiFetch<PurchaseResult>(`${BASE}/purchases`, { method: "POST", body, idempotencyKey });
 export const checkPurchaseDuplicates = (body: { supplierName: string | null; date?: string; lines: Array<{ variantId: string; amount: number }> }) =>
   apiFetch<{ matches: DuplicatePurchaseMatch[] }>(`${BASE}/purchases/duplicate-check`, { method: "POST", body: { ...body, supplierName: body.supplierName ?? "Local market" } });
+/** docs/MATERIALS_PURCHASING.md §4: an order still to arrive, per item in stock units. */
+export interface ExpectedOrder {
+  id: string;
+  number: string;
+  status: "SUBMITTED" | "APPROVED" | "PARTIALLY_RECEIVED" | string;
+  supplier: { id: string; name: string };
+  orderDate: string;
+  expectedDate: string | null;
+  note: string | null;
+  total: number;
+  lines: Array<{ variantId: string; name: string; unit: string; ordered: number; received: number; rejected: number; remaining: number; boughtAs: { label: string; factor: number } | null }>;
+  remaining: number;
+}
+export type OrderBody = Omit<PurchaseBody, "paidFrom" | "extras" | "extrasMethod" | "updateCatalogCost" | "duplicateReason"> & { expectedDate?: string | null };
+export interface DeliveryBody {
+  date?: string;
+  supplierRef?: string | null;
+  lines: Array<{ variantId: string; good: number; damaged: number }>;
+  bill: "NOW" | "LATER";
+  paidFromAccountId?: string | null;
+  extras: Array<{ description: string; amount: number }>;
+  extrasMethod?: "VALUE" | "QUANTITY";
+}
+export const listExpectedOrders = () => apiFetch<{ orders: ExpectedOrder[] }>(`${BASE}/orders/expected`);
+export const recordStockOrder = (body: OrderBody, idempotencyKey: string) => apiFetch<{ replayed: boolean; order: ExpectedOrder }>(`${BASE}/orders`, { method: "POST", body, idempotencyKey });
+export const receiveStockDelivery = (orderId: string, body: DeliveryBody, idempotencyKey: string) =>
+  apiFetch<{ replayed: boolean; receiptNumber: string | null; invoiceId: string | null; order: ExpectedOrder }>(`${BASE}/orders/${orderId}/deliveries`, { method: "POST", body, idempotencyKey });
 export const finishStockPurchase = (id: string, body: { paidFrom?: PaidFrom }) => apiFetch<PurchaseResult>(`${BASE}/purchases/${id}/finish`, { method: "POST", body });
 export const recordStockCount = (body: CountBody, idempotencyKey: string) => apiFetch<CountResult>(`${BASE}/counts`, { method: "POST", body, idempotencyKey });
 

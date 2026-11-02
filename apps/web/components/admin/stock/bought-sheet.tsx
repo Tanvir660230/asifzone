@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { useDiscardGuard } from "@/components/ui/discard-guard";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { Table } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -108,8 +109,12 @@ function startLines(choices: Choice[], start: BoughtStart | undefined): Line[] {
   return out;
 }
 
-export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; start?: BoughtStart; onClose: () => void }) {
+export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, canOrder = false, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; canOrder?: boolean; start?: BoughtStart; onClose: () => void }) {
   const qc = useQueryClient();
+  // docs/MATERIALS_PURCHASING.md §4: "No, ordered" makes a purchase order that waits on Expected — no stock, no money yet
+  const [arrived, setArrived] = useState<"yes" | "ordered">("yes");
+  const ordering = arrived === "ordered";
+  const [expectedDate, setExpectedDate] = useState("");
   // Blueprint P1.4 (owner decision Q-F): before stock costing is live the purchase is recorded in simple mode — stock in,
   // catalog cost set from it unless unticked, the money kept with the purchase and nothing booked.
   const simple = !overview.costingActive;
@@ -187,7 +192,8 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   const documentError = !documentUnits
     ? "Enter the total units printed on the bill or receipt"
     : lines.length && Math.abs(documentUnits - unitsEntered) > 1e-6 ? `The items add up to ${num(unitsEntered)}, the bill says ${num(documentUnits)} — check each line` : null;
-  const valid = lines.length > 0 && lineErrors.every((e) => !e) && extraErrors.every((e) => !e) && !supplierError && !documentError && Boolean(paidFrom) && date <= todayLocal();
+  const valid = lines.length > 0 && lineErrors.every((e) => !e) && (ordering || extraErrors.every((e) => !e)) && !supplierError && !documentError && (ordering || Boolean(paidFrom)) && date <= todayLocal()
+    && (!ordering || !expectedDate || expectedDate >= date) && (!ordering || lines.every((l) => !qtyOf(l.damaged)));
   // what will be received, one row per colour / size — shown before saving
   const arriving = lines.flatMap((l) => l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0).map((v) => ({
     id: v.variantId,
@@ -232,14 +238,20 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   const duplicates = duplicatesQ.data?.matches ?? [];
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async (): Promise<{ text: string }> => {
       const b = body();
+      if (ordering) {
+        const o: stockApi.OrderBody = { date: b.date, supplierName: b.supplierName, documentTotal: b.documentTotal, expectedDate: expectedDate || null, lines: b.lines };
+        const r = await stockApi.recordStockOrder(o, idempotencyKeyFor(formId, o));
+        return { text: r.replayed ? "Already ordered — nothing was added twice" : `Ordered (${r.order.number}) — it waits under Expected deliveries${r.order.status === "SUBMITTED" ? " until an approver approves it" : ""}` };
+      }
       // One key per open form: a retry of the same purchase replays it; a changed purchase is a new one.
-      return stockApi.recordStockPurchase(b, idempotencyKeyFor(formId, b));
+      const r = await stockApi.recordStockPurchase(b, idempotencyKeyFor(formId, b));
+      return { text: r.replayed ? "Already recorded — nothing was added twice" : r.purchase.mode === "SIMPLE" ? "Purchase recorded — the stock is in; the money goes into the books when they start" : `Purchase recorded${r.purchase.receipt?.number ? ` (${r.purchase.receipt.number})` : ""}` };
     },
     onSuccess: (r) => {
       settleIdempotencyKey(formId);
-      toast.success(r.replayed ? "Already recorded — nothing was added twice" : r.purchase.mode === "SIMPLE" ? "Purchase recorded — the stock is in; the money goes into the books when they start" : `Purchase recorded${r.purchase.receipt?.number ? ` (${r.purchase.receipt.number})` : ""}`);
+      toast.success(r.text);
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
       void qc.invalidateQueries({ queryKey: ["finance"] });
       onClose();
@@ -277,8 +289,8 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     <Modal
       open
       onClose={guard.requestClose}
-      title="Received goods"
-      description="What arrived, what you paid and who paid it."
+      title={ordering ? "Ordered goods" : "Received goods"}
+      description={ordering ? "What you ordered and its price. Stock goes up when it arrives." : "What arrived, what you paid and who paid it."}
       widthClassName="max-w-3xl"
       footer={guard.prompt ?? (
         <>
@@ -286,12 +298,18 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
           {reviewing
             ? <Button type="button" variant="outline" onClick={() => setReviewing(false)} disabled={save.isPending} data-testid="bought-edit">Edit</Button>
             : <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>}
-          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? "Confirm and record" : "Review purchase"}</Button>
+          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? (ordering ? "Confirm order" : "Confirm and record") : ordering ? "Review order" : "Review purchase"}</Button>
         </>
       )}
     >
       <form id="stock-bought-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
         {problem && <div ref={errorRef}><ProblemAlert problem={problem} /></div>}
+        {canOrder && !simple && !reviewing && (
+          <div className="space-y-1.5">
+            <p className="ui-label" aria-hidden="true">Has it arrived?</p>
+            <SegmentedControl<"yes" | "ordered"> aria-label="Has it arrived?" size="md" value={arrived} onChange={(v) => setArrived(v)} options={[{ value: "yes", label: "Yes, it's here", testId: "bought-arrived-yes" }, { value: "ordered", label: "No, ordered", testId: "bought-arrived-ordered" }]} />
+          </div>
+        )}
         {simple && (
           <div data-testid="bought-simple">
             <Alert variant="info" title="Stock costing hasn't started on this store">
@@ -356,6 +374,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
               good={totals[i]!.good}
               extrasShare={extrasMethod === "QUANTITY" ? (goodUnits ? (extrasMinor * Math.max(0, totals[i]!.good)) / goodUnits : 0) : goodsMinor ? (extrasMinor * totals[i]!.minor) / goodsMinor : 0}
               lastEach={lastEachOf(l)}
+              ordering={ordering}
               error={tried ? lineErrors[i] : null}
               onChange={(patch) => update(l.key, patch)}
               onRemove={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
@@ -386,7 +405,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
           </div>
         </section>
 
-        <section aria-labelledby="bought-extras" className="space-y-3">
+        <section aria-labelledby="bought-extras" className={cn("space-y-3", ordering && "hidden")}>
           <div className="flex items-center justify-between gap-3">
             <h3 id="bought-extras" className="text-sm font-medium text-fg">Extra costs <span className="font-normal text-fg-muted">(transport, customs…)</span></h3>
             <Button type="button" variant="ghost" size="sm" onClick={() => setExtras((x) => [...x, { key: nextKey(), description: "", amount: "" }])} data-testid="bought-add-extra"><Plus className="h-4 w-4" aria-hidden="true" /> Add</Button>
@@ -436,11 +455,16 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
           >
             <Input id="bought-document-total" inputMode="decimal" className="tabular-nums sm:max-w-40" value={documentTotal} onChange={(e) => setDocumentTotal(e.target.value)} data-testid="bought-document-total" />
           </Field>
+          {ordering && (
+            <Field htmlFor="bought-expected" label="Expected by" hint="Optional." error={tried && expectedDate && expectedDate < date ? "After the order date" : undefined}>
+              <Input id="bought-expected" type="date" value={expectedDate} min={date} onChange={(e) => setExpectedDate(e.target.value)} data-testid="bought-expected" />
+            </Field>
+          )}
           <Field
             htmlFor="bought-paid-from"
             label="Paid from"
             required
-            className="sm:col-span-2"
+            className={cn("sm:col-span-2", ordering && "hidden")}
             error={tried && !paidFrom ? "Choose who paid" : undefined}
             hint={
               shortOf ? <span className="text-warning-700">{shortOf.name} holds {formatPrice(shortOf.currentBalance)}; this needs {formatPrice(totalMinor / 100)}.</span>
@@ -513,7 +537,7 @@ function BuyUnitQty({ line, unit, id, onChange }: { line: Line; unit: string; id
 /** A unit price this much above the last one is worth a second look (a typo, or a real rise) — never a block. */
 const PRICE_JUMP = 0.2;
 
-function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, error, onChange, onRemove }: { line: Line; qty: number; good: number; minor: number; extrasShare: number; lastEach: number | null; error: string | null | undefined; onChange: (p: Partial<Line>) => void; onRemove: () => void }) {
+function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, error, onChange, onRemove }: { line: Line; qty: number; good: number; minor: number; extrasShare: number; lastEach: number | null; ordering: boolean; error: string | null | undefined; onChange: (p: Partial<Line>) => void; onRemove: () => void }) {
   const { choice } = line;
   const v0 = choice.variants[0]!;
   const unit = choice.grid ? "pcs" : v0.unit;
@@ -562,7 +586,7 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, error, onCh
           <Field htmlFor={`${id}-disc`} label={`Discount (${storeCurrencySymbol()})`}>
             <Input id={`${id}-disc`} inputMode="decimal" className="tabular-nums" value={line.discount ?? ""} onChange={(e) => onChange({ discount: e.target.value })} data-testid="bought-discount" />
           </Field>
-          {!choice.grid && (
+          {!choice.grid && !ordering && (
             <Field htmlFor={`${id}-dmg`} label={`Arrived damaged (${unit})`}>
               <Input id={`${id}-dmg`} inputMode="numeric" className="tabular-nums" value={line.damaged ?? ""} onChange={(e) => onChange({ damaged: e.target.value })} data-testid="bought-damaged" />
             </Field>
@@ -570,7 +594,7 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, error, onCh
         </div>
       ) : (
         <Button type="button" variant="ghost" size="sm" className="-ml-2 mt-2" onClick={() => setMore(true)} data-testid="bought-more-toggle">
-          <Plus className="h-4 w-4" aria-hidden="true" /> {choice.grid ? "Discount" : "Discount or damaged"}
+          <Plus className="h-4 w-4" aria-hidden="true" /> {choice.grid || ordering ? "Discount" : "Discount or damaged"}
         </Button>
       )}
       {jump !== null && jump > PRICE_JUMP && (
