@@ -79,6 +79,52 @@ export const stockPurchaseSchema = z
   });
 export type StockPurchaseInput = z.input<typeof stockPurchaseSchema>;
 
+/**
+ * Ordered, not yet arrived (docs/MATERIALS_PURCHASING.md §4): the same lines as Bought, without damaged units (nothing has
+ * arrived) or extras (they are paid with a delivery). Makes a purchase order — no stock, no money.
+ */
+export const stockOrderSchema = z
+  .object({
+    date: businessDate.optional(),
+    expectedDate: businessDate.optional().nullable(),
+    supplierName: z.string().trim().max(120).optional().nullable().transform((v) => (v ? v : null)).refine((v) => v === null || v.length >= 2, "At least 2 characters"),
+    reference: optionalText(100),
+    note: optionalText(500),
+    lines: z.array(stockPurchaseLineSchema).min(1).max(100).refine(onceEach, "Each item once — add the quantities together"),
+    documentTotal: z.number().positive().max(100_000_000).refine(fourDecimals, "At most 4 decimals"),
+  })
+  .refine((o) => o.lines.every((l) => !l.damaged), { message: "Nothing has arrived yet — damaged units are entered with the delivery", path: ["lines"] })
+  .refine((o) => !o.expectedDate || !o.date || o.expectedDate >= o.date, { message: "Expected after the order date", path: ["expectedDate"] })
+  .superRefine((o, ctx) => {
+    const entered = o.lines.reduce((s, l) => s + tenThousandths(billQuantityOf(l)), 0);
+    if (entered !== tenThousandths(o.documentTotal)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentTotal"], message: `The lines add up to ${entered / 10_000} but the order says ${o.documentTotal}` });
+  });
+export type StockOrderInput = z.input<typeof stockOrderSchema>;
+
+/**
+ * A delivery against an ordered purchase (docs/MATERIALS_PURCHASING.md §4): per item, good units into stock and damaged ones
+ * rejected (stock units); the bill made now — paid now from an account, or left to pay — or later, when the supplier's
+ * invoice comes; extras paid with it need the account they were paid from.
+ */
+export const stockDeliverySchema = z
+  .object({
+    date: businessDate.optional(),
+    supplierRef: optionalText(100),
+    lines: z
+      .array(z.object({ variantId: id, good: z.number().int().min(0).max(1_000_000), damaged: z.number().int().min(0).max(1_000_000).default(0) }))
+      .min(1)
+      .max(100)
+      .refine(onceEach, "Each item once")
+      .refine((ls) => ls.some((l) => l.good + l.damaged > 0), "Enter what arrived"),
+    bill: z.enum(["NOW", "LATER"]).default("NOW"),
+    paidFromAccountId: id.optional().nullable(),
+    extras: z.array(z.object({ description: z.string().trim().min(1).max(120), amount: positive })).max(20).default([]),
+    extrasMethod: z.enum(EXTRAS_METHODS).default("VALUE"),
+  })
+  .refine((d) => d.bill === "NOW" || !d.paidFromAccountId, { message: "A bill that comes later is paid later", path: ["paidFromAccountId"] })
+  .refine((d) => !d.extras.length || Boolean(d.paidFromAccountId), { message: "Say which account paid the extras", path: ["paidFromAccountId"] });
+export type StockDeliveryInput = z.input<typeof stockDeliverySchema>;
+
 /** Before saving a purchase: does it look like one already entered (blueprint P0.3)? The supplier by id (formal receipt)
  * or by name (the stock hub's form); amounts are line totals in major units. */
 export const purchaseDuplicateCheckSchema = z

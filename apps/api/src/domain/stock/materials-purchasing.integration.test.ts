@@ -115,7 +115,7 @@ describe("materials", () => {
 
   it("the database keeps a material type off finished goods", async () => {
     const p = await createStockedProduct({ stocks: [0], basePrice: 100 });
-    await expect(prisma.product.update({ where: { id: p.id }, data: { materialType: "RAW" } })).rejects.toThrow();
+    await expect(prisma.product.update({ where: { id: p.product.id }, data: { materialType: "RAW" } })).rejects.toThrow();
   });
 });
 
@@ -245,5 +245,84 @@ describe("reorder point", () => {
     expect(suggestReorder({ usedPerDay: 10, available: 50, leadTimeDays: 3, coverDays: 7, today: "2026-11-02", reorderPoint: 50, safetyStock: 10 })).toEqual({ suggested: 60, orderBy: "2026-11-02" });
     // nothing set: unchanged behaviour
     expect(suggestReorder({ usedPerDay: 10, available: 50, leadTimeDays: 3, coverDays: 7, today: "2026-11-02" })).toEqual({ suggested: 50, orderBy: "2026-11-04" });
+  });
+});
+
+describe("ordered, then delivered in parts", () => {
+  let orderId = "";
+  const order = () => {
+    const litre = units(oil.productId).then((us) => us.find((u) => u.label === "litre")!);
+    return litre.then((l) => ({
+      supplierName: `Vitest Glass House ${RUN}`,
+      lines: [
+        { variantId: oil.variantId, purchaseUnitId: l.id, purchaseQty: 10, amount: 200000 },
+        { variantId: bottle.variantId, quantity: 500, amount: 4950, discount: 50 },
+      ],
+      documentTotal: 510,
+    }));
+  };
+  const post = (url: string, body: object, key: string) => api().post(url, body, `${key}-${RUN}`);
+
+  it("an order moves no stock and waits on Expected, approved at once for someone who may approve", async () => {
+    const before = { o: await stock(oil.variantId), b: await stock(bottle.variantId) };
+    const r = await post("/stock/orders", await order(), "order-1");
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    orderId = r.body.order.id;
+    expect(r.body.order).toMatchObject({ status: "APPROVED", remaining: 10500 });
+    expect(r.body.order.lines.find((l: { variantId: string }) => l.variantId === oil.variantId)).toMatchObject({ ordered: 10000, received: 0, remaining: 10000, boughtAs: { label: "litre", factor: 1000 } });
+    expect({ o: await stock(oil.variantId), b: await stock(bottle.variantId) }).toEqual(before);
+    const bottleLine = await prisma.purchaseOrderLine.findFirstOrThrow({ where: { purchaseOrderId: orderId, variantId: bottle.variantId } });
+    expect(Number(bottleLine.discountAmount)).toBe(50);
+    expect(Number(bottleLine.grossUnitPrice)).toBe(10);
+    const again = await post("/stock/orders", await order(), "order-1");
+    expect(again.status).toBe(200);
+    expect(again.body.order.id).toBe(orderId);
+    expect(await prisma.purchaseOrder.count({ where: { deliveryTerms: { startsWith: "stock-order:order-1" } } })).toBe(1);
+    const expected = await request(app).get("/api/v1/finance/stock/orders/expected").set("Cookie", [`access_token=${signAccessToken({ adminId: admin, role: "OWNER" })}`, `csrf_token=${CSRF}`]);
+    expect(expected.body.orders.map((o: { id: string }) => o.id)).toContain(orderId);
+  });
+
+  it("first delivery: part of each, 10 bottles broken, bill later — stock rises by the good units only, nothing billed", async () => {
+    const before = { o: await stock(oil.variantId), b: await stock(bottle.variantId) };
+    const bills = await prisma.supplierInvoice.count();
+    const d = { lines: [{ variantId: oil.variantId, good: 4000 }, { variantId: bottle.variantId, good: 290, damaged: 10 }], bill: "LATER" };
+    const r = await post(`/stock/orders/${orderId}/deliveries`, d, "delivery-1");
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(await stock(oil.variantId)).toBe(before.o + 4000);
+    expect(await stock(bottle.variantId)).toBe(before.b + 290);
+    expect(r.body).toMatchObject({ invoiceId: null, paymentId: null, order: { status: "PARTIALLY_RECEIVED", remaining: 6000 + 210 } });
+    expect(r.body.order.lines.find((l: { variantId: string }) => l.variantId === bottle.variantId)).toMatchObject({ received: 290, rejected: 10, remaining: 210 });
+    expect(await prisma.supplierInvoice.count()).toBe(bills);
+    const oilLine = await prisma.goodsReceiptLine.findFirstOrThrow({ where: { goodsReceiptId: r.body.receiptId, variantId: oil.variantId } });
+    expect(oilLine).toMatchObject({ purchaseUnitLabel: "litre" });
+    expect(Number(oilLine.purchaseQty)).toBe(4);
+    // the same delivery sent again writes nothing
+    const again = await post(`/stock/orders/${orderId}/deliveries`, d, "delivery-1");
+    expect(again.status).toBe(200);
+    expect(again.body.receiptId).toBe(r.body.receiptId);
+    expect(await stock(oil.variantId)).toBe(before.o + 4000);
+  });
+
+  it("the rest arrives, billed and paid now with transport by quantity: the order is received and leaves Expected", async () => {
+    const d = { lines: [{ variantId: oil.variantId, good: 6000 }, { variantId: bottle.variantId, good: 210 }], bill: "NOW", paidFromAccountId: bank, extras: [{ description: "Van", amount: 300 }], extrasMethod: "QUANTITY" };
+    const r = await post(`/stock/orders/${orderId}/deliveries`, d, "delivery-2");
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.order).toMatchObject({ status: "RECEIVED", remaining: 0 });
+    const bill = await prisma.supplierInvoice.findUniqueOrThrow({ where: { id: r.body.invoiceId } });
+    expect(bill.status).toBe("POSTED");
+    expect(Number(bill.total)).toBe(120000 + 2079); // 6000 ml × ৳20 + 210 bottles × ৳9.90
+    expect(r.body.paymentId).toEqual(expect.any(String));
+    expect((await prisma.landedCost.findUniqueOrThrow({ where: { id: r.body.landedCostId } })).method).toBe("QUANTITY");
+    const expected = await request(app).get("/api/v1/finance/stock/orders/expected").set("Cookie", [`access_token=${signAccessToken({ adminId: admin, role: "OWNER" })}`, `csrf_token=${CSRF}`]);
+    expect(expected.body.orders.map((o: { id: string }) => o.id)).not.toContain(orderId);
+    const late = await post(`/stock/orders/${orderId}/deliveries`, { lines: [{ variantId: oil.variantId, good: 1 }] }, "delivery-3");
+    expect(late.status).toBe(409);
+    expect(late.body.details?.code).toBe("PO_NOT_RECEIVABLE");
+  });
+
+  it("damaged units on an order are refused — nothing has arrived yet", async () => {
+    const o = await order();
+    const r = await post("/stock/orders", { ...o, lines: [{ ...o.lines[1]!, damaged: 1 }], documentTotal: 500 }, "order-damaged");
+    expect(r.status).toBe(400);
   });
 });

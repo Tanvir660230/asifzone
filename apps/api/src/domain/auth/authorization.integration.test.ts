@@ -566,7 +566,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +5: Warehouse Operations — the Exception Center counts; pick list, product labels, print log read/record (docs/WAREHOUSE_OPERATIONS.md)
     // +5: the unified scanner — resolve a code, the parcel card, receive, correct a receipt, link a code
     // +1: the rider took these — handover from the orders list without a scanner
-    expect(routes).toHaveLength(787);
+    expect(routes).toHaveLength(790);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

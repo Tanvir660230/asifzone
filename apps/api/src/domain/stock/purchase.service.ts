@@ -239,7 +239,7 @@ async function ensureOwnerPocket(businessId: string, actor: FinanceActor): Promi
 }
 
 /** Who pays, from the request: an account (cash, bank or wallet) or the owner's own money (`account` null: made later). */
-async function resolvePaidFrom(businessId: string, paidFrom: StockPurchaseFinishInput["paidFrom"] & object): Promise<PaidFrom | { kind: "OWNER"; financialAccountId: null; name: string; funding?: OwnerFunding }> {
+export async function resolvePaidFrom(businessId: string, paidFrom: StockPurchaseFinishInput["paidFrom"] & object): Promise<PaidFrom | { kind: "OWNER"; financialAccountId: null; name: string; funding?: OwnerFunding }> {
   if ("ownerPocket" in paidFrom) {
     const { name, account } = await findOwnerPocket(businessId);
     return account ? { kind: "OWNER", financialAccountId: account.id, name: account.name } : { kind: "OWNER", financialAccountId: null, name };
@@ -254,7 +254,7 @@ const onHold = (s: { displayName: string; statusReason: string | null }) =>
   financeError(409, "SUPPLIER_ON_HOLD", `${s.displayName} is on hold${s.statusReason ? ` (${s.statusReason})` : ""} — nothing is bought from or paid to it until it is released in Suppliers`);
 
 /** The supplier a name picks: an active one; one on hold is refused; none → made later (null). */
-async function supplierByName(businessId: string, name: string): Promise<string | null> {
+export async function supplierByName(businessId: string, name: string): Promise<string | null> {
   const found = await prisma.supplier.findMany({ where: { businessId, displayName: { equals: name, mode: "insensitive" }, status: { not: "INACTIVE" } }, orderBy: { createdAt: "asc" }, select: { id: true, status: true, displayName: true, statusReason: true } });
   const active = found.find((s) => s.status === "ACTIVE");
   if (active) return active.id;
@@ -287,7 +287,7 @@ async function assertSupplierUsable(id: string) {
 
 /** The date is in open books: on or after the opening date, its month not closed (soft-closed: period closers only) —
  * the rules journal posting enforces, read without writing. */
-async function assertBooksOpen(business: FinanceBusinessInfo, date: string, actor: FinanceActor) {
+export async function assertBooksOpen(business: FinanceBusinessInfo, date: string, actor: FinanceActor) {
   if (!business.openingDate) throw financeError(409, "OPENING_DATE_NOT_SET", "Set the Financial Opening Date before recording purchases");
   if (date < business.openingDate) throw financeError(409, "BEFORE_OPENING_DATE", `The books start on ${business.openingDate}; a purchase can't be dated before it`, { openingDate: business.openingDate });
   const period = await prisma.financialPeriod.findUnique({ where: { businessId_startDate: { businessId: business.id, startDate: dateColumn(monthPeriod(date).startDate) } }, select: { status: true, startDate: true } });
@@ -298,7 +298,7 @@ async function assertBooksOpen(business: FinanceBusinessInfo, date: string, acto
 }
 
 /** A cash box or wallet holds what is still to be paid (treasury's no-overdraft rule, checked before anything is written). */
-async function assertMoneyFor(business: FinanceBusinessInfo, paidFrom: { kind: string; financialAccountId: string | null }, neededMinor: number) {
+export async function assertMoneyFor(business: FinanceBusinessInfo, paidFrom: { kind: string; financialAccountId: string | null }, neededMinor: number) {
   if (paidFrom.kind !== "ACCOUNT" || !paidFrom.financialAccountId || neededMinor <= 0) return;
   const fa = await prisma.financialAccount.findUniqueOrThrow({ where: { id: paidFrom.financialAccountId }, select: { name: true, kind: true, ledgerAccountId: true } });
   if (!NO_OVERDRAFT.has(fa.kind)) return;
@@ -311,7 +311,7 @@ async function assertMoneyFor(business: FinanceBusinessInfo, paidFrom: { kind: s
   }
 }
 
-async function costingLive(businessId: string): Promise<boolean> {
+export async function costingLive(businessId: string): Promise<boolean> {
   const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: businessId }, select: { inventoryCostingActivatedAt: true } });
   return Boolean(biz.inventoryCostingActivatedAt);
 }
@@ -327,7 +327,7 @@ type ParsedPurchase = ReturnType<typeof stockPurchaseSchema.parse>;
  * item's live units and converts to whole stock units; damaged units leave at least one good one. Returns the items by id
  * and the lines as stored: `quantity` = good units into stock.
  */
-async function checkedLines(input: ParsedPurchase, cur: string) {
+export async function checkedLines(input: Pick<ParsedPurchase, "lines">, cur: string) {
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: input.lines.map((l) => l.variantId) } },
     select: {
