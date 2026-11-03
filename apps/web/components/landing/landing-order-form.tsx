@@ -15,7 +15,6 @@ import {
   BD_DIVISION_BY_DISTRICT,
   NO_SIZE_VALUE,
   bdPhoneSchema,
-  isAvailable,
   maxSellableQuantity,
   parseAreaDistrictOption,
   type CheckoutInput,
@@ -29,7 +28,8 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
-import { useVariantOptions, stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
+import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
+import { useLandingSelection } from "./landing-selection";
 import { useQuote } from "@/hooks/use-quote";
 import { createOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
@@ -63,22 +63,14 @@ const isBangla = (s: string) => /[ঀ-৿]/.test(s);
  *
  * Pressing order without a size (or colour) opens a small popup with just that choice; picking it carries straight on
  * with the order, so the shopper never has to find what they missed.
+ *
+ * The colour and size live in LandingSelectionProvider, so the gallery and the colour showcase follow the same choice.
  */
-export function LandingOrderForm({ product, codEnabled }: { product: Product; codEnabled: boolean }) {
+export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean; ctaText?: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
-  const options = useVariantOptions(product.variants, product.resolved?.variantDimensions);
-
-  const sellable = (s: string | null, c: string | null) =>
-    product.variants.some((v) => (s === null || v.size === s) && (c === null || v.color === c) && isAvailable(product.trackInventory, v.stock));
-  // Only one option can actually be bought: it is chosen already, there is nothing to decide.
-  const onlySellable = (values: string[], test: (v: string) => boolean) => {
-    const ok = values.filter(test);
-    return ok.length === 1 ? ok[0]! : null;
-  };
-  const [size, setSize] = useState<string | null>(options.defaultSize ?? (options.showSizes ? onlySellable(options.sizes, (s) => sellable(s, null)) : null));
-  const [color, setColor] = useState<string | null>(options.defaultColor ?? (options.showColors ? onlySellable(options.colors, (c) => sellable(null, c)) : null));
+  const { product, options, size, color, setSize, setColor, sellable } = useLandingSelection();
   const [quantity, setQuantity] = useState(1);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -406,7 +398,7 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
               অর্ডার পাঠানো হচ্ছে
             </>
           ) : (
-            "অর্ডার কনফার্ম করুন"
+            ctaText || "অর্ডার কনফার্ম করুন"
           )}
         </button>
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-fg-muted">

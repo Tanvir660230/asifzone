@@ -7,6 +7,7 @@ import type {
   FlashSale,
   HomepageSection,
   PaymentMethodOption,
+  PublicLandingPage,
   Product,
   SearchSuggestions,
   SocialLink,
@@ -336,4 +337,13 @@ export async function fetchPopularSearches(limit = 8) {
  * the automatic list when none are picked. Short cache like the other recommendation calls. */
 export function getProductRail(productId: string, key: "related" | "frequentlyBought" | "crossSell" | "upsell" | "recommended") {
   return storefrontFetch<{ source: "curated" | "auto"; items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/rail/${key}`, REVALIDATE_SECONDS, [`product:${productId}`]);
+}
+
+/** The live campaign landing page at /lp/<slug>, or null when there is none — the route then shows the product's own
+ * landing page. Never cached: publishing or unpublishing must show at once, and an ad sends people here at any moment. */
+export async function getPublicLandingPage(slug: string): Promise<PublicLandingPage | null> {
+  const res = await fetch(`${apiBaseUrl()}/api/landing-pages/public/${encodeURIComponent(slug)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Storefront fetch failed (${res.status}): landing page ${slug}`);
+  return ((await res.json()) as { page: PublicLandingPage }).page;
 }

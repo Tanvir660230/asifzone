@@ -210,6 +210,7 @@ export const NAV_NODES: readonly NavNode[] = [
     commands: [{ id: "create.product", kind: "create", label: "New product", hint: "Product Builder", route: PRODUCT_NEW_HREF, capability: "catalog.manage" }],
   },
   { id: "products.all", label: "All products", title: term("product"), kind: "page", parent: "products", domain: "stock", route: "/admin/products", capability: "catalog.view", order: 0 },
+  { id: "products.group", label: "Group colours", title: "Group products into one", kind: "page", parent: "products", domain: "stock", route: "/admin/products/group", capability: "catalog.manage", order: 0.5, keywords: ["merge", "variant", "colour", "color", "parent product", "group"] },
   { id: "products.categories", label: term("category"), kind: "page", parent: "products", domain: "stock", route: "/admin/categories", capability: "catalog.view", order: 1 },
   {
     id: "products.variant-options",
@@ -361,6 +362,7 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   // Blueprint P2.5: every published product's one-page order form for ads (/lp/<slug>)
   { id: "marketing.landing-pages", label: "Landing pages", kind: "page", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages", capability: "promotions.manage", order: -0.5, keywords: ["lp", "landing page", "ad link", "facebook ad", "order form"] },
+  { id: "marketing.landing-page-detail", label: "Landing page", kind: "detail", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages/[id]", capability: "promotions.manage", order: -0.4, visibility: "hidden" },
   // Blueprint tab 2 §2: one Discounts entry, its three pages as tabs (URLs kept).
   { id: "marketing.discounts", label: "Discounts", kind: "page", parent: "marketing", domain: "grow", index: "/admin/flash-sales", capability: "promotions.manage", order: 0, keywords: ["discount", "offer", "sale", "promo"] },
   { id: "marketing.flash-sales", label: term("flashSale"), kind: "page", parent: "marketing.discounts", domain: "grow", route: "/admin/flash-sales", capability: "promotions.manage", order: 0 },

@@ -4,6 +4,7 @@ import { AppError } from "../../lib/app-error";
 import { processProductImage } from "../uploads/upload.service";
 import * as productService from "./product.service";
 import { duplicateProduct } from "./product-duplicate";
+import { commitGrouping, listGroupings, previewGrouping, undoGrouping } from "./product-grouping";
 import { exportProductsFullCsv, importTemplateCsv, planProductImport, runProductImport } from "./product-csv";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
@@ -230,4 +231,24 @@ export const rail = asyncHandler(async (req: Request, res: Response) => {
 
 export const preview = asyncHandler(async (req: Request, res: Response) => {
   res.json({ product: await productService.getProductForPreview(req.params.id!) });
+});
+
+export const groupingPreview = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ plan: await previewGrouping(req.body) });
+});
+
+export const groupingCommit = asyncHandler(async (req: Request, res: Response) => {
+  // commitGrouping records its own event, with the sources and the grouping id.
+  res.locals.auditHandled = true;
+  res.status(201).json(await commitGrouping(req.body, req.admin!.adminId, req.ip));
+});
+
+export const groupingUndo = asyncHandler(async (req: Request, res: Response) => {
+  res.locals.auditHandled = true;
+  await undoGrouping(req.params.groupingId!, req.admin!.adminId, req.ip);
+  res.status(204).end();
+});
+
+export const groupings = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ groupings: await listGroupings(req.params.id!) });
 });
