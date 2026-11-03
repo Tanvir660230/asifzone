@@ -5,6 +5,7 @@ import DOMPurify from "isomorphic-dompurify";
 import { BadgeCheck, Banknote, MessageCircle, Package, Phone, RotateCcw, Ruler, ShieldCheck, Sparkles, Star, Truck, type LucideIcon } from "lucide-react";
 import {
   landingVariants,
+  mergeLandingProducts,
   storePolicy,
   type LandingBackground,
   type LandingIcon,
@@ -45,12 +46,18 @@ export function sellOnPage(product: Product, variantIds: string[]): Product {
   return { ...product, variants, images: product.images.filter((i) => !dropped.has(i.id)) };
 }
 
+/** The page's products as one (a collection page's extras behind the same picker), as this page sells them. An extra
+ * that fails to load is left out rather than taking the whole page down; the main product is required. */
 export async function loadCampaignProduct(page: PublicLandingPage): Promise<Product | null> {
-  try {
-    return sellOnPage((await getProductBySlug(page.productSlug)).product, page.content.variantIds);
-  } catch {
-    return null;
-  }
+  const load = (slug: string) => getProductBySlug(slug).then((r) => r.product).catch(() => null);
+  const [main, ...extras] = await Promise.all([load(page.productSlug), ...(page.extraProductSlugs ?? []).map(load)]);
+  if (!main) return null;
+  return campaignProduct(main, extras.filter((p): p is Product => p !== null), page.content);
+}
+
+/** Merge (collection pages) then trim to the page's chosen variants — shared by the live page and the editor's preview. */
+export function campaignProduct(main: Product, extras: Product[], content: PublicLandingPage["content"]): Product {
+  return sellOnPage(mergeLandingProducts(main, extras, content.displayName), content.variantIds);
 }
 
 export function campaignMetadata(page: PublicLandingPage, product: Product, storeName: string): Metadata {

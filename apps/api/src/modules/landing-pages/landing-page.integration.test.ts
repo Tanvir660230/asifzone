@@ -90,6 +90,44 @@ describe("campaign landing pages", () => {
     await pub(page.slug).expect(404);
   });
 
+  it("a collection page sells several products' variants without changing the products", async () => {
+    const { product: main, variants: mainVariants } = await createStockedProduct({ stocks: [3, 3] });
+    const { product: extra, variants: extraVariants } = await createStockedProduct({ stocks: [2, 2] });
+    const owner = await asOwner();
+    const page = (await owner.post("/api/landing-pages", { name: "All jackets", slug: `vt-collection-${RUN}`, productId: main.id, templateKey: "colors" }).expect(201)).body.page;
+    const save = (content: object, version: number) => owner.put(`/api/landing-pages/${page.id}`, { name: page.name, slug: page.slug, content: { ...page.content, ...content }, version });
+
+    // The main product can't also be an extra, and an extra can't be listed twice.
+    await save({ extraProductIds: [main.id] }, page.version).expect(400);
+    await save({ extraProductIds: [extra.id, extra.id] }, page.version).expect(400);
+
+    // Variants may come from the main product or an extra; anything else is refused.
+    const { variants: strangers } = await createStockedProduct({ stocks: [1] });
+    await save({ extraProductIds: [extra.id], variantIds: [strangers[0]!.id] }, page.version).expect(400);
+
+    // Both products are "Black": the extra's colour is told apart by its product name, and a default may use that label.
+    const label = `Black (${extra.name})`;
+    const saved = (
+      await save({ extraProductIds: [extra.id], displayName: "All jackets", variantIds: [mainVariants[0]!.id, extraVariants[1]!.id], defaultColor: label }, page.version).expect(200)
+    ).body.page;
+    expect(saved.content).toMatchObject({ extraProductIds: [extra.id], displayName: "All jackets" });
+
+    // Publishing needs every product on the page to be published.
+    await prisma.product.update({ where: { id: extra.id }, data: { status: "DRAFT", isActive: false } });
+    await owner.post(`/api/landing-pages/${page.id}/publish`).expect(400);
+    await prisma.product.update({ where: { id: extra.id }, data: { status: "PUBLISHED", isActive: true } });
+    await owner.post(`/api/landing-pages/${page.id}/publish`).expect(200);
+    expect((await pub(page.slug).expect(200)).body.page).toMatchObject({ productSlug: main.slug, extraProductSlugs: [extra.slug] });
+
+    // An extra unpublished later drops off the live page; the page itself stays up.
+    await prisma.product.update({ where: { id: extra.id }, data: { status: "DRAFT", isActive: false } });
+    expect((await pub(page.slug).expect(200)).body.page.extraProductSlugs).toEqual([]);
+
+    // The products themselves are untouched: each still owns its own variants.
+    expect(await prisma.productVariant.count({ where: { productId: extra.id } })).toBe(2);
+    expect(await prisma.productVariant.count({ where: { productId: main.id } })).toBe(2);
+  });
+
   it("is admin-only", async () => {
     await request(app).get("/api/landing-pages").expect(401);
     await request(app).post("/api/landing-pages").send({}).expect(401);

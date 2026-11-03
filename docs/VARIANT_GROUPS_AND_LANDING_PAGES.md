@@ -63,6 +63,15 @@ Admin › Marketing › **Landing pages** › Campaign pages (`promotions.manage
   the page starts on, sections (drag to reorder, switch off, edit, add, remove), heading style, phone order bar,
   "call us" in the header, and the link-preview title/description/image. Autosaves; the right side shows the working
   copy exactly as it will look (phone or desktop width).
+- **Collection pages** ("Also sell on this page", up to 11 more products): one ad for several products that stay
+  separate — e.g. six single-colour jackets behind one colour picker, *without* grouping them (§1). Each product keeps
+  its own product page, SKUs, price, stock and order lines; the page only shows them together
+  (`packages/shared/src/landing-collection.ts`: `mergeLandingProducts`). A colour keeps its name; the same colour from
+  a later product is shown as "Onyx Black (Haven Full-Sleeve Jacket)" (`landingColorLabels`, used by the API for the
+  default colour too). A variant without photos of its own follows its product's photos. Optional *Page title*
+  replaces the first product's name. The first product stays the page's product for tracking (ViewContent), reviews,
+  description and "more products". All products must be finished goods with the same stock-tracking setting; publish
+  needs every one of them published, and one unpublished later simply drops off the live page.
 - **Sections**: hero, gallery & price, colour showcase, features, specifications, offer (words + optional countdown —
   never a price change), description, reviews, delivery & payment (from store settings), FAQ (own + standard answers),
   trust badges, order form (required), more products. Backgrounds are theme tokens only; no custom HTML or scripts.

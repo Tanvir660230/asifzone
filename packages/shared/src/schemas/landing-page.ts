@@ -108,9 +108,20 @@ export type LandingDesign = z.infer<typeof landingDesignSchema>;
 
 export const landingPageContentSchema = z.object({
   productId: z.string().min(1).max(40),
-  /** The variants this page sells, a subset of the product's. Empty = every active variant. */
+  /** A collection page: more products sold beside the main one, behind the same colour/size picker — each keeps its own
+   * variants, prices and stock (landing-collection.ts). The main product stays the page's product for tracking, reviews
+   * and "more products". */
+  extraProductIds: z
+    .array(z.string().min(1).max(40))
+    .max(11)
+    .default([])
+    .refine((ids) => new Set(ids).size === ids.length, "A product is listed twice"),
+  /** The page's title in place of the main product's name — e.g. "Haven sleeveless jackets" for a collection. */
+  displayName: optionalText(120),
+  /** The variants this page sells, a subset of its products'. Empty = every active variant. */
   variantIds: z.array(z.string().min(1).max(40)).max(200).default([]),
-  defaultColor: optionalText(80),
+  /** A colour as the page shows it — on a collection page a repeated colour carries its product's name (landingColorLabels). */
+  defaultColor: optionalText(160),
   defaultSize: optionalText(80),
   design: landingDesignSchema.default({}),
   seoTitle: optionalText(70),
@@ -192,6 +203,8 @@ export interface PublicLandingPage {
   name: string;
   slug: string;
   productSlug: string;
+  /** A collection page's other products that are on sale now, in the page's order (unpublished ones are left out). */
+  extraProductSlugs: string[];
   content: LandingPageContent;
 }
 
@@ -298,6 +311,7 @@ export const LANDING_TEMPLATES: Record<LandingTemplateKey, { name: string; descr
 export function landingTemplateContent(key: LandingTemplateKey, productId: string): LandingPageContent {
   return {
     productId,
+    extraProductIds: [],
     variantIds: [],
     design: { headingFont: "display", stickyCta: true, headerCall: true },
     sections: LANDING_TEMPLATES[key].sections.map(defaultLandingSection),
