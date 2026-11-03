@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { isPixelExcludedPath, trackingConfigured } from "@/lib/pixels";
+import { configuredTrackerNames, isPixelExcludedPath, trackingConfigured } from "@/lib/pixels";
 import {
   getAdTrackingConsent,
   OPEN_CONSENT_PREFERENCES_EVENT,
   setAdTrackingConsent,
+  trackingConsentMode,
   type AdTrackingConsent,
 } from "@/lib/pixels/consent";
 
@@ -30,6 +31,10 @@ export function TrackingConsentBanner() {
 
   if (!open || !trackingConfigured() || isPixelExcludedPath(pathname)) return null;
 
+  const notice = trackingConsentMode() === "notice";
+  // Only the trackers this store actually runs — naming one that isn't set up would be untrue.
+  const trackers = configuredTrackerNames().join(", ");
+
   const choose = (decision: AdTrackingConsent) => {
     setOpen(false);
     setAdTrackingConsent(decision);
@@ -44,7 +49,9 @@ export function TrackingConsentBanner() {
     >
       {/* Short enough to stay a strip at the bottom of a phone instead of covering half the page. */}
       <p className="text-sm text-ink-700 sm:flex-1">
-        May we use cookies (Meta, TikTok, Clarity) to measure our ads and improve the shop?{" "}
+        {notice
+          ? `We use cookies (${trackers}) to measure our ads and improve the shop. You can decline.`
+          : `May we use cookies (${trackers}) to measure our ads and improve the shop?`}{" "}
         <Link href="/privacy-policy" className="underline underline-offset-2 hover:text-ink-900">
           Privacy policy
         </Link>
@@ -54,7 +61,7 @@ export function TrackingConsentBanner() {
           Decline
         </Button>
         <Button size="sm" onClick={() => choose("granted")}>
-          Allow
+          {notice ? "OK" : "Allow"}
         </Button>
       </div>
     </div>

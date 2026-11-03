@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { PaymentMethodOption, SocialLink, StoreSettings } from "@clothing-brand/shared";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
-import { trackingConfigured } from "@/lib/pixels";
+import { useTrackingConfigured } from "@/lib/pixels";
 import { openTrackingPreferences } from "@/lib/pixels/consent";
 import { shortAddress } from "@/lib/store-identity";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -43,6 +43,7 @@ function LinkColumn({ title, links }: { title: string; links: { href: string; la
  * and the store's contact details, socials and payment methods sit in one quiet row above the legal line.
  */
 export function MihrabFooter({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
+  const showTracking = useTrackingConfigured();
   const address = shortAddress(settings);
   const categoryLinks = categories.flatMap((c) => [c, ...c.children]).slice(0, 6);
   const whatsappLink = socialLinks.find((l) => l.platform === "WHATSAPP" && l.isActive);
@@ -212,7 +213,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
                 Refunds
               </Link>
             </li>
-            {trackingConfigured() && (
+            {showTracking && (
               <li>
                 <button type="button" onClick={openTrackingPreferences} className={LINK}>
                   Tracking preferences

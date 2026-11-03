@@ -178,6 +178,16 @@ function CheckoutForm() {
     if (fallback) setValue("paymentMethod", fallback);
   }, [codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
+  // With exactly one way to pay there is nothing to choose: tick it once settings are known, so a COD-only store doesn't
+  // make every shopper tap the only option (or fail validation for not tapping it). Several methods still wait for the
+  // shopper's own pick, as above.
+  const settingsLoaded = Boolean(settingsData);
+  useEffect(() => {
+    if (!settingsLoaded || paymentMethod) return;
+    const enabled = ([["COD", codEnabled], ["SSLCOMMERZ", onlinePaymentEnabled], ["EPS_PG", epsPaymentEnabled]] as const).filter(([, on]) => on);
+    if (enabled.length === 1) setValue("paymentMethod", enabled[0]![0], { shouldValidate: false });
+  }, [settingsLoaded, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
+
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
   // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a

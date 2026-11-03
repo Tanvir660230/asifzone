@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { pixelForget, pixelPageView } from "@/lib/pixels";
-import { onAdTrackingConsentChange } from "@/lib/pixels/consent";
+import { onAdTrackingConsentChange, trackingConsentMode } from "@/lib/pixels/consent";
 
 /** Renders nothing — fires the ad-pixel PageView (Meta, TikTok) for the first load and every client-side route change.
  * The pixel scripts themselves are loaded lazily by lib/pixels/ on the first event (so they're never even downloaded on
@@ -23,7 +23,8 @@ export function AdPixels() {
     () =>
       onAdTrackingConsentChange((decision) => {
         if (decision === "granted") {
-          pixelPageView(window.location.pathname);
+          // Under "unless declined" this page was already counted before the shopper tapped OK.
+          if (trackingConsentMode() !== "notice") pixelPageView(window.location.pathname);
           return;
         }
         pixelForget();

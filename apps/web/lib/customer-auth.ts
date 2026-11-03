@@ -11,7 +11,7 @@ import type {
   RequestOtpInput,
   VerifyOtpInput,
 } from "@clothing-brand/shared";
-import { apiFetch } from "./api-client";
+import { ApiError, apiFetch, mayHaveSession } from "./api-client";
 import { pixelForget } from "./pixels";
 
 /** Phase 11: when an existing guest record already holds this email, nothing is signed in — the API emails a link that
@@ -61,6 +61,8 @@ export function logoutCustomer() {
 }
 
 export function getCurrentCustomer() {
+  // A guest (no session cookie at all) is answered here exactly as the API would — 401 — without the round trip.
+  if (!mayHaveSession()) return Promise.reject(new ApiError(401, "Not signed in"));
   return apiFetch<{ customer: Customer }>("/api/customers/me");
 }
 
