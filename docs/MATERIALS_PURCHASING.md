@@ -48,6 +48,10 @@ item and 50 on another; nothing converts between materials).
 - `extrasMethod`: VALUE (default, as before) or QUANTITY — how the extras' landed cost (or, before costing is live, the
   catalog cost) is spread over the lines.
 
+- **Already in stock without a purchase** — the duplicate check also warns when at least 70% of the items bought came into
+  stock in the 30 days before without a purchase (restock, import, count gain), by at least half of what is being bought
+  (`matchStockAdded`, duplicate-purchase.ts). Both live duplicates of October 2026 were of this kind. A warning only.
+
 ## §4 Ordered, not yet arrived
 
 The purchase form asks **Has it arrived?** (only for people with `purchasing.manage`, once costing is live).

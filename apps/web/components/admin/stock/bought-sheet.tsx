@@ -227,7 +227,12 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     duplicateReason: duplicateReason.trim() || null,
     ...(simple ? { updateCatalogCost } : {}),
   });
-  const goodsLines = () => body().lines.map((l) => ({ variantId: l.variantId, amount: l.amount }));
+  // quantities in stock units (a line bought in litres sends what it converts to) — for the "already in stock" check
+  const goodsLines = () => lines.flatMap((l, i) => {
+    const vs = l.choice.variants.filter((v) => qtyOf(l.qty[v.variantId]) > 0);
+    const amounts = spread(totals[i]!.minor, vs.map((v) => qtyOf(l.qty[v.variantId])));
+    return vs.map((v, k) => ({ variantId: v.variantId, amount: amounts[k]! / 100, quantity: qtyOf(l.qty[v.variantId]) }));
+  });
   const duplicatesQ = useQuery({
     queryKey: ["stock-hub", "duplicate-check", supplier.trim(), date, JSON.stringify(reviewing ? goodsLines() : [])],
     queryFn: () => stockApi.checkPurchaseDuplicates({ supplierName: supplier.trim() || null, date, lines: goodsLines() }),
@@ -348,8 +353,10 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
               <Alert variant="warning" title="This looks like a purchase already recorded" className="mt-3">
                 <ul className="mt-1 space-y-0.5" data-testid="bought-duplicates">
                   {duplicates.map((d) => (
-                    <li key={d.receiptId}>
-                      {d.number} on {d.receiptDate} · {formatPrice(d.total)} · {Math.round(d.itemOverlap * 100)}% of the same items
+                    <li key={d.kind === "STOCK_ADDED" ? "stock-added" : d.receiptId}>
+                      {d.kind === "STOCK_ADDED"
+                        ? <>{d.number}, last on {d.receiptDate} ({Math.round(d.itemOverlap * 100)}% of these items) — by a count, an import or a restock. If that was this batch, don&apos;t record it again.</>
+                        : <>{d.number} on {d.receiptDate} · {formatPrice(d.total)} · {Math.round(d.itemOverlap * 100)}% of the same items</>}
                     </li>
                   ))}
                 </ul>

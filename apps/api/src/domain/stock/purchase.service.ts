@@ -54,7 +54,7 @@ import { ownerMoney } from "../finance/partner-profit.service";
 import { ownerOwedBack } from "../finance/owner-advances.service";
 import { createFinancialAccount } from "../finance/financial-accounts.service";
 import { moneyBalanceAt } from "../finance/ledger.service";
-import { findDuplicateReceipts, findDuplicateSimplePurchases, type DuplicateMatch } from "./duplicate-purchase";
+import { findDuplicateReceipts, findDuplicateSimplePurchases, matchStockAdded, stockAddedWithoutPurchase, type DuplicateMatch } from "./duplicate-purchase";
 import { claimEntry, claimEntryById, completeEntry, findEntry, fingerprintOf, isUniqueViolation, releaseEntry, renewLease, saveSteps, unitOf, variantLabel, type Lease } from "./hub-entry";
 import { adjustVariantStockInTx, afterAdjustment, type AdjustResult } from "../../modules/inventory/inventory.service";
 
@@ -277,7 +277,10 @@ export async function checkPurchaseDuplicates(input: PurchaseDuplicateCheckInput
     // purchases recorded before costing was live (P1.4) have no receipt: matched by the supplier's name
     supplierName ? findDuplicateSimplePurchases(prisma, { businessId: business.id, supplierName, shape, currency: cur }) : Promise.resolve([]),
   ]);
-  return { matches: [...receipts, ...simple] };
+  // goods already added to stock without a purchase (the October 2026 duplicates): asked about too
+  const added = matchStockAdded(input.lines, await stockAddedWithoutPurchase(prisma, shape.variantIds, shape.date));
+  const stockAdded: DuplicateMatch[] = added ? [{ kind: "STOCK_ADDED", receiptId: "", number: `${added.units.toLocaleString("en-US")} units added to stock without a purchase`, receiptDate: added.receiptDate, total: 0, itemOverlap: added.itemOverlap, totalDifference: 0 }] : [];
+  return { matches: [...receipts, ...simple, ...stockAdded] };
 }
 
 async function assertSupplierUsable(id: string) {

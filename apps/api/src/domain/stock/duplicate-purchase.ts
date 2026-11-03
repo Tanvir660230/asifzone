@@ -26,6 +26,8 @@ export interface PurchaseShape {
 }
 
 export interface DuplicateMatch {
+  /** RECEIPT (default): another purchase; STOCK_ADDED: the same items came into stock lately without any purchase. */
+  kind?: "RECEIPT" | "STOCK_ADDED";
   receiptId: string;
   number: string;
   receiptDate: string;
@@ -116,6 +118,60 @@ export async function findDuplicateSimplePurchases(
     if (hit) out.push({ receiptId: r.id, number: "Purchase (not in the books)", receiptDate: date, total: toMajorNumber(totalMinor, args.currency), ...hit });
   }
   return out;
+}
+
+/**
+ * Stock added without a purchase (docs/MATERIALS_PURCHASING.md §3): both live duplicates of October 2026 (GRN-000001 caps,
+ * GRN-000002 oil) were goods already in the books — added at product creation, an import or a count — then entered again as
+ * a purchase, which the receipt-to-receipt rule above can't see. So: when at least 70% of the items bought came into stock in
+ * the 30 days before the purchase other than through a purchase (restock, import, count gain — never a receipt or a stock hub
+ * purchase), and — where quantities are known — by at least half of what is being bought, it is flagged. A warning only.
+ */
+export const STOCK_ADDED_RULE = { days: 30, minItemOverlap: 0.7, minQtyShare: 0.5 } as const;
+
+export interface StockInflow { variantId: string; qty: number; lastDate: string }
+
+/** Pure: does a purchase of these lines look like stock already added? Null when it doesn't. */
+export function matchStockAdded(lines: Array<{ variantId: string; quantity?: number | null }>, inflows: StockInflow[]): Pick<DuplicateMatch, "itemOverlap" | "receiptDate"> & { units: number } | null {
+  const ids = [...new Set(lines.map((l) => l.variantId))];
+  if (!ids.length) return null;
+  const by = new Map(inflows.map((i) => [i.variantId, i]));
+  const hits = ids.filter((id) => {
+    const inflow = by.get(id);
+    if (!inflow || inflow.qty <= 0) return false;
+    const bought = lines.filter((l) => l.variantId === id).reduce((s, l) => s + (l.quantity ?? 0), 0);
+    return !bought || inflow.qty >= bought * STOCK_ADDED_RULE.minQtyShare;
+  });
+  const itemOverlap = hits.length / ids.length;
+  if (itemOverlap < STOCK_ADDED_RULE.minItemOverlap) return null;
+  const last = hits.map((id) => by.get(id)!.lastDate).sort().at(-1)!;
+  return { itemOverlap: Math.round(itemOverlap * 1000) / 1000, receiptDate: last, units: hits.reduce((s, id) => s + by.get(id)!.qty, 0) };
+}
+
+/** Stock that came in without a purchase in the window before `date`, per item (reason RESTOCK / IMPORT / ADJUSTMENT gains). */
+export async function stockAddedWithoutPurchase(db: AppTransactionClient | typeof prisma, variantIds: string[], date: string): Promise<StockInflow[]> {
+  if (!variantIds.length) return [];
+  const end = Date.parse(`${date}T00:00:00Z`) + 2 * DAY_MS;
+  const rows = await db.stockMovement.findMany({
+    where: {
+      variantId: { in: variantIds },
+      change: { gt: 0 },
+      reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT"] },
+      createdAt: { gte: new Date(end - (STOCK_ADDED_RULE.days + 2) * DAY_MS), lt: new Date(end) },
+      // a stock hub purchase before costing was live is a RESTOCK sourced on its entry: a purchase, matched above
+      NOT: { reason: "RESTOCK", sourceType: "StockHubEntry" },
+    },
+    select: { variantId: true, change: true, createdAt: true },
+  });
+  const out = new Map<string, StockInflow>();
+  for (const r of rows) {
+    const d = r.createdAt.toISOString().slice(0, 10);
+    const cur = out.get(r.variantId) ?? { variantId: r.variantId, qty: 0, lastDate: d };
+    cur.qty += r.change;
+    if (d > cur.lastDate) cur.lastDate = d;
+    out.set(r.variantId, cur);
+  }
+  return [...out.values()];
 }
 
 /** What is stored on the receipt (GoodsReceipt.duplicateWarning). */
