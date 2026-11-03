@@ -1,5 +1,6 @@
 import { Prisma, type LandingPage } from "@prisma/client";
 import {
+  landingColorLabels,
   landingPageContentSchema,
   landingTemplateContent,
   type CreateLandingPageInput,
@@ -65,20 +66,46 @@ async function assertSlugFree(slug: string, exceptId?: string) {
   if (redirect) throw AppError.conflict(`This address redirects to ${redirect.toPath} (Settings › Redirects) — choose another`);
 }
 
-/** The content, checked against the product it names: a sold product, and variants that are its own. */
+const productIdsOf = (content: LandingPageContent) => [content.productId, ...(content.extraProductIds ?? [])];
+
+/** The content, checked against the products it names: sold products, each once, and variants that are their own. A
+ * collection page's products must also agree on stock tracking, since the page's picker reads one rule for all. */
 async function assertContent(content: LandingPageContent) {
-  const product = await prisma.product.findUnique({
-    where: { id: content.productId },
-    select: { kind: true, deletedAt: true, variants: { select: { id: true, size: true, color: true } } },
+  const extraIds = content.extraProductIds ?? [];
+  if (extraIds.includes(content.productId)) throw AppError.badRequest("The page's main product is already on it — remove it from the other products");
+  const rows = await prisma.product.findMany({
+    where: { id: { in: productIdsOf(content) } },
+    select: { id: true, name: true, kind: true, deletedAt: true, trackInventory: true, variants: { select: { id: true, size: true, color: true } } },
   });
-  if (!product || product.deletedAt) throw AppError.badRequest("The chosen product doesn't exist or is in Trash");
-  if (product.kind !== "FINISHED") throw AppError.badRequest("A material can't be sold on a landing page");
-  const own = new Set(product.variants.map((v) => v.id));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const products = productIdsOf(content).map((id) => byId.get(id));
+  const main = products[0];
+  if (!main || main.deletedAt) throw AppError.badRequest("The chosen product doesn't exist or is in Trash");
+  for (const p of products) {
+    if (!p || p.deletedAt) throw AppError.badRequest("One of the page's products doesn't exist or is in Trash — remove it");
+    if (p.kind !== "FINISHED") throw AppError.badRequest(`“${p.name}” is a material — it can't be sold on a landing page`);
+    if (p.trackInventory !== main.trackInventory) throw AppError.badRequest(`“${p.name}” counts stock differently from “${main.name}” — a page's products must all track stock, or all not`);
+  }
+  const all = (products as NonNullable<(typeof products)[number]>[]).flatMap((p) => p.variants);
+  const own = new Set(all.map((v) => v.id));
   const foreign = content.variantIds.filter((id) => !own.has(id));
-  if (foreign.length) throw AppError.badRequest("Some chosen variants don't belong to this product — pick them again");
-  const offered = content.variantIds.length ? product.variants.filter((v) => content.variantIds.includes(v.id)) : product.variants;
-  if (content.defaultColor && !offered.some((v) => v.color === content.defaultColor)) throw AppError.badRequest("The default colour isn't one this page offers");
+  if (foreign.length) throw AppError.badRequest("Some chosen variants don't belong to this page's products — pick them again");
+  const labels = landingColorLabels(products as NonNullable<(typeof products)[number]>[]);
+  const offered = content.variantIds.length ? all.filter((v) => content.variantIds.includes(v.id)) : all;
+  if (content.defaultColor && !offered.some((v) => (labels.get(v.id) ?? v.color) === content.defaultColor)) throw AppError.badRequest("The default colour isn't one this page offers");
   if (content.defaultSize && !offered.some((v) => v.size === content.defaultSize)) throw AppError.badRequest("The default size isn't one this page offers");
+}
+
+/** A collection page's other products that are on sale, as slugs in the page's order. */
+async function liveExtraSlugs(content: LandingPageContent, onlyPublished: boolean): Promise<string[]> {
+  const ids = content.extraProductIds ?? [];
+  if (!ids.length) return [];
+  const rows = await prisma.product.findMany({
+    where: { id: { in: ids }, deletedAt: null, ...(onlyPublished ? { status: "PUBLISHED" } : {}) },
+    select: { id: true, slug: true },
+  });
+  const slugById = new Map(rows.map((r) => [r.id, r.slug]));
+  return ids.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
 }
 
 export async function listLandingPages(): Promise<LandingPageSummary[]> {
@@ -145,6 +172,10 @@ export async function publishLandingPage(id: string, adminId: string, ip?: strin
   const content = landingPageContentSchema.parse(existing.content);
   await assertContent(content);
   if (existing.product.status !== "PUBLISHED") throw AppError.badRequest(`Publish “${existing.product.name}” first — a landing page can only sell a published product`);
+  if (content.extraProductIds.length) {
+    const hidden = await prisma.product.findFirst({ where: { id: { in: content.extraProductIds }, status: { not: "PUBLISHED" } }, select: { name: true } });
+    if (hidden) throw AppError.badRequest(`Publish “${hidden.name}” first, or remove it from the page — a landing page can only sell published products`);
+  }
   const row = await prisma.landingPage.update({
     where: { id },
     data: { status: "PUBLISHED", publishedContent: content as unknown as Prisma.InputJsonValue, publishedAt: new Date(), publishedById: adminId, content: content as unknown as Prisma.InputJsonValue },
@@ -193,12 +224,22 @@ export async function getPublicLandingPage(slug: string): Promise<PublicLandingP
   const content = row.publishedContent as unknown as LandingPageContent;
   const product = await prisma.product.findUnique({ where: { id: content.productId }, select: { slug: true, status: true, deletedAt: true } });
   if (!product || product.deletedAt || product.status !== "PUBLISHED") return null;
-  return { id: row.id, name: row.name, slug: row.slug, productSlug: product.slug, content };
+  // An extra product unpublished after the page went live simply drops off it; the page stays up for the others.
+  return { id: row.id, name: row.name, slug: row.slug, productSlug: product.slug, extraProductSlugs: await liveExtraSlugs(content, true), content };
 }
 
-/** The working copy, rendered as the live page would be — the editor's preview. */
+/** The working copy, rendered as the live page would be — the editor's preview (unpublished extras included, so the
+ * admin sees the whole page before publishing it). */
 export async function getPreviewLandingPage(id: string): Promise<PublicLandingPage & { productStatus: string }> {
   const row = await load(id);
   const content = row.content as unknown as LandingPageContent;
-  return { id: row.id, name: row.name, slug: row.slug, productSlug: row.product.slug, productStatus: row.product.status, content };
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    productSlug: row.product.slug,
+    productStatus: row.product.status,
+    extraProductSlugs: await liveExtraSlugs(content, false),
+    content,
+  };
 }

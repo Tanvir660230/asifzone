@@ -3,7 +3,7 @@
 import { use, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -13,6 +13,8 @@ import {
   LANDING_SINGLETON_SECTIONS,
   defaultLandingSection,
   landingPageContentSchema,
+  mergeLandingProducts,
+  type Product,
   slugify,
   type LandingPageContent,
   type LandingPageDetail,
@@ -106,6 +108,19 @@ function Editor({ initial }: { initial: LandingPageDetail }) {
   const productName = useRef<string>(initial.productName);
 
   const product = useQuery({ queryKey: ["admin", "product", draft.content.productId], queryFn: () => getProduct(draft.content.productId) });
+  // A collection page's other products: loaded one by one, so the variant list shows every colour the page will offer.
+  const extraIds = draft.content.extraProductIds ?? [];
+  const extras = useQueries({ queries: extraIds.map((pid) => ({ queryKey: ["admin", "product", pid], queryFn: () => getProduct(pid) })) });
+  const extraNames = useRef(new Map<string, string>());
+  const extrasLoading = extras.some((q) => q.isLoading);
+  const extrasFailed = extras.some((q) => q.error);
+  const offeredProduct =
+    product.data && !extrasLoading
+      ? mergeLandingProducts(
+          product.data.product,
+          extras.map((q) => q.data?.product).filter((p): p is Product => Boolean(p)),
+        )
+      : null;
 
   // Autosave: a moment after the last change, the draft is checked here first (the same schema the server uses), then sent.
   const first = useRef(true);
@@ -207,7 +222,15 @@ function Editor({ initial }: { initial: LandingPageDetail }) {
     if (!p || p.id === draft.content.productId) return;
     if (!(await confirm(`Sell “${p.name}” on this page instead? The colour and size choices are reset.`, { confirmLabel: "Change product", tone: "default", title: "Change product" }))) return;
     productName.current = p.name;
-    setContent({ productId: p.id, variantIds: [], defaultColor: undefined, defaultSize: undefined });
+    setContent({ productId: p.id, extraProductIds: extraIds.filter((x) => x !== p.id), variantIds: [], defaultColor: undefined, defaultSize: undefined });
+  }
+
+  /** The other products a collection page sells. Adding or removing one starts the variant choice over (every variant
+   * of every product), so a removed product's variants never linger in the page. */
+  function changeExtras(list: { id: string; name: string }[]) {
+    for (const p of list) extraNames.current.set(p.id, p.name);
+    const ids = list.map((p) => p.id).filter((x) => x !== draft.content.productId);
+    setContent({ extraProductIds: ids, variantIds: [], defaultColor: undefined, defaultSize: undefined });
   }
 
   async function copyLink() {
@@ -293,19 +316,44 @@ function Editor({ initial }: { initial: LandingPageDetail }) {
             </div>
           </Panel>
 
-          <Panel title="Product & options" description="The page sells this product's own variants, prices and stock.">
+          <Panel title="Product & options" description="The page sells its products' own variants, prices and stock.">
             <div className="space-y-4">
               <div>
                 <p className="mb-1.5 text-xs font-medium text-fg">Product</p>
                 <ProductPicker selected={[{ id: draft.content.productId, name: product.data?.product.name ?? productName.current }]} onChange={(list) => void changeProduct(list)} />
               </div>
-              {product.isLoading ? (
+              <div>
+                <p className="text-xs font-medium text-fg">Also sell on this page</p>
+                <p className="mb-1.5 mt-0.5 text-xs text-fg-muted">
+                  For one ad that sells several products — e.g. every colour of a jacket. Each keeps its own product page, price and stock; here they share one colour and size picker.
+                </p>
+                <ProductPicker
+                  selected={extraIds.map((pid, i) => ({ id: pid, name: extras[i]?.data?.product.name ?? extraNames.current.get(pid) ?? "Loading…" }))}
+                  onChange={changeExtras}
+                />
+              </div>
+              {extraIds.length > 0 && (
+                <div>
+                  <Label htmlFor="lp-display-name" className="text-xs">
+                    Page title
+                  </Label>
+                  <Input
+                    id="lp-display-name"
+                    value={draft.content.displayName ?? ""}
+                    maxLength={120}
+                    placeholder={product.data?.product.name ?? "e.g. Haven sleeveless jackets"}
+                    onChange={(e) => setContent({ displayName: e.target.value || undefined })}
+                  />
+                  <p className="mt-1 text-xs text-fg-muted">Shown instead of the first product&apos;s name.</p>
+                </div>
+              )}
+              {product.isLoading || extrasLoading ? (
                 <Skeleton className="h-32" />
-              ) : product.error ? (
-                <p className="text-sm text-danger-700">Couldn&apos;t load the product&apos;s variants.</p>
-              ) : product.data ? (
+              ) : product.error || extrasFailed ? (
+                <p className="text-sm text-danger-700">Couldn&apos;t load the products&apos; variants — reload the page.</p>
+              ) : offeredProduct ? (
                 <VariantChooser
-                  variants={product.data.product.variants}
+                  variants={offeredProduct.variants}
                   value={draft.content.variantIds}
                   onChange={(variantIds) => setContent({ variantIds })}
                   defaultColor={draft.content.defaultColor}

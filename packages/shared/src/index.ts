@@ -16,6 +16,7 @@ export * from "./schemas/redirect";
 export * from "./schemas/banner";
 export * from "./schemas/homepage-section";
 export * from "./schemas/landing-page";
+export * from "./landing-collection";
 export * from "./schemas/product-grouping";
 export * from "./schemas/social-link";
 export * from "./schemas/newsletter";
