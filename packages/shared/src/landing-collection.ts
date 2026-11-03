@@ -76,7 +76,8 @@ export function mergeLandingProducts(main: Product, extras: Product[], displayNa
   const list = offered.length ? offered : Object.values(prices);
   const cheapest = list.reduce((a, b) => (b.selling < a.selling ? b : a), list[0]!);
   const pricing: ProductPricing = {
-    currency: main.pricing?.currency ?? extras.find((p) => p.pricing)?.pricing?.currency ?? "BDT",
+    // The store's currency as the server sent it; no price is formatted from this, the storefront uses its own setting.
+    currency: main.pricing?.currency ?? extras.find((p) => p.pricing)?.pricing?.currency ?? "",
     from: cheapest.selling,
     to: Math.max(...list.map((p) => p.selling)),
     listFrom: Math.min(...list.map((p) => p.list)),
