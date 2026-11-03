@@ -123,7 +123,7 @@ describe("Settings › Integrations", () => {
     const owner = await asOwner();
     await owner.patch("/api/settings/integrations", { values: { META_PIXEL_ID: "1234567890", META_ACCESS_TOKEN: "EAAG-secret-token-xyz", CLARITY_ID: "clar1ty" } });
     const res = await request(app).get("/api/settings");
-    expect(res.body.settings.integrationIds).toEqual({ metaPixelId: "1234567890", tiktokPixelId: "", clarityId: "clar1ty", googleClientId: "", vapidPublicKey: "" });
+    expect(res.body.settings.integrationIds).toEqual({ metaPixelId: "1234567890", tiktokPixelId: "", clarityId: "clar1ty", googleClientId: "", vapidPublicKey: "", trackingConsent: "" });
     expect(JSON.stringify(res.body)).not.toContain("EAAG-secret-token-xyz");
   });
 
