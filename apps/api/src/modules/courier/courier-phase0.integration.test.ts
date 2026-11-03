@@ -31,6 +31,7 @@ import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { getOrderStats, listOrders, updateOrderStatus } from "../orders/order.service";
 import { bulkSyncCourierStatuses, syncPendingCourierStatuses } from "./courier.service";
+import { courierHealthStats } from "./courier-health.service";
 import { orderListQuerySchema } from "@clothing-brand/shared";
 import { getSteadfastStatusByConsignmentId } from "../../providers/courier/steadfast";
 
@@ -254,5 +255,42 @@ describe("courier health report", () => {
     expect(res.body.polling.maxLevel).toBe(0);
     expect(Array.isArray(res.body.webhook.last48h.checks)).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain("wh-phase0-secret");
+  });
+});
+
+describe("courier health counts Steadfast's real reporting pattern (2026-10-30)", () => {
+  it("counts only contradictions against the webhook, and leaves out changes Steadfast never pushes", async () => {
+    const before = await courierHealthStats(48);
+    const cid = () => {
+      const c = String(++seq);
+      consignments.push(c);
+      return c;
+    };
+    const event = (status: string, verifiedStatus: string) =>
+      ({ consignmentId: cid(), notificationType: "delivery_status", status, verifiedStatus, payload: {}, outcome: "APPLIED" }) as const;
+    await prisma.courierWebhookEvent.createMany({
+      data: [
+        event("delivered", "delivered_approval_pending"), // awaiting Steadfast's approval
+        event("partial_delivered", "pending"), // the status API hasn't caught up yet
+        event("cancelled", "cancelled"), // same
+        event("delivered", "cancelled"), // a real contradiction
+      ],
+    });
+    await prisma.courierStatusChange.createMany({
+      data: [
+        { consignmentId: cid(), fromStatus: "pending", toStatus: "delivered_approval_pending", source: "WEBHOOK" },
+        { consignmentId: cid(), fromStatus: "delivered_approval_pending", toStatus: "delivered", source: "POLL" }, // never pushed
+        { consignmentId: cid(), fromStatus: "in_review", toStatus: "pending", source: "POLL" }, // never pushed
+        { consignmentId: cid(), fromStatus: "pending", toStatus: "cancelled", source: "POLL" }, // pushed, but the poll got it first
+      ],
+    });
+    const after = await courierHealthStats(48);
+    expect(after.compared - before.compared).toBe(4);
+    expect(after.disagreed - before.disagreed).toBe(1);
+    expect((after.awaitingApproval ?? 0) - (before.awaitingApproval ?? 0)).toBe(1);
+    expect((after.apiBehind ?? 0) - (before.apiBehind ?? 0)).toBe(1);
+    expect((after.changes.WEBHOOK ?? 0) - (before.changes.WEBHOOK ?? 0)).toBe(1);
+    expect((after.changes.POLL ?? 0) - (before.changes.POLL ?? 0)).toBe(1);
+    expect((after.notPushed ?? 0) - (before.notPushed ?? 0)).toBe(2);
   });
 });

@@ -6,7 +6,7 @@
  */
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
-import { allowedPollLevel, evaluateWebhookHealth, type CourierHealthStats } from "./courier-sync-policy";
+import { allowedPollLevel, compareCourierStatuses, evaluateWebhookHealth, isPushedTransition, type CourierHealthStats } from "./courier-sync-policy";
 
 /** Courier statuses after which Steadfast reports nothing more for a consignment. */
 export const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "cancelled"];
@@ -24,27 +24,42 @@ const HOUR = 3_600_000;
 
 export async function courierHealthStats(windowHours: number, now: Date = new Date()): Promise<CourierHealthStats> {
   const from = new Date(now.getTime() - windowHours * HOUR);
-  const [byOutcome, last, rejections, compared, disagreed, changes, openParcels, overdueParcels] = await Promise.all([
+  const [byOutcome, last, rejections, pairs, transitions, openParcels, overdueParcels] = await Promise.all([
     prisma.courierWebhookEvent.groupBy({ by: ["outcome"], where: { receivedAt: { gte: from } }, _count: true }),
     prisma.courierWebhookEvent.findFirst({ where: { receivedAt: { gte: from } }, orderBy: { receivedAt: "desc" }, select: { receivedAt: true } }),
     prisma.courierWebhookRejection.count({ where: { receivedAt: { gte: from } } }),
-    prisma.courierWebhookEvent.count({ where: { receivedAt: { gte: from }, status: { not: null }, verifiedStatus: { not: null } } }),
-    // The body's status and the status API's, compared in SQL (Prisma can't compare two columns).
-    prisma.$queryRaw<Array<{ n: number }>>`
-      SELECT count(*)::int AS n FROM "CourierWebhookEvent"
-      WHERE "receivedAt" >= ${from} AND status IS NOT NULL AND "verifiedStatus" IS NOT NULL AND status <> "verifiedStatus"`,
-    prisma.courierStatusChange.groupBy({ by: ["source"], where: { observedAt: { gte: from } }, _count: true }),
+    // The body's status beside the status API's, one row per distinct pair — classified below (compareCourierStatuses).
+    prisma.courierWebhookEvent.groupBy({
+      by: ["status", "verifiedStatus"],
+      where: { receivedAt: { gte: from }, status: { not: null }, verifiedStatus: { not: null } },
+      _count: true,
+    }),
+    prisma.courierStatusChange.groupBy({ by: ["fromStatus", "toStatus", "source"], where: { observedAt: { gte: from } }, _count: true }),
     prisma.order.count({ where: OPEN_PARCEL_WHERE }),
     prisma.order.count({ where: { ...OPEN_PARCEL_WHERE, courierNextPollAt: { lt: new Date(now.getTime() - OVERDUE_GRACE_MS) } } }),
   ]);
+  const agreement = { compared: 0, disagreed: 0, awaitingApproval: 0, apiBehind: 0 };
+  for (const p of pairs) {
+    const kind = compareCourierStatuses(p.status!, p.verifiedStatus!);
+    agreement.compared += p._count;
+    if (kind === "CONTRADICTION") agreement.disagreed += p._count;
+    else if (kind === "AWAITING_APPROVAL") agreement.awaitingApproval += p._count;
+    else if (kind === "API_BEHIND") agreement.apiBehind += p._count;
+  }
+  const changes: Record<string, number> = {};
+  let notPushed = 0;
+  for (const t of transitions) {
+    if (!isPushedTransition(t.fromStatus, t.toStatus)) notPushed += t._count;
+    else changes[t.source] = (changes[t.source] ?? 0) + t._count;
+  }
   return {
     windowHours,
     events: Object.fromEntries(byOutcome.map((r) => [r.outcome, r._count])),
     lastValidEventAt: last?.receivedAt ?? null,
     rejections,
-    compared,
-    disagreed: disagreed[0]?.n ?? 0,
-    changes: Object.fromEntries(changes.map((r) => [r.source, r._count])),
+    ...agreement,
+    changes,
+    notPushed,
     openParcels,
     overdueParcels,
   };
