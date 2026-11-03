@@ -18,6 +18,7 @@ import {
   duplicateProductSchema,
   productImportRequestSchema,
   productImportCommitSchema,
+  productGroupingSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
@@ -87,6 +88,12 @@ productRouter.get("/:id", requireAdmin, requirePermission("catalog.read"), produ
 productRouter.get("/:id/history", requireAdmin, requirePermission("catalog.read"), productController.history);
 productRouter.get("/:id/sales-summary", requireAdmin, requirePermission("catalog.read"), productController.salesSummary);
 productRouter.get("/:id/preview", requireAdmin, requirePermission("catalog.read"), productController.preview);
+
+// Grouping separate products into one parent (docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §1). Before "/:id" routes.
+productRouter.post("/groupings/preview", requireAdmin, requirePermission("catalog.manage"), validate(productGroupingSchema), productController.groupingPreview);
+productRouter.post("/groupings", requireAdmin, requirePermission("catalog.manage"), validate(productGroupingSchema), productController.groupingCommit);
+productRouter.post("/groupings/:groupingId/undo", requireAdmin, requirePermission("catalog.manage"), productController.groupingUndo);
+productRouter.get("/:id/groupings", requireAdmin, requirePermission("catalog.read"), productController.groupings);
 
 productRouter.post("/bulk/delete", requireAdmin, requirePermission("catalog.manage"), validate(bulkProductIdsSchema), productController.bulkDelete);
 productRouter.post("/bulk/status", requireAdmin, requirePermission("catalog.manage"), validate(bulkProductStatusSchema), productController.bulkStatus);

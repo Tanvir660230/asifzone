@@ -1,20 +1,22 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import DOMPurify from "isomorphic-dompurify";
-import { Banknote, ChevronDown, MessageCircle, Phone, RotateCcw, Star, Truck } from "lucide-react";
-import { storePolicy } from "@clothing-brand/shared";
-import { StoreLogoImage } from "@/components/store-logo-image";
+import { ChevronDown, MessageCircle, Phone, Star } from "lucide-react";
+import { storePolicy, type Product } from "@clothing-brand/shared";
 import { ProductReviews } from "@/components/storefront/product-reviews";
 import { TrackProductView } from "@/components/storefront/track-product-view";
-import { LandingGallery } from "@/components/landing/landing-gallery";
+import { LandingSelectionGallery } from "@/components/landing/landing-gallery";
 import { LandingOrderForm } from "@/components/landing/landing-order-form";
+import { LandingSelectionProvider } from "@/components/landing/landing-selection";
 import { LandingStickyCta } from "@/components/landing/landing-sticky-cta";
 import { LandingMoreProducts } from "@/components/landing/landing-more-products";
-import { getActiveSocialLinksSafe, getProductBySlug, getSiteSettings } from "@/lib/api/storefront";
+import { LandingFaqList, LandingFooter, LandingHeader, telHref } from "@/components/landing/landing-chrome";
+import { CampaignLandingView, campaignMetadata, loadCampaignProduct } from "@/components/landing/campaign-landing-view";
+import { getActiveSocialLinksSafe, getProductBySlug, getPublicLandingPage, getSiteSettings } from "@/lib/api/storefront";
 import { formatPrice } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
+import { bn, landingPromises, standardLandingFaqs } from "@/lib/landing-content";
 import { percentOffLabel, productDisplayPrice } from "@/lib/pricing-display";
 import { productSeoFields, storeTitle, buildOpenGraph } from "@/lib/seo";
 
@@ -33,9 +35,20 @@ async function loadProduct(slug: string) {
   }
 }
 
+/** A published campaign page at this address wins; otherwise the address is a product's own automatic page. A failed
+ * lookup of the campaign page falls through to the product, so an API hiccup never hides a product's page. */
+async function loadCampaign(slug: string) {
+  const page = await getPublicLandingPage(slug).catch(() => null);
+  if (!page) return null;
+  const product = await loadCampaignProduct(page);
+  return product ? { page, product } : null;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const [product, { settings }] = await Promise.all([loadProduct(slug), getSiteSettings()]);
+  const [campaign, { settings }] = await Promise.all([loadCampaign(slug), getSiteSettings()]);
+  if (campaign) return campaignMetadata(campaign.page, campaign.product, settings.storeName);
+  const product = await loadProduct(slug);
   if (!product) return { title: "Product not found" };
   const { title, description, canonical, og } = productSeoFields(product);
   return {
@@ -48,82 +61,42 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-const BN_DIGITS = "০১২৩৪৫৬৭৮৯";
-const bn = (value: number | string) => String(value).replace(/\d/g, (d) => BN_DIGITS[Number(d)]!);
-const range = ([a, b]: readonly [number, number]) => (a === b ? bn(a) : `${bn(a)}-${bn(b)}`);
-
 export default async function ProductLandingPage({ params }: Props) {
   const { slug } = await params;
-  const [product, { settings }, { links }] = await Promise.all([loadProduct(slug), getSiteSettings(), getActiveSocialLinksSafe()]);
+  const campaign = await loadCampaign(slug);
+  if (campaign) return <CampaignLandingView page={campaign.page} product={campaign.product} />;
+
+  const product = await loadProduct(slug);
   if (!product) notFound();
+  return <AutomaticLandingView product={product} />;
+}
+
+/** A product's automatic landing page: one fixed layout for every published product, at its own slug. */
+async function AutomaticLandingView({ product }: { product: Product }) {
+  const [{ settings }, { links }] = await Promise.all([getSiteSettings(), getActiveSocialLinksSafe()]);
 
   // A server component formats money in the store's own currency explicitly (lib/store-config.ts).
   const money = (value: string | number) => formatPrice(value, settings.currency);
   const shown = productDisplayPrice(product);
   const hasWas = shown.was !== null && Number(shown.was) > Number(shown.price);
   const policy = storePolicy(settings);
-  const { insideDhaka, outsideDhaka } = policy.deliveryDays;
   const description = DOMPurify.sanitize(product.description ?? "");
   const whatsapp = links.find((l) => l.platform === "WHATSAPP" && l.isActive)?.url ?? null;
-  const phone = settings.contactPhone;
-  const tel = phone ? `tel:${phone.replace(/\s+/g, "")}` : null;
-
-  const promises = [
-    { icon: Truck, title: "সারা দেশে হোম ডেলিভারি", text: `${range([Math.min(insideDhaka[0], outsideDhaka[0]), Math.max(insideDhaka[1], outsideDhaka[1])])} দিনে পৌঁছে যাবে` },
-    { icon: Banknote, title: "ক্যাশ অন ডেলিভারি", text: "পণ্য হাতে পেয়ে দাম দিন" },
-    ...(policy.returns ? [{ icon: RotateCcw, title: `${bn(policy.returns.days)} দিনের সহজ রিটার্ন`, text: "পছন্দ না হলে বদলে নিন" }] : []),
-  ];
-
+  const tel = telHref(settings.contactPhone);
+  const promises = landingPromises(policy);
   // Real answers from this store's own settings and policy: nothing here is promised that the store hasn't set.
-  const faqs = [
-    { q: "অর্ডার করলে কত দিনে হাতে পাব?", a: `ঢাকার ভেতরে ${range(insideDhaka)} দিনে, ঢাকার বাইরে ${range(outsideDhaka)} দিনে।` },
-    {
-      q: "ডেলিভারি চার্জ কত?",
-      a: `ঢাকার ভেতরে ${money(settings.shippingFeeDhaka)}, ঢাকার বাইরে ${money(settings.shippingFeeOutsideDhaka)}। অর্ডার ফর্মে জেলা দিলেই ডেলিভারিসহ মোট দাম দেখতে পাবেন।`,
-    },
-    { q: "আগে টাকা দিতে হবে কি?", a: "না। অর্ডার করতে কোনো অগ্রিম টাকা লাগবে না। ডেলিভারিম্যানের কাছ থেকে পণ্য হাতে পেয়ে তারপর মূল্য পরিশোধ করবেন।" },
-    ...(policy.returns
-      ? [
-          {
-            q: "পণ্য পছন্দ না হলে বা সাইজ না মিললে?",
-            a: `ডেলিভারির ${bn(policy.returns.days)} দিনের মধ্যে রিটার্ন বা সাইজ বদল করতে পারবেন।${policy.returns.conditions ? ` শর্ত: ${policy.returns.conditions}।` : ""}`,
-          },
-        ]
-      : []),
-    { q: "অর্ডার করার পর কী হবে?", a: "অর্ডার পাওয়ার পর আমাদের প্রতিনিধি আপনার নম্বরে ফোন করে সাইজ ও ঠিকানা নিশ্চিত করবেন, তারপর পণ্যটি পাঠিয়ে দেওয়া হবে।" },
-  ];
+  const faqs = standardLandingFaqs(settings, policy, money);
 
   return (
-    <>
+    <LandingSelectionProvider product={product}>
       <TrackProductView productId={product.id} productName={product.name} categoryId={product.categoryId} price={Number(shown.price)} />
 
-      <header className="sticky top-0 z-dock border-b border-line bg-surface/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4">
-          <Link href="/" className="flex min-w-0 items-center" aria-label={settings.storeName}>
-            {settings.logoUrl ? (
-              <StoreLogoImage
-                src={resolveImageUrl(settings.logoUrl)}
-                alt={settings.storeName}
-                className="h-8 w-32 object-contain object-left"
-                fallback={<span className="truncate font-display text-lg text-fg">{settings.storeName}</span>}
-              />
-            ) : (
-              <span className="truncate font-display text-lg text-fg">{settings.storeName}</span>
-            )}
-          </Link>
-          {tel && (
-            <a href={tel} className="inline-flex h-10 items-center gap-2 rounded-[var(--control-radius)] bg-surface-muted px-4 text-sm font-semibold text-fg" lang="bn">
-              <Phone size={16} aria-hidden="true" />
-              কল করুন
-            </a>
-          )}
-        </div>
-      </header>
+      <LandingHeader settings={settings} tel={tel} />
 
       <main id="main-content" className="flex-1 pb-28 lg:pb-20" lang="bn">
         <div className="mx-auto max-w-6xl lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12 lg:px-4 lg:pt-8">
           <div className="lg:sticky lg:top-24 lg:self-start">
-            <LandingGallery images={product.images} productName={product.name} />
+            <LandingSelectionGallery />
           </div>
 
           <div className="px-4 pt-5 lg:px-0 lg:pt-0">
@@ -171,7 +144,7 @@ export default async function ProductLandingPage({ params }: Props) {
                 এখনই অর্ডার করুন
               </h2>
               <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">নাম, মোবাইল নম্বর ও ঠিকানা দিন। আমাদের প্রতিনিধি ফোন করে অর্ডারটি নিশ্চিত করবেন।</p>
-              <LandingOrderForm product={product} codEnabled={settings.codEnabled} />
+              <LandingOrderForm codEnabled={settings.codEnabled} />
             </section>
 
             {(tel || whatsapp) && (
@@ -213,17 +186,7 @@ export default async function ProductLandingPage({ params }: Props) {
             <h2 id="faq-title" className="mb-4 text-xl font-bold text-fg">
               যা জানতে চান
             </h2>
-            <div className="divide-y divide-line rounded-xl border border-line bg-surface">
-              {faqs.map(({ q, a }) => (
-                <details key={q} className="group">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-base font-semibold text-fg [&::-webkit-details-marker]:hidden">
-                    {q}
-                    <ChevronDown size={18} className="shrink-0 text-fg-muted transition-transform duration-base group-open:rotate-180" aria-hidden="true" />
-                  </summary>
-                  <p className="px-5 pb-4 text-sm leading-relaxed text-fg-muted">{a}</p>
-                </details>
-              ))}
-            </div>
+            <LandingFaqList faqs={faqs} />
           </section>
 
           <Suspense fallback={null}>
@@ -238,18 +201,9 @@ export default async function ProductLandingPage({ params }: Props) {
         </div>
       </main>
 
-      <footer className="border-t border-line bg-surface py-6 text-center text-xs text-fg-muted">
-        <p>
-          © {new Date().getFullYear()} {settings.storeName}
-        </p>
-        <nav aria-label="Policies" className="mt-2 flex justify-center gap-4">
-          <Link href="/shipping-returns">Shipping &amp; returns</Link>
-          <Link href="/privacy-policy">Privacy</Link>
-          <Link href="/terms">Terms</Link>
-        </nav>
-      </footer>
+      <LandingFooter storeName={settings.storeName} />
 
       <LandingStickyCta price={money(shown.price)} was={hasWas ? money(shown.was!) : null} imageUrl={product.images[0] ? resolveImageUrl(product.images[0].url) : null} />
-    </>
+    </LandingSelectionProvider>
   );
 }

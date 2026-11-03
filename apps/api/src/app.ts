@@ -30,6 +30,7 @@ import { paymentMethodRouter } from "./modules/payment-methods/payment-method.ro
 import { flashSaleRouter } from "./modules/flash-sales/flash-sale.routes";
 import { bannerRouter } from "./modules/banners/banner.routes";
 import { homepageSectionRouter } from "./modules/homepage-sections/homepage-section.routes";
+import { landingPageRouter } from "./modules/landing-pages/landing-page.routes";
 import { socialLinkRouter } from "./modules/social-links/social-link.routes";
 import { newsletterRouter } from "./modules/newsletter/newsletter.routes";
 import { feedbackRouter } from "./modules/feedback/feedback.routes";
@@ -127,6 +128,7 @@ app.use("/api/payment-methods", paymentMethodRouter);
 app.use("/api/flash-sales", flashSaleRouter);
 app.use("/api/banners", bannerRouter);
 app.use("/api/homepage-sections", homepageSectionRouter);
+app.use("/api/landing-pages", landingPageRouter);
 app.use("/api/social-links", socialLinkRouter);
 app.use("/api/newsletter", newsletterRouter);
 app.use("/api/feedback", feedbackRouter);

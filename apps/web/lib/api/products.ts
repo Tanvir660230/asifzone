@@ -9,6 +9,9 @@ import type {
   ProductImportReport,
   ProductImportResult,
   ProductListExtras,
+  ProductGroupingInput,
+  GroupingPlan,
+  ProductGroupingSummary,
 } from "@clothing-brand/shared";
 import { apiFetch, apiUploadWithProgress, type FetchSignal } from "../api-client";
 import { publicApiUrl } from "../runtime-config";
@@ -167,4 +170,22 @@ export function reorderProductImages(productId: string, imageIds: string[]) {
     method: "PATCH",
     body: { imageIds },
   });
+}
+
+/* Grouping separate products into one parent (docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §1). */
+
+export function previewGrouping(input: ProductGroupingInput) {
+  return apiFetch<{ plan: GroupingPlan }>("/api/products/groupings/preview", { method: "POST", body: input });
+}
+
+export function commitGrouping(input: ProductGroupingInput) {
+  return apiFetch<{ groupingId: string; plan: GroupingPlan }>("/api/products/groupings", { method: "POST", body: input });
+}
+
+export function undoGrouping(groupingId: string) {
+  return apiFetch<void>(`/api/products/groupings/${groupingId}/undo`, { method: "POST" });
+}
+
+export function listGroupings(productId: string) {
+  return apiFetch<{ groupings: ProductGroupingSummary[] }>(`/api/products/${productId}/groupings`);
 }

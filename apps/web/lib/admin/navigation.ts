@@ -210,6 +210,7 @@ export const NAV_NODES: readonly NavNode[] = [
     commands: [{ id: "create.product", kind: "create", label: "New product", hint: "Product Builder", route: PRODUCT_NEW_HREF, capability: "catalog.manage" }],
   },
   { id: "products.all", label: "All products", title: term("product"), kind: "page", parent: "products", domain: "stock", route: "/admin/products", capability: "catalog.view", order: 0 },
+  { id: "products.group", label: "Group colours", title: "Group products into one", kind: "page", parent: "products", domain: "stock", route: "/admin/products/group", capability: "catalog.manage", order: 0.5, keywords: ["merge", "variant", "colour", "color", "parent product", "group"] },
   { id: "products.categories", label: term("category"), kind: "page", parent: "products", domain: "stock", route: "/admin/categories", capability: "catalog.view", order: 1 },
   {
     id: "products.variant-options",
