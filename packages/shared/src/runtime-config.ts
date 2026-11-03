@@ -27,6 +27,9 @@ export interface PublicRuntimeConfig {
   googleClientId: string;
   /** VAPID public key for web-push subscriptions (the private half stays in the API). */
   vapidPublicKey: string;
+  /** How ad trackers wait for the shopper (`TRACKING_CONSENT`): `ask` (default) runs nothing until they allow it; `notice`
+   * runs them unless they decline. Anything else reads as `ask` (lib/pixels/consent.ts). */
+  trackingConsent: string;
   /** The brand theme id (`<html data-brand>`, themes in @clothing-brand/ui-tokens). The web app falls back to `default`
    * for an id it does not know. */
   theme: string;
@@ -58,6 +61,7 @@ export const PUBLIC_RUNTIME_ENV: Readonly<Record<keyof PublicRuntimeConfig, read
   clarityId: ["CLARITY_ID", "NEXT_PUBLIC_CLARITY_ID"],
   googleClientId: ["GOOGLE_CLIENT_ID", "NEXT_PUBLIC_GOOGLE_CLIENT_ID"],
   vapidPublicKey: ["WEB_PUSH_PUBLIC_KEY", "NEXT_PUBLIC_VAPID_PUBLIC_KEY"],
+  trackingConsent: ["TRACKING_CONSENT"],
   theme: ["STORE_THEME"],
   adminFeatures: ["ADMIN_FEATURES"],
 };
@@ -71,6 +75,7 @@ const PUBLIC_DEFAULTS: PublicRuntimeConfig = {
   clarityId: "",
   googleClientId: "",
   vapidPublicKey: "",
+  trackingConsent: "ask",
   theme: "default",
   adminFeatures: "",
 };

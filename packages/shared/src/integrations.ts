@@ -56,6 +56,11 @@ const SANDBOX_LIVE_EPS = [
   { value: "false", label: "Live (real payments)" },
 ] as const;
 
+const TRACKING_CONSENT_OPTIONS = [
+  { value: "ask", label: "Ask first (only after Allow)" },
+  { value: "notice", label: "Unless the shopper declines" },
+] as const;
+
 export const INTEGRATIONS: readonly IntegrationDefinition[] = [
   {
     id: "sslcommerz",
@@ -179,6 +184,22 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
     fields: [{ key: "CLARITY_ID", label: "Project ID", kind: "text", required: true }],
   },
   {
+    id: "tracking_consent",
+    name: "Tracking consent",
+    group: "marketing",
+    description: "When the Meta / TikTok pixels and Clarity may run in a shopper's browser. Server-side purchase events are not affected.",
+    docsHint: "Your privacy policy should say which one this store uses",
+    fields: [
+      {
+        key: "TRACKING_CONSENT",
+        label: "Trackers run",
+        kind: "select",
+        options: TRACKING_CONSENT_OPTIONS,
+        help: "\"Ask first\" runs nothing until the shopper taps Allow. \"Unless declined\" runs them from the first page; Decline stops them for good.",
+      },
+    ],
+  },
+  {
     id: "google",
     name: "Google sign-in",
     group: "signin",
@@ -280,6 +301,7 @@ export const PUBLIC_INTEGRATION_KEYS = {
   clarityId: "CLARITY_ID",
   googleClientId: "GOOGLE_CLIENT_ID",
   vapidPublicKey: "WEB_PUSH_PUBLIC_KEY",
+  trackingConsent: "TRACKING_CONSENT",
 } as const;
 
 export type PublicIntegrationIds = { [K in keyof typeof PUBLIC_INTEGRATION_KEYS]: string };

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { metaPurchaseEventId, normalizeBdPhone, normalizeMetaEmail, type Order } from "@clothing-brand/shared";
 import { getStoreConfig } from "../store-config";
 import { clarityConfigured } from "./clarity";
@@ -25,6 +26,25 @@ const PROVIDERS: PixelProvider[] = [metaPixel, tiktokPixel];
  * nothing to consent to, so the consent banner and its footer link stay hidden. */
 export function trackingConfigured(): boolean {
   return PROVIDERS.some((p) => p.enabled) || clarityConfigured();
+}
+
+/** `trackingConfigured()` for rendering: false on the server and on the first client render, the real answer once mounted.
+ * The server can't answer it reliably — ids saved in Settings › Integrations reach the root layout's module copy, not the
+ * one that server-renders client components — so rendering it straight made the footer's "Tracking preferences" link a
+ * hydration mismatch (React #418) on every page of a store whose pixel id lives only in the dashboard. */
+export function useTrackingConfigured(): boolean {
+  const [configured, setConfigured] = useState(false);
+  useEffect(() => setConfigured(trackingConfigured()), []);
+  return configured;
+}
+
+/** The trackers this store actually runs, by the names a shopper knows — for the consent banner's wording. */
+export function configuredTrackerNames(): string[] {
+  return [
+    ...(metaPixel.enabled ? ["Meta"] : []),
+    ...(tiktokPixel.enabled ? ["TikTok"] : []),
+    ...(clarityConfigured() ? ["Microsoft Clarity"] : []),
+  ];
 }
 
 /** Admin screens, the admin's draft-product previews and the product wizard's embedded preview frame — never a shopper,
