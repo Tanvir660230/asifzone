@@ -178,6 +178,17 @@ function CheckoutForm() {
     if (fallback) setValue("paymentMethod", fallback);
   }, [codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
+  // When the store offers exactly one way to pay (e.g. cash on delivery only) there is no choice to make — select it
+  // once settings have loaded, so the shopper isn't stopped by "Please select a payment method". With two or more
+  // methods the shopper still picks one themselves (above).
+  useEffect(() => {
+    if (!settingsData || paymentMethod) return;
+    const enabledByMethod = { COD: codEnabled, SSLCOMMERZ: onlinePaymentEnabled, EPS_PG: epsPaymentEnabled } as const;
+    const enabled = (Object.keys(enabledByMethod) as Array<keyof typeof enabledByMethod>).filter((m) => enabledByMethod[m]);
+    const [only] = enabled;
+    if (enabled.length === 1 && only) setValue("paymentMethod", only);
+  }, [settingsData, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
+
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
   // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a

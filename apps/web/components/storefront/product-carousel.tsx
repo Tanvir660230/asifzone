@@ -243,8 +243,17 @@ function ProductRail({ title, eyebrow, subtitle, href, products, mihrab }: PartP
         }}
         className="ui-rail ui-reveal grid grid-cols-2 gap-x-3 gap-y-7 sm:grid-cols-3 sm:gap-x-4 lg:flex lg:snap-x lg:snap-mandatory lg:gap-4 lg:overflow-x-auto lg:pb-2"
       >
+        {/* Exactly three pieces fill the row as three larger cards, instead of three quarters and an empty slot. */}
         {products.map((product, i) => (
-          <div key={product.id} data-grid-item={i} className={cn("min-w-0 lg:w-[calc((100%-3rem)/4)] lg:shrink-0 lg:snap-start", itemClass(i))}>
+          <div
+            key={product.id}
+            data-grid-item={i}
+            className={cn(
+              "min-w-0 lg:shrink-0 lg:snap-start",
+              products.length === 3 ? "lg:w-[calc((100%-2rem)/3)]" : "lg:w-[calc((100%-3rem)/4)]",
+              itemClass(i),
+            )}
+          >
             <ProductCard product={product} />
           </div>
         ))}

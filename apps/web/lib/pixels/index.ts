@@ -27,6 +27,15 @@ export function trackingConfigured(): boolean {
   return PROVIDERS.some((p) => p.enabled) || clarityConfigured();
 }
 
+const TRACKER_LABELS: Record<string, string> = { meta: "Meta", tiktok: "TikTok" };
+
+/** The trackers this installation actually runs, by the names a shopper knows — the consent banner lists only these. */
+export function configuredTrackerNames(): string[] {
+  const names = PROVIDERS.filter((p) => p.enabled).map((p) => TRACKER_LABELS[p.name] ?? p.name);
+  if (clarityConfigured()) names.push("Clarity");
+  return names;
+}
+
 /** Admin screens, the admin's draft-product previews and the product wizard's embedded preview frame — never a shopper,
  * so nothing there is ever reported (same exclusions PageViewTracker uses for first-party analytics). */
 export function isPixelExcludedPath(pathname: string): boolean {
