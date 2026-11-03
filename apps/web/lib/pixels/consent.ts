@@ -1,11 +1,23 @@
 /** The single tracking-consent gate for the storefront: every ad pixel (lib/pixels/) and the Clarity heatmap script ask
  * `hasAdTrackingConsent()` before anything loads or fires. The decision is the shopper's, made in the consent banner
- * (components/analytics/tracking-consent-banner.tsx) and kept in this browser. Until they choose, nothing is tracked
- * or downloaded — no decision means no consent. First-party, aggregate analytics to our own API (PageViewTracker) and
- * functional widgets (live chat) are not third-party tracking and are not gated here.
+ * (components/analytics/tracking-consent-banner.tsx) and kept in this browser. First-party, aggregate analytics to our
+ * own API (PageViewTracker) and functional widgets (live chat) are not third-party tracking and are not gated here.
+ *
+ * What "no decision yet" means is the store's choice (Settings › Integrations › Tracking consent, TRACKING_CONSENT):
+ *   - `ask` (the default): nothing is tracked or downloaded until the shopper taps Allow;
+ *   - `notice`: trackers run from the first page, and Decline stops them in this browser for good.
+ * An explicit Allow or Decline always wins.
  *
  * Bump the key's version to ask everyone again (e.g. when a new kind of tracker is added). */
+import { publicRuntimeConfig } from "../runtime-config";
+
 export type AdTrackingConsent = "granted" | "denied";
+export type TrackingConsentMode = "ask" | "notice";
+
+/** This store's rule for a shopper who hasn't chosen yet. Anything but `notice` is the safe `ask`. */
+export function trackingConsentMode(): TrackingConsentMode {
+  return publicRuntimeConfig().trackingConsent === "notice" ? "notice" : "ask";
+}
 
 const STORAGE_KEY = "az_tracking_consent_v1";
 const CHANGE_EVENT = "az:tracking-consent";
@@ -21,7 +33,10 @@ export function getAdTrackingConsent(): AdTrackingConsent | null {
 }
 
 export function hasAdTrackingConsent(): boolean {
-  return getAdTrackingConsent() === "granted";
+  if (typeof window === "undefined") return false;
+  const decision = getAdTrackingConsent();
+  if (decision) return decision === "granted";
+  return trackingConsentMode() === "notice";
 }
 
 export function setAdTrackingConsent(decision: AdTrackingConsent): void {

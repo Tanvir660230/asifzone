@@ -69,6 +69,13 @@ function readCsrfCookie(): string | undefined {
   return match?.[1];
 }
 
+/** Whether this browser may hold a signed-in session at all. Every sign-in and every refresh (admin or customer) sets the
+ * readable csrf_token cookie with the refresh token's lifetime, and sign-out clears it — so without it there is no
+ * session to ask about, and a guest needn't pay a 401 + a failed refresh on every page. */
+export function mayHaveSession(): boolean {
+  return typeof document === "undefined" || readCsrfCookie() !== undefined;
+}
+
 // A 401 from any of these means "credentials were wrong" or "not logged in yet", never "session
 // expired" — retrying them through a refresh would just waste a round trip on every failed login.
 const SKIP_REFRESH_PATHS = [

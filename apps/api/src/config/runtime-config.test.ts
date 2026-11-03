@@ -40,6 +40,8 @@ describe("runtime configuration", () => {
       clarityId: "c111",
       googleClientId: "g111.apps.googleusercontent.com",
       vapidPublicKey: "vapid-public-111",
+      // Not set → the safe default: trackers wait for the shopper's Allow.
+      trackingConsent: "ask",
       theme: "default",
       adminFeatures: "",
     });

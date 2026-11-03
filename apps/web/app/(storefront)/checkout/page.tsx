@@ -178,16 +178,15 @@ function CheckoutForm() {
     if (fallback) setValue("paymentMethod", fallback);
   }, [codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
-  // When the store offers exactly one way to pay (e.g. cash on delivery only) there is no choice to make — select it
-  // once settings have loaded, so the shopper isn't stopped by "Please select a payment method". With two or more
-  // methods the shopper still picks one themselves (above).
+  // With exactly one way to pay there is nothing to choose: tick it once settings are known, so a COD-only store doesn't
+  // make every shopper tap the only option (or fail validation for not tapping it). Several methods still wait for the
+  // shopper's own pick, as above.
+  const settingsLoaded = Boolean(settingsData);
   useEffect(() => {
-    if (!settingsData || paymentMethod) return;
-    const enabledByMethod = { COD: codEnabled, SSLCOMMERZ: onlinePaymentEnabled, EPS_PG: epsPaymentEnabled } as const;
-    const enabled = (Object.keys(enabledByMethod) as Array<keyof typeof enabledByMethod>).filter((m) => enabledByMethod[m]);
-    const [only] = enabled;
-    if (enabled.length === 1 && only) setValue("paymentMethod", only);
-  }, [settingsData, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
+    if (!settingsLoaded || paymentMethod) return;
+    const enabled = ([["COD", codEnabled], ["SSLCOMMERZ", onlinePaymentEnabled], ["EPS_PG", epsPaymentEnabled]] as const).filter(([, on]) => on);
+    if (enabled.length === 1) setValue("paymentMethod", enabled[0]![0], { shouldValidate: false });
+  }, [settingsLoaded, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");

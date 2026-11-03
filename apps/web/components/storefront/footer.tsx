@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Phone } from "lucide-react";
 import type { PaymentMethodOption, SocialLink, StoreSettings } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
-import { trackingConfigured } from "@/lib/pixels";
+import { useTrackingConfigured } from "@/lib/pixels";
 import { openTrackingPreferences } from "@/lib/pixels/consent";
 import { shortAddress } from "@/lib/store-identity";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
@@ -61,6 +61,7 @@ const FOOTER_LINK_CLASS = "inline-block py-1 text-ink-300 transition-colors dura
  * bottom bar with how to pay, the copyright and the legal links. Designed on the dark palette as a `.ui-band-inverse`
  * section, so a theme may render it light (logos swap through `.ui-art-on-dark` / `.ui-art-on-light`). */
 export function Footer({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
+  const showTracking = useTrackingConfigured();
   const address = shortAddress(settings);
   // Depth-first flatten (each parent immediately followed by its own children) so a store with
   // few top-level categories still fills this column meaningfully via subcategories, e.g.
@@ -285,7 +286,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
               <Link href="/shipping-returns" className="inline-block py-1 transition-colors hover:text-cream-50">
                 Refund policy
               </Link>
-              {trackingConfigured() && (
+              {showTracking && (
                 <button type="button" onClick={openTrackingPreferences} className="inline-block py-1 transition-colors hover:text-cream-50">
                   Tracking preferences
                 </button>
