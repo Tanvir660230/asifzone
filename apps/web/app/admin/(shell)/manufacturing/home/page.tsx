@@ -38,7 +38,7 @@ export default function ProductionHomePage() {
   }
 
   const actions = [
-    { href: "/admin/stock?bought=new", label: "Bought", detail: "Oil, bottles, boxes — in litres, dozens or pieces", icon: PackagePlus, tint: "bg-info-100 text-info-700", show: can("purchasing.receive") },
+    { href: "/admin/stock/purchases/new", label: "New purchase", detail: "Oil, bottles, boxes — in litres, dozens or pieces", icon: PackagePlus, tint: "bg-info-100 text-info-700", show: can("purchasing.receive") },
     { href: "/admin/stock?fill=1", label: "Filled", detail: "Bottles filled — oil and bottles leave stock at cost", icon: Droplets, tint: "bg-success-100 text-success-700", show: can("manufacturing.view") },
     { href: "/admin/manufacturing/boms", label: "Recipes", detail: "What goes into one bottle or piece", icon: ListTree, tint: "bg-warning-100 text-warning-700", show: true },
     { href: "/admin/finance/product-costs", label: "Price & profit", detail: "What each sale costs and earns", icon: ChartNoAxesCombined, tint: "bg-ink-100 text-ink-700", show: can("costing.view") },
@@ -54,17 +54,20 @@ export default function ProductionHomePage() {
   return (
     <div className="space-y-6">
       <ModuleTabs />
-      <PageHeader title="Production" description="Materials, recipes and filling in one place." />
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {actions.map((a) => (
-          <Link key={a.label} href={a.href} className="group flex min-h-28 flex-col gap-2 rounded-2xl border border-line-subtle bg-surface p-4 shadow-sm transition-colors duration-fast hover:border-line" data-testid={`production-action-${a.label.toLowerCase().replace(/\W+/g, "-")}`}>
-            <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", a.tint)}><a.icon className="h-5 w-5" aria-hidden="true" /></span>
-            <span className="text-[15px] font-semibold text-fg">{a.label}</span>
-            <span className="text-sm text-fg-muted max-sm:hidden">{a.detail}</span>
-          </Link>
-        ))}
-      </div>
+      {/* stock UI redesign: the section's pages are in its menu, so the shortcuts are one quiet row of buttons, not cards */}
+      <PageHeader
+        title="Production"
+        description="What needs filling or making today, and what the materials in stock can still make."
+        action={
+          <div className="flex flex-wrap gap-2">
+            {actions.map((a) => (
+              <Link key={a.label} href={a.href} title={a.detail} className={buttonVariants({ variant: "outline", size: "sm" })} data-testid={`production-action-${a.label.toLowerCase().replace(/\W+/g, "-")}`}>
+                <a.icon className="h-4 w-4" aria-hidden="true" /> {a.label}
+              </Link>
+            ))}
+          </div>
+        }
+      />
 
       {q.isLoading && <Skeleton className="h-64 w-full" />}
       {q.isError && <Alert variant="danger" title="Production couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}

@@ -21,6 +21,7 @@ import type { StockPurchase } from "@/lib/api/stock";
 import type { GoodsReceipt } from "@/lib/api/purchasing";
 import { formatBookDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ExpectedOrders } from "@/components/admin/stock/expected-orders";
 
 const PAGE_SIZE = 50;
 /** What the stock hub's quick "Received goods" writes as a direct receipt's reason (domain/stock/purchase.service.ts). */
@@ -114,13 +115,16 @@ export default function StockPurchasesPage() {
       <ModuleTabs />
       <PageHeader
         title="Purchases"
-        description="Everything bought, however it was entered — check here before buying again."
+        description="Everything bought — on the way and received. Stock goes up only when goods are received."
         action={can("purchasing.receive") && (
-          <Link href="/admin/stock?open=bought" className={cn(buttonVariants({ size: "sm" }))}>
-            <Plus className="h-4 w-4" aria-hidden /> Received goods
+          <Link href="/admin/stock/purchases/new" className={cn(buttonVariants({ size: "sm" }))} data-testid="purchases-new">
+            <Plus className="h-4 w-4" aria-hidden /> New purchase
           </Link>
         )}
       />
+      {/* stock UI redesign: orders still to arrive head the list, received with Receive in place */}
+      {can("purchasing.view") && <ExpectedOrders canReceive={can("purchasing.receive")} canPay={can("finance.transact")} />}
+      <h2 className="text-base font-semibold text-fg">Received</h2>
       <DataTable
         caption="Purchases"
         columns={columns}
@@ -140,7 +144,7 @@ export default function StockPurchasesPage() {
             ? <EmptyState icon={PackageCheck} title="No possible duplicates on this page" description="A purchase that looks like one already entered shows here." />
             : simpleRows.length
               ? <EmptyState icon={PackageCheck} title="No purchases in the books yet" description="The purchases below were recorded before stock costing started." />
-              : <EmptyState icon={PackageCheck} title="No purchases yet" description="Record what arrived with Received goods — it adds the stock and what you paid." action={can("purchasing.receive") ? <Link href="/admin/stock?open=bought" className="text-sm font-medium text-accent hover:underline">Received goods</Link> : undefined} />
+              : <EmptyState icon={PackageCheck} title="No purchases yet" description="Record what arrived with Received goods — it adds the stock and what you paid." action={can("purchasing.receive") ? <Link href="/admin/stock/purchases/new" className="text-sm font-medium text-accent hover:underline">New purchase</Link> : undefined} />
         }
       />
       {simpleRows.length > 0 && (

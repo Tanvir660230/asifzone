@@ -9,6 +9,7 @@ import { MobileNavBar, useMobileBack } from "@/components/admin/mobile-nav-bar";
 import { MoreSheet } from "@/components/admin/more-sheet";
 import { PhoneTables } from "@/components/admin/phone-tables";
 import { SectionBar } from "@/components/admin/section-bar";
+import { isStockSectionPath } from "@/components/admin/stock/stock-side-nav";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
 import { PeriodChip } from "@/components/admin/period-chip";
@@ -41,7 +42,8 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   useKeyboardFlag();
   // The module's pages under the toolbar whenever the sidebar isn't listing them: under a collapsed rail, and below lg.
   const sectionBar = access.ready ? sectionBarFor(pathname, access) : null;
-  const sectionBarMode = sidebar.collapsed ? "always" : "compact";
+  // The Stock section lists its pages in its own grouped menu on wide screens (StockFrame), so its bar is for phones only.
+  const sectionBarMode = sidebar.collapsed && !isStockSectionPath(pathname) ? "always" : "compact";
   // The Create menu: the navigation manifest's create commands this admin may run, each with its module's icon.
   const createItems = useCreateCommands().map((c) => ({
     label: c.label,

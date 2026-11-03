@@ -26,10 +26,20 @@ import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
+import { listStockItems, type StockListItem } from "@/lib/api/stock-smart";
 import { cn } from "@/lib/utils";
 import { formatUnitCost } from "@/components/admin/manufacturing/format";
 import { PermissionState } from "@/components/admin/permission-state";
+
+/** One plain sentence for what a material needs: out, buy some by a date, or how long it lasts — a dot for the first two. */
+function NeedsCell({ item, unit, archived }: { item: StockListItem | undefined; unit: string; archived: boolean }) {
+  if (archived || !item) return <span className="text-fg-subtle">—</span>;
+  const buy = item.reorder && item.reorder.suggested > 0 ? item.reorder : null;
+  if (item.status === "OUT") return <span className="text-danger-700" data-testid="material-needs"><span aria-hidden className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-danger-600 align-middle" />Out{buy ? ` · buy ${buy.suggested.toLocaleString()} ${unit}` : ""}</span>;
+  if (buy || item.status === "LOW") return <span className="text-warning-700" data-testid="material-needs"><span aria-hidden className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-warning-600 align-middle" />{buy ? `Buy ${buy.suggested.toLocaleString()} ${unit} by ${formatBookDate(buy.orderBy)}` : "Running low"}</span>;
+  return <span className="text-fg-muted" data-testid="material-needs">{item.daysLeft !== null ? `Lasts about ${Math.round(item.daysLeft)} days` : "Not used lately"}</span>;
+}
 
 const SKU_RE = /^[A-Za-z0-9][A-Za-z0-9._-]+$/;
 const TYPES = Object.keys(mfg.MATERIAL_TYPE_LABEL) as mfg.MaterialType[];
@@ -57,6 +67,9 @@ export default function MaterialsPage() {
   const [editing, setEditing] = useState<mfg.Material | null>(null);
   const query = { q: q.trim() || undefined, includeArchived: showArchived || undefined };
   const list = useQuery({ queryKey: mfg.manufacturingKeys.materials(query), queryFn: () => mfg.listMaterials(query), enabled: allowed });
+  // what each needs now (stock UI redesign): the stock list's status and reorder for materials, by size
+  const status = useQuery({ queryKey: ["stock-hub", "materials-status"], queryFn: () => listStockItems({ group: "MATERIAL", limit: 200 }), enabled: allowed && can("inventory.view") });
+  const statusOf = new Map((status.data?.items ?? []).map((i) => [i.variantId, i]));
   const showCost = can("costing.view");
   const canManage = can("manufacturing.manage");
   const canBuy = can("purchasing.receive");
@@ -99,8 +112,8 @@ export default function MaterialsPage() {
             <TableHead>
               <tr>
                 <TableHeaderCell>Material</TableHeaderCell>
-                <TableHeaderCell>SKU</TableHeaderCell>
                 <TableHeaderCell align="right">In stock</TableHeaderCell>
+                <TableHeaderCell>Needs</TableHeaderCell>
                 {showCost && <TableHeaderCell align="right">Average cost</TableHeaderCell>}
                 {showCost && <TableHeaderCell align="right">Value</TableHeaderCell>}
                 <TableHeaderCell align="right"><span className="sr-only">Actions</span></TableHeaderCell>
@@ -120,10 +133,12 @@ export default function MaterialsPage() {
                           {m.archived && <Badge variant="neutral">Archived</Badge>}
                         </span>
                       ) : <span className="sr-only">{m.name}</span>}
+                      {/* stock UI redesign: the SKU under the name, so the row's actions fit beside the side menu */}
                       <span className="block text-sm text-ink-600">{[v.spec, v.color].filter(Boolean).join(" · ")}</span>
+                      <span className="block break-all font-mono text-xs text-ink-500">{v.sku}</span>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">{v.sku}</TableCell>
                     <TableCell align="right" className="whitespace-nowrap tabular-nums">{v.stock.toLocaleString()} {m.stockUnit}</TableCell>
+                    <TableCell className="whitespace-nowrap"><NeedsCell item={statusOf.get(v.id)} unit={m.stockUnit ?? "pcs"} archived={m.archived} /></TableCell>
                     {showCost && <TableCell align="right" className="whitespace-nowrap tabular-nums">{v.averageCost === null ? "—" : formatUnitCost(v.averageCost, m.stockUnit)}</TableCell>}
                     {showCost && <TableCell align="right" className="tabular-nums">{v.value === null ? "—" : formatPrice(v.value)}</TableCell>}
                     <TableCell align="right">

@@ -50,19 +50,35 @@ export function ExpectedOrders({ canReceive, canPay }: { canReceive: boolean; ca
       <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle">
         {orders.map((o) => {
           const late = o.expectedDate !== null && o.expectedDate < today;
+          const ordered = o.lines.reduce((s, l) => s + l.ordered, 0);
+          const arrived = o.lines.reduce((s, l) => s + l.received, 0);
+          const pct = ordered > 0 ? Math.min(100, Math.round((arrived / ordered) * 100)) : 0;
           return (
             <li key={o.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4" data-testid="expected-order">
               <div className="min-w-0 space-y-1">
                 <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-fg">
                   {o.supplier.name}
                   <span className="text-sm font-normal text-fg-muted tabular-nums">{o.number}</span>
-                  {o.status === "SUBMITTED" && <Badge variant="warning">Waiting for approval</Badge>}
-                  {o.status === "PARTIALLY_RECEIVED" && <Badge variant="neutral">Part arrived</Badge>}
-                  {late && <Badge variant="warning">Late</Badge>}
+                  {o.status === "SUBMITTED" ? <Badge variant="warning">Waiting for approval</Badge> : o.status === "PARTIALLY_RECEIVED" ? <Badge variant="info">Part arrived</Badge> : <Badge variant="neutral">On the way</Badge>}
+                  {late && <Badge variant="danger">Late</Badge>}
                 </p>
                 <p className="text-sm text-fg-muted">
                   Ordered {formatBookDate(o.orderDate)}{o.expectedDate ? ` · expected ${formatBookDate(o.expectedDate)}` : ""}
                 </p>
+                {/* stock UI redesign: how much of the order is in, at a glance */}
+                <div className="flex items-center gap-2 pt-0.5 sm:max-w-xs" data-testid="expected-progress">
+                  <div
+                    role="progressbar"
+                    aria-label={`${o.number} arrived`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={pct}
+                    className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-900/[0.08]"
+                  >
+                    <div className="h-full rounded-full bg-info-500" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums text-fg-muted">{num(arrived)} of {num(ordered)} in</span>
+                </div>
                 <ul className="text-sm text-fg">
                   {o.lines.filter((l) => l.remaining > 0).map((l) => (
                     <li key={l.variantId} className="tabular-nums">{l.name}: {num(l.remaining)} {l.unit}{inBought(l, l.remaining)} to come{l.received ? <span className="text-fg-muted"> · {num(l.received)} arrived</span> : null}</li>
