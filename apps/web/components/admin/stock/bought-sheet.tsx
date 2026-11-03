@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
@@ -33,6 +33,8 @@ const OWNER_REPAY = "owner-repay";
 const PAYING = new Set(["CASH", "BANK", "MOBILE_WALLET"]);
 const NO_OVERDRAFT = new Set(["CASH", "MOBILE_WALLET"]);
 const DEFAULT_SUPPLIER = "Local market";
+// browser storage is already per store (each store has its own domain), so the key names no store
+const DRAFT_KEY = "admin:purchase-draft:v1";
 
 /** Something that can be bought: one variant, or a product whose colours × sizes are entered as a grid. */
 interface Choice { id: string; label: string; detail: string; variants: StockItem[]; grid: boolean }
@@ -44,6 +46,8 @@ interface Line {
   choice: Choice;
   qty: Record<string, string>;
   amount: string;
+  /** Typed price per bill unit; the line total is worked out from it (undefined once a total is typed). */
+  price?: string;
   discount?: string;
   damaged?: string;
   buy?: { unitId: string; label: string; factor: number; qty: string; inexact?: { exact: number; below: number; above: number } };
@@ -109,7 +113,7 @@ function startLines(choices: Choice[], start: BoughtStart | undefined): Line[] {
   return out;
 }
 
-export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, canOrder = false, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; canOrder?: boolean; start?: BoughtStart; onClose: () => void }) {
+export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog, canOrder = false, asPage = false, start, onClose }: { overview: StockOverview; purchases: StockPurchase[]; canOwnerMoney: boolean; canEditCatalog: boolean; canOrder?: boolean; /** Stock › Purchases › New purchase: a page with a draft kept on this device, not the quick sheet. */ asPage?: boolean; start?: BoughtStart; onClose: () => void }) {
   const qc = useQueryClient();
   // docs/MATERIALS_PURCHASING.md §4: "No, ordered" makes a purchase order that waits on Expected — no stock, no money yet
   const [arrived, setArrived] = useState<"yes" | "ordered">("yes");
@@ -149,6 +153,37 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
   const [duplicateReason, setDuplicateReason] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
 
+  // On the page (not the quick sheet) the half-typed purchase is kept on this device as a draft — the server keeps no drafts.
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!asPage || start || restored.current) return;
+    restored.current = true;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw) as { lines?: Line[]; extras?: Extra[]; supplier?: string; date?: string; documentTotal?: string; arrived?: "yes" | "ordered" };
+      const known = new Set(choices.map((c) => c.id));
+      const keep = (d.lines ?? []).filter((l) => known.has(l.choice.id)).map((l) => ({ ...l, key: nextKey(), choice: choices.find((c) => c.id === l.choice.id)! }));
+      if (!keep.length) return;
+      setLines(keep);
+      setExtras(d.extras ?? []);
+      setSupplier(d.supplier ?? "");
+      if (d.date) setDate(d.date);
+      setDocumentTotal(d.documentTotal ?? "");
+      if (d.arrived) setArrived(d.arrived);
+      setDraftNote("Draft restored from this device");
+    } catch { /* no storage: start empty */ }
+  }, [asPage, start, choices]);
+  useEffect(() => {
+    if (!asPage || !restored.current) return;
+    try {
+      if (!lines.length) return localStorage.removeItem(DRAFT_KEY);
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ lines, extras, supplier, date, documentTotal, arrived }));
+      setDraftNote("Draft kept on this device");
+    } catch { /* storage full or blocked: nothing kept */ }
+  }, [asPage, lines, extras, supplier, date, documentTotal, arrived]);
+
   const added = new Set(lines.map((l) => l.choice.id));
   const q = query.trim().toLowerCase();
   const results = (q ? choices.filter((c) => `${c.label} ${c.detail} ${c.variants.map((v) => `${v.sku} ${v.size ?? ""} ${v.color ?? ""}`).join(" ")}`.toLowerCase().includes(q)) : choices).filter((c) => !added.has(c.id)).slice(0, q ? 8 : 6);
@@ -158,7 +193,16 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     setQuery("");
     setProblem(null);
   };
-  const update = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const update = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => {
+    if (l.key !== key) return l;
+    const next = { ...l, ...patch };
+    // a typed price keeps the line total in step when the quantity changes
+    if (next.price && ("qty" in patch || "buy" in patch) && /^\d+(\.\d{1,2})?$/.test(next.price.trim())) {
+      const billQty = next.buy ? Number(next.buy.qty) || 0 : next.choice.variants.reduce((s, v) => s + qtyOf(next.qty[v.variantId]), 0);
+      if (billQty > 0) next.amount = String(Math.round(Number(next.price) * billQty * 100) / 100);
+    }
+    return next;
+  }));
 
   // Each line's quantity arrived, good units (arrived − damaged), goods total and share of the extras, for the per-unit preview.
   const totals = lines.map((l) => {
@@ -256,6 +300,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     },
     onSuccess: (r) => {
       settleIdempotencyKey(formId);
+      if (asPage) try { localStorage.removeItem(DRAFT_KEY); } catch { /* nothing kept */ }
       toast.success(r.text);
       void qc.invalidateQueries({ queryKey: stockApi.stockKeys.all });
       void qc.invalidateQueries({ queryKey: ["finance"] });
@@ -290,23 +335,18 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
     });
   };
 
-  return (
-    <Modal
-      open
-      onClose={guard.requestClose}
-      title={ordering ? "Ordered goods" : "Received goods"}
-      description={ordering ? "What you ordered and its price. Stock goes up when it arrives." : "What arrived, what you paid and who paid it."}
-      widthClassName="max-w-3xl"
-      footer={guard.prompt ?? (
-        <>
-          <p className="mr-auto self-center text-sm text-fg-muted max-sm:order-last" aria-live="polite">Total <span className="font-semibold tabular-nums text-fg">{formatPrice(totalMinor / 100)}</span></p>
-          {reviewing
-            ? <Button type="button" variant="outline" onClick={() => setReviewing(false)} disabled={save.isPending} data-testid="bought-edit">Edit</Button>
-            : <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>}
-          <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? (ordering ? "Confirm order" : "Confirm and record") : ordering ? "Review order" : "Review purchase"}</Button>
-        </>
-      )}
-    >
+  const title = ordering ? "Ordered goods" : asPage ? "New purchase" : "Received goods";
+  const description = ordering ? "What you ordered and its price. Stock goes up when it arrives." : "What arrived, what you paid and who paid it — one item or many.";
+  const footer = guard.prompt ?? (
+    <>
+      <p className="mr-auto self-center text-sm text-fg-muted max-sm:order-last" aria-live="polite">Total <span className="font-semibold tabular-nums text-fg">{formatPrice(totalMinor / 100)}</span></p>
+      {reviewing
+        ? <Button type="button" variant="outline" onClick={() => setReviewing(false)} disabled={save.isPending} data-testid="bought-edit">Edit</Button>
+        : <Button type="button" variant="outline" onClick={guard.requestClose}>Cancel</Button>}
+      <Button type="submit" form="stock-bought-form" loading={save.isPending} data-testid="bought-save">{reviewing ? (ordering ? "Confirm order" : "Confirm and record") : ordering ? "Review order" : "Review purchase"}</Button>
+    </>
+  );
+  const content = (
       <form id="stock-bought-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
         {problem && <div ref={errorRef}><ProblemAlert problem={problem} /></div>}
         {canOrder && !simple && !reviewing && (
@@ -503,6 +543,26 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
         </section>
         </div>
       </form>
+  );
+  // Stock › Purchases › New purchase: the same form as a page, its actions in a bar pinned to the bottom
+  if (asPage) {
+    return (
+      <div className="space-y-5" data-testid="purchase-page">
+        <div className="max-w-4xl">
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-tight text-fg">{title}</h1>
+            <p className="mt-1 text-sm text-fg-muted">{description}</p>
+          </div>
+          {draftNote && <p className="mt-1 text-xs text-fg-subtle" data-testid="purchase-draft-note">{draftNote}</p>}
+        </div>
+        <div className="max-w-4xl">{content}</div>
+        <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-surface px-4 py-3 sm:mx-0 sm:max-w-4xl sm:rounded-xl sm:border">{footer}</div>
+      </div>
+    );
+  }
+  return (
+    <Modal open onClose={guard.requestClose} title={title} description={description} widthClassName="max-w-3xl" footer={footer}>
+      {content}
     </Modal>
   );
 }
@@ -555,6 +615,14 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, e
   const [more, setMore] = useState(Boolean(line.discount?.trim() || line.damaged?.trim()));
   const per = unit === "pcs" ? "each" : `per ${unit}`;
   const id = `bl-${line.key}`;
+  // the price is typed per unit as the bill shows it (a bundle, a litre); the line total follows (and typing a total clears it)
+  const billQty = line.buy ? Number(line.buy.qty) || 0 : qty;
+  const billUnit = line.buy?.label ?? unit;
+  const onPrice = (raw: string) => {
+    const p = Number(raw);
+    const ok = /^\d+(\.\d{1,2})?$/.test(raw.trim()) && billQty > 0;
+    onChange({ price: raw, amount: ok ? String(Math.round(p * billQty * 100) / 100) : line.amount });
+  };
   return (
     <div className="rounded-xl border border-line-subtle p-3 sm:p-4" data-testid="bought-line">
       <div className="flex items-start justify-between gap-3">
@@ -562,7 +630,7 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, e
         <IconButton aria-label={`Remove ${choice.label}`} size="sm" className="-mr-1 -mt-1" onClick={onRemove}><X size={16} /></IconButton>
       </div>
       {choice.grid && <QtyGrid line={line} onChange={onChange} />}
-      <div className={cn("mt-3 grid grid-cols-2 gap-3 sm:items-end", v0.purchaseUnits.length && !choice.grid ? "sm:grid-cols-[13rem_10rem_minmax(0,1fr)]" : "sm:grid-cols-[8rem_10rem_minmax(0,1fr)]")}>
+      <div className={cn("mt-3 grid grid-cols-2 gap-3 sm:items-end", v0.purchaseUnits.length && !choice.grid ? "sm:grid-cols-[13rem_8rem_9rem_minmax(0,1fr)]" : "sm:grid-cols-[8rem_8rem_9rem_minmax(0,1fr)]")}>
         {choice.grid ? (
           <div className="min-w-0">
             <p className="ui-label">How many</p>
@@ -575,8 +643,11 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, e
             <Input id={`${id}-q`} inputMode="numeric" className="tabular-nums" value={line.qty[v0.variantId] ?? ""} onChange={(e) => onChange({ qty: { [v0.variantId]: e.target.value } })} data-testid="bought-qty" />
           </Field>
         )}
-        <Field htmlFor={`${id}-a`} label={`Paid in all (${storeCurrencySymbol()})`} hint={line.discount?.trim() ? "After the discount" : undefined}>
-          <Input id={`${id}-a`} inputMode="decimal" className="tabular-nums" value={line.amount} onChange={(e) => onChange({ amount: e.target.value })} data-testid="bought-amount" />
+        <Field htmlFor={`${id}-p`} label={`Price / ${billUnit} (${storeCurrencySymbol()})`}>
+          <Input id={`${id}-p`} inputMode="decimal" className="tabular-nums" value={line.price ?? (billQty && line.amount.trim() && Number.isFinite(Number(line.amount)) ? String(Math.round((Number(line.amount) / billQty) * 100) / 100) : "")} onChange={(e) => onPrice(e.target.value)} data-testid="bought-price" />
+        </Field>
+        <Field htmlFor={`${id}-a`} label={`Line total (${storeCurrencySymbol()})`} hint={line.discount?.trim() ? "After the discount" : undefined}>
+          <Input id={`${id}-a`} inputMode="decimal" className="tabular-nums" value={line.amount} onChange={(e) => onChange({ amount: e.target.value, price: undefined })} data-testid="bought-amount" />
         </Field>
         <p className="col-span-2 text-sm text-fg-muted sm:col-span-1 sm:pb-2.5" aria-live="polite" data-testid="bought-per-unit">
           {each === null ? <span className="text-fg-subtle">Cost {per} shows here</span> : (

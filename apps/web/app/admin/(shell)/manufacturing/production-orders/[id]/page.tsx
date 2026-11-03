@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +19,7 @@ import { IssueModal, ReturnModal, UsageModal } from "@/components/admin/manufact
 import { ProductionCosts } from "@/components/admin/manufacturing/production-costs";
 import { ProductionDeliveries } from "@/components/admin/manufacturing/production-deliveries";
 import { ProductionClose } from "@/components/admin/manufacturing/production-close";
+import { ProductPackaging, ProductionStepper } from "@/components/admin/manufacturing/production-stepper";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { SizeColorGrid } from "@/components/admin/manufacturing/size-color-grid";
 import { formatUnitCost } from "@/components/admin/manufacturing/format";
@@ -68,12 +70,13 @@ export default function ProductionOrderPage() {
     <div className="space-y-6">
       <BackLink href="/admin/manufacturing/production-orders" label="Production orders" />
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl text-ink-900">{o.number}</h1>
-          <p className="text-sm text-ink-600">{o.product.name} · {o.inHouse ? "made in-house" : `by ${o.producer?.displayName}`} · ordered {o.orderDate}{o.expectedDate ? ` · expected ${o.expectedDate}` : ""}</p>
+        <div className="min-w-0">
+          <h1 className="font-display text-display-sm text-fg">{o.number}</h1>
+          <p className="text-sm text-fg-muted">{o.product.name} · {o.inHouse ? "made in-house" : `by ${o.producer?.displayName}`} · ordered {o.orderDate}{o.expectedDate ? ` · expected ${o.expectedDate}` : ""}</p>
         </div>
         <Badge variant={MO_STATUS_BADGE[o.status]} data-testid="mo-status">{MO_STATUS_LABEL[o.status]}</Badge>
       </div>
+      <ProductionStepper status={o.status} />
 
       <div className="flex flex-wrap gap-2">
         {can("manufacturing.approve") && o.status === "DRAFT" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "approve" })} data-testid="mo-approve">Approve plan</Button>}
@@ -103,7 +106,17 @@ export default function ProductionOrderPage() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold text-ink-900">Materials</h2>
-        {shortfalls.length > 0 && o.status !== "CANCELLED" && <Alert variant="warning" title={`${shortfalls.length} material(s) short`}>Stock on hand doesn&apos;t cover the plan — order the difference before issuing.</Alert>}
+        {shortfalls.length > 0 && o.status !== "CANCELLED" && (
+          <Alert variant="warning" title={shortfalls.length === 1 ? "Short of 1 material" : `Short of ${shortfalls.length} materials`}>
+            {/* stock UI redesign: name each one and how much, with the way to buy it */}
+            <ul className="mt-1 space-y-0.5" data-testid="mo-shortfalls">
+              {shortfalls.map((m) => (
+                <li key={m.id}><span className="font-medium">{m.name}</span>: need {m.plannedQty.toLocaleString()} {m.stockUnit}, {m.inStock.toLocaleString()} in stock — {m.shortfall.toLocaleString()} {m.stockUnit} short</li>
+              ))}
+            </ul>
+            <Link href="/admin/stock/purchases/new" className="mt-2 inline-block text-sm font-medium underline underline-offset-4">Buy what&apos;s missing</Link>
+          </Alert>
+        )}
         {o.materials.length ? (
           <Card className="overflow-hidden p-0">
             <HScrollShadow>
@@ -145,6 +158,8 @@ export default function ProductionOrderPage() {
           <p className="text-sm text-ink-600">No materials planned — choose a bill of materials or add materials by hand.</p>
         )}
       </section>
+
+      {can("finance.view") && o.status !== "CANCELLED" && <ProductPackaging productId={o.product.id} />}
 
       {/* Once approved, the plan appears in Production costs' planned-vs-actual table. */}
       {o.planned && o.status === "DRAFT" && (

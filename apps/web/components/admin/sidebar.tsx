@@ -13,6 +13,7 @@ import { useNavAccess, useNavBadges } from "@/hooks/use-nav-access";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { NAV_ICONS } from "./nav-icons";
+import { isStockSectionPath } from "./stock/stock-side-nav";
 
 /**
  * The admin sidebar — rendered entirely from the navigation manifest (lib/admin/navigation.ts): modules grouped by
@@ -222,6 +223,7 @@ function ModuleRow({
 }) {
   const { node, href, children } = item;
   const Icon = node.icon ? NAV_ICONS[node.icon] : undefined;
+  const pathname = usePathname();
   const badges = useNavBadges();
   const childBadge = (child: NavItem) => (child.node.badge ? badges[child.node.badge] : 0);
   const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
@@ -285,8 +287,9 @@ function ModuleRow({
         )}
       </Link>
 
+      {/* The Stock section lists its pages in its own grouped menu beside the page (StockFrame), so not here as well. */}
       {!collapse && active && children.length > 0 && (
-        <div className="mb-1 mt-px space-y-px pl-[30px]">
+        <div className={cn("mb-1 mt-px space-y-px pl-[30px]", isStockSectionPath(pathname) && "lg:hidden")}>
           {children.map((child) => {
             const childActive = trail.has(child.node.id);
             return (

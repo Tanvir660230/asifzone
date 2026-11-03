@@ -283,6 +283,8 @@ export const NAV_NODES: readonly NavNode[] = [
   // Blueprint tab 2 §2: every purchase, both paths, in one list (the formal documents stay under More)
   { id: "inventory.purchases", label: "Purchases", kind: "page", parent: "inventory", domain: "stock", route: "/admin/stock/purchases", capability: "purchasing.view", order: 1, description: "Everything bought, however it was entered, with possible duplicates flagged.", keywords: ["purchases", "bought", "received goods", "duplicate", "grn"] },
   // docs/MATERIALS_PURCHASING.md §6: where each material went in a month
+  // stock UI redesign: the purchase form as a page (one item or a whole bill)
+  { id: "inventory.purchase-new", label: "New purchase", kind: "detail", parent: "inventory", domain: "stock", route: "/admin/stock/purchases/new", capability: "purchasing.receive", order: 1, visibility: "hidden" },
   { id: "inventory.usage", label: "Material usage", kind: "page", parent: "inventory", domain: "stock", route: "/admin/stock/usage", capability: "inventory.view", order: 3, description: "Each material month by month: bought, used, packed, wasted, counted — and what to look into.", keywords: ["usage", "materials", "reconciliation", "wastage", "consumption"] },
   { id: "inventory.stock", label: "History & adjustments", title: "Stock history & adjustments", kind: "page", parent: "inventory", domain: "stock", route: "/admin/inventory", capability: "inventory.view", order: 4, keywords: ["stock", "adjust", "movements", "levels", "write off"] },
   // Stock › More: the formal purchasing path and the books-side stock pages (tab 2 §2) — owners and purchasing roles.

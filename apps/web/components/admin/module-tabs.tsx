@@ -5,6 +5,7 @@ import { NavTabs } from "@/components/ui/tabs";
 import { ancestryOf, moduleOf, navNode, resolveNavNode, sectionTabsFor } from "@/lib/admin/navigation";
 import { cn } from "@/lib/utils";
 import { useNavAccess } from "@/hooks/use-nav-access";
+import { isStockSectionPath } from "@/components/admin/stock/stock-side-nav";
 
 /**
  * In-page section tabs derived from the navigation manifest (lib/admin/navigation.ts): the pages beside the current one
@@ -30,7 +31,7 @@ export function ModuleTabs({ className = "mb-6", "aria-label": ariaLabel }: { cl
       tabs={tabs.map((t) => ({ label: t.node.label, href: t.href }))}
       activeHref={active?.href}
       scrollable={tabs.length > 6}
-      className={cn(className, group?.innerList && "lg:hidden")}
+      className={cn(className, (group?.innerList || isStockSectionPath(pathname)) && "lg:hidden")}
       aria-label={ariaLabel}
     />
   );

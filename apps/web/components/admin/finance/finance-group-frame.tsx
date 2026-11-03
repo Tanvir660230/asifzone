@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { InnerNav } from "@/components/admin/inner-nav";
 import { navNode, resolveNavNode } from "@/lib/admin/navigation";
+import { isStockSectionPath, StockFrame } from "@/components/admin/stock/stock-side-nav";
 
 /**
  * The money and books groups (Accounts & cash, Bills to pay, Payments & refunds, Courier & gateway, Statements, Ledger &
@@ -18,6 +19,8 @@ export function FinanceGroupFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const node = resolveNavNode(pathname);
   const group = node?.parent ? navNode(node.parent) : undefined;
+  // purchasing, packaging and the stock check belong to the Stock section: its menu, not the money groups
+  if (isStockSectionPath(pathname)) return <div data-area="finance"><StockFrame>{children}</StockFrame></div>;
   if (!node || node.kind === "detail" || !group?.innerList) return <div data-area="finance">{children}</div>;
   return (
     <div data-area="finance" className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-8">

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
@@ -28,7 +29,11 @@ import { formatBookDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PermissionState } from "@/components/admin/permission-state";
 
-const SCOPE_LABEL: Record<PackingScope, string> = { EVERY_PARCEL: "Every parcel", CATEGORY: "Category", PRODUCT: "Product", VARIANT: "Variant" };
+const RULE_GROUPS: Array<{ label: string; scopes: PackingScope[] }> = [
+  { label: "Every parcel", scopes: ["EVERY_PARCEL"] },
+  { label: "By category", scopes: ["CATEGORY"] },
+  { label: "By product", scopes: ["PRODUCT", "VARIANT"] },
+];
 
 /** Owner's books §6.2: what a parcel uses (poly, box, sticker), taken from stock when it leaves at its real cost, and how
  * long each material lasts at the current pace. */
@@ -48,6 +53,7 @@ export default function PackagingPage() {
 
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Package} page="Packaging" /></div>;
   const d = data.data;
+  const stockOf = new Map((d?.materials ?? []).map((m) => [m.id, m]));
   return (
     <div className="space-y-6">
       <ModuleTabs />
@@ -77,27 +83,49 @@ export default function PackagingPage() {
             />
           )}
           {d.rules.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-fg">Rules</h2>
-            {(
-              <Card className="divide-y divide-line p-0 text-sm">
-                {d.rules.map((r) => (
-                  <div key={r.id} className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", !r.isActive && "opacity-60")} data-testid="packing-rule">
-                    <span className="min-w-0">
-                      <span className="block text-fg">{r.quantity} × {r.material.product.name}{r.material.size && r.material.size !== "Default" ? ` (${r.material.size})` : ""} {r.per === "UNIT" ? "per item" : "per parcel"}</span>
-                      <span className="block text-xs text-fg-muted">{SCOPE_LABEL[r.scope]}{r.scopeName ? `: ${r.scopeName}` : ""} · from {formatBookDate(r.createdOn)}{r.notes ? ` · ${r.notes}` : ""}</span>
-                    </span>
-                    {can("finance.configure") && <Switch checked={r.isActive} onChange={(on) => toggle.mutate({ id: r.id, on })} aria-label={r.isActive ? "Switch the rule off" : "Switch the rule on"} />}
-                  </div>
-                ))}
-              </Card>
-            )}
+          <section className="space-y-4" aria-labelledby="packing-rules-title">
+            <h2 id="packing-rules-title" className="text-lg font-semibold text-fg">What each parcel takes</h2>
+            {/* stock UI redesign: the rules grouped by who they apply to, each with its material's stock beside it */}
+            {RULE_GROUPS.map((g) => {
+              const rules = d.rules.filter((r) => g.scopes.includes(r.scope)).sort((a, b) => Number(b.isActive) - Number(a.isActive) || (a.scopeName ?? "").localeCompare(b.scopeName ?? ""));
+              if (!rules.length) return null;
+              return (
+                <div key={g.label} className="space-y-1.5" data-testid="packing-rule-group">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">{g.label}</h3>
+                  <Card className="divide-y divide-line p-0 text-sm">
+                    {rules.map((r) => {
+                      const m = stockOf.get(r.material.id);
+                      const out = r.material.stock <= 0;
+                      return (
+                        <div key={r.id} className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", !r.isActive && "opacity-60")} data-testid="packing-rule">
+                          <span className="min-w-0">
+                            {r.scopeName && <span className="block font-medium text-fg">{r.scopeName}</span>}
+                            <span className="block text-fg">{r.quantity} × {r.material.product.name}{r.material.size && r.material.size !== "Default" ? ` (${r.material.size})` : ""} <span className="text-fg-muted">{r.per === "UNIT" ? "per item" : "per parcel"}</span></span>
+                            <span className="block text-xs text-fg-muted">
+                              {r.isActive ? "On" : "Off"} · from {formatBookDate(r.createdOn)}{r.notes ? ` · ${r.notes}` : ""}
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-3">
+                            <span className="text-right text-xs tabular-nums text-fg-muted">
+                              {r.material.stock.toLocaleString()} {r.material.product.stockUnit ?? ""} in stock
+                              {out ? <Badge variant="danger" className="ml-2">Out</Badge> : m?.low ? <Badge variant="warning" className="ml-2">Buy soon</Badge> : null}
+                            </span>
+                            {can("finance.configure") && <Switch checked={r.isActive} onChange={(on) => toggle.mutate({ id: r.id, on })} aria-label={r.isActive ? "Switch the rule off" : "Switch the rule on"} />}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                </div>
+              );
+            })}
           </section>
           )}
           {d.materials.length > 0 && (
             <section className="space-y-2">
               <h2 className="text-lg font-semibold text-fg">Materials and how long they last</h2>
               <Card className="overflow-hidden p-0">
+                <HScrollShadow>
                 <Table>
                   <TableHead>
                     <tr>
@@ -110,14 +138,17 @@ export default function PackagingPage() {
                   <tbody>
                     {d.materials.map((m) => (
                       <TableRow key={m.id}>
-                        <TableCell><span className="block text-fg">{m.name}</span><span className="block text-xs text-fg-muted">{m.sku}</span></TableCell>
-                        <TableCell align="right" className="tabular-nums">{m.stock} {m.unit ?? ""}</TableCell>
-                        <TableCell align="right" className="tabular-nums">{m.usedLast30Days}</TableCell>
-                        <TableCell align="right">{m.runsOutOn ? <span className="flex items-center justify-end gap-2">{m.low && <Badge variant="warning">buy soon</Badge>}{formatBookDate(m.runsOutOn)}</span> : <span className="text-fg-muted">—</span>}</TableCell>
+                        <TableCell className="min-w-40"><span className="block text-fg">{m.name}</span><span className="block text-xs text-fg-muted">{m.sku}</span></TableCell>
+                        <TableCell align="right" className="whitespace-nowrap tabular-nums">{m.stock.toLocaleString()} {m.unit ?? ""}</TableCell>
+                        <TableCell align="right" className="tabular-nums">{m.usedLast30Days.toLocaleString()}</TableCell>
+                        <TableCell align="right" className="whitespace-nowrap">
+                          {m.stock <= 0 ? <Badge variant="danger">Out</Badge> : m.runsOutOn ? <span className="flex items-center justify-end gap-2">{m.low && <Badge variant="warning">Buy soon</Badge>}{formatBookDate(m.runsOutOn)}</span> : <span className="text-fg-muted">—</span>}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </tbody>
                 </Table>
+                </HScrollShadow>
               </Card>
             </section>
           )}
