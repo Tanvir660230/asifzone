@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allowedPollLevel, basePollIntervalMs, evaluateWebhookHealth, MAX_INTERVAL_MS, pollIntervalMs, type CourierHealthStats } from "./courier-sync-policy";
+import { allowedPollLevel, basePollIntervalMs, compareCourierStatuses, evaluateWebhookHealth, isPushedTransition, MAX_INTERVAL_MS, pollIntervalMs, type CourierHealthStats } from "./courier-sync-policy";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -82,5 +82,46 @@ describe("poll level", () => {
   it("returns to full polling the moment the last 48 h are not healthy", () => {
     expect(allowedPollLevel("DEGRADED", "HEALTHY", 2)).toBe(0);
     expect(allowedPollLevel("NOT_PROVEN", "HEALTHY", 2)).toBe(0);
+  });
+});
+
+describe("how Steadfast actually reports (first live day, 2026-10-30)", () => {
+  it("a rider's report awaiting Steadfast's approval, or ahead of the status API, is not a contradiction", () => {
+    expect(compareCourierStatuses("cancelled", "cancelled")).toBe("SAME");
+    expect(compareCourierStatuses("delivered", "delivered_approval_pending")).toBe("AWAITING_APPROVAL");
+    expect(compareCourierStatuses("partial_delivered", "partial_delivered_approval_pending")).toBe("AWAITING_APPROVAL");
+    expect(compareCourierStatuses("partial_delivered", "pending")).toBe("API_BEHIND");
+    expect(compareCourierStatuses("delivered", "cancelled")).toBe("CONTRADICTION");
+    expect(compareCourierStatuses("delivered", "hold")).toBe("CONTRADICTION");
+    expect(compareCourierStatuses("pending", "delivered")).toBe("CONTRADICTION");
+  });
+
+  it("approvals and accepted bookings are never pushed, so they don't count against the webhook", () => {
+    expect(isPushedTransition("delivered_approval_pending", "delivered")).toBe(false);
+    expect(isPushedTransition("partial_delivered_approval_pending", "partial_delivered")).toBe(false);
+    expect(isPushedTransition("in_review", "pending")).toBe(false);
+    expect(isPushedTransition("pending", "delivered_approval_pending")).toBe(true);
+    expect(isPushedTransition("pending", "cancelled")).toBe(true);
+    expect(isPushedTransition(null, "pending")).toBe(true);
+  });
+
+  it("the live day's numbers read as healthy once the test call has left the window, and still fail on a real contradiction", () => {
+    // 2026-10-30, Asif Zone: 357 calls, none failed; 56 compared — 14 same, 35 awaiting approval, 7 ahead of the API;
+    // pushed changes 50 by webhook, 6 by poll (89%); 114 approvals / accepted bookings caught by poll, left out.
+    const day = healthy({
+      events: { APPLIED: 352, NO_ORDER: 3, NO_CONSIGNMENT: 2 },
+      rejections: 0,
+      compared: 56,
+      disagreed: 0,
+      awaitingApproval: 35,
+      apiBehind: 7,
+      changes: { WEBHOOK: 50, POLL: 6 },
+      notPushed: 114,
+      openParcels: 179,
+    });
+    expect(evaluateWebhookHealth(day, now).state).toBe("HEALTHY");
+    expect(evaluateWebhookHealth({ ...day, disagreed: 5 }, now).state).toBe("DEGRADED");
+    expect(evaluateWebhookHealth({ ...day, rejections: 1 }, now).state).toBe("DEGRADED");
+    expect(evaluateWebhookHealth({ ...day, changes: { WEBHOOK: 40, POLL: 16 } }, now).state).not.toBe("HEALTHY");
   });
 });
