@@ -33,7 +33,8 @@ const OWNER_REPAY = "owner-repay";
 const PAYING = new Set(["CASH", "BANK", "MOBILE_WALLET"]);
 const NO_OVERDRAFT = new Set(["CASH", "MOBILE_WALLET"]);
 const DEFAULT_SUPPLIER = "Local market";
-const DRAFT_KEY = "asifzone:purchase-draft:v1";
+// browser storage is already per store (each store has its own domain), so the key names no store
+const DRAFT_KEY = "admin:purchase-draft:v1";
 
 /** Something that can be bought: one variant, or a product whose colours × sizes are entered as a grid. */
 interface Choice { id: string; label: string; detail: string; variants: StockItem[]; grid: boolean }
