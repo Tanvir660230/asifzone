@@ -70,6 +70,8 @@ test("make a family in admin, and its products link to each other on the store",
   await expect(family.getByTestId("family-tile")).toHaveCount(2);
   await family.getByTestId("family-tile").first().click();
   await expect(phone).toHaveURL(new RegExp(`/product/${c!.slug}$`));
+  // The page transition shows the leaving page beside the new one for a moment: wait until only c's page is left.
+  await expect(phone.getByRole("heading", { level: 1, name: c!.name })).toHaveCount(1);
   await expect(phone.getByRole("heading", { level: 1, name: c!.name })).toBeVisible();
   // The buying words match the rest of the website (English).
   await expect(phone.getByRole("button", { name: "Add to Cart" }).first()).toBeVisible();

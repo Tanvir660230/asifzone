@@ -216,7 +216,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   // "Few left" is a description, not part of the name: the size is still called by its own name.
                   aria-description={state === "low" && !isSelected ? BUY.fewLeft : undefined}
                   aria-pressed={isSelected}
-                  title={inStock ? undefined : BUY.soldOut}
+                  title={inStock ? undefined : BUY.outOfStock}
                   whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
                     "relative isolate flex w-full items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
@@ -265,8 +265,6 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
             {options.colorLabel}
             {selectedColor ? ` — ${selectedColor}` : ""}
           </p>
-          {/* One colour is a fact, not a choice: its name above is enough (the product family's tiles offer the others). */}
-          {options.colors.length > 1 && (
           <div className="flex flex-wrap gap-2" role="group" aria-label={options.colorLabel}>
             {options.colors.map((color) => {
               // With one colour only, a crossed swatch would just repeat the crossed size above it.
@@ -344,7 +342,6 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
               );
             })}
           </div>
-          )}
         </div>
       )}
     </>

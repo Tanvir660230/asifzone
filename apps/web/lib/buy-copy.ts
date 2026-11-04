@@ -21,6 +21,7 @@ export const BUY = {
   /** The Tahafi sticky capsule's one action. */
   orderNow: "Order now",
   soldOut: "Sold out",
+  outOfStock: "Out of stock",
   fewLeft: "Few left",
   fewLeftTag: "Few left",
   fewLeftUrgent: "Only a few left — order soon",

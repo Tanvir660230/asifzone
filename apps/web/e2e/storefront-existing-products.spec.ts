@@ -65,8 +65,7 @@ test.describe("existing products keep working", () => {
 
     const hasSizePicker = new Set(product.variants.map((v) => v.size)).size > 1 || variant.size !== "Standard";
     if (hasSizePicker && variant.size !== "Standard") await page.getByRole("button", { name: variant.size, exact: true }).first().click();
-    // A product in one colour has no colour to pick (it is chosen already); only a choice of colours shows swatches.
-    if (variant.color && new Set(product.variants.map((v) => v.color)).size > 1) await page.getByRole("button", { name: variant.color, exact: true }).first().click();
+    if (variant.color) await page.getByRole("button", { name: variant.color, exact: true }).first().click();
 
     await page.getByRole("button", { name: "Add to Cart" }).first().click();
     await expect(page.getByTestId("added-to-bag")).toContainText(product.name);
