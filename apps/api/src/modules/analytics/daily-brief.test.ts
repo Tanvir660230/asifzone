@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeBrief, type BriefInput } from "./daily-brief";
+import { BRIEF_SMS_MAX, composeBrief, type BriefInput } from "./daily-brief";
 
 const counts = (p: Partial<BriefInput["day"]> = {}): BriefInput["day"] => ({
   placed: 0,
@@ -81,5 +81,15 @@ describe("composeBrief", () => {
     expect(b.headline).toBe("Tuesday: no orders");
     expect(b.lines).toEqual([]);
     expect(b.watch).toEqual([]);
+  });
+
+  it("fits the brief in one plain SMS with the store name in front", () => {
+    const b = composeBrief(base);
+    expect(b.sms).toBe("Tue: 34 orders, BDT 18,400 sales, 25 delivered. Now: 5 to confirm, 7 to send, 3 call-backs.");
+    const busy = composeBrief({ ...base, day: counts({ placed: 1234, delivered: 999 }), netSales: 12_345_678, queues: { ...base.queues, awaitingConfirmation: 999, readyToBook: 999, holdsDue: 999, stuckWithCourier: 999 } });
+    expect(`A Long Store Name Ltd: ${busy.sms}`.length).toBeLessThanOrEqual(BRIEF_SMS_MAX);
+    expect(/^[ -~]*$/.test(busy.sms)).toBe(true);
+    const quiet = composeBrief({ ...base, queues: { ...base.queues, awaitingConfirmation: 0, readyToBook: 0, holdsDue: 0 } });
+    expect(quiet.sms.endsWith("Nothing waiting.")).toBe(true);
   });
 });

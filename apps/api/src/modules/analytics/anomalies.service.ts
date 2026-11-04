@@ -10,7 +10,11 @@ import { AppError } from "../../lib/app-error";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { storeContext } from "../../domain/metrics/store-time";
 import { detectAnomaly, type Anomaly } from "./anomalies";
-import { composeBrief, type DailyBrief } from "./daily-brief";
+import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
+import { getSettings } from "../settings/settings.service";
+import { getSmsSettings } from "../sms-settings/sms-settings.service";
+import { BRIEF_SMS_MAX, composeBrief, type DailyBrief } from "./daily-brief";
 import { financeAlerts } from "../../domain/finance/finance-alerts.service";
 import { comparisonDates, countOps, type OpsCountKey } from "./ops-pulse";
 import { getOpsPulse, loadOpsEvents } from "./ops-pulse.service";
@@ -148,5 +152,26 @@ export async function sendMorningBrief(now: Date = new Date()): Promise<DailyBri
       link: "/admin/analytics/operations",
     },
   });
+  await textMorningBrief(brief);
   return brief;
+}
+
+/** The same brief as one SMS to the admin alert phones, when the owner switched it on (SMS notifications › Admin alerts).
+ * After the bell row, and never throwing: the bell row is the once-a-day marker, so a failed text is logged, not retried —
+ * a retry would skip the brief anyway, and a text must not go out twice. */
+async function textMorningBrief(brief: DailyBriefReport): Promise<void> {
+  try {
+    const sms = await getSmsSettings();
+    const phones = sms.adminAlertPhones.split(",").map((p) => p.trim()).filter(Boolean);
+    if (!sms.adminDailyBriefEnabled || !phones.length) return;
+    const { storeName } = await getSettings();
+    // An old cached brief (from before `sms` existed) falls back to its headline.
+    const body = `${storeName}: ${brief.sms ?? brief.headline}`.slice(0, BRIEF_SMS_MAX);
+    const results = await Promise.allSettled(phones.map((to) => getProviders().sms.send({ to, body })));
+    results.forEach((r, i) => {
+      if (r.status === "rejected") captureError(r.reason, { msg: `[daily-brief] SMS to ${phones[i]} failed:` });
+    });
+  } catch (err) {
+    captureError(err, { msg: "[daily-brief] SMS skipped:" });
+  }
 }

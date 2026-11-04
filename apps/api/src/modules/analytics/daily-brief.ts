@@ -34,7 +34,13 @@ export interface DailyBrief {
   todo: string[];
   /** unusual + todo — the notification's "Watch" line. */
   watch: string[];
+  /** The brief as one plain-ASCII text (one SMS segment with the store name in front, BRIEF_SMS_MAX): the day's orders and
+   * sales, then the counts waiting. Plain ASCII on purpose — a ৳ or Bangla letter makes it a Unicode SMS of 70 characters. */
+  sms: string;
 }
+
+/** 160 GSM characters is one SMS; the sender adds "<store name>: " in front. */
+export const BRIEF_SMS_MAX = 160;
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 const avg = (n: number) => (Number.isInteger(n) ? count(n) : n.toFixed(1));
@@ -91,5 +97,12 @@ export function composeBrief(input: BriefInput): DailyBrief {
   if (queues.awaitingConfirmation) todo.push(`${plural(queues.awaitingConfirmation, "order")} waiting to be confirmed`);
   if (queues.stuckWithCourier) todo.push(`${plural(queues.stuckWithCourier, "parcel")} with the courier for over 5 days`);
   if (queues.partialToReconcile) todo.push(`${plural(queues.partialToReconcile, "part delivery", "part deliveries")} to reconcile`);
-  return { headline, lines, unusual, todo, watch: [...unusual, ...todo] };
+  const waiting = [
+    queues.awaitingConfirmation ? `${count(queues.awaitingConfirmation)} to confirm` : "",
+    queues.readyToBook ? `${count(queues.readyToBook)} to send` : "",
+    queues.holdsDue ? `${count(queues.holdsDue)} call-back${queues.holdsDue === 1 ? "" : "s"}` : "",
+    queues.stuckWithCourier ? `${count(queues.stuckWithCourier)} stuck` : "",
+  ].filter(Boolean);
+  const sms = `${weekday.slice(0, 3)}: ${plural(day.placed, "order")}, ${currency} ${count(input.netSales)} sales, ${count(day.delivered)} delivered. ${waiting.length ? `Now: ${waiting.join(", ")}.` : "Nothing waiting."}`;
+  return { headline, lines, unusual, todo, watch: [...unusual, ...todo], sms };
 }

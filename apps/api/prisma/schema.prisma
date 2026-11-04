@@ -2854,6 +2854,9 @@ model SmsNotificationSetting {
   /// single-purpose fields on StoreSetting).
   adminAlertPhones                     String   @default("")
   adminOrderAlertEnabled               Boolean  @default(true)
+  /// The morning brief (analytics/anomalies.service.ts sendMorningBrief) as one short SMS to adminAlertPhones. Opt-in:
+  /// each text costs the store money.
+  adminDailyBriefEnabled               Boolean  @default(false)
   customerOrderPlacedEnabled           Boolean  @default(true)
   customerOrderConfirmedEnabled        Boolean  @default(true)
   customerOrderShippedEnabled          Boolean  @default(true)
