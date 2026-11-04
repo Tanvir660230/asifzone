@@ -971,6 +971,17 @@
     html[data-keyboard="open"]:has([data-tab-bar]) {
       --dock-offset: 0px;
     }
+    /* On the product page, the buy bar takes the tab bar's place while it is on screen (<html data-sticky-atc>,
+       components/storefront/sticky-add-to-cart.tsx): one bar at the bottom, never two stacked (owner, 2026-11-04). */
+    html[data-sticky-atc]:has([data-tab-bar]),
+    html[data-buy-under-dock]:has([data-tab-bar]) {
+      --dock-offset: 0px;
+    }
+    /* …and while the page's own buy buttons sit in the band the bar would cover (product-showcase.tsx). */
+    html[data-sticky-atc] [data-tab-bar],
+    html[data-buy-under-dock] [data-tab-bar] {
+      display: none;
+    }
     @supports not selector(:has(*)) {
       :root {
         --dock-offset: var(--dock-tab-bar);

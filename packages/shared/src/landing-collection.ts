@@ -16,6 +16,16 @@ function commonPrefixWords(names: string[]): number {
 }
 
 /**
+ * Each name without the words every name starts with: ["Premium Pakistani Cap - New White C", "Premium Pakistani Cap -
+ * Black B"] → ["New White C", "Black B"]. A single name, or one that would be left empty, stays whole. Used for collection
+ * landing pages and for product-family tiles, so a product is called the same thing on both.
+ */
+export function distinctNames(names: string[]): string[] {
+  const skip = names.length > 1 ? commonPrefixWords(names) : 0;
+  return names.map((name) => name.trim().split(/\s+/).slice(skip).join(" ").replace(SEPARATORS, "") || name);
+}
+
+/**
  * The colour each variant shows under on a collection page, by variant id. A colour only one product has keeps its own
  * name ("Olive Green"). A colour several products share — the same colour in different designs — is called by what sets
  * each product apart: its name without the words all the page's names start with ("Premium Pakistani Cap - New Black D"
@@ -26,8 +36,7 @@ export function landingColorLabels(products: Array<{ name: string; variants: Arr
   const colorsOf = products.map((p) => [...new Set(p.variants.map((v) => (v.color ?? "").trim()))]);
   const owners = new Map<string, number>();
   for (const colors of colorsOf) for (const c of colors) owners.set(c, (owners.get(c) ?? 0) + 1);
-  const skip = products.length > 1 ? commonPrefixWords(products.map((p) => p.name)) : 0;
-  const distinct = products.map((p) => p.name.trim().split(/\s+/).slice(skip).join(" ").replace(SEPARATORS, "") || p.name);
+  const distinct = distinctNames(products.map((p) => p.name));
 
   const labels = new Map<string, string>();
   const used = new Set<string>();

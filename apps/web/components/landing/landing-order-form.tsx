@@ -30,6 +30,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
 import { colorImage, useLandingSelection } from "./landing-selection";
+import { PHOTO_TILE_WIDTH, PhotoTileBody } from "@/components/storefront/photo-tile";
 import { useQuote } from "@/hooks/use-quote";
 import { createOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
@@ -484,25 +485,10 @@ function OptionPickers({
                 aria-pressed={selected}
                 aria-label={ok ? c : `${c}, স্টকে নেই`}
                 title={c}
-                className={cn("w-[4.25rem] shrink-0 text-left transition-transform duration-base active:scale-[0.97]", !ok && "cursor-not-allowed opacity-40")}
+                className={cn(PHOTO_TILE_WIDTH, "text-left transition-transform duration-base active:scale-[0.97]", !ok && "cursor-not-allowed")}
               >
-                <span
-                  className={cn(
-                    "relative block aspect-[4/5] overflow-hidden rounded-lg bg-surface-muted ring-offset-2 ring-offset-surface transition-shadow duration-base",
-                    selected ? "ring-2 ring-ink-900" : "ring-1 ring-line",
-                  )}
-                >
-                  <Image src={resolveImageUrl(photos[i]!.url)} alt="" fill sizes="68px" className="object-cover" />
-                  {selected && (
-                    <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ink-900 text-cream-50">
-                      <Check size={12} strokeWidth={3} aria-hidden="true" />
-                    </span>
-                  )}
-                </span>
-                {/* The name under the photo: designs of one colour look alike at this size. */}
-                <span className={cn("mt-1.5 block truncate text-[11px] leading-tight", selected ? "font-semibold text-fg" : "text-fg-muted")} lang="en" aria-hidden="true">
-                  {c}
-                </span>
+                {/* The name under the photo, whole (two lines at most): designs of one colour look alike at this size. */}
+                <PhotoTileBody imageUrl={photos[i]!.url} label={c} selected={selected} unavailable={!ok} />
               </button>
             );
           })}

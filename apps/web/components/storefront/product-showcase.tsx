@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
-import { NO_SIZE_VALUE, pickGalleryImages, variantShipsFree, type PolicyHighlightKind, type Product, type ProductVariant } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, pickGalleryImages, variantShipsFree, type PolicyHighlightKind, type Product, type ProductVariant, type PublicProductFamily } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
+import { ProductFamilyPicker } from "@/components/storefront/product-family-picker";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
 import type { PickerIntent } from "@/components/storefront/variant-picker-dialog";
@@ -20,6 +21,7 @@ import { storeLayout } from "@/lib/theme-layout";
 import { cn } from "@/lib/utils";
 import { Money } from "@/components/ui/money";
 import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
+import { BUY } from "@/lib/buy-copy";
 import type { SpecAccordionItem } from "@/lib/product-specs";
 
 const POLICY_ICON: Record<PolicyHighlightKind, typeof Truck> = { delivery: Truck, returns: RotateCcw, cashOnDelivery: Banknote };
@@ -39,12 +41,14 @@ interface ProductShowcaseProps {
   orderHelp?: { fees: { insideDhaka: string; elsewhere: string }; whatsappUrl: string | null };
   /** The store's name: a product whose brand is the store itself doesn't repeat it above its title. */
   storeName?: string;
+  /** The product families this product is in (only members on sale), shown as photo tiles above the options. */
+  families?: PublicProductFamily[];
 }
 
 /** Owns the one piece of state that needs to be shared between the gallery and the variant
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
-export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [], orderHelp, storeName }: ProductShowcaseProps) {
+export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [], orderHelp, storeName, families = [] }: ProductShowcaseProps) {
   // The store's own name above every one of its products says nothing the header logo doesn't; another brand's name does.
   const brand = product.brand && product.brand.trim().toLowerCase() !== storeName?.trim().toLowerCase() ? product.brand : null;
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
@@ -73,7 +77,34 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
       { rootMargin: "0px 0px -1px 0px" },
     );
     observer.observe(target);
-    return () => observer.disconnect();
+    // The buy buttons sitting in the screen's bottom band, under the tab bar or dock (a phone opening the page, the
+    // buttons near the fold): the bar steps aside so it never covers them (<html data-buy-under-dock>, globals.css).
+    // Once they are clear of the band it comes back; once they are scrolled past, the sticky buy bar takes its place.
+    // Measured on scroll (one frame at a time), not by an observer: an observer only reports crossings, and the buttons
+    // can enter the band straight from below the screen without crossing anything it watches.
+    const root = document.documentElement;
+    const BAND = 104; // the tab bar / dock and the space under it, in px
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const r = target.getBoundingClientRect();
+      const under = r.top < window.innerHeight && r.bottom > window.innerHeight - BAND;
+      if (under) root.dataset.buyUnderDock = "";
+      else delete root.dataset.buyUnderDock;
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame) cancelAnimationFrame(frame);
+      delete root.dataset.buyUnderDock;
+    };
   }, []);
 
   // What the shopper is looking at follows their choice: the selected colour's own images (then the shared ones),
@@ -157,7 +188,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             <>
               <span className="text-base text-fg-muted line-through" data-testid="product-compare-price"><Money value={shown.was} /></span>
               {/* The same server-resolved comparison the card badge shows; no price is computed here. */}
-              <span className="rounded-full bg-sale-50 px-2.5 py-0.5 text-xs font-semibold text-sale-600">{percentOffLabel(shown.price, shown.was)}% off</span>
+              <span className="rounded-full bg-sale-50 px-2.5 py-0.5 text-xs font-semibold text-sale-600">{BUY.percentOff(percentOffLabel(shown.price, shown.was)!)}</span>
             </>
           )}
         </div>
@@ -175,8 +206,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           <p className="mt-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700 sm:inline-flex sm:items-center sm:rounded-full sm:py-1" data-testid="product-free-delivery">
             <Truck size={15} aria-hidden="true" className="mt-0.5 shrink-0 sm:mt-0" />
             <span>
-              <span className="font-medium">Free delivery{freeOn ? ` on ${freeOn}` : ""}</span>{" "}
-              <span className="text-success-700/80">· when everything in your bag ships free</span>
+              <span className="font-medium">{freeOn ? BUY.freeDeliveryOn(freeOn) : BUY.freeDelivery}</span>
             </span>
           </p>
         )}
@@ -184,7 +214,15 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         <UrgencySignals signals={urgencySignals} />
         <AdminSalesBadge productId={product.id} />
 
-        <div className="mt-6 sm:mt-8" ref={buttonsRef}>
+        {families.length > 0 && (
+          <div className="mt-6 space-y-5 sm:mt-8">
+            {families.map((family) => (
+              <ProductFamilyPicker key={family.id} family={family} currentProductId={product.id} />
+            ))}
+          </div>
+        )}
+
+        <div className={families.length > 0 ? "mt-5" : "mt-6 sm:mt-8"} ref={buttonsRef}>
           <VariantSelector
             variants={product.variants}
             productId={product.id}

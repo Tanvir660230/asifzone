@@ -300,6 +300,11 @@ const componentTokens = {
   // Product card.
   // The product photo's shape on a card (square in the base design).
   "--card-media-aspect": "1 / 1",
+  // Product page and landing page photographs (gallery, colour and family tiles): the frame's shape and how the photo
+  // sits in it. The studio photos are 1600×1920 (5:6), so a 5:6 frame with `contain` shows the whole photo, never cropped
+  // (owner, 2026-11-04); a photo of another shape sits centred on the frame's ground.
+  "--product-photo-aspect": "5 / 6",
+  "--product-photo-fit": "contain",
   // The thread a preset's hang-tag hangs from (Tahafi's hero).
   "--tag-thread": "rgb(var(--color-ink-300))",
   // The lit edge of a floating glass panel (globals.css .glass-panel); a dark colour mode dims it.
@@ -481,6 +486,9 @@ const themeDefinitions = {
       "--card-image-zoom": "1.04",
       "--card-tier-display": "none",
       "--product-tier-display": "none",
+      // The same 5:6 studio photos as the base design: whole, never cropped.
+      "--product-photo-aspect": "5 / 6",
+      "--product-photo-fit": "contain",
       "--card-title-tracking": "0",
       "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
@@ -600,6 +608,9 @@ const themeDefinitions = {
       "--hero-cta-text": "rgb(255 255 255)",
       // Product cards: the photograph on white, square, inside a soft white card.
       "--card-media-aspect": "1 / 1",
+      // Square model photos (1254×1254), filling a square frame — until 4:5 photos arrive.
+      "--product-photo-aspect": "1 / 1",
+      "--product-photo-fit": "cover",
       "--card-lift": "0",
       "--card-frame-border": "transparent",
       "--card-frame-shadow": "0 1px 2px rgb(28 28 26 / 0.05), 0 10px 24px -16px rgb(28 28 26 / 0.22)",

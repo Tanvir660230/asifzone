@@ -88,7 +88,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
     <footer className="mt-12 bg-cream-200 text-fg sm:mt-20">
       <div className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 sm:pt-20 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
-          <div className="lg:col-span-5">
+          <div className="min-w-0 lg:col-span-5">
             {showNewsletter ? (
               <>
                 <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.newsletterHeading || "Stay in touch"}</h2>

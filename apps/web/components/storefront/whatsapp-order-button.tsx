@@ -2,6 +2,7 @@
 
 import { SocialIcon } from "@/components/social-icon";
 import { pixelContact } from "@/lib/pixels";
+import { BUY } from "@/lib/buy-copy";
 import { productOrderMessage, withWhatsAppMessage, type WhatsAppOrderLine } from "@/lib/whatsapp";
 
 interface WhatsAppOrderButtonProps {
@@ -32,7 +33,7 @@ export function WhatsAppOrderButton({ whatsappUrl, productName, options }: Whats
       data-fab-collision
     >
       <SocialIcon platform="WHATSAPP" size={18} />
-      Order on WhatsApp
+      {BUY.whatsappOrder}
     </a>
   );
 }

@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/format";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { readSizeMemory, recordSize, suggestSize } from "@/lib/size-memory";
+import { BUY } from "@/lib/buy-copy";
 import { WishlistButton } from "./wishlist-button";
 import { StockAlertButton } from "./stock-alert-button";
 import { SizeGuideModal } from "./size-guide-modal";
@@ -176,7 +177,7 @@ export function VariantSelector({
             >
               {/* Stock is shown as a state (and a meter), never a quantity. The SKU is the shop’s code, not the shopper’s. */}
               <StockBadge stock={stock} testId="variant-stock-status" />
-              {maxQty === 0 && restockDate && <p className="mt-2 text-sm text-ink-500">Expected back in stock: {formatDate(restockDate)}</p>}
+              {maxQty === 0 && restockDate && <p className="mt-2 text-sm text-ink-500">{BUY.expectedBack(formatDate(restockDate))}</p>}
               {maxQty === 0 && <StockAlertButton variantId={selectedVariant.id} />}
             </motion.div>
           ) : (
@@ -195,7 +196,7 @@ export function VariantSelector({
                 <span className="mt-1.5 flex items-center gap-2">
                   <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-accent" />
                   <span>
-                    You usually take{" "}
+                    {BUY.usualSize}{" "}
                     <button
                       type="button"
                       onClick={() => setSelectedSize(suggestedSize)}
@@ -221,12 +222,12 @@ export function VariantSelector({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="flex items-center gap-3 overflow-hidden"
           >
-            <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
+            <p className="shrink-0 text-xs ui-caps text-ink-500">{BUY.quantity}</p>
             <div className="flex items-center rounded-[var(--control-radius)] border border-ink-200 shadow-sm">
               <button
                 onClick={() => setQuantity(Math.max(1, effectiveQty - 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
-                aria-label="Decrease quantity"
+                aria-label={BUY.decrease}
               >
                 −
               </button>
@@ -234,7 +235,7 @@ export function VariantSelector({
               <button
                 onClick={() => setQuantity(Math.min(maxQty, effectiveQty + 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
-                aria-label="Increase quantity"
+                aria-label={BUY.increase}
               >
                 +
               </button>
@@ -246,11 +247,12 @@ export function VariantSelector({
       {/* data-inline-actions: the product page watches this row to show its sticky bar while the row is off screen. */}
       <div data-inline-actions>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="flex-1" disabled={soldOut} onClick={handleAddToCart}>
-            Add to Cart
+          {/* min-w-0 + tighter sides below 400px: the Bangla labels fit a 320px phone beside the wishlist button. */}
+          <Button variant="outline" size="lg" className="min-w-0 flex-1 px-3 min-[400px]:px-6" disabled={soldOut} onClick={handleAddToCart}>
+            {BUY.addToCart}
           </Button>
-          <Button variant="primary" size="lg" className="flex-1" disabled={soldOut} onClick={handleBuyNow}>
-            Buy Now
+          <Button variant="primary" size="lg" className="min-w-0 flex-1 px-3 min-[400px]:px-6" disabled={soldOut} onClick={handleBuyNow}>
+            {BUY.buyNow}
           </Button>
           <WishlistButton productId={productId} className="h-12 w-12 shrink-0 border border-ink-200 bg-cream-50" />
         </div>

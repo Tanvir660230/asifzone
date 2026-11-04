@@ -89,26 +89,29 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               aria-label={`View image ${i + 1} of ${productName}`}
               aria-current={i === activeIndex}
               className={cn(
-                "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition-colors duration-150 ease-smooth lg:h-20 lg:w-20",
-                thumbsBelow && "aspect-[4/5] h-auto w-14 lg:h-auto lg:w-16",
+                // The photo frame's own shape (--product-photo-aspect), small.
+                "relative aspect-[var(--product-photo-aspect)] w-16 shrink-0 overflow-hidden rounded-lg border-2 bg-ink-100 transition-colors duration-150 ease-smooth lg:w-20",
+                thumbsBelow && "w-14 lg:w-16",
                 i === activeIndex ? "border-brass-400" : "border-transparent hover:border-ink-200",
               )}
             >
-              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="80px" className="object-cover" />
+              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="80px" className="[object-fit:var(--product-photo-fit)]" />
             </button>
           ))}
         </div>
       )}
 
       <div
-        // Capped to a share of the viewport height in addition to the usual aspect-square sizing
-        // — width-driven aspect-square alone let this grow taller than the screen on shorter
-        // desktop windows (laptop, browser zoom), pushing price/Add to Cart off-screen with no
-        // hint anything was below. The cap only ever engages when that would happen; a normal
-        // window never hits it.
+        // Capped to a share of the viewport height: width-driven sizing alone let the photo grow taller than a short
+        // desktop window (laptop, browser zoom), pushing the price and buttons off-screen. The cap narrows the frame
+        // rather than squashing it, and only engages when that would happen.
         className={cn(
-          "group relative flex-1 cursor-zoom-in select-none overflow-hidden rounded-xl bg-ink-100",
-          thumbsBelow ? "aspect-[4/5] max-h-[80vh]" : "aspect-square max-h-[70vh]",
+          // The theme's photo shape (--product-photo-aspect: 5:6 for the studio photos, 1:1 for Tahafi's); on a short window
+          // the frame narrows instead of growing past the screen, so its shape — and the uncropped photo — holds.
+          "group relative mx-auto w-full flex-1 cursor-zoom-in select-none overflow-hidden rounded-xl bg-ink-100 aspect-[var(--product-photo-aspect)]",
+          thumbsBelow
+            ? "lg:max-w-[calc(80vh*(var(--product-photo-aspect)))]"
+            : "lg:max-w-[calc(70vh*(var(--product-photo-aspect)))]",
         )}
         onMouseMove={handleMouseMove}
         onClick={() => active && setLightboxOpen(true)}
@@ -133,7 +136,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                     alt={img.altText ?? productName}
                     fill
                     sizes="(min-width: 1024px) 50vw, 100vw"
-                    className="object-cover transition-transform duration-300 ease-out lg:group-hover:scale-150"
+                    className="transition-transform duration-300 ease-out [object-fit:var(--product-photo-fit)] lg:group-hover:scale-150"
                     style={i === activeIndex ? { transformOrigin: zoomOrigin } : undefined}
                     priority={i === 0}
                   />

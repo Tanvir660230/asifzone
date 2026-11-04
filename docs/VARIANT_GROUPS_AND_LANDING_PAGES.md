@@ -91,6 +91,22 @@ stock and delivery charges, idempotency, `QUOTE_CHANGED`. Tracking is unchanged 
 InitiateCheckout/AddPaymentInfo/Purchase with variant ids, server Purchase deduplicated by order number — so Meta sees
 the same ids from every page. Ad spend attribution keeps working through the page path (`Campaign.landingPath`).
 
+## 3. Product families
+
+Admin › Products › **Product families** (`/admin/products/families`, `catalog.manage`). A family links matching products
+that stay separate — every colour of a cap, a jacket with and without sleeves, a matching cap — so each one's product
+page shows the others as photo tiles (`components/storefront/product-family-picker.tsx`). Owner decisions, 2026-11-04:
+
+- Made by hand: the admin picks each member and the tile order; nothing groups products by name. A product may be in
+  several families; each shows as its own row of tiles with the family's name above it.
+- A tile's name: the member's own label if set, else its product name without the words every member's name starts
+  with (`distinctNames`, the same rule as collection landing pages).
+- Only members on sale show (published, not in Trash, not a material). A sold-out member stays, struck through and
+  still linked; nothing is removed automatically. A family with fewer than two members on sale shows nothing.
+- Nothing about a product changes: the tables `ProductFamily` / `ProductFamilyMember` hold only the links (migration
+  `20261211100000_product_families`); deleting a family deletes the links. Prices on tiles are the server's.
+- The storefront reads `GET /api/product-families/for/:productId` (60 s cache), so an edit shows within a minute.
+
 ## API
 
 | Method | Path | |
@@ -104,6 +120,9 @@ the same ids from every page. Ad spend attribution keeps working through the pag
 | POST | `/api/landing-pages/:id/{publish,unpublish,duplicate}` | |
 | GET | `/api/landing-pages/:id/preview` | working copy, admin only (`/lp-preview/<id>`) |
 | GET | `/api/landing-pages/public/:slug` | the live page, public |
+| GET/POST | `/api/product-families` | list / create (`catalog.manage`) |
+| GET/PUT/DELETE | `/api/product-families/:id` | read / save / delete |
+| GET | `/api/product-families/for/:productId` | a product page's families, public |
 
 Migration `20261210100000_variant_groups_landing_pages` only adds `ProductGrouping`, `LandingPage` and the
 `LandingPageStatus` enum — no existing table or row changes. Rolling back the code leaves the two tables unused.

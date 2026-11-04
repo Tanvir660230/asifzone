@@ -63,9 +63,9 @@ export function LandingColorShowcase() {
                 !ok && "cursor-not-allowed opacity-50",
               )}
             >
-              <span className="relative block aspect-[4/5] bg-surface-muted">
+              <span className="relative block aspect-[var(--product-photo-aspect)] bg-surface-muted">
                 {img ? (
-                  <Image src={resolveImageUrl(img.url)} alt={img.altText ?? `${product.name} — ${c}`} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-cover" />
+                  <Image src={resolveImageUrl(img.url)} alt={img.altText ?? `${product.name} — ${c}`} fill sizes="(min-width: 1024px) 25vw, 50vw" className="[object-fit:var(--product-photo-fit)]" />
                 ) : hex ? (
                   <span className="absolute inset-0" style={{ backgroundColor: hex }} aria-hidden="true" />
                 ) : null}

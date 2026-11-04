@@ -6,6 +6,7 @@ import { Check, CircleSlash, Flame } from "lucide-react";
 import { NO_SIZE_VALUE, isAvailable, variantStockState, type ProductVariant, type VariantDimension } from "@clothing-brand/shared";
 import { cn, isPaleColor } from "@/lib/utils";
 import { storeLayout } from "@/lib/theme-layout";
+import { BUY, dimensionLabel } from "@/lib/buy-copy";
 
 /** Below this many units a LOW_STOCK variant reads "Only a few left" instead of "Limited stock" — wording only. */
 const CRITICAL_STOCK_THRESHOLD = 3;
@@ -31,8 +32,8 @@ export function useVariantOptions(variants: ProductVariant[], variantDimensions:
       colors,
       showSizes,
       showColors,
-      sizeLabel: sizeDim?.label ?? "Size",
-      colorLabel: colorDim?.label ?? "Color",
+      sizeLabel: dimensionLabel(sizeDim?.label, "size"),
+      colorLabel: dimensionLabel(colorDim?.label, "color"),
       /** A single value needs no choice — it's pre-selected. */
       defaultSize: sizes.length === 1 ? (sizes[0] ?? null) : null,
       defaultColor: colors.length === 1 ? (colors[0] ?? null) : !showSizes ? firstColorInStock : null,
@@ -50,9 +51,9 @@ export type StockTone = "ok" | "warn" | "urgent" | "out";
 
 export function stockLine(trackInventory: boolean, stock: number, lowStockThreshold: number): { text: string; tone: StockTone } {
   const state = variantStockState(trackInventory, stock, lowStockThreshold);
-  if (state === "OUT_OF_STOCK") return { text: "Sold out", tone: "out" };
-  if (state === "LOW_STOCK") return stock <= CRITICAL_STOCK_THRESHOLD ? { text: "Only a few left — order soon", tone: "urgent" } : { text: "Limited stock — order soon", tone: "warn" };
-  return { text: "In stock — ready to ship", tone: "ok" }; // IN_STOCK and UNLIMITED (D5)
+  if (state === "OUT_OF_STOCK") return { text: BUY.soldOut, tone: "out" };
+  if (state === "LOW_STOCK") return stock <= CRITICAL_STOCK_THRESHOLD ? { text: BUY.fewLeftUrgent, tone: "urgent" } : { text: BUY.limited, tone: "warn" };
+  return { text: BUY.inStock, tone: "ok" }; // IN_STOCK and UNLIMITED (D5)
 }
 
 /** A size's state across its variants (any colour): in stock if any variant is, "few left" if only low ones are. */
@@ -113,7 +114,7 @@ function SizeTag({ state }: { state: SizeState }) {
         "bg-sale-500",
       )}
     >
-      Few left
+      {BUY.fewLeftTag}
     </span>
   );
 }
@@ -213,9 +214,9 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   disabled={!inStock && !soldOutSelectable}
                   aria-label={inStock ? (isSuggested ? `${size}, your usual size` : size) : `${size} — out of stock`}
                   // "Few left" is a description, not part of the name: the size is still called by its own name.
-                  aria-description={state === "low" && !isSelected ? "Few left" : undefined}
+                  aria-description={state === "low" && !isSelected ? BUY.fewLeft : undefined}
                   aria-pressed={isSelected}
-                  title={inStock ? undefined : "Out of stock"}
+                  title={inStock ? undefined : BUY.outOfStock}
                   whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
                     "relative isolate flex w-full items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
@@ -351,8 +352,8 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
 export function missingSelectionText(options: VariantOptions, selectedSize: string | null, selectedColor: string | null): string {
   const sizeMissing = options.showSizes && !selectedSize;
   const colorMissing = options.showColors && !selectedColor;
-  if (sizeMissing && colorMissing) return `Please select a ${options.sizeLabel.toLowerCase()} and ${options.colorLabel.toLowerCase()} to continue`;
-  if (sizeMissing) return `Please select a ${options.sizeLabel.toLowerCase()} to continue`;
-  if (colorMissing) return `Please select a ${options.colorLabel.toLowerCase()} to continue`;
-  return "This combination isn't available — please choose another";
+  if (sizeMissing && colorMissing) return BUY.choose(options.sizeLabel, options.colorLabel);
+  if (sizeMissing) return BUY.choose(options.sizeLabel);
+  if (colorMissing) return BUY.choose(options.colorLabel);
+  return BUY.unavailableCombo;
 }

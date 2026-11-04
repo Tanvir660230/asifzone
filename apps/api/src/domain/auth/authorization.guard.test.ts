@@ -87,6 +87,7 @@ const PUBLIC_ROUTES = [
   "GET /api/banners/active",
   "GET /api/homepage-sections/active",
   "GET /api/landing-pages/public/:slug", // a published campaign landing page only (docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §2)
+  "GET /api/product-families/for/:productId", // a product page's families: members on sale only, no cost or stock count (§3)
   "GET /api/social-links/active",
   "POST /api/newsletter/subscribe",
   "POST /api/feedback/",

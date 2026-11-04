@@ -37,7 +37,7 @@ export function LandingGallery({ images, productName }: { images: ProductImage[]
   }
 
   if (images.length === 0) {
-    return <div className="aspect-[4/5] w-full bg-surface-muted lg:rounded-xl" aria-hidden="true" />;
+    return <div className="aspect-[var(--product-photo-aspect)] w-full bg-surface-muted lg:rounded-xl" aria-hidden="true" />;
   }
 
   return (
@@ -54,11 +54,11 @@ export function LandingGallery({ images, productName }: { images: ProductImage[]
               aria-label={`ছবি ${i + 1}`}
               onClick={() => goTo(i)}
               className={cn(
-                "relative aspect-[4/5] w-full overflow-hidden rounded-lg bg-surface-muted ring-offset-2 ring-offset-canvas transition-shadow duration-base",
+                "relative aspect-[var(--product-photo-aspect)] w-full overflow-hidden rounded-lg bg-surface-muted ring-offset-2 ring-offset-canvas transition-shadow duration-base",
                 i === active ? "ring-2 ring-ink-900" : "opacity-70 hover:opacity-100",
               )}
             >
-              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="72px" className="object-cover" />
+              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="72px" className="[object-fit:var(--product-photo-fit)]" />
             </button>
           ))}
         </div>
@@ -72,14 +72,14 @@ export function LandingGallery({ images, productName }: { images: ProductImage[]
           aria-label={productName}
         >
           {images.map((img, i) => (
-            <div key={img.id} className="relative aspect-[4/5] w-full shrink-0 snap-center bg-surface-muted" aria-roledescription="slide" aria-label={`${i + 1} / ${images.length}`}>
+            <div key={img.id} className="relative aspect-[var(--product-photo-aspect)] w-full shrink-0 snap-center bg-surface-muted" aria-roledescription="slide" aria-label={`${i + 1} / ${images.length}`}>
               <Image
                 src={resolveImageUrl(img.url)}
                 alt={img.altText ?? productName}
                 fill
                 priority={i === 0}
                 sizes="(min-width: 1024px) 50vw, 100vw"
-                className="object-cover"
+                className="[object-fit:var(--product-photo-fit)]"
               />
             </div>
           ))}
