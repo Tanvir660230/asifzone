@@ -5,7 +5,7 @@ import Image from "next/image";
 import { pickGalleryImages, type ProductImage } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
-import { useLandingSelection } from "./landing-selection";
+import { colorImage, useLandingSelection } from "./landing-selection";
 
 /**
  * The landing page's photos. Phones: an edge-to-edge swipe strip (native scroll-snap, no library) with dots, so the
@@ -104,7 +104,10 @@ export function LandingGallery({ images, productName }: { images: ProductImage[]
 /** The gallery of a landing page, following the shopper's colour: that colour's own photos first, then the shared
  * ones — the same rule as the product page (pickGalleryImages). Remounts on a new colour so it starts at its first photo. */
 export function LandingSelectionGallery() {
-  const { product, size, color } = useLandingSelection();
-  const images = useMemo(() => pickGalleryImages(product.images, product.variants, { size, color }), [product.images, product.variants, size, color]);
-  return <LandingGallery key={color ?? ""} images={images} productName={product.name} />;
+  const { product, options, size, color } = useLandingSelection();
+  // Nothing chosen yet on a page whose colours have their own photos (a collection of designs): show the first colour's
+  // photos, not every design's at once.
+  const shownColor = color ?? (options.showColors && options.colors.length > 1 && colorImage(product, options.colors[0]!) ? options.colors[0]! : null);
+  const images = useMemo(() => pickGalleryImages(product.images, product.variants, { size, color: shownColor }), [product.images, product.variants, size, shownColor]);
+  return <LandingGallery key={shownColor ?? ""} images={images} productName={product.name} />;
 }

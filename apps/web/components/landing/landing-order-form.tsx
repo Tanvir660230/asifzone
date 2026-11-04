@@ -484,18 +484,25 @@ function OptionPickers({
                 aria-pressed={selected}
                 aria-label={ok ? c : `${c}, স্টকে নেই`}
                 title={c}
-                className={cn(
-                  "relative aspect-[4/5] w-[4.25rem] shrink-0 overflow-hidden rounded-lg bg-surface-muted ring-offset-2 ring-offset-surface transition-shadow duration-base active:scale-[0.97]",
-                  selected ? "ring-2 ring-ink-900" : "ring-1 ring-line",
-                  !ok && "cursor-not-allowed opacity-40",
-                )}
+                className={cn("w-[4.25rem] shrink-0 text-left transition-transform duration-base active:scale-[0.97]", !ok && "cursor-not-allowed opacity-40")}
               >
-                <Image src={resolveImageUrl(photos[i]!.url)} alt="" fill sizes="68px" className="object-cover" />
-                {selected && (
-                  <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ink-900 text-cream-50">
-                    <Check size={12} strokeWidth={3} aria-hidden="true" />
-                  </span>
-                )}
+                <span
+                  className={cn(
+                    "relative block aspect-[4/5] overflow-hidden rounded-lg bg-surface-muted ring-offset-2 ring-offset-surface transition-shadow duration-base",
+                    selected ? "ring-2 ring-ink-900" : "ring-1 ring-line",
+                  )}
+                >
+                  <Image src={resolveImageUrl(photos[i]!.url)} alt="" fill sizes="68px" className="object-cover" />
+                  {selected && (
+                    <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ink-900 text-cream-50">
+                      <Check size={12} strokeWidth={3} aria-hidden="true" />
+                    </span>
+                  )}
+                </span>
+                {/* The name under the photo: designs of one colour look alike at this size. */}
+                <span className={cn("mt-1.5 block truncate text-[11px] leading-tight", selected ? "font-semibold text-fg" : "text-fg-muted")} lang="en" aria-hidden="true">
+                  {c}
+                </span>
               </button>
             );
           })}
