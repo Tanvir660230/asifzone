@@ -72,6 +72,10 @@ Admin › Marketing › **Landing pages** › Campaign pages (`promotions.manage
   replaces the first product's name. The first product stays the page's product for tracking (ViewContent), reviews,
   description and "more products". All products must be finished goods with the same stock-tracking setting; publish
   needs every one of them published, and one unpublished later simply drops off the live page.
+- **Order form**: when every colour has its own photo, colours are chosen by photo (a swipe strip on phones) and come
+  before the size; otherwise colour swatches after the size. A product with a size guide gets an inline *সাইজ চার্ট*
+  under the sizes (the chosen size highlighted). The phone order bar shows the chosen colour's photo, price and choice.
+  For the fewest scrolls on an ad page: gallery & price straight followed by the order form, no hero or colour showcase.
 - **Sections**: hero, gallery & price, colour showcase, features, specifications, offer (words + optional countdown —
   never a price change), description, reviews, delivery & payment (from store settings), FAQ (own + standard answers),
   trust badges, order form (required), more products. Backgrounds are theme tokens only; no custom HTML or scripts.

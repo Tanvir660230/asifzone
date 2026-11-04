@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { isAvailable, type Product } from "@clothing-brand/shared";
+import { isAvailable, type Product, type ProductImage } from "@clothing-brand/shared";
 import { useVariantOptions, type VariantOptions } from "@/components/storefront/variant-option-pickers";
 
 interface LandingSelection {
@@ -16,6 +16,13 @@ interface LandingSelection {
 }
 
 const Ctx = createContext<LandingSelection | null>(null);
+
+/** A colour's own first photo (a variant of that colour with photos of its own), or null when it has none. */
+export function colorImage(product: Product, color: string): ProductImage | null {
+  const v = product.variants.find((x) => x.color === color && (x.imageId || x.images?.length));
+  const id = v?.imageId ?? v?.images?.[0]?.imageId;
+  return product.images.find((i) => i.id === id) ?? null;
+}
 
 /**
  * The colour and size the shopper has chosen on a landing page, shared by every part that shows or changes it: the

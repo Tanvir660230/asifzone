@@ -8,7 +8,7 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { bn } from "@/lib/landing-content";
 import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
 import { cn, isPaleColor } from "@/lib/utils";
-import { useLandingSelection } from "./landing-selection";
+import { colorImage, useLandingSelection } from "./landing-selection";
 
 /** The price of what the shopper has chosen (the page's "from" price before a choice) — server-resolved numbers only. */
 export function LandingLivePrice() {
@@ -38,11 +38,7 @@ export function LandingLivePrice() {
 export function LandingColorShowcase() {
   const { product, options, color, setColor, sellable } = useLandingSelection();
   if (!options.showColors) return null;
-  const imageFor = (c: string) => {
-    const v = product.variants.find((x) => x.color === c && (x.imageId || x.images?.length));
-    const id = v?.imageId ?? v?.images?.[0]?.imageId;
-    return product.images.find((i) => i.id === id) ?? null;
-  };
+  const imageFor = (c: string) => colorImage(product, c);
   function choose(c: string) {
     setColor(c);
     document.getElementById("order")?.scrollIntoView({ behavior: "smooth", block: "start" });

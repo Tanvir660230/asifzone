@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Check, Loader2, Lock, Minus, Plus } from "lucide-react";
+import { Check, Loader2, Lock, Minus, Plus, Ruler } from "lucide-react";
 import {
   BD_ALL_AREA_OPTIONS,
   BD_ALL_DISTRICTS,
@@ -29,7 +29,7 @@ import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
-import { useLandingSelection } from "./landing-selection";
+import { colorImage, useLandingSelection } from "./landing-selection";
 import { useQuote } from "@/hooks/use-quote";
 import { createOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
@@ -90,8 +90,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     ? variantShipsFree(product.freeDelivery, variant.freeDelivery)
     : product.variants.length > 0 && product.variants.every((v) => variantShipsFree(product.freeDelivery, v.freeDelivery));
   const stock = variant && !soldOut ? stockLine(product.trackInventory, variant.stock, product.lowStockThreshold) : null;
-  const colorImageId = color ? product.variants.find((v) => v.color === color && v.imageId)?.imageId : undefined;
-  const summaryImage = product.images.find((i) => i.id === (variant?.imageId ?? colorImageId)) ?? product.images[0];
+  const summaryImage = product.images.find((i) => i.id === variant?.imageId) ?? (color ? colorImage(product, color) : null) ?? product.images[0];
 
   const {
     register,
@@ -457,15 +456,116 @@ function OptionPickers({
   const chipState = (selected: boolean, ok: boolean) =>
     selected ? "border-ink-900 bg-ink-900 text-cream-50" : ok ? "border-line bg-surface text-fg hover:border-ink-900" : "cursor-not-allowed border-dashed border-line text-fg-muted line-through";
   const anySoldOut = options.sizes.some((s) => !sellable(s, null));
+  const [chartOpen, setChartOpen] = useState(false);
+  const guide = product.resolved?.sizeGuide;
+  const chart = guide?.show && guide.chart && guide.chart.enabled !== false && guide.chart.columns.length > 0 && guide.chart.rows.length > 0 ? guide.chart : null;
+  // Every colour has its own photo: the shopper picks the jacket they can see, not a dot of colour.
+  const photos = options.showColors ? options.colors.map((c) => colorImage(product, c)) : [];
+  const byPhoto = photos.length > 1 && photos.every(Boolean);
+
+  const colorPicker = options.showColors && (
+    // min-w-0: a fieldset is min-content wide by default, which would let the photo strip widen the page.
+    <fieldset className="min-w-0">
+      <legend className="mb-2.5 text-sm font-semibold text-fg">
+        {colorLabel}
+        {color && <span className="ml-2 font-normal text-fg-muted">{color}</span>}
+      </legend>
+      {byPhoto ? (
+        <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden" data-testid="landing-color-photos">
+          {options.colors.map((c, i) => {
+            const ok = sellable(size, c);
+            const selected = color === c;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onColor(c)}
+                disabled={!ok}
+                aria-pressed={selected}
+                aria-label={ok ? c : `${c}, স্টকে নেই`}
+                title={c}
+                className={cn("w-[4.25rem] shrink-0 text-left transition-transform duration-base active:scale-[0.97]", !ok && "cursor-not-allowed opacity-40")}
+              >
+                <span
+                  className={cn(
+                    "relative block aspect-[4/5] overflow-hidden rounded-lg bg-surface-muted ring-offset-2 ring-offset-surface transition-shadow duration-base",
+                    selected ? "ring-2 ring-ink-900" : "ring-1 ring-line",
+                  )}
+                >
+                  <Image src={resolveImageUrl(photos[i]!.url)} alt="" fill sizes="68px" className="object-cover" />
+                  {selected && (
+                    <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ink-900 text-cream-50">
+                      <Check size={12} strokeWidth={3} aria-hidden="true" />
+                    </span>
+                  )}
+                </span>
+                {/* The name under the photo: designs of one colour look alike at this size. */}
+                <span className={cn("mt-1.5 block truncate text-[11px] leading-tight", selected ? "font-semibold text-fg" : "text-fg-muted")} lang="en" aria-hidden="true">
+                  {c}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2.5">
+          {options.colors.map((c) => {
+            const ok = sellable(size, c);
+            const hex = product.variants.find((v) => v.color === c)?.colorHex;
+            const selected = color === c;
+            return hex ? (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onColor(c)}
+                disabled={!ok}
+                aria-pressed={selected}
+                aria-label={ok ? c : `${c}, স্টকে নেই`}
+                title={c}
+                className={cn(
+                  "flex h-11 w-11 items-center justify-center rounded-[var(--swatch-radius)] border-2 transition-shadow duration-base",
+                  selected ? "border-surface ring-2 ring-ink-900" : isPaleColor(hex) ? "border-line-strong" : "border-transparent",
+                  !ok && "cursor-not-allowed opacity-35",
+                )}
+                style={{ backgroundColor: hex }}
+              >
+                {selected && <Check size={18} strokeWidth={3} className={isPaleColor(hex) ? "text-ink-900" : "text-white"} aria-hidden="true" />}
+              </button>
+            ) : (
+              <button key={c} type="button" onClick={() => onColor(c)} disabled={!ok} aria-pressed={selected} className={cn(chip, chipState(selected, ok))}>
+                {c}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </fieldset>
+  );
 
   return (
     <div className="space-y-5">
+      {/* Photos first: the colour is what an ad visitor came for, and the gallery above follows it. */}
+      {byPhoto && colorPicker}
       {options.showSizes && (
         <fieldset>
-          <legend className="mb-2.5 text-sm font-semibold text-fg">
-            {sizeLabel}
-            {size && size !== NO_SIZE_VALUE && <span className="ml-2 font-normal text-fg-muted">{size}</span>}
-          </legend>
+          <div className="mb-2.5 flex items-baseline justify-between gap-3">
+            <legend className="text-sm font-semibold text-fg">
+              {sizeLabel}
+              {size && size !== NO_SIZE_VALUE && <span className="ml-2 font-normal text-fg-muted">{size}</span>}
+            </legend>
+            {chart && (
+              <button
+                type="button"
+                onClick={() => setChartOpen((o) => !o)}
+                aria-expanded={chartOpen}
+                aria-controls="lp-size-chart"
+                className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-fg underline underline-offset-4"
+              >
+                <Ruler size={15} aria-hidden="true" />
+                সাইজ চার্ট
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {options.sizes.map((s) => {
               const ok = sellable(s, null);
@@ -478,47 +578,38 @@ function OptionPickers({
             })}
           </div>
           {anySoldOut && <p className="mt-2 text-xs text-fg-muted">কাটা দাগ দেওয়া সাইজগুলো এখন স্টকে নেই।</p>}
+          {chart && chartOpen && (
+            <div id="lp-size-chart" className="mt-3 overflow-x-auto rounded-xl border border-line bg-surface" data-testid="landing-size-chart">
+              <table className="w-full text-left text-sm tabular-nums" lang="en">
+                <thead>
+                  <tr className="text-xs text-fg-muted">
+                    {chart.columns.map((col, i) => (
+                      <th key={i} scope="col" className="px-3 py-2 font-medium">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line border-t border-line">
+                  {chart.rows.map((row, r) => (
+                    <tr key={r} className={cn(row[0] === size && "bg-surface-muted font-semibold")}>
+                      {row.map((cell, c) => (
+                        <td key={c} className={cn("px-3 py-2 text-fg", c === 0 && "font-semibold")}>
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="border-t border-line px-3 py-2 text-xs text-fg-muted" lang="bn">
+                মাপ {chart.unit === "cm" ? "সেন্টিমিটারে" : "ইঞ্চিতে"}। দুই সাইজের মাঝামাঝি হলে বড়টা নিন।
+              </p>
+            </div>
+          )}
         </fieldset>
       )}
-
-      {options.showColors && (
-        <fieldset>
-          <legend className="mb-2.5 text-sm font-semibold text-fg">
-            {colorLabel}
-            {color && <span className="ml-2 font-normal text-fg-muted">{color}</span>}
-          </legend>
-          <div className="flex flex-wrap gap-2.5">
-            {options.colors.map((c) => {
-              const ok = sellable(size, c);
-              const hex = product.variants.find((v) => v.color === c)?.colorHex;
-              const selected = color === c;
-              return hex ? (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => onColor(c)}
-                  disabled={!ok}
-                  aria-pressed={selected}
-                  aria-label={ok ? c : `${c}, স্টকে নেই`}
-                  title={c}
-                  className={cn(
-                    "flex h-11 w-11 items-center justify-center rounded-[var(--swatch-radius)] border-2 transition-shadow duration-base",
-                    selected ? "border-surface ring-2 ring-ink-900" : isPaleColor(hex) ? "border-line-strong" : "border-transparent",
-                    !ok && "cursor-not-allowed opacity-35",
-                  )}
-                  style={{ backgroundColor: hex }}
-                >
-                  {selected && <Check size={18} strokeWidth={3} className={isPaleColor(hex) ? "text-ink-900" : "text-white"} aria-hidden="true" />}
-                </button>
-              ) : (
-                <button key={c} type="button" onClick={() => onColor(c)} disabled={!ok} aria-pressed={selected} className={cn(chip, chipState(selected, ok))}>
-                  {c}
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
-      )}
+      {!byPhoto && colorPicker}
     </div>
   );
 }
