@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
+import { landingColorLabels } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, placeOrder, RUN, stockOf } from "../../test-fixtures";
@@ -105,8 +106,9 @@ describe("campaign landing pages", () => {
     const { variants: strangers } = await createStockedProduct({ stocks: [1] });
     await save({ extraProductIds: [extra.id], variantIds: [strangers[0]!.id] }, page.version).expect(400);
 
-    // Both products are "Black": the extra's colour is told apart by its product name, and a default may use that label.
-    const label = `Black (${extra.name})`;
+    // Both products are "Black": each is told apart by its product name, and a default may use that label.
+    const label = landingColorLabels([main, extra].map((p, i) => ({ name: p.name, variants: (i ? extraVariants : mainVariants).map((v) => ({ id: v.id, color: "Black" })) }))).get(extraVariants[1]!.id)!;
+    expect(label).not.toBe("Black");
     const saved = (
       await save({ extraProductIds: [extra.id], displayName: "All jackets", variantIds: [mainVariants[0]!.id, extraVariants[1]!.id], defaultColor: label }, page.version).expect(200)
     ).body.page;

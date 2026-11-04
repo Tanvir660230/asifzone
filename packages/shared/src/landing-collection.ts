@@ -5,39 +5,52 @@ import type { Product, ProductPricing, VariantPricing } from "./types";
    still belongs to its own product (its own SKU, stock, price and order lines); only the page shows them together. The
    API (which colours a default may name) and the storefront (what the shopper picks from) use the same labels. */
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const SEPARATORS = /^[\s–—\-:|·,]+|[\s–—\-:|·,]+$/g;
 
-/** "Haven Full-Sleeve Jacket – Onyx Black" → "Haven Full-Sleeve Jacket": a product's name without its colour suffix. */
-function nameWithoutColor(name: string, color: string): string {
-  if (!color) return name;
-  const short = name.replace(new RegExp(`\\s*[–—-]\\s*${escapeRegExp(color)}\\s*$`, "i"), "").trim();
-  return short || name;
+/** The words every name starts with ("Premium Pakistani Cap -"), so each product can be called by what sets it apart. */
+function commonPrefixWords(names: string[]): number {
+  const split = names.map((n) => n.trim().split(/\s+/));
+  let n = 0;
+  while (split.every((w) => w.length > n + 1 && w[n]!.toLowerCase() === split[0]![n]!.toLowerCase())) n++;
+  return n;
 }
 
 /**
- * The colour each variant shows under on a collection page, by variant id. A colour keeps its own name the first time it
- * appears; the same colour from a later product is told apart by that product's name ("Onyx Black (Haven Full-Sleeve
- * Jacket)"), so two products never fold into one choice. A product without a colour is chosen by its name.
+ * The colour each variant shows under on a collection page, by variant id. A colour only one product has keeps its own
+ * name ("Olive Green"). A colour several products share — the same colour in different designs — is called by what sets
+ * each product apart: its name without the words all the page's names start with ("Premium Pakistani Cap - New Black D"
+ * → "New Black D"), with the colour in front when that product comes in more than one colour. Two products never fold
+ * into one choice. A product without a colour is chosen by its name the same way.
  */
 export function landingColorLabels(products: Array<{ name: string; variants: Array<{ id: string; color: string | null }> }>): Map<string, string> {
+  const colorsOf = products.map((p) => [...new Set(p.variants.map((v) => (v.color ?? "").trim()))]);
+  const owners = new Map<string, number>();
+  for (const colors of colorsOf) for (const c of colors) owners.set(c, (owners.get(c) ?? 0) + 1);
+  const skip = products.length > 1 ? commonPrefixWords(products.map((p) => p.name)) : 0;
+  const distinct = products.map((p) => p.name.trim().split(/\s+/).slice(skip).join(" ").replace(SEPARATORS, "") || p.name);
+
   const labels = new Map<string, string>();
-  const taken = new Set<string>();
-  for (const product of products) {
+  const used = new Set<string>();
+  products.forEach((product, i) => {
     const own = new Map<string, string>();
     for (const v of product.variants) {
       const color = (v.color ?? "").trim();
       let label = own.get(color);
       if (label === undefined) {
-        label = !color ? product.name : taken.has(color) ? `${color} (${nameWithoutColor(product.name, color)})` : color;
+        label = !color ? distinct[i]! : (owners.get(color) ?? 0) < 2 ? color : colorsOf[i]!.length > 1 ? `${color} (${distinct[i]})` : distinct[i]!;
+        // Still taken (two products with the same name): the full name tells them apart.
+        if (used.has(label)) label = color ? `${color} (${product.name})` : product.name;
         own.set(color, label);
       }
       labels.set(v.id, label);
     }
-    for (const label of own.values()) taken.add(label);
-    for (const color of own.keys()) if (color) taken.add(color);
-  }
+    for (const label of own.values()) used.add(label);
+  });
   return labels;
 }
+
+/** "XS 21", "XS/21" and "xs - 21" are one size: the spelling the page met first is the one it shows. */
+const sizeKey = (size: string) => size.trim().toLowerCase().replace(/[\s/\-_]+/g, "");
 
 /** A variant's server-resolved price, or one built from its product's stored prices when the API sent no pricing. */
 function pricingOf(product: Product, variant: Product["variants"][number]): VariantPricing {
@@ -60,10 +73,14 @@ export function mergeLandingProducts(main: Product, extras: Product[], displayNa
 
   const all = [main, ...extras];
   const labels = landingColorLabels(all);
+  const sizeSpelling = new Map<string, string>();
+  for (const p of all) for (const v of p.variants) if (v.size && !sizeSpelling.has(sizeKey(v.size))) sizeSpelling.set(sizeKey(v.size), v.size);
   const variants = all.flatMap((p) =>
     p.variants.map((v) => ({
       ...v,
       color: labels.get(v.id) ?? v.color,
+      // Shown only — the order still goes by the variant's id, and its order line keeps its own size.
+      size: v.size ? (sizeSpelling.get(sizeKey(v.size)) ?? v.size) : v.size,
       images: v.imageId || v.images?.length ? v.images : p.images.map((img, i) => ({ imageId: img.id, sortOrder: i })),
     })),
   );

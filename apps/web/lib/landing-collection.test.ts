@@ -29,17 +29,37 @@ function product(id: string, name: string, color: string, price: number, opts: {
 }
 
 describe("landingColorLabels", () => {
-  it("keeps a colour's own name and tells repeated colours apart by product name", () => {
+  it("keeps a colour only one product has, and calls shared colours by what sets each product apart", () => {
     const labels = landingColorLabels([
       { name: "Haven Sleeveless Jacket – Onyx Black", variants: [{ id: "a", color: "Onyx Black" }] },
       { name: "Haven Full-Sleeve Jacket – Onyx Black", variants: [{ id: "b", color: "Onyx Black" }] },
       { name: "Haven Sleeveless Jacket – Olive Green", variants: [{ id: "c", color: "Olive Green" }] },
+    ]);
+    // "Haven" starts every name, so it is left off.
+    expect(labels.get("a")).toBe("Sleeveless Jacket – Onyx Black");
+    expect(labels.get("b")).toBe("Full-Sleeve Jacket – Onyx Black");
+    expect(labels.get("c")).toBe("Olive Green");
+  });
+
+  it("names caps of one colour in several designs by their design", () => {
+    const labels = landingColorLabels([
+      { name: "Premium Pakistani Cap - New White C", variants: [{ id: "wc", color: "White" }] },
+      { name: "Premium Pakistani Cap - New Black C", variants: [{ id: "bc", color: "Black" }] },
+      { name: "Premium Pakistani Cap - White B", variants: [{ id: "wb", color: "White" }] },
+      { name: "Premium Pakistani Cap - Black B", variants: [{ id: "bb", color: "Black" }] },
+    ]);
+    expect([...new Set(labels.values())]).toEqual(["New White C", "New Black C", "White B", "Black B"]);
+  });
+
+  it("keeps the colour in front for a product with several colours, and names a colourless product", () => {
+    const labels = landingColorLabels([
+      { name: "Tee Classic", variants: [{ id: "r", color: "Red" }, { id: "k", color: "Black" }] },
+      { name: "Tee Slim", variants: [{ id: "s", color: "Black" }] },
       { name: "Plain Tee", variants: [{ id: "d", color: "" }] },
     ]);
-    expect(labels.get("a")).toBe("Onyx Black");
-    expect(labels.get("b")).toBe("Onyx Black (Haven Full-Sleeve Jacket)");
-    expect(labels.get("c")).toBe("Olive Green");
-    // A product without a colour is chosen by its name.
+    expect(labels.get("r")).toBe("Red");
+    expect(labels.get("k")).toBe("Black (Tee Classic)");
+    expect(labels.get("s")).toBe("Tee Slim");
     expect(labels.get("d")).toBe("Plain Tee");
   });
 });
@@ -66,6 +86,15 @@ describe("mergeLandingProducts", () => {
     expect(merged.pricing!.variants["black-L"]!.selling).toBe(1590);
     expect(merged.pricing!.variants["navy-M"]!.selling).toBe(1390);
     expect(merged.pricing).toMatchObject({ from: 1390, to: 1590, listFrom: 1390, compareAt: 1990 });
+  });
+
+  it("shows one size spelling for sizes written differently, without changing which variant is ordered", () => {
+    const a = product("a", "Cap - White C", "White", 999);
+    const b = product("b", "Cap - White B", "White", 999);
+    a.variants = a.variants.map((v, i) => ({ ...v, size: ["XS/21", "S/21.5"][i]! }));
+    b.variants = b.variants.map((v, i) => ({ ...v, size: ["XS 21", "2XL 23.5"][i]! }));
+    const merged = mergeLandingProducts(a, [b]);
+    expect(merged.variants.map((v) => `${v.id}:${v.size}`)).toEqual(["a-M:XS/21", "a-L:S/21.5", "b-M:XS/21", "b-L:2XL 23.5"]);
   });
 
   it("keeps a variant's own photo links when it has them", () => {
