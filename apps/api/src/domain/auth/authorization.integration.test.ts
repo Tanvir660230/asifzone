@@ -567,7 +567,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +5: the unified scanner — resolve a code, the parcel card, receive, correct a receipt, link a code
     // +1: the rider took these — handover from the orders list without a scanner
     // +14: product grouping (preview, group, undo, a product's groupings) and campaign landing pages (list, create, image, read, preview, save, publish, unpublish, duplicate, delete) — docs/VARIANT_GROUPS_AND_LANDING_PAGES.md
-    expect(routes).toHaveLength(807);
+    // +5: product families (list, create, read, save, delete; catalog.manage) — docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §3
+    expect(routes).toHaveLength(812);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

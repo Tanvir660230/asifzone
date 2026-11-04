@@ -8,6 +8,7 @@ import type {
   HomepageSection,
   PaymentMethodOption,
   PublicLandingPage,
+  PublicProductFamily,
   Product,
   SearchSuggestions,
   SocialLink,
@@ -81,6 +82,17 @@ export function getCategoryStockOverview(slug: string) {
 
 export function getProductBySlug(slug: string) {
   return storefrontFetch<{ product: Product }>(`/api/products/slug/${encodeURIComponent(slug)}`, REVALIDATE_SECONDS, [`product:${slug}`]);
+}
+
+/** The product families a product page shows (docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §3). A family edit shows within a
+ * minute; a failed read shows no families rather than failing the product page. */
+export async function getProductFamilies(productId: string): Promise<PublicProductFamily[]> {
+  try {
+    const { families } = await storefrontFetch<{ families: PublicProductFamily[] }>(`/api/product-families/for/${encodeURIComponent(productId)}`, REVALIDATE_SECONDS);
+    return families;
+  } catch {
+    return [];
+  }
 }
 
 /** Where an unknown product slug now lives, if a redirect covers it (a published product was renamed).

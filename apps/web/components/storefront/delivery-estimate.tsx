@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import { estimateDelivery } from "@clothing-brand/shared";
 import { formatPrice, formatStoreDate } from "@/lib/format";
+import { BUY } from "@/lib/buy-copy";
 
 const DAY: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" };
 
@@ -33,20 +34,20 @@ export function DeliveryEstimate({ fees, freeDelivery = false, bare = false }: D
   }, []);
 
   const fee = (amount: string | undefined) => {
-    if (freeDelivery) return "Free delivery";
+    if (freeDelivery) return BUY.freeDelivery;
     if (amount === undefined) return null;
-    return Number(amount) === 0 ? "Free delivery" : `${formatPrice(amount)} delivery`;
+    return Number(amount) === 0 ? BUY.freeDelivery : BUY.deliveryFee(formatPrice(amount));
   };
   const rows = [
-    { label: "Inside Dhaka", dates: lines?.inside, fee: fee(fees?.insideDhaka) },
-    { label: "Elsewhere", dates: lines?.outside, fee: fee(fees?.elsewhere) },
+    { label: BUY.insideDhaka, dates: lines?.inside, fee: fee(fees?.insideDhaka) },
+    { label: BUY.outsideDhaka, dates: lines?.outside, fee: fee(fees?.elsewhere) },
   ];
 
   return (
     <div className={bare ? "flex items-start" : "flex items-start gap-3 rounded-xl bg-surface-muted px-4 py-3.5"} data-testid="delivery-estimate">
       {!bare && <CalendarClock size={18} className="mt-0.5 shrink-0 text-ink-900" aria-hidden="true" />}
       <div className="min-w-0 flex-1 text-sm leading-5">
-        <p className="font-medium text-ink-900">Order today, estimated delivery</p>
+        <p className="font-medium text-ink-900">{BUY.deliveryEstimate}</p>
         {/* One row per area: the area and its fee on the left, the dates on the right; narrow enough for a phone. */}
         <dl className="mt-2 space-y-2">
           {rows.map((row) => (

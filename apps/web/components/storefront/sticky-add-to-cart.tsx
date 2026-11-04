@@ -7,6 +7,7 @@ import { Money } from "@/components/ui/money";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { storeLayout } from "@/lib/theme-layout";
+import { BUY } from "@/lib/buy-copy";
 import type { PickerIntent } from "./variant-picker-dialog";
 
 interface StickyAddToCartProps {
@@ -69,14 +70,14 @@ export function StickyAddToCart({
     // action above the dock (whose bag button is right below, so the bar does not repeat it; the inline buttons keep
     // Add to Cart).
     return (
-      <div data-testid="sticky-add-to-cart" className="fixed inset-x-0 bottom-[var(--dock-offset)] z-40 animate-fade-in px-3 pb-2 lg:hidden">
+      <div data-testid="sticky-add-to-cart" className="fixed inset-x-0 bottom-[var(--dock-offset)] z-40 animate-fade-in px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:hidden">
         <div className="glass-panel mx-auto flex max-w-md items-center rounded-full p-1.5 shadow-floatLg">
           <Button variant="primary" size="lg" className="h-12 flex-1 rounded-full" disabled={outOfStock} onClick={handleBuyNow}>
             {outOfStock ? (
-              "Sold out"
+              BUY.soldOut
             ) : (
               <>
-                Order now <span aria-hidden="true">·</span> <Money value={price} />
+                {BUY.orderNow} <span aria-hidden="true">·</span> <Money value={price} />
               </>
             )}
           </Button>
@@ -87,18 +88,18 @@ export function StickyAddToCart({
 
   return (
     <div data-testid="sticky-add-to-cart" className="glass fixed inset-x-0 bottom-[var(--dock-offset)] z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 sm:px-6">
         {/* The price as a small stack (now / was), so it reads as a price beside the buttons rather than a stray label. */}
         <div className="flex shrink-0 flex-col leading-tight">
           <Money value={price} className="text-base font-semibold text-ink-900" />
           {was !== null && Number(was) > Number(price) && <Money value={was} className="text-xs text-fg-muted line-through" />}
         </div>
-        <div className="flex flex-1 gap-2">
-          <Button variant="outline" size="lg" className="flex-1" disabled={outOfStock} onClick={handleAddToCart}>
-            Add to Cart
+        <div className="flex min-w-0 flex-1 gap-2">
+          <Button variant="outline" size="lg" className="min-w-0 flex-1 px-2.5 min-[400px]:px-6" disabled={outOfStock} onClick={handleAddToCart}>
+            {BUY.addToCart}
           </Button>
-          <Button variant="primary" size="lg" className="flex-1" disabled={outOfStock} onClick={handleBuyNow}>
-            Buy Now
+          <Button variant="primary" size="lg" className="min-w-0 flex-1 px-2.5 min-[400px]:px-6" disabled={outOfStock} onClick={handleBuyNow}>
+            {BUY.buyNow}
           </Button>
         </div>
       </div>

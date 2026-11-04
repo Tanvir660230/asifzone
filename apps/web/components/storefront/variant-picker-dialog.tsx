@@ -12,6 +12,7 @@ import { Money } from "@/components/ui/money";
 import { resolveImageUrl } from "@/lib/image-url";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
+import { BUY } from "@/lib/buy-copy";
 import { StockBadge, VariantOptionPickers, missingSelectionText, stockLine, useVariantOptions } from "./variant-option-pickers";
 
 export type PickerIntent = "cart" | "buy";
@@ -98,7 +99,7 @@ export function VariantPickerDialog({
   const canConfirm = Boolean(variant) && maxQty > 0;
   const price = variantDisplayPrice(product, variant?.id);
   const stock = variant ? stockLine(product.trackInventory, variant.stock, lowStockThreshold) : null;
-  const actionLabel = intent === "buy" ? "Buy Now" : "Add to Cart";
+  const actionLabel = intent === "buy" ? BUY.buyNow : BUY.addToCart;
 
   function selectSize(next: string) {
     setSize(next);
@@ -142,7 +143,7 @@ export function VariantPickerDialog({
           )}
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="font-display text-base text-ink-900">
-              Choose your options
+              {BUY.chooseOptions}
             </h2>
             <p className="truncate text-sm text-ink-600">{productName}</p>
             <p className="mt-0.5 text-sm font-semibold text-ink-900" data-testid="variant-picker-price">
@@ -185,13 +186,13 @@ export function VariantPickerDialog({
 
           {canConfirm && (
             <div className="flex items-center gap-3">
-              <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
+              <p className="shrink-0 text-xs ui-caps text-ink-500">{BUY.quantity}</p>
               <div className="flex items-center rounded-[var(--control-radius)] border border-ink-200 shadow-sm">
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                   className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 hover:bg-ink-50 active:scale-90"
-                  aria-label="Decrease quantity"
+                  aria-label={BUY.decrease}
                 >
                   −
                 </button>
@@ -200,7 +201,7 @@ export function VariantPickerDialog({
                   type="button"
                   onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
                   className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 hover:bg-ink-50 active:scale-90"
-                  aria-label="Increase quantity"
+                  aria-label={BUY.increase}
                 >
                   +
                 </button>

@@ -13,6 +13,7 @@ import {
   getBudgetAlternatives,
   getBundleForProduct,
   getPremiumAlternatives,
+  getProductFamilies,
   getProductRail,
   getSiteSettings,
   getSiteSettingsSafe,
@@ -117,10 +118,11 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
   const sanitize = (html: string) => DOMPurify.sanitize(html);
   const product = sanitizeRichTextSpecs(rawProduct, sanitize);
   const live = mode === "live";
-  const [urgencySignals, { settings }, { links }] = await Promise.all([
+  const [urgencySignals, { settings }, { links }, families] = await Promise.all([
     live ? getUrgencySignals(product.id) : Promise.resolve(NO_SIGNALS),
     getSiteSettings(),
     getActiveSocialLinksSafe(),
+    getProductFamilies(product.id),
   ]);
   const orderHelp = {
     fees: { insideDhaka: settings.shippingFeeDhaka, elsewhere: settings.shippingFeeOutsideDhaka },
@@ -173,6 +175,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
           policyLines={policyHighlights(policy)}
           orderHelp={orderHelp}
           storeName={settings.storeName}
+          families={families}
         />
       </div>
 

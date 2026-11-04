@@ -211,6 +211,8 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   { id: "products.all", label: "All products", title: term("product"), kind: "page", parent: "products", domain: "stock", route: "/admin/products", capability: "catalog.view", order: 0 },
   { id: "products.group", label: "Group colours", title: "Group products into one", kind: "page", parent: "products", domain: "stock", route: "/admin/products/group", capability: "catalog.manage", order: 0.5, keywords: ["merge", "variant", "colour", "color", "parent product", "group"] },
+  { id: "products.families", label: "Product families", title: "Product families", kind: "page", parent: "products", domain: "stock", route: "/admin/products/families", capability: "catalog.manage", order: 0.6, keywords: ["family", "collection", "matching", "colours", "series", "link products"] },
+  { id: "products.family-detail", label: "Product family", kind: "detail", parent: "products", domain: "stock", route: "/admin/products/families/[id]", capability: "catalog.manage", order: 0.61, visibility: "hidden" },
   { id: "products.categories", label: term("category"), kind: "page", parent: "products", domain: "stock", route: "/admin/categories", capability: "catalog.view", order: 1 },
   {
     id: "products.variant-options",

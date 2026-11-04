@@ -593,6 +593,8 @@ model Product {
   groupingsAsParent  ProductGrouping[]
   /// Campaign landing pages that sell this product (§2).
   landingPages       LandingPage[]
+  /// Product families this product is shown in (matching products linked on the product page; nothing is merged).
+  familyMemberships  ProductFamilyMember[]
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
 
@@ -2388,6 +2390,32 @@ model LandingPage {
 
   @@index([productId])
   @@index([status])
+}
+
+/// A hand-made set of matching products (e.g. "Haven Collection": the sleeveless jackets, the full-sleeve jackets and a
+/// cap) shown together as photo tiles on each member's product page. Members stay separate products — their SKUs,
+/// stock, prices and order lines are untouched; deleting a family deletes only the links. A product may be in several.
+model ProductFamily {
+  id          String                @id @default(cuid())
+  name        String
+  members     ProductFamilyMember[]
+  createdById String?
+  updatedById String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+}
+
+model ProductFamilyMember {
+  familyId  String
+  family    ProductFamily @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sortOrder Int           @default(0)
+  /// The tile's name in this family; empty = the product's name without the words every member's name starts with.
+  label     String?
+
+  @@id([familyId, productId])
+  @@index([productId])
 }
 
 /// Ordered list of blocks rendered on the storefront homepage — lets the admin builder reorder,

@@ -11,12 +11,15 @@ import { formatPrice } from "@/lib/format";
 interface ProductPickerProps {
   selected: Array<{ id: string; name: string }>;
   onChange: (selected: Array<{ id: string; name: string }>) => void;
+  /** The caller shows the chosen products itself (with photos, order, labels): the picked product is handed over whole
+   * and the chips under the search box are left out. */
+  onPick?: (product: Product) => void;
 }
 
 /** Debounced product search-and-select, copying the pattern already used by the admin "New order"
  * page's item picker (search-as-you-type against GET /api/products) — chosen products render as
  * removable chips. */
-export function ProductPicker({ selected, onChange }: ProductPickerProps) {
+export function ProductPicker({ selected, onChange, onPick }: ProductPickerProps) {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 300);
   const [results, setResults] = useState<Product[]>([]);
@@ -39,7 +42,8 @@ export function ProductPicker({ selected, onChange }: ProductPickerProps) {
 
   function add(product: Product) {
     if (selectedIds.has(product.id)) return;
-    onChange([...selected, { id: product.id, name: product.name }]);
+    if (onPick) onPick(product);
+    else onChange([...selected, { id: product.id, name: product.name }]);
     setQuery("");
     setResults([]);
   }
@@ -67,7 +71,7 @@ export function ProductPicker({ selected, onChange }: ProductPickerProps) {
           ))}
         </div>
       )}
-      {selected.length > 0 ? (
+      {onPick ? null : selected.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {selected.map((p) => (
             <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 py-1 pl-3 pr-2 text-xs text-ink-700">
