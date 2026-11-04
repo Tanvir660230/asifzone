@@ -2,14 +2,28 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { NO_SIZE_VALUE } from "@clothing-brand/shared";
+import { formatPrice } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image-url";
+import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
+import { colorImage, useLandingSelection } from "./landing-selection";
 
 /**
  * The landing page's phone-width order bar: the product, its price and one button that takes the shopper to the form.
  * It appears once the shopper has scrolled past the price, hides while the form itself is on screen (it would only
- * cover it), and is not shown from 1024px, where the form sits beside the photos.
+ * cover it), and is not shown from 1024px, where the form sits beside the photos. It follows the shopper's choice: the
+ * chosen colour's photo, the chosen variant's price, and what is chosen so far.
  */
-export function LandingStickyCta({ price, was, imageUrl }: { price: string; was: string | null; imageUrl: string | null }) {
+export function LandingStickyCta({ price: pagePrice, was: pageWas, imageUrl: pageImage }: { price: string; was: string | null; imageUrl: string | null }) {
+  const { product, options, size, color } = useLandingSelection();
+  const variant = options.resolve(size, color);
+  const chosen = variant ? variantDisplayPrice(product, variant.id) : null;
+  const price = chosen ? formatPrice(chosen.price) : pagePrice;
+  const was = chosen ? (chosen.was !== null && Number(chosen.was) > Number(chosen.price) ? formatPrice(chosen.was) : null) : pageWas;
+  const photo = color ? colorImage(product, color) : null;
+  const imageUrl = photo ? resolveImageUrl(photo.url) : pageImage;
+  const picked = [color, size && size !== NO_SIZE_VALUE ? size : null].filter(Boolean).join(" · ");
   const [pastPrice, setPastPrice] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
 
@@ -49,8 +63,15 @@ export function LandingStickyCta({ price, was, imageUrl }: { price: string; was:
           </span>
         )}
         <div className="min-w-0 leading-tight">
-          <p className="text-lg font-bold tabular-nums text-fg">{price}</p>
-          {was && <p className="text-xs tabular-nums text-fg-muted line-through">{was}</p>}
+          <p className="text-lg font-bold tabular-nums text-fg">
+            {price}
+            {was && <span className="ml-1.5 text-xs font-normal text-fg-muted line-through">{was}</span>}
+          </p>
+          {picked && (
+            <p className="truncate text-xs text-fg-muted" lang="en">
+              {picked}
+            </p>
+          )}
         </div>
         <a
           href="#order"

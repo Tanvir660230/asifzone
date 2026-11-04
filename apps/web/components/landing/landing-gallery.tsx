@@ -41,7 +41,8 @@ export function LandingGallery({ images, productName }: { images: ProductImage[]
   }
 
   return (
-    <div className="lg:grid lg:grid-cols-[4.5rem_minmax(0,1fr)] lg:gap-4">
+    // The thumbnail column only exists with more than one photo; a single photo takes the full width.
+    <div className={cn(images.length > 1 && "lg:grid lg:grid-cols-[4.5rem_minmax(0,1fr)] lg:gap-4")}>
       {images.length > 1 && (
         <div className="hidden lg:flex lg:flex-col lg:gap-3" role="tablist" aria-label="ছবি">
           {images.map((img, i) => (
