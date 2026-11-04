@@ -96,3 +96,4 @@ export * from "./types";
 export * from "./permissions";
 export * from "./traffic-channel";
 export * from "./courier-costs";
+export * from "./notification-kinds";

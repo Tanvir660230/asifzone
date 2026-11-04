@@ -1,10 +1,14 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
+import type { NotificationView } from "@clothing-brand/shared";
 import * as notificationService from "./notification.service";
+
+/** `?view=activity` picks the routine list; anything else is the important one (the default). */
+const viewOf = (req: Request): NotificationView => (req.query.view === "activity" ? "activity" : "important");
 
 // Every route is requireSelf: read state and visibility are the calling admin's own (DR-15).
 export const list = asyncHandler(async (req: Request, res: Response) => {
-  res.json(await notificationService.listNotifications(req.admin!));
+  res.json(await notificationService.listNotifications(req.admin!, viewOf(req)));
 });
 
 export const markRead = asyncHandler(async (req: Request, res: Response) => {
@@ -13,6 +17,6 @@ export const markRead = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const markAllRead = asyncHandler(async (req: Request, res: Response) => {
-  await notificationService.markAllNotificationsRead(req.admin!);
+  await notificationService.markAllNotificationsRead(req.admin!, req.query.view === undefined ? undefined : viewOf(req));
   res.status(204).send();
 });
