@@ -178,7 +178,7 @@ test("product card quick add asks for the options when there is a real choice", 
   const card = page.locator("div.group").filter({ has: page.getByRole("link", { name: name }) }).first();
   await expect(card).toBeVisible();
   if (!isMobile) await card.hover();
-  // The classic card names it "Quick add to cart", the mihrab preset "Choose options" ("Add to bag" when there is no
+  // The classic card names it "Quick add to cart", the honey preset "Choose options" ("Add to bag" when there is no
   // choice) — same button, same behaviour.
   await card.getByRole("button", { name: /^(Quick add to cart|Choose options)$/ }).click();
   const dialog = picker(page);

@@ -21,7 +21,7 @@ interface BottomDockState {
   onCheckoutPage: boolean;
   /** Is StickyCartBar showing below 1024px too. Not where the theme has the bottom tab bar (`--dock-tab-bar` above 0):
    * its Bag tab already carries the count one tap away, and a second bar stacked over it only took screen from the
-   * products. Where there is no tab bar (the mihrab preset) the phone keeps the bar. */
+   * products. Where there is no tab bar (the honey preset) the phone keeps the bar. */
   showCartBarOnPhone: boolean;
 }
 

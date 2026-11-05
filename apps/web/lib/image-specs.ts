@@ -47,10 +47,10 @@ const SPECS = {
 
 export type ImageSpecKey = keyof typeof SPECS | "productPhoto";
 
-/** Product photos take the product card / gallery frame of the installed theme: square in classic, 4:5 in mihrab. */
+/** Product photos take the product card / gallery frame of the installed theme: square in classic, 5:6 in honey. */
 function productPhotoSpec(): ImageSpec {
-  return storeLayout() === "mihrab"
-    ? { ratio: [4, 5], width: 1600, height: 2000, minWidth: 1000, usedIn: "product cards and the product page", frame: "mihrab/product-card" }
+  return storeLayout() === "honey"
+    ? { ratio: [5, 6], width: 1600, height: 1920, minWidth: 1000, usedIn: "product cards and the product page", frame: "honey/product-card" }
     : { ratio: [1, 1], width: 1600, height: 1600, minWidth: 1000, usedIn: "product cards and the product page", frame: "product-card" };
 }
 
@@ -59,9 +59,9 @@ export function imageSpec(key: ImageSpecKey): ImageSpec {
 }
 
 /** The hero section's photograph frame: beside the copy (4:5) when the section or the theme composes it that way — and
- * always in the mihrab preset's arch — otherwise the wide band under the copy. */
+ * always in the honey preset's hero — otherwise the wide band under the copy. */
 export function heroPhotoSpecKey(layout: unknown): ImageSpecKey {
-  if (storeLayout() === "mihrab") return "heroSectionSplit";
+  if (storeLayout() === "honey") return "heroSectionSplit";
   if (layout === "split") return "heroSectionSplit";
   if (layout === "stacked") return "heroSectionWide";
   const themeLayout = tokens.themes[resolveThemeId(publicRuntimeConfig().theme)]?.cssVariables["--hero-layout-lg"];

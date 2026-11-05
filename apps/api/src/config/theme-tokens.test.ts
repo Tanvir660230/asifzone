@@ -59,34 +59,37 @@ describe("brand themes", () => {
     }
   });
 
-  it("gives Nasihamart its own identity: navy / ivory / sand, the logo's serif for headings, square controls, the mihrab preset", () => {
-    const n = tokens.themes.nasihamart!.cssVariables;
-    expect(n["--color-ink-900"]).toBe("11 31 51"); // navy #0B1F33
-    expect(n["--color-cream-100"]).toBe("248 246 241"); // ivory #F8F6F1
-    expect(n["--color-cream-200"]).toBe("238 231 219"); // sand #EEE7DB
-    // Headings in Newsreader (the wordmark's serif, not Asif Zone's Playfair), everything else in the grotesk.
-    expect(n["--font-display-family"]).toBe("var(--font-editorial)");
-    expect(n["--product-title-family"]).toContain("var(--font-display-family)");
-    expect(n["--font-body-family"]).toBe("var(--font-grotesk)");
+  it("gives Nasihamart its own identity: the logo's charcoal and orange, always dark for shoppers, the honey preset", () => {
+    const theme = tokens.themes.nasihamart!;
+    const n = theme.cssVariables;
+    expect(n["--color-ink-900"]).toBe("35 31 32"); // the logo's charcoal #231F20
+    expect(theme.darkModeVariables["--color-accent"]).toBe("245 135 31"); // the logo's orange #F5871F
+    expect(theme.darkModeVariables["--color-cream-100"]).toBe("20 17 14"); // the page #14110E
+    expect(n["--font-display-family"]).toBe("var(--font-outfit)");
+    expect(n["--font-body-family"]).toBe("var(--font-hind)");
     for (const name of ["--control-radius", "--chip-radius", "--swatch-radius", "--fab-radius"]) {
-      expect(n[name], name).not.toBe(tokens.cssVariables[name]);
+      expect(n[name], name).toBe("9999px");
     }
-    // The phone tab bar is the same height in every theme (owner, 2026-10-13: Nasihamart gets it too); sheets squarer.
-    expect(n["--dock-tab-bar"]).toBeUndefined();
-    expect(n["--sheet-radius"]).not.toBe(tokens.cssVariables["--sheet-radius"]);
-    expect(tokens.themes.nasihamart!.layout).toBe("mihrab");
+    expect(theme.layout).toBe("honey");
+    expect(theme.darkAlways).toBe(true);
     expect(tokens.themes.default!.layout).toBe("classic");
-    // The hero and brand story are light; the footer, flash sale and editorial banner stay navy.
-    expect(tokens.themes.nasihamart!.lightBandRoles).toEqual(["hero", "story"]);
+    // Only Nasihamart is always dark: Tahafi's mode follows the shopper, and the base design has none.
+    expect(tokens.themes.tahafi!.darkAlways).toBe(false);
+    expect(tokens.themes.default!.darkAlways).toBe(false);
   });
 
-  it("keeps Nasihamart's text legible (WCAG AA 4.5:1) on navy: the dark sections' text steps and the warm-stone accent", () => {
-    const navy = step("nasihamart", "ink-950", "dark");
-    for (const text of ["cream-50", "cream-200", "ink-300", "ink-400", "ink-500"]) {
-      expect(contrast(step("nasihamart", text, "dark"), navy), `navy section ${text}`).toBeGreaterThanOrEqual(4.5);
+  it("keeps Nasihamart's text legible (WCAG AA 4.5:1) on its dark page, its cards and its orange", () => {
+    const dark = tokens.themes.nasihamart!.darkModeVariables;
+    const on = (name: string) => channels(dark[`--color-${name}`]!);
+    const orange = on("accent");
+    for (const ground of ["cream-100", "cream-50", "cream-200"]) {
+      for (const text of ["ink-900", "ink-700", "ink-500", "ink-400", "sale-600"]) {
+        expect(contrast(on(text), on(ground)), `${text} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(hex("#F9A84A"), on(ground)), `links on ${ground}`).toBeGreaterThanOrEqual(4.5);
     }
-    expect(contrast(hex("#D6C1A2"), navy), "warm stone on navy").toBeGreaterThanOrEqual(4.5);
-    expect(contrast(hex("#123B73"), step("nasihamart", "cream-100")), "secondary blue on ivory").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(on("cream-50"), orange), "charcoal type on orange").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hex("#FFFFFF"), on("sale-500")), "white on the sale tag").toBeGreaterThanOrEqual(4.5);
   });
 
   it("admin data-meaning tokens (estimate, missing) are declared and legible (ERP UI plan tab 21 §1)", () => {
@@ -170,7 +173,6 @@ describe("Tahafi dark colour mode", () => {
     expect(Object.keys(dark).length).toBeGreaterThan(0);
     expect(dark["color-scheme"]).toBe("dark");
     expect(tokens.themes.default!.darkModeVariables).toEqual({});
-    expect(tokens.themes.nasihamart!.darkModeVariables).toEqual({});
   });
 
   it("keeps text and actions legible (WCAG AA 4.5:1) on the dark page, cards and bands", () => {

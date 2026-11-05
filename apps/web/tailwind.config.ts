@@ -115,6 +115,12 @@ const config: Config = {
       // opens, stay light. Emitted after the band rules, with higher specificity, so the bands follow the mode.
       for (const [id, theme] of Object.entries(tokens.themes)) {
         if (!Object.keys(theme.darkModeVariables).length) continue;
+        // A theme that is always dark: every page but the admin, with no device or cookie to consult.
+        if (theme.darkAlways) {
+          const always = `:root[data-brand="${id}"]:not(:has([data-surface="admin"]))`;
+          addBase({ [always]: theme.darkModeVariables, [`${always} .ui-band-inverse`]: theme.darkModeBandVariables });
+          continue;
+        }
         const chosen = `:root[data-brand="${id}"][data-mode="dark"]:has([data-storefront])`;
         const system = `:root[data-brand="${id}"]:not([data-mode="light"]):has([data-storefront])`;
         addBase({ [chosen]: theme.darkModeVariables, [`${chosen} .ui-band-inverse`]: theme.darkModeBandVariables });

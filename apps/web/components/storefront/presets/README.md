@@ -5,7 +5,7 @@ A brand theme has two halves. **Tokens** (packages/ui-tokens `themeDefinitions`)
 | Preset | Store | What it replaces |
 |---|---|---|
 | `classic` | Asif Zone (base design) | — |
-| `mihrab` | Nasihamart | header, footer, product card, loader, hero, trust row, carousels, category arches, flash sale |
+| `honey` | Nasihamart | header, footer, product card, loader, hero (product on a glowing disc), trust row, carousels, category tiles, promo band, flash sale; the phone dock is the tahafi one, which reads only tokens |
 | `tahafi` | Tahafi | header and dock (light glass), product card, loader, hero (Today card), trust card, category cards, lookbook, product-page info card, order-confirmation card |
 
 ## Adding a preset

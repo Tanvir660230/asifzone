@@ -11,9 +11,9 @@ import { resolveThemeId } from "@/lib/theme";
  * Works on the server and in the browser: both read the same runtime config (STORE_THEME), which never changes while the
  * app runs, so a component may branch on it during render without a hydration mismatch.
  */
-export type StoreLayout = "classic" | "mihrab" | "tahafi";
+export type StoreLayout = "classic" | "honey" | "tahafi";
 
-const LAYOUTS: readonly StoreLayout[] = ["classic", "mihrab", "tahafi"];
+const LAYOUTS: readonly StoreLayout[] = ["classic", "honey", "tahafi"];
 
 export function storeLayout(): StoreLayout {
   const layout = tokens.themes[resolveThemeId(publicRuntimeConfig().theme)]?.layout;

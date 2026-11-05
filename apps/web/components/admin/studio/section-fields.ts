@@ -275,7 +275,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
           { value: "image-left", label: "Left" },
           { value: "image-right", label: "Right" },
         ],
-        presets: ["mihrab"],
+        presets: ["honey"],
         showIf: has("imageUrl"),
       },
     ],

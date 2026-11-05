@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { cookies, headers } from "next/headers";
-import { Geist, Inter, Instrument_Sans, Instrument_Serif, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
+import { Geist, Hind_Siliguri, Inter, Instrument_Sans, Instrument_Serif, Newsreader, Outfit, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -50,6 +50,24 @@ const instrumentSans = Instrument_Sans({
   display: "swap",
   preload: false,
   weight: "variable",
+});
+
+// Nasihamart's pair: Outfit for titles, round like the logo, and Hind Siliguri for reading. Not preloaded, like the faces
+// above — only the store whose theme names them downloads them.
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-outfit",
+  display: "swap",
+  preload: false,
+  weight: "variable",
+});
+
+const hindSiliguri = Hind_Siliguri({
+  subsets: ["latin", "bengali"],
+  variable: "--font-hind",
+  display: "swap",
+  preload: false,
+  weight: ["400", "500", "600"],
 });
 
 // Tahafi's pair: a narrow display serif for titles and a clean grotesk for everything else. Not preloaded, like the faces
@@ -139,7 +157,7 @@ export function generateViewport(): Viewport {
     width: "device-width",
     initialScale: 1,
     viewportFit: "cover",
-    themeColor: themeColorHex(theme, storeLayout() === "mihrab" ? "canvas" : "surface"),
+    themeColor: themeColorHex(theme, storeLayout() === "honey" ? "canvas" : "surface"),
   };
 }
 
@@ -164,7 +182,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       lang="en"
       data-brand={themeId}
       data-mode={colorMode ?? undefined}
-      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${instrumentSerif.variable} ${geist.variable} ${notoSansBengali.variable} ${takaSign.variable}`}
+      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${instrumentSerif.variable} ${outfit.variable} ${hindSiliguri.variable} ${geist.variable} ${notoSansBengali.variable} ${takaSign.variable}`}
     >
       <body>
         {/* The store's own design choices (Storefront Studio → Site design): token re-values only, validated on publish.
