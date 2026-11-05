@@ -6,7 +6,7 @@ import { listRoutes, routePermission } from "../../test-routes";
 import { requirePermission } from "../../middlewares/require-admin";
 import { AppError } from "../../lib/app-error";
 
-// Phase 10 (docs/PHASE_10_AUDIT.md) architecture guards: one authorization model, enforced on the server, stated per route.
+// Phase 10 (docs/history/PHASE_10_AUDIT.md) architecture guards: one authorization model, enforced on the server, stated per route.
 
 const API = join(__dirname, "..", "..");
 const WEB = join(API, "..", "..", "web");
@@ -28,7 +28,7 @@ const apiSource = files(API, /\.ts$/).filter((f) => !/\.test\.ts$|test-(fixtures
 // OWNER and STAFF sidebars from it); production web code may not.
 const webSource = files(WEB, /\.(ts|tsx)$/).filter((f) => !/\.test\.tsx?$/.test(f));
 
-/** The audited public surface (docs/PHASE_10_AUDIT.md §B): storefront reads, auth bootstrap, checkout / quote, guest
+/** The audited public surface (docs/history/PHASE_10_AUDIT.md §B): storefront reads, auth bootstrap, checkout / quote, guest
  * tracking (order number + phone), beacons, provider callbacks. A new unauthenticated route is a deliberate decision. */
 const PUBLIC_ROUTES = [
   "GET /health",

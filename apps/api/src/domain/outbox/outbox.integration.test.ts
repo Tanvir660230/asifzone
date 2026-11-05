@@ -26,7 +26,7 @@ import {
   retryOutboxEvent,
 } from "./processor";
 
-// Phase 8 (docs/PHASE_8_AUDIT.md): durable intent committed with business truth; at-least-once delivery; idempotent
+// Phase 8 (docs/history/PHASE_8_AUDIT.md): durable intent committed with business truth; at-least-once delivery; idempotent
 // consumers; outbox failures never touch business truth.
 
 let admin: string;

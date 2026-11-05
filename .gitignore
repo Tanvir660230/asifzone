@@ -19,3 +19,6 @@ blob-report/
 /AsifZone Eps/
 # media:normalize backup files (database cell values) — kept on the server that ran the normalization, never committed.
 apps/api/backups/
+# Local tool output (browser screenshots, design-skill state).
+.playwright-mcp/
+.impeccable/

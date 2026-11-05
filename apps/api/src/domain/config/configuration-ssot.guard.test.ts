@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-// Phase 7 (docs/PHASE_7_AUDIT.md): one configuration concept → one owner → one resolution path. These focused scans keep a
+// Phase 7 (docs/history/PHASE_7_AUDIT.md): one configuration concept → one owner → one resolution path. These focused scans keep a
 // new hard-coded business currency/timezone, a second currency/timezone reader or a new settings-table owner out of CI.
 
 const ROOT = join(__dirname, "..", "..", "..", "..", "..");

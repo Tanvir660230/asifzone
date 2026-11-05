@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { contributions, groupKeyOf, resolveBusinessRange, snapshotCoverage, sumOf, type BusinessRange, type OrderFact } from "@clothing-brand/shared";
 import { T, deliveredCod, line, paidOnline } from "./metrics-facts.fixture";
 
-// Phase 6 (docs/PHASE_6_AUDIT.md, METRICS_REGISTRY §3): COGS and gross margin come from each line's recorded cost only;
+// Phase 6 (docs/history/PHASE_6_AUDIT.md, METRICS_REGISTRY §3): COGS and gross margin come from each line's recorded cost only;
 // category/brand/product from the line's own snapshots. Nothing reads today's catalog for history.
 
 const TZ = "Asia/Dhaka";

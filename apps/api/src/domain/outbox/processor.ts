@@ -1,5 +1,5 @@
 /**
- * Outbox delivery (Phase 8, docs/PHASE_8_AUDIT.md): durable intent + at-least-once delivery + idempotent consumers.
+ * Outbox delivery (Phase 8, docs/history/PHASE_8_AUDIT.md): durable intent + at-least-once delivery + idempotent consumers.
  *
  *   dispatchOutbox   claims due PENDING rows (FOR UPDATE SKIP LOCKED + a short lease, safe with any number of dispatchers),
  *                    enqueues each to BullMQ with a per-attempt job id (a duplicate enqueue of the same attempt is a no-op),

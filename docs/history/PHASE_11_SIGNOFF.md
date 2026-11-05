@@ -2,7 +2,7 @@
 
 **Branch:** `phase-11/production-readiness`, from the contract `0d01810` on `phase-11/contract`, itself from Phase 10 `0ac16a9`.
 **Contract:** [PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md).
-**Decisions:** [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md), Phase 11 section (BD-11.1 to 11.7, F-26, F-27, R-1, readings P11-1 to P11-5).
+**Decisions:** [BUSINESS_DECISIONS.md](../BUSINESS_DECISIONS.md), Phase 11 section (BD-11.1 to 11.7, F-26, F-27, R-1, readings P11-1 to P11-5).
 **Status:** ready for review, awaiting approval. Phase 11 is **not** declared approved here.
 
 **Invariant delivered (SSOT_REGISTRY I37):**
@@ -94,7 +94,7 @@ issued (login: new family, expiresAt = login + 7 d) → active → rotated (new 
 - **Script:** `docker/deploy.sh` runs backup → verify (size, `gzip -t`) → build → **migrate before switching** → switch
   → readiness gate (≤ 120 s) → nginx.
 - **Failure handling:** any failure stops with rollback instructions. The CI deploy job runs it.
-- **Runbook:** [DEPLOYMENT.md](DEPLOYMENT.md).
+- **Runbook:** [DEPLOYMENT.md](../DEPLOYMENT.md).
 
 ## 6. Rate limits (in-memory store kept)
 

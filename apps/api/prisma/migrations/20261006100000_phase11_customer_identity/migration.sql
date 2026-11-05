@@ -1,4 +1,4 @@
--- Phase 11 (docs/PHASE_11_IMPLEMENTATION_CONTRACT.md §4, §10): customer identity integrity + DB-tracked customer sessions +
+-- Phase 11 (docs/history/PHASE_11_IMPLEMENTATION_CONTRACT.md §4, §10): customer identity integrity + DB-tracked customer sessions +
 -- outbox correlation IDs. Additive only: new nullable columns, two new tables, one partial unique index. No backfill —
 -- no existing phone is marked verified (BD-11.2), so the partial index below can never fail on existing duplicates.
 

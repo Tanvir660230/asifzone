@@ -16,7 +16,7 @@ import {
   toBdInternationalDigits,
 } from "@clothing-brand/shared";
 
-// Phase 12 W1 (docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §10, §21 guard 4): every Bangladesh-specific rule and reference
+// Phase 12 W1 (docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §10, §21 guard 4): every Bangladesh-specific rule and reference
 // dataset has ONE owner, packages/shared/src/country/bd.ts. These scans keep a second copy of a rule (a phone regex, a
 // "880" conversion, the Dhaka split, the division list, a hard-coded country code/name) out of runtime code. Copy text
 // that merely *mentions* Bangladesh (footer prose, terms, search synonyms) is presentation and is not scanned.

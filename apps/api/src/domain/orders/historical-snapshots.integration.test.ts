@@ -14,7 +14,7 @@ import { loadOrderFacts } from "../metrics/facts.repository";
 import { computeMetrics } from "../metrics/metrics.service";
 import { metricsConsistency } from "../metrics/consistency.service";
 
-// Phase 6 (docs/PHASE_6_AUDIT.md): order lines freeze cost, product, category and brand when written; reports read the
+// Phase 6 (docs/history/PHASE_6_AUDIT.md): order lines freeze cost, product, category and brand when written; reports read the
 // snapshots, never today's catalog; recorded cost never reaches a customer response; the store currency is locked.
 
 let admin: string;

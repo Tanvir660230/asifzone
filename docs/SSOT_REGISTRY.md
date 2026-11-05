@@ -7,9 +7,9 @@
 
 **Phase 4 (2026-09-29):** the payment and refund truth has one owner, the Payment Ledger
 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)). See B5 and invariants I9, I23–I26. Audit and duplicate-truth matrix:
-[PHASE_4_AUDIT.md](PHASE_4_AUDIT.md).
+[PHASE_4_AUDIT.md](history/PHASE_4_AUDIT.md).
 
-**Phase 5 (2026-09-30):** every business number has one definition in the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md)). See B7 and invariants I11, I27, I28. Audit: [PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md).
+**Phase 5 (2026-09-30):** every business number has one definition in the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md)). See B7 and invariants I11, I27, I28. Audit: [PHASE_5_METRICS_AUDIT.md](history/PHASE_5_METRICS_AUDIT.md).
 
 **Legend.** *Status today*: ✅ single authority and single writer · ⚠️ authority clear but duplicated logic or a writer outside the owner · ❌ conflicting definitions or known drift path. *Class*: **M** master data · **S** transaction snapshot (immutable history — not duplication) · **P** projection/cache (derivable, must be reconciled) · **D** computed on demand (never stored).
 
@@ -308,7 +308,7 @@ rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
 | I37 | unverified contact data never grants access: a phone is a login identifier only with `phoneVerifiedAt` (one verified owner per phone, partial unique index); an unclaimed passwordless record is claimed only with proof of the matched identity (email link, phone OTP, Google `email_verified`, reset link), atomically and audited, never moving history; a guest order joins an existing customer only through a verified phone or email; customer sessions are DB-tracked rotating families (fixed 7-day maximum, reuse revokes the family, server-side logout / logout-everywhere / password change / reset); observability (correlation IDs, redacted logs, error capture, readiness, attention) never writes business state | Identity & operations (guard + integration/concurrency + mutation tests) |
 
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
-`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 6 implements and tests I30–I32 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)). Phase 7 implements and tests I33 ([PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)). Phase 8 implements and tests I34 ([PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)). Phase 9 implements and tests I35 ([PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)). Phase 10 implements and tests I36 ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). Phase 11 implements and tests I37 ([PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)). Phase 4 implements and tests
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 6 implements and tests I30–I32 ([PHASE_6_AUDIT.md](history/PHASE_6_AUDIT.md)). Phase 7 implements and tests I33 ([PHASE_7_SIGNOFF.md](history/PHASE_7_SIGNOFF.md)). Phase 8 implements and tests I34 ([PHASE_8_SIGNOFF.md](history/PHASE_8_SIGNOFF.md)). Phase 9 implements and tests I35 ([PHASE_9_SIGNOFF.md](history/PHASE_9_SIGNOFF.md)). Phase 10 implements and tests I36 ([PHASE_10_SIGNOFF.md](history/PHASE_10_SIGNOFF.md)). Phase 11 implements and tests I37 ([PHASE_11_SIGNOFF.md](history/PHASE_11_SIGNOFF.md)). Phase 4 implements and tests
 I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).
 
 ## Part D — ERP blueprint rows (27 Oct 2026, implemented on feat/erp-core)

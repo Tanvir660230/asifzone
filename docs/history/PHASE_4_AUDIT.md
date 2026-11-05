@@ -8,10 +8,10 @@ on branch `phase-4/payment-ledger`.
 and each consumer (admin, storefront, courier, analytics). I did not stop at file names. Line numbers refer to the
 audited revision.
 
-**Contracts I treated as fixed:** D1–D10 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)), the order state machine
-([ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md)), InventoryService as the only stock writer
-([INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md)), the Phase 2 pricing pipeline ([PRICING_PIPELINE.md](PRICING_PIPELINE.md))
-and the Phase 3 Storefront Read Model ([STOREFRONT_READ_MODEL.md](STOREFRONT_READ_MODEL.md)).
+**Contracts I treated as fixed:** D1–D10 ([BUSINESS_DECISIONS.md](../BUSINESS_DECISIONS.md)), the order state machine
+([ORDER_STATE_MACHINE.md](../ORDER_STATE_MACHINE.md)), InventoryService as the only stock writer
+([INVENTORY_INVARIANTS.md](../INVENTORY_INVARIANTS.md)), the Phase 2 pricing pipeline ([PRICING_PIPELINE.md](../PRICING_PIPELINE.md))
+and the Phase 3 Storefront Read Model ([STOREFRONT_READ_MODEL.md](../STOREFRONT_READ_MODEL.md)).
 
 ---
 
@@ -178,7 +178,7 @@ maintainability.
 It is the **smallest coherent boundary** that removes every S1 finding the audit found: one table pair (`Payment`,
 `Refund`), one projection (`Order.paymentStatus`), one engine, one service.
 
-### Deliberately deferred (see [PAYMENT_LEDGER.md §12](PAYMENT_LEDGER.md) for the full list)
+### Deliberately deferred (see [PAYMENT_LEDGER.md §12](../PAYMENT_LEDGER.md) for the full list)
 
 - **Phase 5 (metrics):** the metrics registry; revenue, net sales, refunds, returns, collected cash, outstanding COD
   and AOV on one definition each; raw `NOW()` windows and store-timezone days; trashed and exchange orders excluded

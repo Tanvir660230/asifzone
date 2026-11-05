@@ -1,4 +1,4 @@
--- Phase 12 (docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §17, D-1/D-2/D-8): store identity fields on the existing identity
+-- Phase 12 (docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §17, D-1/D-2/D-8): store identity fields on the existing identity
 -- owner (StoreSetting — no new StoreProfile table) and a neutral SKU-prefix default for NEW databases.
 -- ADDITIVE ONLY: eight nullable columns, no backfill, no row written. The default change affects only rows created
 -- later; the existing CatalogSetting row keeps its stored prefix, and no existing SKU is touched.

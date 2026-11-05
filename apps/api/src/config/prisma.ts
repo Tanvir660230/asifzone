@@ -3,7 +3,7 @@ import { env } from "./env";
 
 export const prisma = new PrismaClient({
   log: env.nodeEnv === "development" ? ["warn", "error"] : ["error"],
-  // Recorded cost is internal (docs/PHASE_6_AUDIT.md G6): customer paths read order lines with `include: { items: true }`,
+  // Recorded cost is internal (docs/history/PHASE_6_AUDIT.md G6): customer paths read order lines with `include: { items: true }`,
   // so the column is omitted from every read by default. Only the metrics fact loader selects it explicitly.
   // Phase 4B adds the cost's source and the stock exit it was costed at — internal too.
   omit: { orderItem: { unitCostSnapshot: true, unitCostSource: true, costMovementId: true } },

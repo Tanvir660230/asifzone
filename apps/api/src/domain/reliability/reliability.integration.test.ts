@@ -18,7 +18,7 @@ import { recordReturnDecision } from "../../modules/inventory/inventory.service"
 import { cleanupOutbox } from "../outbox/processor";
 import { checkout } from "../../test-fixtures";
 
-// Phase 9 (docs/PHASE_9_AUDIT.md): critical commerce operations stay correct under retries, concurrency, provider
+// Phase 9 (docs/history/PHASE_9_AUDIT.md): critical commerce operations stay correct under retries, concurrency, provider
 // failures and recovery; automated tests can't reach a live provider.
 
 let admin: string;

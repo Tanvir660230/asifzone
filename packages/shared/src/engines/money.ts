@@ -11,7 +11,7 @@ export interface Money {
 
 /** Minor-unit digits per currency — the engine's table of currencies it can represent exactly. Unknown codes default to 2
  * (the ISO 4217 norm) for internal pseudo-currencies (e.g. allocation weights); a STORE currency must be one of these
- * (`isSupportedCurrency`, enforced by the settings writer — docs/PHASE_7_AUDIT.md D-8). */
+ * (`isSupportedCurrency`, enforced by the settings writer — docs/history/PHASE_7_AUDIT.md D-8). */
 const MINOR_DIGITS: Record<string, number> = { BDT: 2, USD: 2, EUR: 2, GBP: 2, INR: 2, JPY: 0 };
 
 /** ISO 4217 codes a store may use as its currency. */

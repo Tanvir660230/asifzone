@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { OUTBOX_CONSUMERS } from "./consumers";
 
-// Phase 8 (docs/PHASE_8_AUDIT.md) architecture guards: intents are written only by the outbox writer, inside a
+// Phase 8 (docs/history/PHASE_8_AUDIT.md) architecture guards: intents are written only by the outbox writer, inside a
 // transaction; business-transaction modules never call a provider directly; consumers never write business truth; event
 // names are versioned; every consumer states its idempotency boundary.
 

@@ -1,7 +1,7 @@
 /**
  * Sales, product, customer and financial analytics — adapters over the metrics SSOT (docs/METRICS_REGISTRY.md).
  * Phase 5 replaced ~40 hand-written SQL aggregations (each with its own "sale" predicate, money field and time window;
- * docs/PHASE_5_METRICS_AUDIT.md) with cuts of the ONE engine: every figure below is a registry metric's contributions,
+ * docs/history/PHASE_5_METRICS_AUDIT.md) with cuts of the ONE engine: every figure below is a registry metric's contributions,
  * grouped for the chart that needs it. Response shapes are unchanged for the dashboards; meanings follow the registry
  * (e.g. "revenue" is now `realised_net_sales`, the PD-5.1 headline).
  */

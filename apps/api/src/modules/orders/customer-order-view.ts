@@ -1,5 +1,5 @@
 /**
- * The one customer-facing view of an order (Phase 10, docs/PHASE_10_AUDIT.md G-3). Everything a customer or guest receives
+ * The one customer-facing view of an order (Phase 10, docs/history/PHASE_10_AUDIT.md G-3). Everything a customer or guest receives
  * about an order — checkout response, guest tracking, the account's order list and detail — goes through here, so what
  * they may see is decided in one place, by whitelist:
  *

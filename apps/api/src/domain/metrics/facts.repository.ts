@@ -2,7 +2,7 @@
  * The fact loader (docs/METRICS_REGISTRY.md) — the ONLY code that reads sales facts for metrics. It turns Order/OrderItem
  * snapshots, OrderStatusHistory, Payment/Refund (ledger), StockMovement RETURN rows and approved exchanges into the pure
  * engine's OrderFact objects. Cost and category/brand come only from the order line's own Phase 6 snapshots
- * (docs/PHASE_6_AUDIT.md) — never today's catalog; this is the one reader that selects the omitted recorded cost. It uses Prisma's typed API only (correct UTC semantics, no raw time comparisons) and never
+ * (docs/history/PHASE_6_AUDIT.md) — never today's catalog; this is the one reader that selects the omitted recorded cost. It uses Prisma's typed API only (correct UTC semantics, no raw time comparisons) and never
  * writes anything.
  *
  * For a range, it loads exactly the orders that have an event inside it — placement, first delivery, a cancellation (the

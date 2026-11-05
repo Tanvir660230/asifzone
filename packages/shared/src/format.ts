@@ -1,5 +1,5 @@
 /**
- * Display formatting driven by the store's configuration (docs/PHASE_7_AUDIT.md) — the ONE place that turns an amount or an
+ * Display formatting driven by the store's configuration (docs/history/PHASE_7_AUDIT.md) — the ONE place that turns an amount or an
  * instant into text. Callers pass the store currency / timezone (API: domain/config/commerce-settings; web: StoreConfig).
  * Nothing here knows a particular currency or timezone.
  */

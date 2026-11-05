@@ -159,7 +159,7 @@ export const env = {
     get baseUrl() { return integrationSetting("STEADFAST_BASE_URL") || "https://portal.packzy.com/api/v1"; },
     get webhookToken() { return integrationSetting("STEADFAST_WEBHOOK_TOKEN"); },
   },
-  // Phase 12 W5 (docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §15): which concrete provider backs each capability. Raw strings,
+  // Phase 12 W5 (docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §15): which concrete provider backs each capability. Raw strings,
   // parsed and validated only by providers/selection.ts; unset or blank = today's behaviour (see DEFAULT_SELECTION there).
   providers: {
     paymentGateways: process.env.PAYMENT_GATEWAYS ?? "",

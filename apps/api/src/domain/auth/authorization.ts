@@ -1,5 +1,5 @@
 /**
- * The canonical admin authorization service (Phase 10, docs/PHASE_10_AUDIT.md). Every admin request resolves its identity
+ * The canonical admin authorization service (Phase 10, docs/history/PHASE_10_AUDIT.md). Every admin request resolves its identity
  * here — from the database, not from the token's claims — and every permission decision goes through `can()`.
  *
  *  - Authentication: the access token only says *which* admin; `resolveAdminIdentity` loads that admin and refuses one that

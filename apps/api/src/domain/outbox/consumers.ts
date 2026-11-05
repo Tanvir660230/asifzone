@@ -1,5 +1,5 @@
 /**
- * Outbox consumers (Phase 8, docs/PHASE_8_AUDIT.md) — each performs ONE external side effect for an intent recorded in the
+ * Outbox consumers (Phase 8, docs/history/PHASE_8_AUDIT.md) — each performs ONE external side effect for an intent recorded in the
  * business transaction. Delivery is at least once, so every consumer states how a repeat stays safe. Consumers read the
  * order row at send time (contact details, immutable totals — I26) and NEVER write business truth.
  */
