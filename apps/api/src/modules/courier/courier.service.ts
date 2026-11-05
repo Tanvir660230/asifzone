@@ -672,7 +672,7 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     if (!event.consignmentId) return outcome;
     const order = await prisma.order.findFirst({
       where: { courierConsignmentId: event.consignmentId },
-      select: { id: true, orderNumber: true, status: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true },
+      select: { id: true, orderNumber: true, status: true, total: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true },
     });
     outcome = "NO_ORDER";
     if (!order) return outcome;
@@ -684,7 +684,9 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     await applyCourierStatus(order, status, "WEBHOOK");
     // What the rider collected on a partial delivery (PAYMENT_LEDGER §5b) — the body's cod_amount is accepted only when
     // Steadfast's own status API also says partial_delivered, so a mistyped or replayed body can't put money on an order.
-    if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null) {
+    // Steadfast often leaves cod_amount at the booked COD on these pushes (2026-11-06: 999 pushed, 100 collected), so that
+    // figure is never taken as money; the payout line is what says what was collected.
+    if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null && event.codAmount < (await bookedCod(order))) {
       await recordCourierCollected(order, event.codAmount);
     }
     outcome = "APPLIED";
@@ -711,6 +713,12 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
       })
       .catch((err) => captureError(err, { msg: "[steadfast-webhook] could not log the event:" }));
   }
+}
+
+/** The COD Steadfast was booked for: the order total less what was prepaid other than through the courier. */
+async function bookedCod(order: { id: string; total: Prisma.Decimal }) {
+  const prepaid = await prisma.payment.aggregate({ where: { orderId: order.id, status: "SUCCEEDED", purpose: "ORDER", provider: { not: "COD" } }, _sum: { amount: true } });
+  return Math.max(0, Number(order.total) - Number(prepaid._sum.amount ?? 0));
 }
 
 /** Keeps Steadfast's reported collection on the order (with a timeline line when it changes), then settles it as the

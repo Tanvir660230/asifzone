@@ -128,6 +128,23 @@ describe("refused parcel — the rider collected the delivery charge", () => {
     expect(await collectedOf(order.id)).toBeNull();
   });
 
+  it("a partial push whose cod_amount is still the booked COD says nothing about what was collected", async () => {
+    const { order, consignmentId } = await shipped();
+    await handleSteadfastWebhook(partial(consignmentId, 1000));
+    expect(await collectedOf(order.id)).toBeNull();
+    await updateOrderStatus(order.id, { status: "RETURNED" }, admin);
+    expect((await getOrderPaymentSummary(order.id)).returnCharge).toBe(0);
+  });
+
+  it("on a partly prepaid order the booked COD is the total less the prepayment, and that figure is ignored too", async () => {
+    const { order, consignmentId } = await shipped();
+    await prisma.payment.create({ data: { orderId: order.id, provider: "MANUAL", purpose: "ORDER", status: "SUCCEEDED", amount: 100, settledAt: new Date() } });
+    await handleSteadfastWebhook(partial(consignmentId, 900));
+    expect(await collectedOf(order.id)).toBeNull();
+    await handleSteadfastWebhook(partial(consignmentId, 100));
+    expect(await collectedOf(order.id)).toBe(100);
+  });
+
   it("unknown consignments and bodies without one are logged and ignored", async () => {
     const unknown = String(++seq);
     consignments.push(unknown);
