@@ -1,5 +1,5 @@
 /**
- * Historical order-line facts (Phase 6, docs/PHASE_6_AUDIT.md) — the ONE writer of OrderItem's cost and attribution
+ * Historical order-line facts (Phase 6, docs/history/PHASE_6_AUDIT.md) — the ONE writer of OrderItem's cost and attribution
  * snapshots. Called inside the transaction that writes the order line (order creation, exchange-replacement creation),
  * so the values are exactly what the catalog said when the line became financially committed. Nothing updates them
  * afterwards, and no report reconstructs them from today's catalog.

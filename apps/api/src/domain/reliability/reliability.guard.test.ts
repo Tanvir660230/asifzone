@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Phase 9 (docs/PHASE_9_AUDIT.md) architecture guards — focused on the boundaries this phase established.
+// Phase 9 (docs/history/PHASE_9_AUDIT.md) architecture guards — focused on the boundaries this phase established.
 
 const API = join(__dirname, "..", "..");
 const WEB = join(API, "..", "..", "web");

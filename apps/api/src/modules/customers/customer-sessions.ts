@@ -1,5 +1,5 @@
 /**
- * Customer refresh sessions (Phase 11, BD-11.3; docs/PHASE_11_IMPLEMENTATION_CONTRACT.md §5.2).
+ * Customer refresh sessions (Phase 11, BD-11.3; docs/history/PHASE_11_IMPLEMENTATION_CONTRACT.md §5.2).
  *
  *   issued → active → rotated → … (same family) ;  revoked (logout / logout-all / password change|reset / reuse) ;  expired
  *

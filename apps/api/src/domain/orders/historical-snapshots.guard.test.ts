@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-// Phase 6 (docs/PHASE_6_AUDIT.md): the order-line snapshots have ONE writer (domain/orders/line-snapshots.ts, called from
+// Phase 6 (docs/history/PHASE_6_AUDIT.md): the order-line snapshots have ONE writer (domain/orders/line-snapshots.ts, called from
 // the two transactions that write order lines), and no historical-metrics code reads today's catalog cost or attribution.
 
 const SRC = join(__dirname, "..", "..");

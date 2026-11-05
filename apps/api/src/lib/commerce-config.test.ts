@@ -11,7 +11,7 @@ import {
 } from "@clothing-brand/shared";
 import { currencyChangeBlocked } from "../modules/settings/settings.service";
 
-// Phase 7 (docs/PHASE_7_AUDIT.md): display derives from the configured currency/timezone; the store currency is validated
+// Phase 7 (docs/history/PHASE_7_AUDIT.md): display derives from the configured currency/timezone; the store currency is validated
 // and locked once orders exist.
 
 describe("configuration-derived formatting", () => {

@@ -1,7 +1,7 @@
 # Asif Zone: Frontend Transformation Report
 
 Branch `feat/storefront-transformation` (off `origin/main` 050ca3e) · worktree `C:/dev/asifzone-storefront` · **not committed or pushed yet**
-Plan: `docs/ASIFZONE_FRONTEND_TRANSFORMATION_PLAN.md` (task statuses in §6 below).
+Plan: `docs/history/ASIFZONE_FRONTEND_TRANSFORMATION_PLAN.md` (task statuses in §6 below).
 
 ## 1. Summary
 

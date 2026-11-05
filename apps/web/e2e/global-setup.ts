@@ -1,4 +1,4 @@
-/** Phase 9 (docs/PHASE_9_AUDIT.md D-8): e2e runs must never reach a live provider (SMS, email, courier, gateways, Meta). The
+/** Phase 9 (docs/history/PHASE_9_AUDIT.md D-8): e2e runs must never reach a live provider (SMS, email, courier, gateways, Meta). The
  * API under test has to be started with LIVE_PROVIDERS=off — it then blocks every outbound request to a non-local host
  * and reports `liveProviders: false` on /health. Anything else (live providers on, /health unreachable, an older API that
  * doesn't report the mode) stops the run before a single test executes. */

@@ -1,5 +1,5 @@
 /**
- * External-provider isolation (Phase 9, docs/PHASE_9_AUDIT.md D-8). Automated tests and e2e runs must never reach a live
+ * External-provider isolation (Phase 9, docs/history/PHASE_9_AUDIT.md D-8). Automated tests and e2e runs must never reach a live
  * provider (SMS, email, courier, payment gateways, Meta, AI), whatever credentials happen to be in the environment.
  *
  * `liveProvidersEnabled()` is false under vitest (NODE_ENV=test) and whenever the API is started with LIVE_PROVIDERS=off

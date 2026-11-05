@@ -1,7 +1,7 @@
 # Metrics Registry — Phase 5 (Metrics & Analytics SSOT)
 
 **Status:** Phase 5 contract (2026-09-30), branch `phase-5/metrics-ssot`. Evidence:
-[PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md).
+[PHASE_5_METRICS_AUDIT.md](history/PHASE_5_METRICS_AUDIT.md).
 
 The rules here come from approved sources: D1 (revenue recognition), D6 (exchanges) and D8
 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)), the TARGET_ARCHITECTURE §11 metric table, the order state machine,
@@ -388,7 +388,7 @@ The API code `METRIC_PENDING` remains for any future pending metric.
 - **No projection tables.** Metrics are computed on request from facts. The fact loader selects only orders with an
   event in the window, using indexed columns. The store's volume doesn't justify materialisation. A daily fact table
   (TARGET M13) would add a rebuild, and nothing today needs one. Phase 6 measured the engine at ~0.1 s / 10k orders and
-  ~0.6 s / 100k; revisit above ~50k orders or a lifetime p95 > 1 s ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md) C).
+  ~0.6 s / 100k; revisit above ~50k orders or a lifetime p95 > 1 s ([PHASE_6_AUDIT.md](history/PHASE_6_AUDIT.md) C).
 - **Cache:** Redis, 60 s, keyed by metric set + resolved UTC range + timezone + grouping. Stale semantics: at most 60 s
   old; money commands don't invalidate it, since a dashboard number may lag a refund by up to a minute.
 - **Reconciliation (M-3), `GET /api/v1/metrics/consistency`:**

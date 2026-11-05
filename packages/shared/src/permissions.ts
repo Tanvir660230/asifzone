@@ -1,5 +1,5 @@
 /**
- * The one admin permission vocabulary and role → permission map (Phase 10, docs/PHASE_10_AUDIT.md). The API enforces it
+ * The one admin permission vocabulary and role → permission map (Phase 10, docs/history/PHASE_10_AUDIT.md). The API enforces it
  * (`requirePermission`); the web never re-derives it — it asks `can()` over the list `/api/auth/me` returns.
  *
  * The STAFF grant is the pre-Phase-10 OWNER/STAFF access (verified route by route) with the owner's decisions applied

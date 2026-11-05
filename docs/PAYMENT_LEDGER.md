@@ -2,7 +2,7 @@
 
 **Status:** Phase 4 — **implemented** (2026-09-29), branch `phase-4/payment-ledger`, awaiting owner sign-off. Test
 evidence: §15. Evidence and scope selection:
-[PHASE_4_AUDIT.md](PHASE_4_AUDIT.md). It builds on D1, D6 and D8 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)), the
+[PHASE_4_AUDIT.md](history/PHASE_4_AUDIT.md). It builds on D1, D6 and D8 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)), the
 order state machine ([ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md)) and the Phase 2 totals formula
 ([PRICING_INVARIANTS.md](PRICING_INVARIANTS.md) §6). It changes none of them.
 

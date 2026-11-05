@@ -1,4 +1,4 @@
-// The storefront journey after the UX fixes (docs/STOREFRONT_UX_FIX_PLAN.md): contact menu opens on every page, header
+// The storefront journey after the UX fixes (docs/history/STOREFRONT_UX_FIX_PLAN.md): contact menu opens on every page, header
 // stays in view, homepage sections show two rows, add one product then two more without losing the page, the bag, and a
 // focused checkout. Prints a JSON report and saves screenshots.
 //   node scripts/storefront-journey.mjs <baseUrl> <outDir> <width>

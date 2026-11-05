@@ -1,7 +1,7 @@
 # Phase 12 Sign-off: Store Identity & Provider Configuration
 
 **Branch:** `phase-12/store-identity-provider-config` (from production `2ad99c7`; contract `818f1f6`).
-**Contract:** [PHASE_12_IMPLEMENTATION_CONTRACT.md](PHASE_12_IMPLEMENTATION_CONTRACT.md). **Runbook:** [STORE_DEPLOYMENT.md](STORE_DEPLOYMENT.md).
+**Contract:** [PHASE_12_IMPLEMENTATION_CONTRACT.md](PHASE_12_IMPLEMENTATION_CONTRACT.md). **Runbook:** [STORE_DEPLOYMENT.md](../STORE_DEPLOYMENT.md).
 **Status:** implemented and verified locally; **not deployed, not merged, not pushed** — awaiting review.
 
 ## 1. What changed

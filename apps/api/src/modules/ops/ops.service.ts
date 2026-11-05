@@ -1,5 +1,5 @@
 /**
- * Phase 9 operator reliability report (docs/PHASE_9_AUDIT.md §J): one read-only view of what is stuck, failed or
+ * Phase 9 operator reliability report (docs/history/PHASE_9_AUDIT.md §J): one read-only view of what is stuck, failed or
  * inconsistent right now, which aggregate it concerns, and whether retrying is safe. Every section reuses the subsystem's
  * own detector — nothing here repairs anything (detect → report; repairs stay explicit, per subsystem).
  */

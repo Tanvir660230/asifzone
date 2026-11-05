@@ -4,7 +4,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import { outboxStatus, retryOutboxEvent } from "../../domain/outbox/processor";
 
-/** Phase 8 operator visibility (docs/PHASE_8_AUDIT.md): how many side-effect intents are undelivered or failed, the oldest,
+/** Phase 8 operator visibility (docs/history/PHASE_8_AUDIT.md): how many side-effect intents are undelivered or failed, the oldest,
  * attempts and last error, and whether the dispatcher is running — plus a retry for a FAILED event (OWNER only). */
 export const outboxRouter = Router();
 
