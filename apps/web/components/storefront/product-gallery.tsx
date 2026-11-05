@@ -25,8 +25,8 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const active = images[activeIndex];
   const hasMultiple = images.length > 1;
-  // From 1024px the mihrab preset keeps the thumbnails in a row under a 4:5 photograph; classic moves them beside it.
-  const thumbsBelow = storeLayout() === "mihrab";
+  // From 1024px the honey preset keeps the thumbnails in a row under a 4:5 photograph; classic moves them beside it.
+  const thumbsBelow = storeLayout() === "honey";
   // The only overlay in the storefront that previously had no role="dialog", no Escape handling,
   // and no focus management at all — every other modal/drawer in the app has this.
   const lightboxRef = useFocusTrap<HTMLDivElement>({

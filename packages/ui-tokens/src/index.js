@@ -315,6 +315,10 @@ const componentTokens = {
   // which one shows. A theme's dark colour mode swaps them.
   "--mode-light-art": "contents",
   "--mode-dark-art": "none",
+  // The glowing disc behind a product in the honey preset; other themes never render it.
+  "--disc-fill": "none",
+  "--disc-glow": "none",
+  "--disc-photo-shadow": "none",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -412,136 +416,156 @@ Object.assign(cssVariables, componentTokens);
  */
 const themeDefinitions = {
   default: { label: "Default (neutral editorial)" },
-  // Nasihamart — "Mihrab" (docs/brand/nasihamart/THEME_BLUEPRINT.md). Night navy (#0B1F33) for type and actions, ivory
-  // (#F8F6F1) page, sand (#EEE7DB) behind photography and in the footer, lapis (#123B73) for hover and interaction
-  // (--accent-hover, --nav-hover), warm stone (#D6C1A2) for arch outlines and accents on navy only (1.6:1 on ivory — never
-  // text there), mulberry (#8A2E3B) for promotions. Headings in Newsreader, the serif of the logo's wordmark, so the logo and
-  // the page speak with one voice; Instrument Sans for everything else. Its own layout preset (`mihrab`): the pointed arch of the logo frames
-  // the photography.
+  // Nasihamart — "Honey" (docs/brand/nasihamart/THEME_BLUEPRINT.md). The new logo's colours: orange #F5871F and charcoal
+  // #231F20. Every shopper page is dark (`dark.always`): a warm near-black page, charcoal cards, cream text, and one orange
+  // for actions, with a glowing orange disc behind the product. Outfit for titles (round like the logo), Hind Siliguri for
+  // reading (Latin and Bangla in one family). Large soft corners and pill controls. Its own layout preset (`honey`). The
+  // palette below is the light half: what the admin's store previews and anything outside the shop read.
   nasihamart: {
-    label: "Nasihamart (Mihrab: navy · ivory · sand)",
-    layout: "mihrab",
+    label: "Nasihamart (Honey: charcoal · orange)",
+    layout: "honey",
     palette: {
       ink: {
-        50: "#f4f1eb", // subtle fills
-        100: "#ece7de", // subtle hairlines
-        200: "#e5e0d7", // warm border (lines, card outlines, inputs)
-        300: "#d3ccbf", // strong line
-        400: "#646976", // tertiary text (struck-through prices, hints) — 5.1:1 on ivory
-        500: "#565c69", // secondary text — 6.2:1 on ivory
-        600: "#3e4452",
-        700: "#1a1f2e", // ink: body text — 15.2:1
-        800: "#13223a", // deep navy-ink (secondary blue #123B73 is a token: --accent-hover, --nav-hover)
-        900: "#0b1f33", // navy: headings, primary actions, focus — 15.5:1
-        950: "#0b1f33", // navy: the dark sections and footer
+        50: "#f6f2ec", // subtle fills
+        100: "#ece6dd", // subtle hairlines
+        200: "#e2dbd0", // borders
+        300: "#cfc6b8", // strong line
+        400: "#6b635b", // tertiary text
+        500: "#5a524c", // secondary text
+        600: "#443d38",
+        700: "#2c2724", // body text
+        800: "#272220",
+        900: "#231f20", // the logo's charcoal: headings, primary actions
+        950: "#231f20",
       },
-      // 200 = sand: arch backdrops, image wells, the footer.
-      cream: { 50: "#ffffff", 100: "#f8f6f1", 200: "#eee7db", 300: "#e2d8c8" },
-      // Mulberry, the one promotional accent: 8.3:1 under white badge text, 7.7:1 as text on ivory.
-      sale: { 50: "#f6e9eb", 500: "#8a2e3b", 600: "#6f2330" },
+      cream: { 50: "#ffffff", 100: "#faf7f2", 200: "#f3ece2", 300: "#e8dfd2" },
+      sale: { 50: "#fbe9e0", 500: "#b23c0c", 600: "#8f2f09" },
     },
-    radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "10px", "2xl": "12px", "3xl": "16px" },
+    radii: { sm: "8px", DEFAULT: "12px", md: "14px", lg: "18px", xl: "22px", "2xl": "26px", "3xl": "30px" },
     fontVariables: {
-      "--font-body-family": "var(--font-grotesk)",
-      // Headings: Newsreader, the logo's serif, at a calm book weight.
-      "--font-display-family": "var(--font-editorial)",
+      "--font-body-family": "var(--font-hind)",
+      "--font-display-family": "var(--font-outfit)",
       "--font-display-weight": "500",
-      "--font-display-tracking": "-0.012em",
-      "--eyebrow-weight": "600",
+      "--font-display-tracking": "-0.025em",
+      "--eyebrow-weight": "500",
     },
     components: {
-      // Sentence-case labels; eyebrows stay uppercase with open tracking.
       "--caps-transform": "none",
       "--caps-spread": "0",
-      "--eyebrow-transform": "uppercase",
-      "--eyebrow-spread": "0.6",
+      "--eyebrow-transform": "none",
+      "--eyebrow-spread": "0",
       "--gloss": "0",
-      "--glass-alpha": "0.94",
-      "--header-shadow": "0 1px 0 0 rgb(var(--color-ink-200))",
-      "--control-radius": "var(--radius-default)",
-      // Secondary blue (#123B73, 10.2:1 on ivory): hover and interactive states.
-      "--accent-hover": "rgb(18 59 115)",
-      // The same blue as the `accent-hover` role, which the Button primitive's hover reads.
-      "--color-accent-hover": "18 59 115",
-      "--nav-hover": "rgb(18 59 115)",
-      "--nav-underline": "rgb(214 193 162)",
-      "--icon-stroke": "1.5",
-      // On navy (footer, editorial banner, flash sale) eyebrows and link hovers take the warm stone; the light sections
-      // redeclare it (band components) because stone is unreadable on ivory.
-      "--band-accent": "rgb(214 193 162)",
+      "--glass-alpha": "0.9",
+      "--control-radius": "9999px",
+      "--chip-radius": "9999px",
+      "--swatch-radius": "9999px",
+      "--fab-radius": "9999px",
+      "--icon-stroke": "1.7",
       "--badge-note-bg": "rgb(var(--color-surface) / 0.94)",
       "--badge-note-fg": "rgb(var(--color-ink-900))",
-      "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
-      // Category tiles: the name below the photograph.
-      "--tile-caption-position": "static",
-      "--tile-caption-padding": "0.875rem 0.125rem 0.125rem",
-      "--tile-media-radius": "var(--radius-default)",
-      "--line-item-radius": "var(--radius-md)",
-      "--stepper-radius": "var(--radius-default)",
-      // White cards with a warm hairline and no lift; a soft navy shadow on hover.
+      "--media-scrim": "rgb(20 17 14 / 0.45)",
+      "--tile-media-radius": "var(--radius-2xl)",
+      "--line-item-radius": "var(--radius-lg)",
+      "--stepper-radius": "9999px",
       "--card-lift": "0",
-      "--card-frame-border": "rgb(var(--color-ink-200))",
+      "--card-frame-border": "transparent",
       "--card-frame-shadow": "none",
-      "--card-frame-shadow-hover": "0 12px 28px -18px rgb(11 31 51 / 0.35)",
-      "--card-image-zoom": "1.04",
+      "--card-frame-shadow-hover": "none",
+      "--card-image-zoom": "1.03",
       "--card-tier-display": "none",
       "--product-tier-display": "none",
-      // The same 5:6 studio photos as the base design: whole, never cropped.
+      "--card-media-aspect": "5 / 6",
       "--product-photo-aspect": "5 / 6",
       "--product-photo-fit": "contain",
       "--card-title-tracking": "0",
-      "--panel-border": "rgb(var(--color-ink-200))",
+      "--panel-border": "transparent",
       "--panel-shadow": "none",
-      // The product name in the heading serif, like every other title.
-      "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
-      "--product-title-size": "clamp(1.75rem, 1.5rem + 0.8vw, 2.25rem)",
-      "--product-title-leading": "1.15",
+      "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
+      "--product-title-size": "clamp(2.25rem, 1.9rem + 1.4vw, 3rem)",
+      "--product-title-leading": "1.04",
       "--product-title-weight": "500",
-      "--product-title-tracking": "-0.012em",
-      // Option chips, colour swatches and the floating buttons: squared off, like the controls.
-      "--chip-radius": "var(--radius-sm)",
-      "--swatch-radius": "var(--radius-sm)",
-      "--fab-radius": "var(--radius-default)",
-      // One modest scale: titles lead, but never shout over the products.
-      "--section-title-size": "1.5rem",
-      "--section-title-leading": "1.2",
-      "--section-title-size-sm": "1.75rem",
-      "--section-title-leading-sm": "1.2",
+      "--product-title-tracking": "-0.03em",
+      "--section-title-size": "1.875rem",
+      "--section-title-leading": "1.1",
+      "--section-title-size-sm": "2.75rem",
+      "--section-title-leading-sm": "1.1",
       "--section-rhythm": "1.1",
-      "--page-title-size": "2rem",
-      "--page-title-leading": "1.1",
-      "--page-title-size-sm": "2.625rem",
-      "--page-title-leading-sm": "1.1",
-      "--section-heading-size": "1.625rem",
-      "--section-heading-leading": "1.2",
-      "--section-heading-size-sm": "2.125rem",
-      "--section-heading-leading-sm": "1.15",
-      // Editorial hero: left-aligned copy beside a tall photograph from 1024px.
-      "--hero-align": "left",
-      "--hero-layout-lg": "grid",
-      "--hero-media-aspect-lg": "4 / 5",
-      "--hero-content-max-w-lg": "80rem",
-      "--hero-copy-pad-lg": "2rem",
-      "--hero-media-offset-lg": "0",
-      "--hero-secondary-ring": "currentColor",
-      "--hero-primary-mr": "0.75rem",
-      "--hero-secondary-ml": "0px",
-      "--story-media-max-w": "64rem",
-      "--story-media-h-sm": "26rem",
-      // Sheets squared off like the rest of the controls, still soft enough to read as a sheet.
-      "--sheet-radius": "0.75rem",
+      "--page-title-size": "2.75rem",
+      "--page-title-leading": "1",
+      "--page-title-size-sm": "3.5rem",
+      "--page-title-leading-sm": "1",
+      "--section-heading-size": "1.875rem",
+      "--section-heading-leading": "1.1",
+      "--section-heading-size-sm": "2.75rem",
+      "--section-heading-leading-sm": "1.1",
+      "--sheet-radius": "1.5rem",
+      // The floating dock's row plus the gap below it (the tahafi dock, which reads only tokens).
+      "--dock-tab-bar": "4.75rem",
+      // The glowing disc behind a product (presets/honey/disc.tsx).
+      "--disc-fill": "radial-gradient(circle at 42% 34%, #ffcb6b 0%, #f9a23a 38%, #f5871f 66%, #c8640c 100%)",
+      "--disc-glow": "0 0 170px 26px rgb(245 135 31 / 0.3)",
+      "--disc-photo-shadow": "drop-shadow(0 28px 34px rgb(0 0 0 / 0.55))",
     },
-    // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
-    lightBands: ["hero", "story"],
-    bandSurface: "cream-100",
-    // Inside the light sections: the filled primary action (cream-50 / ink-950 are navy / ivory there) and a blue accent.
+    band: "light",
+    bandSurface: "cream-200",
     bandComponents: {
-      "--hero-cta-fill": "rgb(var(--color-cream-50))",
-      "--hero-cta-text": "rgb(var(--color-ink-950))",
-      "--band-accent": "rgb(18 59 115)",
+      "--hero-cta-fill": "rgb(35 31 32)",
+      "--hero-cta-text": "rgb(255 255 255)",
+      "--band-accent": "rgb(178 60 12)",
     },
-    // Inside the navy sections: the mid tones the dark palette uses for text, re-valued light enough for navy.
-    darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
+    dark: {
+      // No light mode for shoppers: this is the store's only look, on every page outside the admin.
+      always: true,
+      palette: {
+        ink: {
+          50: "#2b2520", // subtle fills
+          100: "#2f2923", // hairlines
+          200: "#3b342d", // borders
+          300: "#4f463d", // strong line
+          400: "#b5aa9d", // tertiary text — 8.4:1 on the page, 7.3:1 on a card
+          500: "#d5cabd", // secondary text — 11.6:1 on the page
+          600: "#e4dbd0",
+          700: "#f2ebe2", // body text
+          800: "#f8f2ea",
+          900: "#fff9f1", // headings
+          950: "#ffffff",
+        },
+        // 50 = the cards, 100 = the page, 200 = secondary grounds.
+        cream: { 50: "#211c18", 100: "#14110e", 200: "#2b2520", 300: "#3a322b" },
+        // 500 = the sale tag behind white type (4.6:1); 600 = a sale price as text (10:1 on the page).
+        sale: { 50: "#3a1d10", 500: "#c8460f", 600: "#ffb26b" },
+        success: { 50: "#132620", 100: "#173328", 200: "#1f4a3a", 500: "#2fc9a3", 600: "#4fd6b3", 700: "#8ee6cf" },
+        warning: { 50: "#2a2112", 100: "#3a2c15", 200: "#57411c", 500: "#e0a447", 600: "#ebb565", 700: "#f2c98a" },
+        danger: { 50: "#2c1615", 100: "#3d1c1a", 200: "#5c2724", 400: "#e0827c", 500: "#e4675f", 600: "#ec7f77", 700: "#f4aaa4" },
+        info: { 50: "#122030", 100: "#172a3f", 200: "#22405f", 500: "#5c9ae0", 600: "#7aaee6", 700: "#a3c8f0" },
+      },
+      components: {
+        "color-scheme": "dark",
+        // Orange actions with charcoal type (accent-fg is cream-50, the card colour): 7.3:1.
+        "--color-accent": "245 135 31",
+        "--color-accent-hover": "249 162 58",
+        "--accent-hover": "rgb(249 162 58)",
+        "--nav-hover": "rgb(249 168 74)",
+        "--nav-underline": "rgb(245 135 31)",
+        "--band-accent": "rgb(249 168 74)",
+        "--glass-alpha": "0.72",
+        "--glass-edge": "rgb(255 255 255 / 0.12)",
+        "--glass-edge-soft": "rgb(255 255 255 / 0.1)",
+        "--danger-fill": "rgb(190 64 56)",
+        "--danger-fill-hover": "rgb(170 54 47)",
+        "--sale-fill-hover": "rgb(170 58 12)",
+        "--header-shadow": "0 1px 0 0 rgb(255 255 255 / 0.06)",
+        "--panel-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
+        "--badge-note-bg": "rgb(33 28 24 / 0.9)",
+        "--badge-note-fg": "rgb(255 249 241)",
+        "--hero-cta-fill": "rgb(245 135 31)",
+        "--hero-cta-text": "rgb(35 31 32)",
+        "--mode-light-art": "none",
+        "--mode-dark-art": "contents",
+      },
+      bandPalette: { ink: { 400: "#b5aa9d", 500: "#a3978a" } },
+      bandComponents: { "--band-accent": "rgb(249 168 74)" },
+    },
   },
   // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). The owner's direction (2026-10-31): the feel of
   // a new iPhone — light, clear and glossy. A soft grey page (#F4F4F2), white cards for the photographs, ink #1C1C1A for
@@ -853,6 +877,8 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
     toneVariables: { light: { ...lightBand(definition), ...definition.bandComponents }, dark: darkTone(definition) },
     // The theme's dark colour mode, if it has one (storefront only; tailwind.config.ts emits it).
     darkModeVariables: definition.dark ? darkModeVariables(definition.dark) : {},
+    // The dark mode is the store's only look: every page but the admin, whatever the device or a cookie says.
+    darkAlways: Boolean(definition.dark?.always),
     darkModeBandVariables: definition.dark ? darkModeBandVariables(definition) : {},
   };
 }

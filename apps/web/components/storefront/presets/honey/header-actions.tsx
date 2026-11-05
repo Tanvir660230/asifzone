@@ -22,22 +22,7 @@ function useMountedCartCount(): number | null {
   return mounted ? count : null;
 }
 
-/** Desktop: a quiet underlined field that opens the shared search overlay. */
-export function MihrabSearchField() {
-  const open = useSearchOverlayStore((s) => s.open);
-  return (
-    <button
-      type="button"
-      onClick={open}
-      className="group flex w-56 items-center gap-2.5 border-b border-line-strong pb-1.5 text-left text-sm text-fg-muted transition-colors duration-200 ease-smooth hover:border-fg hover:text-fg xl:w-64"
-    >
-      <Search size={16} className="shrink-0" />
-      <span className="truncate">Search the store</span>
-    </button>
-  );
-}
-
-export function MihrabSearchIcon() {
+export function HoneySearchIcon() {
   const open = useSearchOverlayStore((s) => s.open);
   return (
     <button type="button" onClick={open} aria-label="Search" className="flex h-11 w-11 items-center justify-center text-fg">
@@ -47,7 +32,7 @@ export function MihrabSearchIcon() {
 }
 
 /** "Bag" with the item count in words-and-figures, opening the shared cart drawer. */
-export function MihrabBagButton({ compact = false }: { compact?: boolean }) {
+export function HoneyBagButton({ compact = false }: { compact?: boolean }) {
   const count = useMountedCartCount();
   const openDrawer = useCartDrawerStore((s) => s.open);
   const label = count ? `Bag, ${count} ${count === 1 ? "item" : "items"}` : "Bag";
@@ -57,16 +42,16 @@ export function MihrabBagButton({ compact = false }: { compact?: boolean }) {
       onClick={openDrawer}
       aria-label={label}
       className={cn(
-        "flex items-center gap-1.5 text-sm font-medium text-fg transition-colors duration-200 ease-smooth hover:text-[color:var(--nav-hover)]",
-        compact ? "h-11 px-1.5" : "h-10",
+        "flex items-center gap-1.5 rounded-full bg-cream-200 px-4 font-display text-[0.9375rem] font-medium tracking-normal text-fg transition-colors duration-200 ease-smooth hover:text-[color:var(--nav-hover)]",
+        "h-11",
       )}
     >
       <span>Bag</span>
       <span
         aria-hidden
         className={cn(
-          "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-xs tabular-nums transition-colors duration-200",
-          count ? "bg-accent text-accent-fg" : "bg-cream-200 text-fg-muted",
+          "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums transition-colors duration-200",
+          count ? "bg-accent text-accent-fg" : "text-fg",
         )}
       >
         {count ?? 0}
@@ -77,7 +62,7 @@ export function MihrabBagButton({ compact = false }: { compact?: boolean }) {
 
 /** Phones: the whole store in one sheet — categories set large, then help links. Opened by the tab bar's Shop tab
  * (store/mobile-menu.ts); it rises above the tab bar, and drags down to close. */
-export function MihrabMenu({ categories }: { categories: NavNode[] }) {
+export function HoneyMenu({ categories }: { categories: NavNode[] }) {
   const open = useMobileMenuStore((s) => s.isOpen);
   const closeMenu = useMobileMenuStore((s) => s.close);
   const [expandedId, setExpandedId] = useState<string | null>(null);

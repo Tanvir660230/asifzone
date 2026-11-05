@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { ProductCard } from "./product-card";
 import { Reveal } from "./reveal";
 import { storeLayout } from "@/lib/theme-layout";
-import { MihrabSectionHead } from "./presets/mihrab/section-head";
+import { HoneySectionHead } from "./presets/honey/section-head";
 
 interface ProductCarouselProps {
   title: string;
@@ -40,16 +40,16 @@ const GRID_DESKTOP_MAX = 8;
  * with arrow controls and a progress bar showing how far along the row the shopper is. */
 export function ProductCarousel({ title, eyebrow, subtitle, href, products, rows = 1 }: ProductCarouselProps) {
   const grid = rows === 2;
-  const mihrab = storeLayout() === "mihrab";
+  const honey = storeLayout() === "honey";
 
   if (products.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-[calc(2.5rem*var(--section-rhythm))] sm:py-[calc(3.5rem*var(--section-rhythm))] sm:px-6 lg:px-8">
       {grid ? (
-        <ProductGridSection title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} products={products} mihrab={mihrab} />
+        <ProductGridSection title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} products={products} honey={honey} />
       ) : (
-        <ProductRail title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} products={products} mihrab={mihrab} />
+        <ProductRail title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} products={products} honey={honey} />
       )}
     </section>
   );
@@ -61,12 +61,12 @@ interface PartProps {
   subtitle?: string | null;
   href?: string;
   products: Product[];
-  mihrab: boolean;
+  honey: boolean;
 }
 
-function SectionHead({ title, eyebrow, subtitle, href, mihrab, children }: Omit<PartProps, "products"> & { children?: React.ReactNode }) {
-  // The mihrab preset heads its rails its own way (title, rule, "View all"); the rail itself is shared.
-  if (mihrab) return <MihrabSectionHead title={title} subtitle={subtitle ?? eyebrow} link={href ? { href, label: "View all" } : undefined} />;
+function SectionHead({ title, eyebrow, subtitle, href, honey, children }: Omit<PartProps, "products"> & { children?: React.ReactNode }) {
+  // The honey preset heads its rails its own way (title, rule, "View all"); the rail itself is shared.
+  if (honey) return <HoneySectionHead title={title} subtitle={subtitle ?? eyebrow} link={href ? { href, label: "View all" } : undefined} />;
   return (
     <Reveal className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
       <div className="min-w-0">
@@ -121,12 +121,12 @@ function useGridPages(count: number) {
   return { listRef, showMore, itemClass, phoneMore: count > phoneShown, tabletMore: count > tabletShown };
 }
 
-function ProductGridSection({ title, eyebrow, subtitle, href, products, mihrab }: PartProps) {
+function ProductGridSection({ title, eyebrow, subtitle, href, products, honey }: PartProps) {
   const { listRef, showMore, itemClass, phoneMore, tabletMore } = useGridPages(products.length);
 
   return (
     <>
-      <SectionHead title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} mihrab={mihrab} />
+      <SectionHead title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} honey={honey} />
       <ul
         ref={(el) => {
           listRef.current = el;
@@ -173,7 +173,7 @@ function GridMore({ title, href, phoneMore, tabletMore, onShowMore }: { title: s
   );
 }
 
-function ProductRail({ title, eyebrow, subtitle, href, products, mihrab }: PartProps) {
+function ProductRail({ title, eyebrow, subtitle, href, products, honey }: PartProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const { listRef, showMore, itemClass, phoneMore, tabletMore } = useGridPages(products.length);
   const [edges, setEdges] = useState({ atStart: true, atEnd: true });
@@ -223,7 +223,7 @@ function ProductRail({ title, eyebrow, subtitle, href, products, mihrab }: PartP
 
   return (
     <>
-      <SectionHead title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} mihrab={mihrab}>
+      <SectionHead title={title} eyebrow={eyebrow} subtitle={subtitle} href={href} honey={honey}>
         {scrollable && (
           <div className="ml-2 hidden items-center gap-2 lg:flex">
             <RailButton label={`Previous: ${title}`} disabled={edges.atStart} onClick={() => page(-1)}>

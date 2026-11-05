@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Eye, Scale, ShoppingBag } from "lucide-react";
+import { Eye, Plus, Scale } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { Money } from "@/components/ui/money";
@@ -24,11 +24,11 @@ function sentenceCase(label: string): string {
 }
 
 /**
- * Mihrab product card: a 4:5 photograph on sand, a small text tag, a bare heart; on desktop an "Add to bag" bar with quick
- * view and compare rises from the bottom of the photograph on hover, on touch a small square bag button. Behaviour is the
- * classic card's exactly — the same availability, price, badge, add-to-cart hook, options dialog, quick view and compare.
+ * Honey product card: a charcoal panel holding a 5:6 photograph, the name and the price. A round orange button adds to the
+ * bag on every screen; on wide screens quick view and compare appear on hover. Behaviour is the classic card's exactly — the
+ * same availability, price, badge, add-to-cart hook, options dialog, quick view and compare.
  */
-export function MihrabProductCard({ product, priority }: { product: Product; priority?: boolean }) {
+export function HoneyProductCard({ product, priority }: { product: Product; priority?: boolean }) {
   const [primaryImage, secondaryImage] = product.images;
   const availability = availabilityOf(product);
   const sellableVariants = product.variants.filter((v) => availability.variants[v.id]?.sellable);
@@ -74,8 +74,8 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
 
   return (
     // Pressed on a phone the card sinks (ui-press) and stays dimmed until the product page arrives (navigation-progress).
-    <div data-nav-pending-scope className="ui-press group">
-      <div className="relative aspect-[4/5] overflow-hidden rounded-md bg-cream-200">
+    <div data-nav-pending-scope className="ui-press group min-w-0 rounded-2xl bg-surface p-2 pb-4">
+      <div className="relative aspect-[5/6] overflow-hidden rounded-xl bg-cream-200">
         <Link href={href} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
             <>
@@ -109,8 +109,8 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
         {(badge || soldOut) && (
           <span
             className={cn(
-              "pointer-events-none absolute left-0 top-3 rounded-r-sm px-2 py-1 text-xs font-medium",
-              soldOut ? "bg-ink-900 text-cream-50" : badge!.tone === "sale" ? "bg-sale-500 text-white" : "bg-canvas text-fg",
+              "pointer-events-none absolute left-2 top-2 rounded-full px-2.5 py-1 text-xs font-medium",
+              soldOut ? "bg-canvas text-fg" : badge!.tone === "sale" ? "bg-sale-500 text-white" : "bg-canvas text-fg",
             )}
             data-testid={soldOut ? "card-sold-out" : undefined}
           >
@@ -120,30 +120,22 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
 
         <WishlistButton
           productId={product.id}
-          className="absolute right-1 top-1 z-10 h-10 w-10 rounded-sm bg-transparent bg-none text-fg shadow-none backdrop-blur-none backdrop-saturate-100 hover:scale-100 hover:text-sale-500"
+          className="absolute right-1.5 top-1.5 z-10 h-10 w-10 rounded-full bg-canvas/70 bg-none text-fg shadow-none backdrop-saturate-100 hover:scale-100 hover:text-[color:var(--nav-hover)]"
         />
 
         {!soldOut && (
           <>
-            {/* Touch: a small square button that never needs hover. */}
             <button
               type="button"
               onClick={handleQuickAdd}
               aria-label={quickAddLabel}
               data-fab-collision
-              className="absolute bottom-2 right-2 z-10 flex h-9 w-9 items-center justify-center rounded-sm bg-canvas text-fg lg:hidden"
+              className="absolute bottom-2.5 right-2.5 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-accent-fg transition-colors duration-200 hover:bg-accent-hover"
             >
-              <ShoppingBag size={16} />
+              <Plus size={20} strokeWidth={2.2} />
             </button>
-            {/* Desktop: the bar rises on hover or keyboard focus. Quick view and compare keep the classic card's names. */}
-            <div className="absolute inset-x-2 bottom-2 z-10 hidden translate-y-[calc(100%+0.5rem)] gap-1 transition-transform duration-300 ease-smooth group-focus-within:translate-y-0 group-hover:translate-y-0 lg:flex">
-              <button
-                type="button"
-                onClick={handleQuickAdd}
-                className="h-10 min-w-0 flex-1 whitespace-nowrap rounded-sm bg-accent text-sm font-medium text-accent-fg transition-colors duration-200 hover:bg-accent-hover"
-              >
-                {quickAddLabel}
-              </button>
+            {/* Wide screens: quick view and compare on hover or keyboard focus. They keep the classic card's names. */}
+            <div className="absolute bottom-2.5 left-2.5 z-10 hidden gap-1.5 opacity-0 transition-opacity duration-200 ease-smooth group-focus-within:opacity-100 group-hover:opacity-100 lg:flex">
               <button
                 type="button"
                 onClick={(e) => {
@@ -152,9 +144,9 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
                 }}
                 aria-label="Quick view"
                 title="Quick view"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-canvas text-fg transition-colors duration-200 hover:bg-surface"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-fg transition-colors duration-200 hover:bg-surface"
               >
-                <Eye size={16} />
+                <Eye size={17} />
               </button>
               <button
                 type="button"
@@ -165,20 +157,17 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
                 aria-label={isComparing ? "Remove from compare" : "Add to compare"}
                 aria-pressed={isComparing}
                 title="Compare"
-                className={cn(
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-sm transition-colors duration-200",
-                  isComparing ? "bg-ink-900 text-cream-50" : "bg-canvas text-fg hover:bg-surface",
-                )}
+                className={cn("flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200", isComparing ? "bg-accent text-accent-fg" : "bg-canvas text-fg hover:bg-surface")}
               >
-                <Scale size={16} />
+                <Scale size={17} />
               </button>
             </div>
           </>
         )}
       </div>
 
-      <Link href={href} className="mt-3 block">
-        <h3 className="line-clamp-2 text-[0.9375rem] leading-snug text-fg group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">
+      <Link href={href} className="mt-3 block px-2">
+        <h3 className="line-clamp-2 text-[0.9375rem] font-medium leading-snug text-fg sm:text-base">
           {product.name}
         </h3>
         {product.reviewCount > 0 && (
@@ -188,7 +177,7 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
           </span>
         )}
         <span className="mt-1.5 flex items-baseline gap-2 tabular-nums">
-          <span className={cn("text-[0.9375rem] font-medium", soldOut ? "text-fg-muted" : hasWas ? "text-sale-500" : "text-fg")} data-testid="card-price">
+          <span className={cn("font-display text-[1.1875rem] font-semibold tracking-normal sm:text-[1.3125rem]", soldOut ? "text-fg-muted" : hasWas ? "text-sale-600" : "text-fg")} data-testid="card-price">
             <Money value={shown.price} />
           </span>
           {hasWas && <span className="text-sm text-fg-muted line-through"><Money value={shown.was!} /></span>}
@@ -199,7 +188,7 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
               <span
                 key={color}
                 title={color}
-                className={cn("h-3 w-3 rounded-[2px] border", isPaleColor(hex) ? "border-line-strong" : "border-transparent")}
+                className={cn("h-3 w-3 rounded-full border", isPaleColor(hex) ? "border-line-strong" : "border-transparent")}
                 style={{ backgroundColor: hex ?? "#d4d4d4" }}
               />
             ))}
