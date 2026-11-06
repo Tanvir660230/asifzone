@@ -299,6 +299,16 @@ export async function orderMoneyInTx(tx: Db, orderId: string) {
 
 /** The body of recordManualPayment, in the caller's transaction (the scanner's parcel receipt records the courier's money
  * with the inspection, all or nothing). Same rules, same timeline note. */
+/** A parcel has one courier return charge: the rider collects once, so a second is the same money entered again. */
+async function assertNoCourierReturnCharge(tx: Db, orderId: string, currency: string) {
+  const existing = await tx.payment.findFirst({ where: { orderId, purpose: "RETURN_CHARGE", provider: "COD", status: "SUCCEEDED" }, select: { amount: true } });
+  if (existing) {
+    throw new AppError(409, `A return charge through the courier is already recorded on this order (${noteMoney(fromMajor(existing.amount.toString(), currency))})`, {
+      code: "RETURN_CHARGE_ALREADY_RECORDED",
+    });
+  }
+}
+
 export async function recordManualPaymentInTx(tx: Db, orderId: string, input: RecordPaymentInput, adminId: string, idempotencyKey: string | null, currency: string) {
   const order = await lockOrder(tx, orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before recording a payment");
@@ -309,6 +319,7 @@ export async function recordManualPaymentInTx(tx: Db, orderId: string, input: Re
     }
     if (amount.amount <= 0) throw AppError.badRequest("Amount must be positive");
     const via = input.via ?? "COURIER";
+    if (via === "COURIER") await assertNoCourierReturnCharge(tx, orderId, currency);
     const note = [via === "COURIER" ? "Through the courier" : null, input.method, input.note].filter(Boolean).join(" — ") || null;
     const created = await tx.payment.create({
       data: {
@@ -430,6 +441,7 @@ export async function reclassifyPayment(orderId: string, paymentId: string, inpu
       if (!RETURN_CHARGE_ORDER_STATUSES.includes(order.status)) {
         throw AppError.badRequest("A return charge is recorded only for a refused parcel — partly delivered, returned or cancelled", { code: "PAYMENT_NOT_ALLOWED" });
       }
+      if (payment.provider === "COD") await assertNoCourierReturnCharge(tx, orderId, currency);
       const position = await loadPosition(tx, order, currency);
       if (amount.amount > position.refundable.amount) {
         throw AppError.badRequest(`Part of this payment was already refunded or credited — only ${noteMoney(position.refundable)} of the order's money is still held`, {

@@ -41,6 +41,24 @@ export async function loadRateCards(businessId: string, cur: string): Promise<{ 
   };
 }
 
+/** The date a waiting parcel's charge estimate stays on: the live estimate's own, or the courier's first report for this booking. */
+async function firstReportedAt(order: { id: string; courierConsignmentId: string | null; courierBookedAt: Date | null }, outcome: string): Promise<Date | null> {
+  const consignmentId = order.courierConsignmentId!;
+  const latest = await prisma.financialEvent.findFirst({
+    where: { eventKey: { startsWith: `order:${order.id}:courier_charge#` } },
+    orderBy: { receivedAt: "desc" },
+    select: { occurredAt: true, payload: true },
+  });
+  const live = latest?.payload as { void?: boolean; consignmentId?: string | null; outcome?: string } | undefined;
+  if (latest && !live?.void && live?.consignmentId === consignmentId && live?.outcome === outcome) return latest.occurredAt;
+  const reports = await prisma.courierStatusChange.findMany({
+    where: { consignmentId, observedAt: { gte: order.courierBookedAt ?? new Date(0) } },
+    orderBy: { observedAt: "asc" },
+    select: { toStatus: true, observedAt: true },
+  });
+  return reports.find((c) => courierOutcome(c.toStatus, "") === outcome)?.observedAt ?? null;
+}
+
 export async function chargeEstimatesForOrder(orderId: string, ctx: FinanceContext, rates?: Awaited<ReturnType<typeof loadRateCards>>): Promise<{ events: Desired[]; withdrawnAt: Map<string, Date> }> {
   const cur = ctx.business.baseCurrency;
   const { cards, fees } = rates ?? (await loadRateCards(ctx.business.id, cur));
@@ -73,7 +91,9 @@ export async function chargeEstimatesForOrder(orderId: string, ctx: FinanceConte
     if (outcome) {
       const booked = order.courierBookedAt?.getTime() ?? 0;
       const hit = order.statusHistory.find((h) => OUTCOME_STATUSES[outcome]!.includes(h.status) && h.createdAt.getTime() >= booked);
-      const at = hit?.createdAt ?? order.courierStatusSyncedAt ?? order.updatedAt;
+      // Until the order's own status follows, the estimate keeps the date it was booked with, else the moment the courier
+      // first reported this outcome. Never the last poll: it moves every sweep, and a moved date re-books the estimate.
+      const at = hit?.createdAt ?? (await firstReportedAt(order, outcome)) ?? order.courierStatusSyncedAt ?? order.updatedAt;
       // What the rider collected for the order (a return charge is not order money and carries no COD charge).
       const collected = order.payments.filter((p) => p.provider === "COD" && p.purpose === "ORDER").reduce((s, p) => s + toMinor(p.amount, cur), 0);
       const e = courierChargeEstimate({ outcome, collected: outcome === "RETURNED" ? 0 : collected, district: order.shippingDistrict, area: order.shippingArea, date: businessDate(at, tz), cards });

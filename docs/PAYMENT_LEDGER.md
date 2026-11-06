@@ -147,6 +147,9 @@ free-delivery order that came back (or any order then marked Returned / Cancelle
 - Admin › order › Payments & refunds: **Record return charge** on a refused parcel; **This was the return charge** on a
   payment that the refund-due alert would otherwise ask to refund; **Count as order money** to undo.
 
+- One courier return charge per parcel: a second one through the courier is refused (409 `RETURN_CHARGE_ALREADY_RECORDED`),
+  whether entered or re-marked. Paid directly to the shop is a separate payment and can still be recorded.
+
 ### 5b. Return charge from Steadfast, automatically (2026-10-21)
 
 Steadfast's status API (`status_by_cid`) gives only a status. Its webhook body also carries `cod_amount` and, on panel
