@@ -44,6 +44,7 @@ import {
   HoneyPromoBanner,
   HoneyTrustRow,
   HoneyValues,
+  HERO_TILES,
 } from "@/components/storefront/presets/honey/sections";
 import { TahafiHero } from "@/components/storefront/presets/tahafi/hero";
 import { TahafiCategoryIndex, TahafiLookbook, TahafiPromiseLine } from "@/components/storefront/presets/tahafi/sections";
@@ -130,8 +131,8 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
       return honey ? <HoneyFlashSale flashSale={data.flashSale} /> : <FlashSaleSection flashSale={data.flashSale} />;
     case "CATEGORY_GRID": {
       const config = section.config as CategoryGridConfig;
-      // The hero's two small tiles already show the first two categories (not when a banner carousel replaces it).
-      if (honey) return <HoneyCategoryTiles categories={data.banners.length > 0 ? data.tree : data.tree.slice(2)} heading={config.heading} subtitle={config.subtitle} />;
+      // The hero's small tiles already show the first categories (not when a banner carousel replaces it).
+      if (honey) return <HoneyCategoryTiles categories={data.banners.length > 0 ? data.tree : data.tree.slice(HERO_TILES)} heading={config.heading} subtitle={config.subtitle} />;
       if (tahafi) return <TahafiCategoryIndex categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
       return <CategoryGrid categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
     }

@@ -37,6 +37,9 @@ interface HeroProps {
   categories?: CategoryTreeNode[];
 }
 
+/** How many categories sit beside the hero: all of them up to three, so a small shop has no lone tile further down. */
+export const HERO_TILES = 3;
+
 /** A category as a small white tile: the name and, when it has one, its photograph at the right edge. */
 function CategoryTile({ category, className }: { category: CategoryTreeNode; className?: string }) {
   return (
@@ -60,23 +63,24 @@ function CategoryTile({ category, className }: { category: CategoryTreeNode; cla
 }
 
 /**
- * The top of the shop: the store's offer on the honey tint, with the first two categories as small tiles beside it (under it
+ * The top of the shop: the store's offer on the honey tint, with the first categories as small tiles beside it (under it
  * on a phone). The whole offer is one link. A cut-out photograph on a transparent background sits best on the tint
  * (Storefront Studio).
  */
 export function HoneyHero({ storeName, tagline, headline, subtext, bodyText, ctaLabel, ctaHref, imageUrl, imageAltText, categories = [] }: HeroProps) {
   const title = (headline || tagline || storeName).trim();
   const line = bodyText || subtext;
-  const tiles = categories.slice(0, 2);
+  const tiles = categories.slice(0, HERO_TILES);
 
   return (
     <section className={`${WIDTH} pt-3 sm:pt-4`}>
-      <div className={cn("grid grid-cols-2 gap-2.5 sm:gap-3.5", tiles.length > 0 && "lg:grid-cols-3 lg:grid-rows-2")}>
+      <div className={cn("grid grid-cols-2 gap-2.5 sm:gap-3.5", tiles.length > 0 && "lg:grid-cols-3", tiles.length === 2 && "lg:grid-rows-2", tiles.length === 3 && "lg:grid-rows-3")}>
         <Link
           href={ctaHref || "/search"}
           className={cn(
             "col-span-2 grid min-h-[12rem] grid-cols-[minmax(0,1fr)_38%] items-center gap-2 overflow-hidden rounded-2xl bg-[var(--offer-tint)] py-4 pl-4 pr-2 sm:min-h-[16rem] sm:pl-8 lg:min-h-[20.5rem] lg:gap-6 lg:pl-12 lg:pr-6",
-            tiles.length > 0 && "lg:row-span-2",
+            tiles.length === 2 && "lg:row-span-2",
+            tiles.length === 3 && "lg:row-span-3",
           )}
         >
           <span className="min-w-0">
@@ -90,8 +94,8 @@ export function HoneyHero({ storeName, tagline, headline, subtext, bodyText, cta
             </span>
           )}
         </Link>
-        {tiles.map((category) => (
-          <CategoryTile key={category.id} category={category} className="h-full" />
+        {tiles.map((category, index) => (
+          <CategoryTile key={category.id} category={category} className={cn("h-full", tiles.length % 2 === 1 && index === tiles.length - 1 && "col-span-2 lg:col-span-1")} />
         ))}
       </div>
     </section>
