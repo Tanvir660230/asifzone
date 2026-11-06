@@ -21,7 +21,7 @@ describe("store policy", () => {
       "Cash on Delivery available",
     ]);
     expect(shippingAndReturnsText(storePolicy(EXISTING_STORE))).toBe(
-      "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days. " +
+      "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 2–5 days. " +
         "Unworn items in original condition with tags attached can be returned or exchanged within 7 days of delivery.",
     );
   });
@@ -32,7 +32,7 @@ describe("store policy", () => {
     expect(policy.handlingDays).toBeNull();
     expect(returnPolicySentence(policy)).toBeNull();
     expect(policyHighlights(policy).map((l) => l.kind)).toEqual(["delivery"]);
-    expect(shippingAndReturnsText(policy)).toBe("Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days.");
+    expect(shippingAndReturnsText(policy)).toBe("Inside Dhaka: 1–2 days, outside Dhaka: 2–5 days.");
   });
 
   it("follows each store's own settings — two stores, two policies, no code change", () => {

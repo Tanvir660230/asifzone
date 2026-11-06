@@ -18,7 +18,7 @@ describe("resolveSections", () => {
     expect(accordion.find((s) => s.key === "shipping")).toMatchObject({
       title: "Shipping & Returns",
       // Store-neutral: the product page writes this row from the store's own policy (store-policy.test.ts).
-      content: "Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days.",
+      content: "Inside Dhaka: 1–2 days, outside Dhaka: 2–5 days.",
     });
     // The page-level blocks keep their old order and titles too.
     const blocks = all.filter((s) => s.area === "block" && s.enabled);

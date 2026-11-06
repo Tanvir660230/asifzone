@@ -174,7 +174,7 @@ describe("Inbox AI — drafts instead", () => {
     const { lastId } = await thread("WHATSAPP", [{ body: "Chittagong e koto din lagbe?" }]);
     const { model, toolResults } = scripted([tool("delivery_charges", {})], [respond("auto", "delivery_charge", "Dhakar baire 3-5 din lage.")]);
     expect(await assistConversation(lastId, model)).toBe("auto");
-    expect(toolResults()).toContain("Outside Dhaka: 3–5 business days");
+    expect(toolResults()).toContain("Outside Dhaka: 2–5 business days");
   });
 
   it("a search that found nothing can't back an answer", async () => {
