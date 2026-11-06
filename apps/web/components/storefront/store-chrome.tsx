@@ -4,6 +4,7 @@ import { Header } from "./header";
 import { Footer } from "./footer";
 import { HoneyHeader } from "./presets/honey/header";
 import { HoneyFooter } from "./presets/honey/footer";
+import { HoneyDock } from "./presets/honey/dock";
 import { TahafiHeader } from "./presets/tahafi/header";
 import { TahafiDock } from "./presets/tahafi/dock";
 import { TahafiFooter } from "./presets/tahafi/footer";
@@ -27,5 +28,7 @@ export function StoreFooter(props: ComponentProps<typeof Footer>) {
 
 /** The phone tab bar in the theme's preset. */
 export function StoreDock() {
-  return storeLayout() === "classic" ? <MobileBottomNav /> : <TahafiDock />;
+  const layout = storeLayout();
+  if (layout === "honey") return <HoneyDock />;
+  return layout === "classic" ? <MobileBottomNav /> : <TahafiDock />;
 }

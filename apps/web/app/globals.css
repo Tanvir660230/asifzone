@@ -502,26 +502,6 @@
     }
   }
 
-  /* The glowing disc a product stands in front of (components/storefront/presets/honey/disc.tsx). */
-  .ui-disc {
-    background: var(--disc-fill);
-    box-shadow: var(--disc-glow);
-  }
-  .ui-disc-breathe {
-    animation: disc-breathe 1.8s ease-in-out infinite;
-  }
-  @keyframes disc-breathe {
-    50% {
-      transform: scale(0.86);
-      opacity: 0.7;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ui-disc-breathe {
-      animation: none;
-    }
-  }
-
   /* Content tile (values grid): a hairline frame a theme may drop. */
   .ui-panel {
     @apply border;
@@ -919,7 +899,7 @@
   }
   @media (min-width: 1024px) {
     :root {
-      --sticky-top: 4.5rem;
+      --sticky-top: var(--header-height);
     }
   }
 
@@ -990,7 +970,7 @@
     @apply opacity-50 transition-opacity duration-fast ease-smooth;
   }
 
-  /* Phones: on a page inside a tab (the navigation bar is showing) the header is just the bar — the Honey promise strip
+  /* Phones: on a page inside a tab (the navigation bar is showing) the header is just the bar — the promise strip
      above it is for the tab pages, where the store introduces itself. */
   @media (max-width: 1023.98px) {
     body:has([data-nav-bar]) [data-promise-strip] {

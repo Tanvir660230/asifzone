@@ -15,10 +15,6 @@ describe("themeColorHex", () => {
     expect(themeColorHex("tahafi", "canvas")).toBe(hex(override));
   });
 
-  it("paints an always-dark store in its dark colours", () => {
-    expect(themeColorHex("nasihamart", "canvas")).toBe("#14110e");
-  });
-
   it("falls back to white for an unknown colour", () => {
     expect(themeColorHex("default", "no-such-colour")).toBe("#ffffff");
   });

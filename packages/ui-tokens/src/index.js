@@ -315,10 +315,14 @@ const componentTokens = {
   // which one shows. A theme's dark colour mode swaps them.
   "--mode-light-art": "contents",
   "--mode-dark-art": "none",
-  // The glowing disc behind a product in the honey preset; other themes never render it.
-  "--disc-fill": "none",
-  "--disc-glow": "none",
-  "--disc-photo-shadow": "none",
+  // The honey preset's one coloured ground, behind the top offer and the product photo; other themes never render it.
+  "--offer-tint": "rgb(var(--color-surface))",
+  // The dark bag bar's action word (honey preset, sticky-cart-bar.tsx); other themes never render it.
+  "--bag-bar-action": "rgb(var(--color-cream-50))",
+  // The header's height from 1024px, where things pinned under it sit (--sticky-top, globals.css).
+  "--header-height": "4.5rem",
+  // The desktop category row: centred (auto), or from the left edge (0).
+  "--nav-start": "auto",
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
@@ -416,57 +420,64 @@ Object.assign(cssVariables, componentTokens);
  */
 const themeDefinitions = {
   default: { label: "Default (neutral editorial)" },
-  // Nasihamart — "Honey" (docs/brand/nasihamart/THEME_BLUEPRINT.md). The new logo's colours: orange #F5871F and charcoal
-  // #231F20. Every shopper page is dark (`dark.always`): a warm near-black page, charcoal cards, cream text, and one orange
-  // for actions, with a glowing orange disc behind the product. Outfit for titles (round like the logo), Hind Siliguri for
-  // reading (Latin and Bangla in one family). Large soft corners and pill controls. Its own layout preset (`honey`). The
-  // palette below is the light half: what the admin's store previews and anything outside the shop read.
+  // Nasihamart — a tidy, app-like food shop (docs/brand/nasihamart/THEME_BLUEPRINT.md). A soft off-white page, white cards,
+  // ink #1F1D1B for type, the logo's orange #F5871F on buying actions only (with ink type: 7.6:1), a honey tint on the top
+  // offer, green for savings. Manrope throughout with Hind Siliguri for Bangla, never heavier than 700. Compact radii, square
+  // photos on the cards, the whole 5:6 photo on the product page. Light only. Its own layout preset (`honey`).
   nasihamart: {
-    label: "Nasihamart (Honey: charcoal · orange)",
+    label: "Nasihamart (tidy shop: white · orange)",
     layout: "honey",
     palette: {
       ink: {
-        50: "#f6f2ec", // subtle fills
-        100: "#ece6dd", // subtle hairlines
-        200: "#e2dbd0", // borders
-        300: "#cfc6b8", // strong line
-        400: "#6b635b", // tertiary text
-        500: "#5a524c", // secondary text
-        600: "#443d38",
-        700: "#2c2724", // body text
-        800: "#272220",
-        900: "#231f20", // the logo's charcoal: headings, primary actions
-        950: "#231f20",
+        50: "#f3f1ec", // subtle fills
+        100: "#ece8e1", // hairlines
+        200: "#e3ded5", // borders (inputs, dividers)
+        300: "#cfc8bc", // strong line
+        400: "#6b6660", // tertiary text (hints, struck prices) — 5.2:1 on the page, 5.6:1 on white
+        500: "#5f5a54", // secondary text — 6.3:1 on the page
+        600: "#45413c",
+        700: "#2e2b28", // body text
+        800: "#2a2725",
+        900: "#1f1d1b", // headings, the bag bar — 15.6:1 on the page
+        950: "#1f1d1b",
       },
-      cream: { 50: "#ffffff", 100: "#faf7f2", 200: "#f3ece2", 300: "#e8dfd2" },
-      sale: { 50: "#fbe9e0", 500: "#b23c0c", 600: "#8f2f09" },
+      // 50 = white cards; 100 = the page; 200 = secondary grounds.
+      cream: { 50: "#ffffff", 100: "#f7f6f3", 200: "#f1efe9", 300: "#e8e4dc" },
+      // A saving is green, never red: green type on its tint 4.9:1, white on the fill 5.4:1.
+      sale: { 50: "#e6f4ec", 500: "#17794a", 600: "#14683f" },
     },
-    radii: { sm: "8px", DEFAULT: "12px", md: "14px", lg: "18px", xl: "22px", "2xl": "26px", "3xl": "30px" },
+    radii: { sm: "8px", DEFAULT: "10px", md: "12px", lg: "14px", xl: "16px", "2xl": "16px", "3xl": "20px" },
     fontVariables: {
-      "--font-body-family": "var(--font-hind)",
-      "--font-display-family": "var(--font-outfit)",
-      "--font-display-weight": "500",
-      "--font-display-tracking": "-0.025em",
-      "--eyebrow-weight": "500",
+      "--font-body-family": "var(--font-manrope), var(--font-hind)",
+      "--font-display-family": "var(--font-manrope), var(--font-hind)",
+      "--font-display-weight": "600",
+      "--font-display-tracking": "-0.015em",
+      "--eyebrow-weight": "600",
     },
     components: {
+      "--color-accent": "245 135 31",
+      "--color-accent-hover": "234 122 18",
+      "--color-accent-fg": "31 29 27",
+      "--accent-hover": "rgb(234 122 18)",
+      "--nav-hover": "rgb(168 82 0)",
+      "--nav-underline": "rgb(245 135 31)",
       "--caps-transform": "none",
       "--caps-spread": "0",
       "--eyebrow-transform": "none",
       "--eyebrow-spread": "0",
       "--gloss": "0",
-      "--glass-alpha": "0.9",
-      "--control-radius": "9999px",
-      "--chip-radius": "9999px",
+      "--glass-alpha": "0.94",
+      "--control-radius": "12px",
+      "--chip-radius": "10px",
       "--swatch-radius": "9999px",
       "--fab-radius": "9999px",
-      "--icon-stroke": "1.7",
+      "--icon-stroke": "1.9",
       "--badge-note-bg": "rgb(var(--color-surface) / 0.94)",
       "--badge-note-fg": "rgb(var(--color-ink-900))",
-      "--media-scrim": "rgb(20 17 14 / 0.45)",
-      "--tile-media-radius": "var(--radius-2xl)",
-      "--line-item-radius": "var(--radius-lg)",
-      "--stepper-radius": "9999px",
+      "--media-scrim": "rgb(31 29 27 / 0.4)",
+      "--tile-media-radius": "var(--radius-lg)",
+      "--line-item-radius": "var(--radius-md)",
+      "--stepper-radius": "12px",
       "--card-lift": "0",
       "--card-frame-border": "transparent",
       "--card-frame-shadow": "none",
@@ -474,97 +485,47 @@ const themeDefinitions = {
       "--card-image-zoom": "1.03",
       "--card-tier-display": "none",
       "--product-tier-display": "none",
-      "--card-media-aspect": "5 / 6",
+      "--card-media-aspect": "1 / 1",
       "--product-photo-aspect": "5 / 6",
       "--product-photo-fit": "contain",
       "--card-title-tracking": "0",
-      "--panel-border": "transparent",
+      "--panel-border": "rgb(var(--color-ink-100))",
       "--panel-shadow": "none",
       "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
-      "--product-title-size": "clamp(2.25rem, 1.9rem + 1.4vw, 3rem)",
-      "--product-title-leading": "1.04",
-      "--product-title-weight": "500",
-      "--product-title-tracking": "-0.03em",
-      "--section-title-size": "1.875rem",
-      "--section-title-leading": "1.1",
-      "--section-title-size-sm": "2.75rem",
-      "--section-title-leading-sm": "1.1",
-      "--section-rhythm": "1.1",
-      "--page-title-size": "2.75rem",
-      "--page-title-leading": "1",
-      "--page-title-size-sm": "3.5rem",
-      "--page-title-leading-sm": "1",
-      "--section-heading-size": "1.875rem",
-      "--section-heading-leading": "1.1",
-      "--section-heading-size-sm": "2.75rem",
-      "--section-heading-leading-sm": "1.1",
-      "--sheet-radius": "1.5rem",
-      // The floating dock's row plus the gap below it (the tahafi dock, which reads only tokens).
-      "--dock-tab-bar": "4.75rem",
-      // The glowing disc behind a product (presets/honey/disc.tsx).
-      "--disc-fill": "radial-gradient(circle at 42% 34%, #ffcb6b 0%, #f9a23a 38%, #f5871f 66%, #c8640c 100%)",
-      "--disc-glow": "0 0 170px 26px rgb(245 135 31 / 0.3)",
-      "--disc-photo-shadow": "drop-shadow(0 28px 34px rgb(0 0 0 / 0.55))",
+      "--product-title-size": "clamp(1.625rem, 1.45rem + 0.7vw, 2rem)",
+      "--product-title-leading": "1.2",
+      "--product-title-weight": "600",
+      "--product-title-tracking": "-0.015em",
+      "--section-title-size": "1.1875rem",
+      "--section-title-leading": "1.25",
+      "--section-title-size-sm": "1.375rem",
+      "--section-title-leading-sm": "1.25",
+      "--section-rhythm": "0.8",
+      "--page-title-size": "1.75rem",
+      "--page-title-leading": "1.2",
+      "--page-title-size-sm": "2.25rem",
+      "--page-title-leading-sm": "1.15",
+      "--section-heading-size": "1.1875rem",
+      "--section-heading-leading": "1.25",
+      "--section-heading-size-sm": "1.375rem",
+      "--section-heading-leading-sm": "1.25",
+      "--sheet-radius": "1.25rem",
+      "--dock-tab-bar": "3.75rem",
+      // The honey tint: the one coloured ground, behind the top offer and the product photo.
+      "--offer-tint": "rgb(255 244 225)",
+      "--bag-bar-action": "rgb(255 201 143)",
+      // Two rows from 1024px: the shop bar and the categories.
+      "--header-height": "7.3125rem",
+      "--nav-start": "0",
+      "--hero-cta-fill": "rgb(245 135 31)",
+      "--hero-cta-text": "rgb(31 29 27)",
     },
     band: "light",
     bandSurface: "cream-200",
     bandComponents: {
-      "--hero-cta-fill": "rgb(35 31 32)",
-      "--hero-cta-text": "rgb(255 255 255)",
-      "--band-accent": "rgb(178 60 12)",
-    },
-    dark: {
-      // No light mode for shoppers: this is the store's only look, on every page outside the admin.
-      always: true,
-      palette: {
-        ink: {
-          50: "#2b2520", // subtle fills
-          100: "#2f2923", // hairlines
-          200: "#3b342d", // borders
-          300: "#4f463d", // strong line
-          400: "#b5aa9d", // tertiary text — 8.4:1 on the page, 7.3:1 on a card
-          500: "#d5cabd", // secondary text — 11.6:1 on the page
-          600: "#e4dbd0",
-          700: "#f2ebe2", // body text
-          800: "#f8f2ea",
-          900: "#fff9f1", // headings
-          950: "#ffffff",
-        },
-        // 50 = the cards, 100 = the page, 200 = secondary grounds.
-        cream: { 50: "#211c18", 100: "#14110e", 200: "#2b2520", 300: "#3a322b" },
-        // 500 = the sale tag behind white type (4.6:1); 600 = a sale price as text (10:1 on the page).
-        sale: { 50: "#3a1d10", 500: "#c8460f", 600: "#ffb26b" },
-        success: { 50: "#132620", 100: "#173328", 200: "#1f4a3a", 500: "#2fc9a3", 600: "#4fd6b3", 700: "#8ee6cf" },
-        warning: { 50: "#2a2112", 100: "#3a2c15", 200: "#57411c", 500: "#e0a447", 600: "#ebb565", 700: "#f2c98a" },
-        danger: { 50: "#2c1615", 100: "#3d1c1a", 200: "#5c2724", 400: "#e0827c", 500: "#e4675f", 600: "#ec7f77", 700: "#f4aaa4" },
-        info: { 50: "#122030", 100: "#172a3f", 200: "#22405f", 500: "#5c9ae0", 600: "#7aaee6", 700: "#a3c8f0" },
-      },
-      components: {
-        "color-scheme": "dark",
-        // Orange actions with charcoal type (accent-fg is cream-50, the card colour): 7.3:1.
-        "--color-accent": "245 135 31",
-        "--color-accent-hover": "249 162 58",
-        "--accent-hover": "rgb(249 162 58)",
-        "--nav-hover": "rgb(249 168 74)",
-        "--nav-underline": "rgb(245 135 31)",
-        "--band-accent": "rgb(249 168 74)",
-        "--glass-alpha": "0.72",
-        "--glass-edge": "rgb(255 255 255 / 0.12)",
-        "--glass-edge-soft": "rgb(255 255 255 / 0.1)",
-        "--danger-fill": "rgb(190 64 56)",
-        "--danger-fill-hover": "rgb(170 54 47)",
-        "--sale-fill-hover": "rgb(170 58 12)",
-        "--header-shadow": "0 1px 0 0 rgb(255 255 255 / 0.06)",
-        "--panel-shadow": "inset 0 0 0 1px rgb(255 255 255 / 0.06)",
-        "--badge-note-bg": "rgb(33 28 24 / 0.9)",
-        "--badge-note-fg": "rgb(255 249 241)",
-        "--hero-cta-fill": "rgb(245 135 31)",
-        "--hero-cta-text": "rgb(35 31 32)",
-        "--mode-light-art": "none",
-        "--mode-dark-art": "contents",
-      },
-      bandPalette: { ink: { 400: "#b5aa9d", 500: "#a3978a" } },
-      bandComponents: { "--band-accent": "rgb(249 168 74)" },
+      "--hero-cta-fill": "rgb(245 135 31)",
+      "--hero-cta-text": "rgb(31 29 27)",
+      "--band-accent": "rgb(168 82 0)",
     },
   },
   // Tahafi — modern modest menswear (docs/brand/tahafi/THEME_BLUEPRINT.md). The owner's direction (2026-10-31): the feel of

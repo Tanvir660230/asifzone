@@ -1,28 +1,29 @@
-# Nasihamart storefront theme: Honey
+# Nasihamart storefront theme: tidy shop
 
-Owner, 2026-11-06: a new logo (orange house and arch, charcoal wordmark), organic food alongside attar and caps, and a full
-new look. The owner rejected an arch-and-doorway system, then two light options, and approved a dark, sharp look. Mockup:
-https://claude.ai/artifact/M6oGXcZWPggnijZHWNjwP8. This replaces the Mihrab theme.
+Owner, 2026-11-06: the dark Honey look and a bright yellow mock were both rejected. The brief became clean, modern and easy to
+use, close to Khaas Food: an app-like shop where buying is quick, with organic food first and caps and attar after it. Plan and
+mock: https://claude.ai/artifact/EMJp5APRGBJg83frJF2Uxv. This replaces the dark Honey theme. The layout preset keeps the id
+`honey`.
 
 ## Direction
 
-The logo's charcoal and orange, with the product lit like a studio shot.
-
-- **Ground:** every shopper page is dark (`dark.always` in ui-tokens). Page #14110E, cards #211C18, cream text #FFF9F1. The
-  admin stays light.
-- **Colour:** one orange, #F5871F, for actions, always with charcoal type (white on it fails contrast). Link orange #F9A84A.
-- **Type:** Outfit for titles, Hind Siliguri for reading (Latin and Bangla).
-- **The one big idea:** the hero product stands in front of a glowing disc with its name large. A two-word headline sits on
-  either side of the product on wide screens.
-- **Shape:** large soft corners and pill controls. No arches outside the logo.
+- **Ground:** a soft off-white page #F7F6F3, white cards. Light only, there is no dark mode.
+- **Colour:** one orange, #F5871F, on buying actions only, always with ink type #1F1D1B (white on it fails contrast). Honey tint
+  #FFF4E1 only on the top offer and the promo band. Green #17794A only for savings.
+- **Type:** Manrope for Latin and figures, Hind Siliguri for Bangla. Never heavier than 700. The fat, round look was the reason
+  the yellow mock failed.
+- **Shape:** 12 to 16px corners, 12px controls, round only for the + on a card.
+- **Buying:** a + on every card adds without leaving the page and becomes a − 1 + stepper. A product with options opens the
+  options sheet. On phones a small dark bar above the tabs shows the count and total. Wide screens show the total on the header's
+  bag button.
+- **Phone tabs:** Home, Shop, Bag, Orders (track order), Chat (contact). The floating contact button is off on phones.
 
 ## Content that makes it work (Storefront Studio and Settings)
 
-- Hero: a two-word headline, a cut-out product image on a transparent background, one line of text, one button. A longer
-  headline falls back to words beside a rounded photograph.
-- Logo: `logoOnDarkUrl` is what shoppers see. `logoUrl` stays the version for light paper (labels, invoices).
-- Categories: the first is the large tile, and its name sits on the photo in charcoal, so its image needs a light or orange
-  background.
-- Promo banner without an image: the full-width orange band.
+- Hero: a short headline, one line of text, one button, and a square photo. A cut-out on a transparent background sits best on
+  the tint.
+- Categories: the first two sit beside the hero as small tiles, the rest appear in the category section.
+- Logo: `logoUrl`, the version for light backgrounds, is what shoppers see.
+- Product photos stay 5:6. Cards crop them square from the middle, so keep the product centred.
 
 Logo files: `docs/brand/nasihamart/2026-logo/` (PNG exports from the designer's pack).
