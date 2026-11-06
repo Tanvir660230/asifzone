@@ -17,6 +17,7 @@ declare global {
 
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 import { FeedbackModal } from "./feedback-modal";
 
 function WhatsAppGlyph({ size = 20 }: { size?: number }) {
@@ -151,7 +152,8 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // sat over the right-hand column's wishlist hearts; the footer, menu and contact page still carry every way to reach
   // the shop.
   const pathname = usePathname() ?? "";
-  const phoneRouteHide = ["/product", "/cart", "/account", "/category", "/search", "/wishlist"].some((route) => pathname.startsWith(route))
+  // The honey preset has a Chat tab, so the floating button never shows on its phones.
+  const phoneRouteHide = storeLayout() === "honey" || ["/product", "/cart", "/account", "/category", "/search", "/wishlist"].some((route) => pathname.startsWith(route))
     ? "max-lg:hidden"
     : "";
   // An open menu closes on a tap outside it or Escape, like any menu.

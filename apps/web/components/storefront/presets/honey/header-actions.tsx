@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Search, ShoppingBag, X } from "lucide-react";
 import { navHref, type NavNode } from "@/lib/nav-links";
+import { Money } from "@/components/ui/money";
+import { useCartQuote } from "@/hooks/use-quote";
 import { useCartCount } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useSearchOverlayStore } from "@/store/search-overlay";
@@ -13,6 +15,7 @@ import { useMobileMenuStore } from "@/store/mobile-menu";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useSheetDrag } from "@/hooks/use-sheet-drag";
 import { cn } from "@/lib/utils";
+import { bagLabel } from "../../count-badge";
 
 /** The persisted cart count is only known in the browser — `null` until mounted, so server and client markup agree. */
 function useMountedCartCount(): number | null {
@@ -22,45 +25,41 @@ function useMountedCartCount(): number | null {
   return mounted ? count : null;
 }
 
-export function HoneySearchIcon() {
+/** The search field. A button that looks like the field and opens the store's search panel, the same one every store uses. */
+export function HoneySearchField() {
   const open = useSearchOverlayStore((s) => s.open);
   return (
-    <button type="button" onClick={open} aria-label="Search" className="flex h-11 w-11 items-center justify-center text-fg">
-      <Search size={20} />
+    <button
+      type="button"
+      onClick={open}
+      className="flex h-11 w-full items-center gap-2.5 rounded-[var(--control-radius)] border border-line bg-canvas px-3.5 text-left text-[0.9375rem] text-fg-muted transition-colors duration-200 ease-smooth hover:border-line-strong"
+    >
+      <Search size={19} strokeWidth={1.9} aria-hidden="true" />
+      <span className="truncate">Search products</span>
     </button>
   );
 }
 
-/** "Bag" with the item count in words-and-figures, opening the shared cart drawer. */
-export function HoneyBagButton({ compact = false }: { compact?: boolean }) {
+/** The bag, in the store's one action colour, with what is in it. Opens the shared cart drawer. */
+export function HoneyBagButton() {
   const count = useMountedCartCount();
+  const { data: quote } = useCartQuote();
   const openDrawer = useCartDrawerStore((s) => s.open);
-  const label = count ? `Bag, ${count} ${count === 1 ? "item" : "items"}` : "Bag";
   return (
     <button
       type="button"
       onClick={openDrawer}
-      aria-label={label}
-      className={cn(
-        "flex items-center gap-1.5 rounded-full bg-cream-200 px-4 font-display text-[0.9375rem] font-medium tracking-normal text-fg transition-colors duration-200 ease-smooth hover:text-[color:var(--nav-hover)]",
-        "h-11",
-      )}
+      aria-label={bagLabel("Bag", count ?? 0)}
+      className="flex h-11 items-center gap-2 whitespace-nowrap rounded-[var(--control-radius)] bg-accent px-3.5 text-sm font-semibold text-accent-fg transition-colors duration-200 ease-smooth hover:bg-accent-hover"
     >
+      <ShoppingBag size={20} strokeWidth={1.9} aria-hidden="true" />
       <span>Bag</span>
-      <span
-        aria-hidden
-        className={cn(
-          "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums transition-colors duration-200",
-          count ? "bg-accent text-accent-fg" : "text-fg",
-        )}
-      >
-        {count ?? 0}
-      </span>
+      {count ? <span className="font-bold tabular-nums">{quote ? <Money value={quote.subtotal} /> : count}</span> : null}
     </button>
   );
 }
 
-/** Phones: the whole store in one sheet — categories set large, then help links. Opened by the tab bar's Shop tab
+/** Phones: the whole store in one sheet — the categories, then help links. Opened by the tab bar's Shop tab
  * (store/mobile-menu.ts); it rises above the tab bar, and drags down to close. */
 export function HoneyMenu({ categories }: { categories: NavNode[] }) {
   const open = useMobileMenuStore((s) => s.isOpen);
@@ -119,7 +118,7 @@ export function HoneyMenu({ categories }: { categories: NavNode[] }) {
                   return (
                     <li key={cat.id} className="border-b border-line">
                       <div className="flex items-center justify-between">
-                        <Link href={navHref(cat)} onClick={close} className="flex-1 py-4 font-display text-[1.5rem] leading-tight text-fg">
+                        <Link href={navHref(cat)} onClick={close} className="flex-1 py-4 text-lg font-semibold leading-tight text-fg">
                           {cat.name}
                         </Link>
                         {cat.children.length > 0 && (

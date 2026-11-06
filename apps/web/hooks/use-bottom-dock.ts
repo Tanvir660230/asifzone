@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useCartStore } from "@/store/cart";
+import { storeLayout } from "@/lib/theme-layout";
 
 /** Routes where StickyCartBar never shows — /cart and /checkout already show the cart inline, and
  * /product hands the same bottom-bar slot to StickyAddToCart instead. */
@@ -21,8 +22,10 @@ interface BottomDockState {
   onCheckoutPage: boolean;
   /** Is StickyCartBar showing below 1024px too. Not where the theme has the bottom tab bar (`--dock-tab-bar` above 0):
    * its Bag tab already carries the count one tap away, and a second bar stacked over it only took screen from the
-   * products. Where there is no tab bar (the honey preset) the phone keeps the bar. */
+   * products. The honey preset keeps it there on purpose: a small dark bar above the tabs with the count and the total. */
   showCartBarOnPhone: boolean;
+  /** Is StickyCartBar showing from 1024px. Not in the honey preset, whose header's bag button already shows the total. */
+  showCartBarOnDesktop: boolean;
 }
 
 /** Single source of truth for "what's currently docked at the bottom of the viewport." Previously
@@ -49,5 +52,13 @@ export function useBottomDockState(): BottomDockState {
   // Checkout is a focused page: no bottom nav and no contact button over the form.
   const onCheckoutPage = pathname.startsWith("/checkout");
 
-  return { showCartBar, onProductPage, onCartOrCheckoutPage, onCheckoutPage, showCartBarOnPhone: showCartBar && !hasTabBar };
+  const honey = storeLayout() === "honey";
+  return {
+    showCartBar,
+    onProductPage,
+    onCartOrCheckoutPage,
+    onCheckoutPage,
+    showCartBarOnPhone: showCartBar && (honey || !hasTabBar),
+    showCartBarOnDesktop: showCartBar && !honey,
+  };
 }
