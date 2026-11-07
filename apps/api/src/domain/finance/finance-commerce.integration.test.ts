@@ -486,6 +486,36 @@ describe("clearing settlements", () => {
     expect(position).toMatchObject({ received: Number(a.total), settled: 0, open: Number(a.total) });
   });
 
+  it("posting a payout records a refused parcel's return charge from the payout's figure; a partly kept parcel waits for a person", async () => {
+    const v = await costedVariant(200);
+    const refused = await placeOrder([{ variantId: v.id, quantity: 1 }]);
+    await deliver(refused.id, "SHIPPED");
+    await updateOrderStatus(refused.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await updateOrderStatus(refused.id, { status: "RETURNED" }, admin);
+    // The webhook claimed 150; the payout says the rider handed over 100. The payout wins.
+    await prisma.order.update({ where: { id: refused.id }, data: { courierCollectedAmount: 150, courierCollectedAt: new Date() } });
+    const kept = await placeOrder([{ variantId: v.id, quantity: 2 }]);
+    await deliver(kept.id, "SHIPPED");
+    await updateOrderStatus(kept.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    const ctx = await getFinanceContext();
+    const cod = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: ctx.business.id, kind: "COURIER" } });
+    const bank = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: ctx.business.id, kind: "BANK" } });
+    const created = await createSettlement({
+      clearingFinancialAccountId: cod.id, destinationFinancialAccountId: bank.id, settlementDate: "2026-10-08", reference: `STF-refused-${RUN}`,
+      evidence: "Steadfast payout", lines: [{ orderNumber: refused.orderNumber, amount: 100, fee: 60 }, { orderNumber: kept.orderNumber, amount: 500, fee: 60 }],
+    }, OWNER, `p3-refused-${RUN}`);
+    await postSettlement(created.settlement.id, OWNER);
+
+    const charges = await prisma.payment.findMany({ where: { orderId: refused.id, purpose: "RETURN_CHARGE", status: "SUCCEEDED" } });
+    expect(charges.map((p) => Number(p.amount))).toEqual([100]);
+    expect(charges[0]!.note).toMatch(/payout/i);
+    // Which item the customer kept is a person's call: nothing is written for the partial parcel.
+    expect(await prisma.payment.count({ where: { orderId: kept.id, status: "SUCCEEDED" } })).toBe(0);
+    // Posting again (replay) never adds a second charge.
+    await postSettlement(created.settlement.id, OWNER);
+    expect(await prisma.payment.count({ where: { orderId: refused.id, purpose: "RETURN_CHARGE" } })).toBe(1);
+  });
+
   it("a gateway settlement statement (CSV) imports once, matches by the gateway's transaction id and books its actual fee", async () => {
     const v = await costedVariant(100, 800);
     const o = await paidOnline([{ variantId: v.id, quantity: 1 }]);

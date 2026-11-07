@@ -377,7 +377,20 @@ export async function recordManualPaymentInTx(tx: Db, orderId: string, input: Re
  * with every unit back. Then the whole collection is the refused parcel's charge — courier cost recovered (a COD row,
  * purpose RETURN_CHARGE). One per order (idempotencyKey `courier-collected:<orderId>`). Skipped when staff already
  * recorded courier cash on the order by hand (never counted twice); when the customer kept something, the collection pays
- * for what they kept and staff record it (the form is prefilled). Safe to call any number of times. */
+ * for what they kept and staff record it (the form is prefilled). Safe to call any number of times. The amount is the
+ * order's posted payout lines when there are any (posting a payout calls this for each of its orders), else the webhook's
+ * reported collection. */
+/** What the courier's posted payouts paid for this order: the sum of its matched settlement lines (the rider's real
+ * collection, more reliable than the webhook's `cod_amount`). Null when no posted payout names the order. */
+export async function courierPaidOutFor(db: Db | typeof prisma, orderId: string): Promise<Prisma.Decimal | null> {
+  const agg = await db.clearingSettlementLine.aggregate({
+    where: { orderId, outsideSale: false, settlement: { status: "POSTED" } },
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+  return agg._count._all > 0 ? (agg._sum.amount ?? new Prisma.Decimal(0)) : null;
+}
+
 export async function settleCourierCollected(orderId: string): Promise<"SETTLED" | "NOT_YET" | "SKIPPED"> {
   const currency = await storeCurrency();
   const key = `courier-collected:${orderId}`;
@@ -388,8 +401,12 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
         where: { id: orderId },
         select: { courierCollectedAmount: true, partialDeliveryReconciledAt: true, items: { select: { quantity: true, returnedQuantity: true } } },
       });
-      if (order.deletedAt || !row.courierCollectedAmount) return "NOT_YET";
-      const collected = fromMajor(row.courierCollectedAmount.toString(), currency);
+      if (order.deletedAt) return "NOT_YET";
+      // A posted payout is what the rider really handed over; the webhook figure is only used until one arrives.
+      const paidOut = await courierPaidOutFor(tx, orderId);
+      const source = paidOut ?? row.courierCollectedAmount;
+      if (!source) return "NOT_YET";
+      const collected = fromMajor(source.toString(), currency);
       if (collected.amount <= 0) return "NOT_YET";
       // A refused parcel received on the scanner before Steadfast reported it is Cancelled (after shipping): the customer
       // kept nothing either.
@@ -408,11 +425,16 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
           purpose: "RETURN_CHARGE",
           status: "SUCCEEDED",
           amount: toMajor(collected),
-          note: "Steadfast: collected by the rider on a refused parcel",
+          note: paidOut ? "Steadfast payout: collected by the rider on a refused parcel" : "Steadfast: collected by the rider on a refused parcel",
           idempotencyKey: key,
         },
       });
-      await timelineNote(tx, orderId, order.status, `Return charge recorded automatically: Steadfast reported ${noteMoney(collected)} collected by the rider — courier cost recovered, not owed back`);
+      await timelineNote(
+        tx,
+        orderId,
+        order.status,
+        `Return charge recorded automatically: Steadfast ${paidOut ? "paid out" : "reported"} ${noteMoney(collected)} collected by the rider — courier cost recovered, not owed back`,
+      );
       await refreshPaymentStatus(tx, orderId, currency);
       return "SETTLED";
     });

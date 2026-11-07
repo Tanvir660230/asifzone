@@ -220,6 +220,8 @@ export interface ParcelView {
     expectedCod: number;
     /** What Steadfast reported the rider collected (partial delivery webhook), if it did. */
     courierReported: number | null;
+    /** What Steadfast's posted payouts paid for this parcel (the real collection), if a payout names it. */
+    paidOut: number | null;
     /** COD and return-charge money already recorded on the order — a second recording here is refused. */
     recorded: Array<{ id: string; amount: number; purpose: "ORDER" | "RETURN_CHARGE"; provider: string; at: string }>;
     /** The viewer holds payments.record. */
