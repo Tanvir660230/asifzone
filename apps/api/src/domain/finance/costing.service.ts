@@ -950,6 +950,12 @@ export async function correctHeldValuesInTx(
   return out;
 }
 
+/** Costing may start on the opening day itself: compare the store's business date of `at` with the opening date (a
+ * calendar date), not the UTC instant with the opening date's UTC midnight — before 6 am in Dhaka those disagree. */
+export function costingStartsBeforeOpening(at: Date, openingDate: Date, timezone: string): boolean {
+  return businessDate(at, timezone) < openingDate.toISOString().slice(0, 10);
+}
+
 /**
  * Activates inventory costing for this installation's books from `at` — a one-way switch (database trigger). Phase 4C's
  * approved valuation cutover is the only production caller; 4B uses it in tests and the benchmark. Audited.
@@ -958,7 +964,7 @@ export async function activateInventoryCostingInTx(tx: AppTransactionClient, bus
   const before = await tx.financeBusiness.findUniqueOrThrow({ where: { id: businessId } });
   if (before.inventoryCostingActivatedAt) return before.inventoryCostingActivatedAt;
   if (!before.openingDate) throw financeError(409, "COSTING_NEEDS_OPENING_DATE", "Set the Financial Opening Date before activating inventory costing");
-  if (at < before.openingDate) throw financeError(409, "COSTING_BEFORE_OPENING", "Costing can't start before the books do");
+  if (costingStartsBeforeOpening(at, before.openingDate, before.timezone)) throw financeError(409, "COSTING_BEFORE_OPENING", "Costing can't start before the books do");
   await tx.financeBusiness.update({ where: { id: businessId }, data: { inventoryCostingActivatedAt: at } });
   await recordFinanceAudit(tx, { businessId, actor, action: "business.inventory_costing_activated", entityType: "FinanceBusiness", entityId: businessId, before: { inventoryCostingActivatedAt: null }, after: { inventoryCostingActivatedAt: at } });
   return at;
