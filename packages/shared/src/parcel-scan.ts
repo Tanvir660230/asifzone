@@ -180,6 +180,8 @@ export interface ParcelLineView {
   received: number;
   /** Units that may still physically come back — the ceiling for this receipt. */
   awaiting: number;
+  /** The line's unit price on the order: when the courier collected at least this much, the customer likely kept one. */
+  unitPrice: number;
 }
 
 export interface ParcelReceiptView {
