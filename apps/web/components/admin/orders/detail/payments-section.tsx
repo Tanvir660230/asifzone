@@ -184,26 +184,28 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
                 </p>
                 {p.purpose === "RETURN_CHARGE" && <p className="text-xs text-ink-500">Courier cost recovered — not owed back, not sales</p>}
                 {p.note && <p className="text-xs text-ink-500">{p.note}</p>}
-                {canMarkReturnCharge(p) && (
-                  <button type="button" className="mt-1 text-xs font-medium text-info-700 underline-offset-2 hover:underline disabled:opacity-50" disabled={detail.remark.isPending} onClick={() => markReturnCharge(p)}>
-                    This was the return charge
-                  </button>
-                )}
-                {p.purpose === "RETURN_CHARGE" && perms.refunds && !order.deletedAt && (
-                  <button type="button" className="mt-1 text-xs font-medium text-ink-500 underline-offset-2 hover:text-ink-800 hover:underline disabled:opacity-50" disabled={detail.remark.isPending} onClick={() => unmarkReturnCharge(p)}>
-                    Count as order money
-                  </button>
-                )}
-                {canVoid(p) && voiding?.id !== p.id && (
-                  <button
-                    type="button"
-                    className="ml-3 mt-1 text-xs font-medium text-ink-500 underline-offset-2 hover:text-danger-700 hover:underline"
-                    onClick={() => setVoiding({ id: p.id, reason: "", payoutWarning: null })}
-                    data-testid="void-payment"
-                  >
-                    Entered by mistake
-                  </button>
-                )}
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                  {canMarkReturnCharge(p) && (
+                    <button type="button" className="text-xs font-medium text-info-700 underline-offset-2 hover:underline disabled:opacity-50" disabled={detail.remark.isPending} onClick={() => markReturnCharge(p)}>
+                      This was the return charge
+                    </button>
+                  )}
+                  {p.purpose === "RETURN_CHARGE" && perms.refunds && !order.deletedAt && (
+                    <button type="button" className="text-xs font-medium text-ink-500 underline-offset-2 hover:text-ink-800 hover:underline disabled:opacity-50" disabled={detail.remark.isPending} onClick={() => unmarkReturnCharge(p)}>
+                      Count as order money
+                    </button>
+                  )}
+                  {canVoid(p) && voiding?.id !== p.id && (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-ink-500 underline-offset-2 hover:text-danger-700 hover:underline"
+                      onClick={() => setVoiding({ id: p.id, reason: "", payoutWarning: null })}
+                      data-testid="void-payment"
+                    >
+                      Entered by mistake
+                    </button>
+                  )}
+                </div>
                 {voiding?.id === p.id && (
                   <div className="mt-2 space-y-2" data-testid="void-payment-form">
                     <Field label="Why is it cancelled?" htmlFor={`void-reason-${p.id}`}>
