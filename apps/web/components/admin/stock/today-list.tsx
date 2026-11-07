@@ -145,6 +145,13 @@ export function TodayList({ data, done, isLoading, isError, onRetry, actions }: 
           </ul>
         )}
       </Card>
+      {data && (
+        <p className="text-xs text-fg-muted" data-testid="today-last-full-count">
+          {data.lastFullCount
+            ? `Last full count: ${formatBookDate(data.lastFullCount.date)} · ${plural(data.lastFullCount.items, "item")}${data.lastFullCount.by ? ` · by ${data.lastFullCount.by}` : ""}`
+            : "No full count recorded yet — when you count everything in the shop, tick \u201cThis is everything I have\u201d."}
+        </p>
+      )}
     </section>
   );
 }
