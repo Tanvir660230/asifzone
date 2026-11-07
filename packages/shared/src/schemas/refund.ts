@@ -44,6 +44,15 @@ export const reclassifyPaymentSchema = z.object({
 
 export type ReclassifyPaymentInput = z.infer<typeof reclassifyPaymentSchema>;
 
+/** Cancels a COD / manual payment entered by mistake (POST /orders/:id/payments/:paymentId/void). `confirmPayout`: the
+ * courier's posted payout covers this money, void it anyway. */
+export const voidPaymentSchema = z.object({
+  reason: z.string().trim().min(3, "Say why this payment is cancelled").max(500),
+  confirmPayout: z.boolean().optional().default(false),
+});
+
+export type VoidPaymentInput = z.infer<typeof voidPaymentSchema>;
+
 /** Repair of the Order.paymentStatus projection from the ledger — a dry run unless `apply` is true. */
 export const paymentLedgerRepairSchema = z.object({
   apply: z.boolean().optional().default(false),
@@ -61,7 +70,7 @@ const ledgerListBase = paginationQuerySchema.extend({
 });
 export const paymentTransactionListQuerySchema = ledgerListBase.extend({
   provider: paymentProviderEnum.optional(),
-  status: z.enum(["SUCCEEDED", "FAILED"]).optional(),
+  status: z.enum(["SUCCEEDED", "FAILED", "VOIDED"]).optional(),
 });
 /** Finance › Online attempts (Blueprint V2 P5): gateway checkout sessions. */
 export const paymentSessionStatusEnum = z.enum(["ACTIVE", "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"]);
@@ -119,7 +128,7 @@ export interface PaymentTransactionRow {
   id: string;
   settledAt: string;
   provider: z.infer<typeof paymentProviderEnum>;
-  status: "SUCCEEDED" | "FAILED";
+  status: "SUCCEEDED" | "FAILED" | "VOIDED";
   /** RETURN_CHARGE: a refused parcel's return charge — courier cost recovered, not order money (PAYMENT_LEDGER §5a). */
   purpose: "ORDER" | "RETURN_CHARGE";
   amount: number;

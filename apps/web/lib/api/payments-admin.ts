@@ -43,7 +43,7 @@ function ledgerQuery(params: object) {
 }
 
 /** Finance › Transactions: every Payment ledger row, newest first. */
-export function listPaymentTransactions(params: LedgerListParams & { provider?: string; status?: "SUCCEEDED" | "FAILED" } = {}, { signal }: FetchSignal = {}) {
+export function listPaymentTransactions(params: LedgerListParams & { provider?: string; status?: "SUCCEEDED" | "FAILED" | "VOIDED" } = {}, { signal }: FetchSignal = {}) {
   return apiFetch<PaginatedResult<PaymentTransactionRow>>(`/api/payment-admin/transactions?${ledgerQuery(params)}`, { signal });
 }
 
@@ -86,6 +86,11 @@ export function recordPayment(orderId: string, input: RecordPaymentInput, idempo
 /** Re-marks a COD / manual payment as a refused parcel's return charge, or back to order money (PAYMENT_LEDGER §5a). */
 export function reclassifyPayment(orderId: string, paymentId: string, input: ReclassifyPaymentInput) {
   return apiFetch<{ payment: OrderPaymentSummary }>(`/api/orders/${orderId}/payments/${paymentId}`, { method: "PATCH", body: input });
+}
+
+/** Cancels a COD / manual payment entered by mistake; it then counts nowhere (VOIDED). */
+export function voidPayment(orderId: string, paymentId: string, input: { reason: string; confirmPayout?: boolean }) {
+  return apiFetch<{ payment: OrderPaymentSummary }>(`/api/orders/${orderId}/payments/${paymentId}/void`, { method: "POST", body: input });
 }
 
 // ─── Order adjustments (docs/ORDER_ADJUSTMENTS.md) ───────────────────────────────────────────────────────────────────

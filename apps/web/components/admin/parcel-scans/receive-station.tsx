@@ -603,6 +603,8 @@ function MoneyPanel({ parcel, form, setForm, plan }: { parcel: ParcelView; form:
   const symbol = storeCurrencySymbol();
   const actual = form.money.actual.trim() === "" ? null : Number(form.money.actual);
   const diff = actual === null || !Number.isFinite(actual) ? null : actual - plan.expected;
+  // The payout is the rider’s real collection; the webhook figure is only a claim until a payout arrives.
+  const suggested = m.paidOut ?? m.courierReported;
   const set = (patch: Partial<FormState["money"]>) => setForm((f) => ({ ...f, money: { ...f.money, ...patch } }));
   return (
     <section className="rounded-xl border border-line-subtle p-3.5" aria-label="Money from the courier" data-testid="money-panel">
@@ -612,12 +614,17 @@ function MoneyPanel({ parcel, form, setForm, plan }: { parcel: ParcelView; form:
           <dt className="text-xs text-fg-muted">Expected COD</dt>
           <dd className="font-semibold tabular-nums text-fg" data-testid="expected-cod">{formatPrice(m.expectedCod)}</dd>
         </div>
-        {m.courierReported !== null && (
+        {m.paidOut !== null ? (
+          <div>
+            <dt className="text-xs text-fg-muted">Steadfast paid out</dt>
+            <dd className="font-semibold tabular-nums text-fg" data-testid="paid-out">{formatPrice(m.paidOut)}</dd>
+          </div>
+        ) : m.courierReported !== null ? (
           <div>
             <dt className="text-xs text-fg-muted">Steadfast says collected</dt>
             <dd className="font-semibold tabular-nums text-fg">{formatPrice(m.courierReported)}</dd>
           </div>
-        )}
+        ) : null}
         {diff !== null && (
           <div>
             <dt className="text-xs text-fg-muted">Difference</dt>
@@ -640,9 +647,9 @@ function MoneyPanel({ parcel, form, setForm, plan }: { parcel: ParcelView; form:
             <label className="block text-xs font-medium text-fg">
               Actually received ({symbol})
               <Input className="mt-1" inputMode="decimal" placeholder="Leave empty if none" value={form.money.actual} onChange={(e) => set({ actual: e.target.value.replace(/[^\d.]/g, "") })} data-testid="money-actual" />
-              {m.courierReported !== null && form.money.actual === "" && (
-                <button type="button" className="mt-1 text-xs font-medium text-fg underline-offset-2 hover:underline" onClick={() => set({ actual: String(m.courierReported) })}>
-                  Use Steadfast&apos;s {formatPrice(m.courierReported)}
+              {suggested !== null && form.money.actual === "" && (
+                <button type="button" className="mt-1 text-xs font-medium text-fg underline-offset-2 hover:underline" onClick={() => set({ actual: String(suggested) })} data-testid="money-use-suggested">
+                  Use {m.paidOut !== null ? "the payout’s" : "Steadfast’s"} {formatPrice(suggested)}
                 </button>
               )}
             </label>
