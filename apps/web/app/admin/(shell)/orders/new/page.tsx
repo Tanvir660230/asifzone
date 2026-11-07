@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
 import { Alert } from "@/components/ui/alert";
 import { useOrderPermissions } from "@/components/admin/orders/order-domain";
+import { PhoneHistoryCard } from "@/components/admin/orders/phone-history";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as productsApi from "@/lib/api/products";
@@ -117,6 +118,7 @@ export default function NewOrderPage() {
 
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
+  const customerPhone = watch("customerPhone");
 
   // Division is derived from the chosen district rather than picked separately; the server quote resolves the
   // shipping zone from the address, exactly as for the storefront checkout.
@@ -364,6 +366,17 @@ export default function NewOrderPage() {
                   {...register("customerPhone")}
                 />
                 {errors.customerPhone && <p className="ui-field-error">{errors.customerPhone.message}</p>}
+                {!customerId && (
+                  <PhoneHistoryCard
+                    phone={customerPhone ?? ""}
+                    onUse={(h) => {
+                      setValue("customerName", h.last.customerName, { shouldValidate: true });
+                      setValue("shippingDistrict", h.last.shippingDistrict, { shouldValidate: true });
+                      setValue("shippingArea", h.last.shippingArea, { shouldValidate: true });
+                      setValue("shippingAddressLine", h.last.shippingAddressLine, { shouldValidate: true });
+                    }}
+                  />
+                )}
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>
