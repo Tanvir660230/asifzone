@@ -20,6 +20,9 @@ export interface BriefInput {
   topChannel: { label: string; orders: number; conversionRate: number | null } | null;
   queues: OpsQueues;
   anomalies: Anomaly[];
+  /** The books' own warnings now (finance alerts: ad spend missing, courier money unpaid, events not posted…), most
+   * severe first. Absent when the books haven't started or the viewer's store has no finance. */
+  moneyAlerts?: Array<{ severity: "critical" | "warning" | "info"; title: string; count: number }>;
 }
 
 export interface DailyBrief {
@@ -78,6 +81,11 @@ export function composeBrief(input: BriefInput): DailyBrief {
 
   const unusual = input.anomalies.map((a) => `${a.label} were ${a.direction === "up" ? "up" : "down"}: ${count(a.value)} against a usual ${avg(a.expected)}`);
   const todo: string[] = [];
+  // Money problems lead: a wrong profit or unpaid courier cash costs more than a late call-back. Info items stay on Home.
+  const severity = { critical: 0, warning: 1, info: 2 } as const;
+  for (const a of [...(input.moneyAlerts ?? [])].filter((a) => a.severity !== "info").sort((x, y) => severity[x.severity] - severity[y.severity])) {
+    todo.push(a.count > 1 ? `${a.title} (${count(a.count)})` : a.title);
+  }
   if (queues.holdsDue) todo.push(`${plural(queues.holdsDue, "call-back is", "call-backs are")} due`);
   if (queues.readyToBook) todo.push(`${plural(queues.readyToBook, "confirmed order")} not sent to the courier yet`);
   if (queues.awaitingConfirmation) todo.push(`${plural(queues.awaitingConfirmation, "order")} waiting to be confirmed`);

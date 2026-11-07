@@ -11,6 +11,7 @@ import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { storeContext } from "../../domain/metrics/store-time";
 import { detectAnomaly, type Anomaly } from "./anomalies";
 import { composeBrief, type DailyBrief } from "./daily-brief";
+import { financeAlerts } from "../../domain/finance/finance-alerts.service";
 import { comparisonDates, countOps, type OpsCountKey } from "./ops-pulse";
 import { getOpsPulse, loadOpsEvents } from "./ops-pulse.service";
 import { getChannelPerformance, sessionStarts } from "./traffic.service";
@@ -105,11 +106,13 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
   const dayStart = businessDayStartUtc(date, timezone);
   // A finished day barely changes (a late delivery at most): cached per day, refreshed in the background (phase 5).
   return cacheSwr(`analytics:v1:daily-brief:${timezone}:${date}`, { freshSeconds: date === today ? 60 : 300, staleSeconds: date === today ? 10 * 60 : 24 * 3600 }, async () => {
-  const [pulse, metrics, channels, anomalies] = await Promise.all([
+  const [pulse, metrics, channels, anomalies, money] = await Promise.all([
     getOpsPulse(date, now),
     computeMetrics({ metrics: ["realised_net_sales", "payments_received"], range: { from: date, to: date } }, now),
     getChannelPerformance(undefined, dayStart, dayStart),
     getAnomalies(date, now),
+    // The brief must still go out when the books can't be read (not started, a failing check): no money lines then.
+    financeAlerts().catch(() => null),
   ]);
   const top = channels.channels.filter((c) => c.channel !== null && c.orders > 0).sort((a, b) => b.orders - a.orders)[0];
   const brief = composeBrief({
@@ -122,6 +125,7 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
     topChannel: top ? { label: top.label, orders: top.orders, conversionRate: top.conversionRate } : null,
     queues: pulse.queues,
     anomalies: anomalies.anomalies,
+    moneyAlerts: money?.alerts.map((a) => ({ severity: a.severity, title: a.title, count: a.count })),
   });
   return { date, partialDay: date === today, ...brief };
   });

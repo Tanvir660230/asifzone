@@ -582,6 +582,36 @@ describe("clearing settlements", () => {
     await expect(voidPayment(online.id, gateway.id, { reason: "test", confirmPayout: false }, admin)).rejects.toMatchObject({ details: { code: "PAYMENT_NOT_ALLOWED" } });
   });
 
+  it("a return charge booked from the webhook's claim is corrected once by the payout's figure", async () => {
+    const v = await costedVariant(200);
+    const o = await placeOrder([{ variantId: v.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await updateOrderStatus(o.id, { status: "RETURNED" }, admin);
+    await prisma.order.update({ where: { id: o.id }, data: { courierCollectedAmount: 150, courierCollectedAt: new Date() } });
+    expect(await settleCourierCollected(o.id)).toBe("SETTLED"); // 150 from the webhook
+    await projectOrder(o.id);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(-150);
+
+    const ctx = await getFinanceContext();
+    const cod = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: ctx.business.id, kind: "COURIER" } });
+    const bank = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: ctx.business.id, kind: "BANK" } });
+    const created = await createSettlement({
+      clearingFinancialAccountId: cod.id, destinationFinancialAccountId: bank.id, settlementDate: "2026-10-10", reference: `STF-claim-${RUN}`,
+      evidence: "Steadfast payout", lines: [{ orderNumber: o.orderNumber, amount: 100, fee: 60 }],
+    }, OWNER, `p3-claim-${RUN}`);
+    await postSettlement(created.settlement.id, OWNER);
+
+    const rows = await prisma.payment.findMany({ where: { orderId: o.id, purpose: "RETURN_CHARGE" }, orderBy: { createdAt: "asc" } });
+    expect(rows.map((p) => [Number(p.amount), p.status])).toEqual([[150, "VOIDED"], [100, "SUCCEEDED"]]);
+    expect((await getOrderPaymentSummary(o.id)).returnCharge).toBe(100);
+    await projectOrder(o.id);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(-100);
+    // Run again (another sweep, a re-post): nothing more changes.
+    expect(await settleCourierCollected(o.id)).toBe("SKIPPED");
+    expect(await prisma.payment.count({ where: { orderId: o.id, purpose: "RETURN_CHARGE" } })).toBe(2);
+  });
+
   it("a gateway settlement statement (CSV) imports once, matches by the gateway's transaction id and books its actual fee", async () => {
     const v = await costedVariant(100, 800);
     const o = await paidOnline([{ variantId: v.id, quantity: 1 }]);
