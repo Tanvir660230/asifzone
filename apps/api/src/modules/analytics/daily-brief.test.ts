@@ -44,6 +44,19 @@ describe("composeBrief", () => {
     expect(composeBrief(base).watch).toEqual(["3 call-backs are due", "7 confirmed orders not sent to the courier yet", "5 orders waiting to be confirmed"]);
   });
 
+  it("leads the to-do with the books' own warnings, critical first; info items stay on Home", () => {
+    const b = composeBrief({
+      ...base,
+      moneyAlerts: [
+        { severity: "warning", title: "Ad spend missing — profit looks higher than it is", count: 6 },
+        { severity: "info", title: "Finance checks not run this week", count: 1 },
+        { severity: "critical", title: "Financial events failed to post", count: 2 },
+      ],
+    });
+    expect(b.todo.slice(0, 2)).toEqual(["Financial events failed to post (2)", "Ad spend missing — profit looks higher than it is (6)"]);
+    expect(b.todo.join(" ")).not.toMatch(/checks not run/);
+  });
+
   it("puts anomalies first, in plain words", () => {
     const b = composeBrief({
       ...base,
