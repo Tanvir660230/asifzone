@@ -9,7 +9,7 @@ const product = {
   slug: "royal-amber",
   description: `<p>${long}</p>`,
   shortDescription: long.slice(0, 200),
-  seoTitle: "Royal Amber attar | Asif Zone",
+  seoTitle: "Royal Amber attar | The store",
   seoDescription: long.slice(0, 160),
   basePrice: "599",
   compareAtPrice: null,
