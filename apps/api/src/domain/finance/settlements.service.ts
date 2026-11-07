@@ -25,6 +25,8 @@ import { parseStatementAmount } from "./statement-parser";
 import { upsertException } from "./finance-exceptions.service";
 import { projectOrder } from "./commerce-accounting.service";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
+import { settleCourierCollected } from "../payments/payment-ledger.service";
+import { captureError } from "../../lib/observability/error-capture";
 
 const adminId = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 const FEE_ACCOUNT: Record<string, AccountMappingKey> = { COURIER: "expense.courier_fees", PAYMENT_GATEWAY: "expense.gateway_fees", OTHER: "expense.settlement_adjustments" };
@@ -303,8 +305,21 @@ async function outsideSaleCostLines(tx: AppTransactionClient, business: FinanceB
  * account reconciles order by order. Idempotent: a posted settlement is returned as it is. */
 export async function postSettlement(id: string, actor: FinanceActor) {
   const result = await postSettlementOnly(id, actor);
-  if (!result.alreadyPosted) await reprojectOrders(result.settlement.lines);
+  if (!result.alreadyPosted) {
+    await settleRefusedParcels(result.settlement.lines);
+    await reprojectOrders(result.settlement.lines);
+  }
   return result;
+}
+
+/** A payout names what the rider collected on each parcel. For a refused parcel (the customer kept nothing) that money is
+ * the return charge, so it is recorded on the order now instead of waiting for someone to notice the payout. Parcels the
+ * customer partly kept still need a person (which item?) and stay on the receive screen, prefilled. A failure is logged and
+ * never undoes the posted payout. */
+async function settleRefusedParcels(lines: Array<{ orderId: string | null; outsideSale: boolean }>) {
+  for (const orderId of new Set(lines.flatMap((l) => (l.orderId && !l.outsideSale ? [l.orderId] : [])))) {
+    await settleCourierCollected(orderId).catch((err) => captureError(err, { msg: `[settlement] return charge for order ${orderId} not recorded:` }));
+  }
 }
 
 /** Owner's books §3.3: a posted (or reversed) settlement withdraws (or restores) the charge estimates of its orders. */

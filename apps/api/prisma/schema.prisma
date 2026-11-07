@@ -185,6 +185,8 @@ enum PaymentSessionStatus {
 enum PaymentTxnStatus {
   SUCCEEDED
   FAILED
+  /// Entered by mistake and cancelled by staff (voidPayment): counts nowhere, kept for the record.
+  VOIDED
 }
 
 enum RefundStatus {
@@ -1815,6 +1817,10 @@ model Payment {
   /// True for rows the Phase 4 backfill inserted from an order's own recorded status (docs/PAYMENT_LEDGER.md §11).
   backfilled            Boolean          @default(false)
   settledAt             DateTime         @default(now())
+  /// A VOIDED row: when, by whom and why it was cancelled.
+  voidedAt              DateTime?
+  voidedByAdminId       String?
+  voidReason            String?
   refunds               Refund[]
   createdAt             DateTime         @default(now())
 
