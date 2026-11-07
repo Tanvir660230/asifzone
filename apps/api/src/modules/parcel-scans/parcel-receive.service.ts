@@ -86,7 +86,7 @@ const ORDER_VIEW = {
   receivedBackBy: { select: { name: true } },
   returnInspectedAt: true,
   items: {
-    select: { id: true, productNameSnapshot: true, skuSnapshot: true, sizeSnapshot: true, colorSnapshot: true, quantity: true, returnedQuantity: true, restockedQuantity: true },
+    select: { id: true, productNameSnapshot: true, skuSnapshot: true, sizeSnapshot: true, colorSnapshot: true, quantity: true, returnedQuantity: true, restockedQuantity: true, priceSnapshot: true },
     orderBy: { id: "asc" },
   },
 } satisfies Prisma.OrderSelect;
@@ -202,6 +202,7 @@ export async function getParcelView(orderId: string, viewer: Viewer): Promise<Pa
     returned: o.status === "CANCELLED" ? i.quantity : i.returnedQuantity,
     received: i.restockedQuantity,
     awaiting: plan.awaiting.get(i.id) ?? 0,
+    unitPrice: Number(i.priceSnapshot),
   }));
   const canSeeMoney = viewer.permissions.includes("payments.read");
   return {

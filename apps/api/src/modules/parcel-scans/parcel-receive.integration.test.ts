@@ -319,6 +319,11 @@ describe("other states", () => {
     await expect(receive(d.id, { lines: [line(d.items[0]!.id, { good: 1 })] })).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it("each line carries its unit price, so the screen can tell an item's price from a delivery charge", async () => {
+    const o = await shipped(1, { price: 750 });
+    expect((await view(o.id)).lines[0]).toMatchObject({ unitPrice: 750 });
+  });
+
   it("a scanned-back refused parcel the courier later reports with a collection settles it as the return charge", async () => {
     const o = await shipped(1);
     await receive(o.id, { outcome: "FULL_RETURN", lines: [line(o.items[0]!.id, { good: 1 })] });

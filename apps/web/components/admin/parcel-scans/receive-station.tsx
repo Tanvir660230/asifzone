@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/toast";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as scansApi from "@/lib/api/parcel-scans";
 import { getOrderExceptions, getOrderStats } from "@/lib/api/admin-orders";
+import { Alert } from "@/components/ui/alert";
 import { formatCount, formatPrice, formatStoreDate, storeCurrencySymbol } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { invalidateOrderQueries, orderKeys } from "@/components/admin/orders/order-domain";
@@ -59,6 +60,16 @@ type View =
   | { kind: "parcel"; parcel: ParcelView; code: string | null; matchedBy: ParcelResolveResult["matchedBy"] };
 
 const decides = (p: ParcelView) => p.receive.mode === "DECIDE_OUTCOME" || p.receive.mode === "RECONCILE";
+
+/** The courier handed over at least one item's price for a parcel that is being decided: more than a refused parcel's
+ * delivery charge, so the customer most likely kept something. The figure the payout (or Steadfast) gives; null when the
+ * viewer can't see money or there is none. */
+function keptLikely(p: ParcelView): number | null {
+  if (!decides(p) || !p.money || !p.lines.length) return null;
+  const collected = p.money.paidOut ?? p.money.courierReported;
+  if (collected === null || collected <= 0) return null;
+  return collected >= Math.min(...p.lines.map((l) => l.unitPrice)) ? collected : null;
+}
 
 export function ReceiveStation() {
   const queryClient = useQueryClient();
@@ -111,7 +122,8 @@ export function ReceiveStation() {
 
   const openParcel = useCallback(async (orderId: string, scanned: string | null, matchedBy: ParcelResolveResult["matchedBy"]) => {
     const parcel = await scansApi.getParcel(orderId);
-    setForm({ outcome: null, lines: Object.fromEntries(parcel.lines.map((l) => [l.orderItemId, { ...EMPTY }])), money: { actual: "", charge: "", reason: "", note: "" }, note: "" });
+    // Money that pays for an item: start on "kept some", so the person says which one instead of receiving it all back.
+    setForm({ outcome: keptLikely(parcel) !== null ? "PARTIAL" : null, lines: Object.fromEntries(parcel.lines.map((l) => [l.orderItemId, { ...EMPTY }])), money: { actual: "", charge: "", reason: "", note: "" }, note: "" });
     setView({ kind: "parcel", parcel, code: scanned, matchedBy });
     return parcel;
   }, []);
@@ -394,6 +406,11 @@ export function ReceiveStation() {
             {parcel.receive.message}
           </div>
 
+          {keptLikely(parcel) !== null && (
+            <Alert variant="warning" title="The customer probably kept something" data-testid="kept-likely">
+              The courier collected {formatPrice(keptLikely(parcel)!)} — at least one item&apos;s price, more than a delivery charge. Say which items the customer kept; only what is in your hand goes back into stock.
+            </Alert>
+          )}
           {parcel.receive.mode === "DECIDE_OUTCOME" && (
             <fieldset>
               <legend className="text-sm font-semibold text-fg">Did the customer keep anything?</legend>
