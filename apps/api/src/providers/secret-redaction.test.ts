@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CREDENTIAL_PARAM, logger, maskText, redact } from "../lib/observability/logger";
+import { bulkSmsRejection } from "./sms/bulksmsbd";
 import { captureError } from "../lib/observability/error-capture";
 
 // Phase 12 W7 (contract S-6): BulkSMSBD takes its API key in the query string and SSLCommerz's validator takes
@@ -50,5 +51,15 @@ describe("credential query parameters are masked", () => {
     expect(text.length).toBeGreaterThan(0);
     expect(text).not.toContain(KEY);
     expect(text).toContain("api_key=[redacted]");
+  });
+});
+
+describe("BulkSMSBD rejection", () => {
+  it("never carries the API key the provider echoes back", () => {
+    const key = "xzkeTESTKEY123456789";
+    const msg = bulkSmsRejection({ response_code: 1015, error_message: `8809600000000 sender id has not found Any Valid Gateway using this ${key} key` }, key);
+    expect(msg).not.toContain(key);
+    expect(msg).toContain("[redacted]");
+    expect(msg).toContain("1015");
   });
 });
