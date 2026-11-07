@@ -46,7 +46,7 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
           beside it the trend wraps instead of the number being cut. The value keeps `truncate` only as a floor for
           pathological widths (it has no spaces to wrap on); its full text is in the title. */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1 sm:pt-2">
-        <p title={value} className="max-w-full truncate text-[20px] font-semibold sm:text-[26px] leading-tight tracking-tight tabular-nums text-fg">
+        <p title={value} className={cn("max-w-full truncate font-semibold leading-tight tracking-tight tabular-nums text-fg", String(value).length > 6 ? "text-[17px] sm:text-[19px]" : "text-[20px] sm:text-[26px]")}>
           {value}
         </p>
         {hasTrend && (

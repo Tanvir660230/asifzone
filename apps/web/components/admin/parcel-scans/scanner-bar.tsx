@@ -1,17 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { CloudOff, PackageCheck, PackageOpen, Volume2, VolumeX } from "lucide-react";
+import { CloudOff, Volume2, VolumeX } from "lucide-react";
 import type { ParcelScanKind } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
 
 /**
- * The scanner's status strip, the same in both modes: which mode this station is in (the two modes are two pages, so a
- * refresh or a bookmark keeps the mode), whether the scanner can type into the scan box right now, the last code read,
- * and the sound switch.
+ * The scanner's status strip, the same in both modes: whether the scanner can type into the scan box right now, the last
+ * code read, and the sound switch. The mode (Dispatch scan / Returns in) is the page, chosen in the Orders tabs above —
+ * a second switch here made three rows of navigation on a phone.
  */
 export function ScannerBar({
-  mode,
   ready,
   online,
   lastCode,
@@ -25,34 +23,8 @@ export function ScannerBar({
   sound: boolean;
   onSound: (on: boolean) => void;
 }) {
-  const modes = [
-    { kind: "DISPATCH" as const, label: "Dispatch", href: "/admin/orders/dispatch", icon: PackageCheck },
-    { kind: "RETURN" as const, label: "Returns in", href: "/admin/orders/returns-in", icon: PackageOpen },
-  ];
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="scanner-bar">
-      <nav aria-label="Scanner mode" className="flex rounded-[var(--chip-radius)] border border-line-subtle bg-ink-900/[0.035] p-1">
-        {modes.map((m) => {
-          const active = m.kind === mode;
-          const Icon = m.icon;
-          return (
-            <Link
-              key={m.kind}
-              href={m.href}
-              aria-current={active ? "page" : undefined}
-              data-testid={`scanner-mode-${m.kind.toLowerCase()}`}
-              className={cn(
-                "flex min-h-[40px] items-center gap-1.5 rounded-[calc(var(--chip-radius)-4px)] px-3.5 text-sm font-medium transition-colors duration-fast ease-smooth",
-                active ? "bg-surface text-fg shadow-sm ring-1 ring-line-subtle" : "text-fg-muted hover:text-fg",
-              )}
-            >
-              <Icon size={16} aria-hidden="true" />
-              {m.label}
-            </Link>
-          );
-        })}
-      </nav>
-
       <span
         className={cn("flex items-center gap-1.5 text-xs font-medium", !online ? "text-info-800" : ready ? "text-success-700" : "text-warning-800")}
         data-testid="scanner-ready"
