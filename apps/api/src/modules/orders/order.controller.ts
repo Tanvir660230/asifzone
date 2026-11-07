@@ -7,7 +7,7 @@ import { toCustomerOrder } from "./customer-order-view";
 import { courierNotesForLabels, getCourierNoteView } from "../courier/courier-note";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
-import { completeRefund, getOrderPaymentSummary, reclassifyPayment as reclassifyLedgerPayment, recordManualPayment } from "../../domain/payments/payment-ledger.service";
+import { completeRefund, getOrderPaymentSummary, reclassifyPayment as reclassifyLedgerPayment, recordManualPayment, voidPayment as voidLedgerPayment } from "../../domain/payments/payment-ledger.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -88,6 +88,10 @@ export const recordPayment = asyncHandler(async (req: Request, res: Response) =>
 
 export const reclassifyPayment = asyncHandler(async (req: Request, res: Response) => {
   res.json({ payment: await reclassifyLedgerPayment(req.params.id!, req.params.paymentId!, req.body, req.admin!.adminId) });
+});
+
+export const voidPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ payment: await voidLedgerPayment(req.params.id!, req.params.paymentId!, req.body, req.admin!.adminId) });
 });
 
 export const getPayment = asyncHandler(async (req: Request, res: Response) => {

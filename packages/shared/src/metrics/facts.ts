@@ -73,7 +73,7 @@ export interface OrderFact {
   bundleId: string | null;
   lines: LineFact[];
   /** `id` is the source row (Payment / Refund / StockMovement) when the loader has it — identity only, never used in a sum. */
-  payments: Array<{ id?: string; amount: number; status: "SUCCEEDED" | "FAILED"; provider: string; settledAt: Date }>;
+  payments: Array<{ id?: string; amount: number; status: "SUCCEEDED" | "FAILED" | "VOIDED"; provider: string; settledAt: Date }>;
   /** SUCCEEDED return-charge Payment rows (docs/PAYMENT_LEDGER.md §5a) — never in `payments` and never in a metric; the
    * books post them as courier cost recovered. Absent = none. */
   returnCharges?: Array<{ id: string; amount: number; provider: string; settledAt: Date }>;

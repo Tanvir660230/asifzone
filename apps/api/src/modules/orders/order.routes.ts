@@ -14,6 +14,7 @@ import {
   completeRefundSchema,
   recordPaymentSchema,
   reclassifyPaymentSchema,
+  voidPaymentSchema,
   bulkOrderIdsSchema,
   confirmationDecisionSchema,
   recordConfirmationAttemptSchema,
@@ -126,6 +127,7 @@ orderRouter.get("/:id/payment", requireAdmin, requirePermission("orders.read"), 
 orderRouter.post("/:id/payments", requireAdmin, requirePermission("payments.record"), validate(recordPaymentSchema), orderController.recordPayment);
 // §5a: re-mark a payment as a refused parcel's return charge (or back). It decides whether money is owed back → refunds.manage.
 orderRouter.patch("/:id/payments/:paymentId", requireAdmin, requirePermission("refunds.manage"), validate(reclassifyPaymentSchema), orderController.reclassifyPayment);
+orderRouter.post("/:id/payments/:paymentId/void", requireAdmin, requirePermission("refunds.manage"), validate(voidPaymentSchema), orderController.voidPayment);
 // Order adjustments (docs/ORDER_ADJUSTMENTS.md): modifications, item returns, store credit, payment links.
 orderRouter.post("/:id/modifications/preview", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminPreviewModification);
 orderRouter.post("/:id/modifications", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminApplyModification);

@@ -18,7 +18,7 @@ import { AppError } from "../../lib/app-error";
 import { captureError } from "../../lib/observability/error-capture";
 import type { AdminIdentity } from "../../domain/auth/authorization";
 import { getCurrency, getTimezone } from "../../domain/config/commerce-settings";
-import { orderMoneyInTx, recordManualPaymentInTx, settleCourierCollected } from "../../domain/payments/payment-ledger.service";
+import { courierPaidOutFor, orderMoneyInTx, recordManualPaymentInTx, settleCourierCollected } from "../../domain/payments/payment-ledger.service";
 import { syncOrderShipments, syncOrderShipmentsSafely } from "../../domain/shipments/shipment-sync";
 import { updateShipmentCostsInTx } from "../../domain/shipments/shipment.service";
 import {
@@ -86,7 +86,7 @@ const ORDER_VIEW = {
   receivedBackBy: { select: { name: true } },
   returnInspectedAt: true,
   items: {
-    select: { id: true, productNameSnapshot: true, skuSnapshot: true, sizeSnapshot: true, colorSnapshot: true, quantity: true, returnedQuantity: true, restockedQuantity: true },
+    select: { id: true, productNameSnapshot: true, skuSnapshot: true, sizeSnapshot: true, colorSnapshot: true, quantity: true, returnedQuantity: true, restockedQuantity: true, priceSnapshot: true },
     orderBy: { id: "asc" },
   },
 } satisfies Prisma.OrderSelect;
@@ -202,6 +202,7 @@ export async function getParcelView(orderId: string, viewer: Viewer): Promise<Pa
     returned: o.status === "CANCELLED" ? i.quantity : i.returnedQuantity,
     received: i.restockedQuantity,
     awaiting: plan.awaiting.get(i.id) ?? 0,
+    unitPrice: Number(i.priceSnapshot),
   }));
   const canSeeMoney = viewer.permissions.includes("payments.read");
   return {
@@ -230,6 +231,7 @@ export async function getParcelView(orderId: string, viewer: Viewer): Promise<Pa
       ? {
           expectedCod: await expectedCodOf(prisma, o),
           courierReported: toNum(o.courierCollectedAmount),
+          paidOut: toNum(await courierPaidOutFor(prisma, o.id)),
           recorded: money.map((p) => ({ id: p.id, amount: Number(p.amount), purpose: p.purpose as "ORDER" | "RETURN_CHARGE", provider: p.provider, at: p.settledAt.toISOString() })),
           canRecord: viewer.permissions.includes("payments.record"),
           canRecordCharge: viewer.permissions.includes("courier_costs.record"),

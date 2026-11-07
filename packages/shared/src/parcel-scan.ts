@@ -180,6 +180,8 @@ export interface ParcelLineView {
   received: number;
   /** Units that may still physically come back — the ceiling for this receipt. */
   awaiting: number;
+  /** The line's unit price on the order: when the courier collected at least this much, the customer likely kept one. */
+  unitPrice: number;
 }
 
 export interface ParcelReceiptView {
@@ -220,6 +222,8 @@ export interface ParcelView {
     expectedCod: number;
     /** What Steadfast reported the rider collected (partial delivery webhook), if it did. */
     courierReported: number | null;
+    /** What Steadfast's posted payouts paid for this parcel (the real collection), if a payout names it. */
+    paidOut: number | null;
     /** COD and return-charge money already recorded on the order — a second recording here is refused. */
     recorded: Array<{ id: string; amount: number; purpose: "ORDER" | "RETURN_CHARGE"; provider: string; at: string }>;
     /** The viewer holds payments.record. */
@@ -286,6 +290,27 @@ export const receiveParcelSchema = z
   })
   .refine((v) => new Set(v.lines.map((l) => l.orderItemId)).size === v.lines.length, { message: "Each item can be listed once", path: ["lines"] });
 export type ReceiveParcelInput = z.infer<typeof receiveParcelSchema>;
+
+/** Many returned parcels at once, all in the same condition, the customer kept nothing (POST /api/parcel-scans/receive-bulk).
+ * `dryRun` = the preview: which ones would be received and which are left for a person, and why. */
+export const bulkReceiveParcelsSchema = z.object({
+  orderIds: z.array(z.string().min(1)).min(1).max(100),
+  condition: z.enum(["GOOD", "DAMAGED"]),
+  dryRun: z.boolean().default(true),
+  note: z.string().trim().max(500).nullish(),
+});
+export type BulkReceiveParcelsInput = z.infer<typeof bulkReceiveParcelsSchema>;
+
+export interface BulkReceiveRow {
+  orderId: string;
+  orderNumber: string | null;
+  /** RECEIVE: would be received (preview). RECEIVED / FAILED: what happened. SKIP: left for a person (`reason`). */
+  action: "RECEIVE" | "RECEIVED" | "SKIP" | "FAILED";
+  units: number;
+  /** What the courier paid out (or reported) for it, if anything. */
+  collected: number | null;
+  reason: string | null;
+}
 
 /** Corrections (owner decision D6): a mistaken inspection is fixed by compensating entries, never by editing it. */
 export const PARCEL_CORRECTION_FROM = ["GOOD", "DAMAGED"] as const;
