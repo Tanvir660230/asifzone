@@ -10,6 +10,9 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | 2026-11-06 | Courier estimates were re-booked every sweep while a parcel waited for the order status | About 1,700 journals a day, one parcel at 14 revisions, amounts unchanged | A waiting estimate keeps its date; a new one takes the courier's first report for that booking |
 | 2026-11-06 | A partial push with `cod_amount` equal to the booked COD could be taken as money collected | 999 pushed, rider collected 100 | That figure is ignored; the payout line says what was collected |
 | 2026-11-06 | The same return charge could be entered twice | HV2NHQ 120 twice; CUFVSN 100 + 60 | A second charge through the courier is refused, entered or re-marked |
+| 2026-11-07 | A script file that failed to download (weak connection, or a page from before a deploy) left the page half-working; only a crash screen reloaded | ~90 ChunkLoadError + 35 truncated-script SyntaxErrors on product/category pages in 7 days | The error listener reloads the page once (at most once a minute) for a missing chunk or a cut-off `/_next/static` file |
+| 2026-11-07 | Review dates caused a hydration mismatch on cached product pages | React #418 on /product/azhaar-elite, /product/royal-amber | "x days ago" is filled in after the page loads |
+| 2026-11-07 | Wallet-extension and in-app-browser noise filled the error list | `window.ethereum…`, `Non-error thrown: {}` | Dropped as noise |
 | 2026-11-07 | An EPS session expired while EPS was timing out, so a payment taken during the outage would be lost | EPS API timeouts since 11-06; 3 sessions expired with no successful verify in the logs | Before expiring, EPS is asked once more: paid → settled, no record → expired, no answer → kept open up to 24 h, then expired with an error to check in the EPS portal |
 
 ## Next

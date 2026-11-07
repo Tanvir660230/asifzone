@@ -5,7 +5,9 @@ import { apiBaseUrl } from "./runtime-config";
  * through POST /api/v1/client-errors (apps/api/src/modules/ops/client-errors.routes.ts); browser noise and errors thrown
  * only by extensions or ad/analytics scripts are dropped here, so the list stays about the store. */
 
-const NOISE = [/^ResizeObserver loop/i, /^Script error\.?$/i];
+// Wallet extensions poking window.ethereum, and a bare "{}" thrown by in-app browsers (Facebook, Instagram): never the
+// store's code, seen on live 2026-11.
+const NOISE = [/^ResizeObserver loop/i, /^Script error\.?$/i, /window\.ethereum/i, /^Non-error thrown: \{\}$/];
 const MAX_REPORTS_PER_PAGE = 5;
 const MESSAGE_MAX = 500;
 const STACK_MAX = 4000;
