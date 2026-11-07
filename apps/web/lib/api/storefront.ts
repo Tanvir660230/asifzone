@@ -1,3 +1,4 @@
+import { cardProducts } from "@/lib/card-product";
 import type {
   Banner,
   BundleForProduct,
@@ -122,7 +123,8 @@ export function listStorefrontProducts(params: Partial<StorefrontProductQuery> =
   if (params.minPrice !== undefined) query.set("minPrice", String(params.minPrice));
   if (params.maxPrice !== undefined) query.set("maxPrice", String(params.maxPrice));
 
-  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`, REVALIDATE_SECONDS, ["products:listing"]);
+  // Listings feed cards only: send them the card shape (lib/card-product.ts), not the full product.
+  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`, REVALIDATE_SECONDS, ["products:listing"]).then(cardProducts);
 }
 
 export interface StorefrontFacets {
