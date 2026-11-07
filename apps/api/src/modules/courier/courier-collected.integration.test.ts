@@ -65,6 +65,16 @@ describe("Steadfast webhook body", () => {
   });
 });
 
+describe("retries", () => {
+  it("two copies of one event arriving together: one is processed, the other is a duplicate, one log row", async () => {
+    const { consignmentId } = await shipped();
+    const key = `race-${consignmentId}`;
+    const results = await Promise.all([handleSteadfastWebhook(partial(consignmentId, 100), { idempotencyKey: key }), handleSteadfastWebhook(partial(consignmentId, 100), { idempotencyKey: key })]);
+    expect(results.sort()).toEqual(["APPLIED", "DUPLICATE"]);
+    expect(await prisma.courierWebhookEvent.count({ where: { idempotencyKey: key } })).toBe(1);
+  });
+});
+
 describe("refused parcel — the rider collected the delivery charge", () => {
   it("collected 100 → kept on the order; once every unit is reconciled back it is the return charge, nothing owed back", async () => {
     const { order, consignmentId } = await shipped();

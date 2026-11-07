@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, usePathname } from "next/navigation";
 import { BadgeCheck, MessageSquare } from "lucide-react";
@@ -16,6 +16,19 @@ import { StarRating, StarRatingInput } from "./star-rating";
 import { ReviewPhotoPicker, ReviewPhotoStrip } from "./review-photos";
 
 const PAGE_SIZE = 10;
+
+/** A review’s age, filled in once the page is in the browser: the product page is served from a cache, so "3 days ago"
+ * written on the server is not what the visitor’s clock says (a hydration mismatch, React #418 on live). The server
+ * and the first browser render show the same thing: nothing. */
+function ReviewAge({ iso }: { iso: string }) {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => setLabel(timeAgo(iso)), [iso]);
+  return (
+    <time dateTime={iso} className="text-xs text-ink-400">
+      {label}
+    </time>
+  );
+}
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -255,7 +268,7 @@ export function ProductReviews({ productId, productName, productType }: { produc
                       </span>
                     )}
                   </div>
-                  <span className="text-xs text-ink-400">{timeAgo(review.createdAt)}</span>
+                  <ReviewAge iso={review.createdAt} />
                 </div>
                 {review.title && <p className="mt-2 text-sm font-medium text-ink-900">{review.title}</p>}
                 <p className="mt-1 text-sm leading-relaxed text-ink-600">{review.body}</p>
