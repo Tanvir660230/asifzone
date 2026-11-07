@@ -14,7 +14,7 @@ import { formatPrice, formatStoreDateTime, PAYMENT_PROVIDER_LABEL } from "@/lib/
 import type { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { OrderPermissions } from "../order-domain";
 import { BlockedHint, DetailSection, Fact } from "./detail-section";
-import type { OrderDetailCommands } from "./use-order-detail-commands";
+import { payoutCovers, type OrderDetailCommands } from "./use-order-detail-commands";
 import { PaymentLinksPanel } from "./payment-links-panel";
 import { useOrderModifications } from "./changes-section";
 
@@ -31,7 +31,11 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
   const [method, setMethod] = useState("");
   const [text, setText] = useState("");
   const [via, setVia] = useState<"COURIER" | "DIRECT">("COURIER");
-  useEffect(() => setForm(null), [order.id]);
+  const [voiding, setVoiding] = useState<{ id: string; reason: string; payoutWarning: string | null } | null>(null);
+  useEffect(() => {
+    setForm(null);
+    setVoiding(null);
+  }, [order.id]);
 
   const { data: modsData } = useOrderModifications(order.id);
   const waitingChange = modsData?.modifications.find((m) => m.status === "AWAITING_PAYMENT") ?? null;
@@ -39,6 +43,8 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
   if (!ledger) return null;
   const succeeded = ledger.payments.filter((p) => p.status === "SUCCEEDED");
   const failed = ledger.payments.filter((p) => p.status === "FAILED");
+  const voided = ledger.payments.filter((p) => p.status === "VOIDED");
+  const canVoid = (p: OrderPaymentSummary["payments"][number]) => perms.refunds && !order.deletedAt && (p.provider === "COD" || p.provider === "MANUAL");
   const kind = manualPaymentKindFor(order);
   const paymentBlocker = manualPaymentBlocker(order, kind);
   const canRefund = perms.refunds && !order.deletedAt && ledger.refundable > 0;
@@ -92,6 +98,16 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
       title: "Undo return charge",
     });
     if (ok) detail.remark.mutate({ paymentId: p.id, purpose: "ORDER" });
+  }
+
+  async function submitVoid(confirmPayout = false) {
+    if (!voiding || voiding.reason.trim().length < 3) return;
+    try {
+      await detail.voidPayment.mutateAsync({ paymentId: voiding.id, reason: voiding.reason.trim(), confirmPayout });
+      setVoiding(null);
+    } catch (err) {
+      if (payoutCovers(err)) setVoiding((v) => (v ? { ...v, payoutWarning: (err as Error).message } : v));
+    }
   }
 
   async function submit() {
@@ -153,7 +169,7 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
         )}
       </div>
 
-      {(succeeded.length > 0 || ledger.refunds.length > 0 || (ledger.credits ?? []).length > 0) && (
+      {(succeeded.length > 0 || voided.length > 0 || ledger.refunds.length > 0 || (ledger.credits ?? []).length > 0) && (
         <ul className="mt-4 divide-y divide-line-subtle rounded-xl border border-line-subtle" aria-label="Payments and refunds">
           {succeeded.map((p) => (
             <li key={p.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
@@ -178,12 +194,69 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
                     Count as order money
                   </button>
                 )}
+                {canVoid(p) && voiding?.id !== p.id && (
+                  <button
+                    type="button"
+                    className="ml-3 mt-1 text-xs font-medium text-ink-500 underline-offset-2 hover:text-danger-700 hover:underline"
+                    onClick={() => setVoiding({ id: p.id, reason: "", payoutWarning: null })}
+                    data-testid="void-payment"
+                  >
+                    Entered by mistake
+                  </button>
+                )}
+                {voiding?.id === p.id && (
+                  <div className="mt-2 space-y-2" data-testid="void-payment-form">
+                    <Field label="Why is it cancelled?" htmlFor={`void-reason-${p.id}`}>
+                      <Input
+                        id={`void-reason-${p.id}`}
+                        value={voiding.reason}
+                        onChange={(e) => setVoiding({ ...voiding, reason: e.target.value, payoutWarning: null })}
+                        placeholder="e.g. entered twice"
+                        maxLength={500}
+                        autoFocus
+                      />
+                    </Field>
+                    {voiding.payoutWarning && (
+                      <Alert variant="warning" title="The courier paid this">
+                        {voiding.payoutWarning}
+                      </Alert>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={voiding.reason.trim().length < 3 || detail.voidPayment.isPending}
+                        onClick={() => submitVoid(Boolean(voiding.payoutWarning))}
+                      >
+                        {voiding.payoutWarning ? "Cancel it anyway" : "Cancel this payment"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setVoiding(null)}>
+                        Keep it
+                      </Button>
+                    </div>
+                    <p className="text-xs text-ink-500">It stays on the order, crossed out, and counts nowhere: not in the books, the balance or reports.</p>
+                  </div>
+                )}
               </div>
               <p className="shrink-0 text-right text-xs text-ink-400">
                 {p.recordedBy ?? (p.backfilled ? "Backfilled" : "System")}
                 <br />
                 {formatStoreDateTime(p.settledAt)}
               </p>
+            </li>
+          ))}
+          {voided.map((p) => (
+            <li key={p.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm" data-testid="voided-payment">
+              <div className="min-w-0">
+                <p className="font-medium text-ink-500">
+                  <span className="line-through">{formatPrice(p.amount)}</span> · {PROVIDER_LABEL[p.provider] ?? p.provider}
+                  <Badge variant="neutral" className="ml-2 align-middle">
+                    Cancelled
+                  </Badge>
+                </p>
+                {p.voidReason && <p className="text-xs text-ink-500">{p.voidReason}</p>}
+              </div>
+              <p className="shrink-0 text-right text-xs text-ink-400">{formatStoreDateTime(p.settledAt)}</p>
             </li>
           ))}
           {(ledger.credits ?? []).map((c) => (

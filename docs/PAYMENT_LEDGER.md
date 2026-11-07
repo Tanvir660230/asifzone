@@ -177,6 +177,22 @@ checked against what Steadfast actually sends.
   "courier-collected cash" form is prefilled with it.
 - Missed webhooks: the 15-minute status sweep still catches the status, but no amount. That parcel's charge is entered
   by hand, or later corroborated from the payout (docs/COURIER_COSTS.md §5).
+- **The payout wins (2026-11-07).** A posted courier payout line is what the rider really handed over; the webhook's
+  `cod_amount` is often the booked COD. `settleCourierCollected` takes the order's posted payout lines when there are any,
+  and posting a payout calls it for every order the payout names, so a refused parcel's charge is recorded the moment
+  the payout is posted. The parcel receive screen shows and prefills the payout figure.
+
+### 5d. Cancelling a payment entered by mistake (VOIDED, 2026-11-07)
+
+`POST /orders/:id/payments/:paymentId/void` (`refunds.manage`, a reason is required) marks a COD or MANUAL row
+`VOIDED` with `voidedAt`, `voidedByAdminId` and `voidReason`, and writes a timeline line. The row stays on the order,
+crossed out. Every reader counts only `SUCCEEDED` rows, so a voided payment leaves the payment position, the order's
+payment status (it does not turn FAILED, which is why FAILED is not reused), analytics and the books (the timeline line
+wakes the commerce sweep, which withdraws the payment or return-charge event). Refused: gateway payments (refund them),
+a payment a refund names, money already refunded or credited, a deleted order. When the courier's posted payout covers
+more than the order's remaining courier money, the server answers 409 `PAYOUT_COVERS_PAYMENT` and the form asks the
+person to confirm (`confirmPayout`). Once a person cancelled a courier charge on an order, `settleCourierCollected`
+never records one there again. Voiding is idempotent.
 
 ### 5c. What a partial delivery and a closed order still owe (2026-10-21)
 

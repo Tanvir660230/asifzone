@@ -10,7 +10,7 @@ import { checkout, cleanupFixtures, createStockedProduct, ownerId, markOpeningPo
 import { createOrder, receiveReturnedParcel, reconcilePartialDelivery, updateOrderStatus } from "../../modules/orders/order.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
-import { reclassifyPayment, recordManualPayment, recordRefund } from "../../domain/payments/payment-ledger.service";
+import { getOrderPaymentSummary, reclassifyPayment, recordManualPayment, recordRefund, settleCourierCollected, voidPayment } from "../../domain/payments/payment-ledger.service";
 import { loadOrderFacts } from "../metrics/facts.repository";
 import { financeTransaction } from "./finance-tx";
 import { getFinanceContext } from "./finance-context";
@@ -239,6 +239,31 @@ describe("payments, refunds, returns", () => {
     await projectOrder(o.id);
     expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(0);
     expect(await ledger(o.id, "asset.receivable_trade")).toBe(receivableBefore);
+  });
+
+  it("a return charge entered by mistake is cancelled: it leaves the books and the order, and is never put back automatically", async () => {
+    const v = await costedVariant(200);
+    const o = await placeOrder([{ variantId: v.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await updateOrderStatus(o.id, { status: "RETURNED" }, admin);
+    const { payment } = await recordManualPayment(o.id, { amount: 120, kind: "RETURN_CHARGE" }, admin);
+    await projectOrder(o.id);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(-120);
+
+    await expect(voidPayment(o.id, payment!.id, { reason: "no", confirmPayout: false }, admin)).resolves.toBeTruthy(); // reason length is the route's job
+    const after = await getOrderPaymentSummary(o.id);
+    expect(after.returnCharge).toBe(0);
+    expect(after.status).not.toBe("FAILED");
+    expect(after.payments.find((p) => p.id === payment!.id)).toMatchObject({ status: "VOIDED", voidReason: "no" });
+    await projectOrder(o.id);
+    expect(await ledger(o.id, "expense.courier_fees", -1)).toBe(0);
+    // The webhook's figure arriving later does not recreate it; a repeat void changes nothing.
+    await prisma.order.update({ where: { id: o.id }, data: { courierCollectedAmount: 120, courierCollectedAt: new Date() } });
+    expect(await settleCourierCollected(o.id)).toBe("SKIPPED");
+    await voidPayment(o.id, payment!.id, { reason: "again", confirmPayout: false }, admin);
+    expect(await prisma.payment.count({ where: { orderId: o.id, status: "SUCCEEDED" } })).toBe(0);
+    expect(await prisma.orderStatusHistory.count({ where: { orderId: o.id, note: { contains: "cancelled (entered by mistake)" } } })).toBe(1);
   });
 
   it("partial, multiple and repeated refunds reduce revenue exactly as the dashboard does; a repeat records one refund", async () => {
@@ -514,6 +539,31 @@ describe("clearing settlements", () => {
     // Posting again (replay) never adds a second charge.
     await postSettlement(created.settlement.id, OWNER);
     expect(await prisma.payment.count({ where: { orderId: refused.id, purpose: "RETURN_CHARGE" } })).toBe(1);
+  });
+
+  it("cancelling courier money a posted payout covers needs confirming; online payments and refunded money can't be cancelled", async () => {
+    const v = await costedVariant(200);
+    const o = await placeOrder([{ variantId: v.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await updateOrderStatus(o.id, { status: "RETURNED" }, admin);
+    const ctx = await getFinanceContext();
+    const cod = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: ctx.business.id, kind: "COURIER" } });
+    const bank = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: ctx.business.id, kind: "BANK" } });
+    const created = await createSettlement({
+      clearingFinancialAccountId: cod.id, destinationFinancialAccountId: bank.id, settlementDate: "2026-10-09", reference: `STF-void-${RUN}`,
+      evidence: "Steadfast payout", lines: [{ orderNumber: o.orderNumber, amount: 80, fee: 60 }],
+    }, OWNER, `p3-void-${RUN}`);
+    await postSettlement(created.settlement.id, OWNER);
+    const charge = await prisma.payment.findFirstOrThrow({ where: { orderId: o.id, purpose: "RETURN_CHARGE", status: "SUCCEEDED" } });
+    await expect(voidPayment(o.id, charge.id, { reason: "test", confirmPayout: false }, admin)).rejects.toMatchObject({ statusCode: 409, details: { code: "PAYOUT_COVERS_PAYMENT", paidOut: 80 } });
+    await voidPayment(o.id, charge.id, { reason: "owner checked the payout", confirmPayout: true }, admin);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: charge.id } })).status).toBe("VOIDED");
+
+    const online = await paidOnline([{ variantId: v.id, quantity: 1 }]);
+    await projectOrder(online.id);
+    const gateway = await prisma.payment.findFirstOrThrow({ where: { orderId: online.id, status: "SUCCEEDED" } });
+    await expect(voidPayment(online.id, gateway.id, { reason: "test", confirmPayout: false }, admin)).rejects.toMatchObject({ details: { code: "PAYMENT_NOT_ALLOWED" } });
   });
 
   it("a gateway settlement statement (CSV) imports once, matches by the gateway's transaction id and books its actual fee", async () => {
