@@ -14,6 +14,7 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | 2026-11-07 | Returned parcels could only be received one at a time | 121 parcels went through a script | Orders › select › More › “These came back…”: a preview, then each parcel through the scanner’s own receive; a parcel where the courier collected an item’s price is left for a person |
 | 2026-11-07 | A mistaken return charge could not be removed; only its journal was reversed by hand | HV2NHQ, CUFVSN (journals 22387, 22388) | A real `VOIDED` payment status: "Entered by mistake" on the order's Payments, with a reason; it counts nowhere and the books follow on the next sweep (docs/PAYMENT_LEDGER.md §5d) |
 | 2026-11-07 | A payout for a refused parcel left the order without its return charge | 31 parcels, 3,194 found only by a hand query | Posting a payout records the return charge on every refused parcel it names, at the payout’s figure (not the webhook’s); the receive screen prefers the payout figure |
+| 2026-11-07 | An EPS session expired while EPS was timing out, so a payment taken during the outage would be lost | EPS API timeouts since 11-06; 3 sessions expired with no successful verify in the logs | Before expiring, EPS is asked once more: paid → settled, no record → expired, no answer → kept open up to 24 h, then expired with an error to check in the EPS portal |
 
 ## Next
 

@@ -59,11 +59,20 @@ describe("anomalies and the daily brief", () => {
     expect(b.headline).toMatch(/^Wednesday: 2 orders \(usual 12, −83%\)/);
     expect(b.watch[0]).toBe("Orders were down: 2 against a usual 12");
 
-    await sendMorningBrief(NEXT_NOON);
-    await new Promise((r) => setTimeout(r, 300)); // notify() is fire-and-forget
+    expect(await sendMorningBrief(NEXT_NOON)).not.toBeNull();
     const note = await prisma.notification.findFirst({ where: { type: "analytics.daily_brief" }, orderBy: { createdAt: "desc" } });
     expect(note).toMatchObject({ title: b.headline, link: "/admin/analytics/operations" });
     expect(note!.body).toContain("Watch: Orders were down");
+  });
+
+  it("sends one brief per store day, so the job's retry after a success sends nothing", async () => {
+    // Real time: the written row lands inside the day the check looks at. The first call may find one already sent today.
+    const since = new Date(Date.now() - 2 * 86_400_000);
+    await sendMorningBrief();
+    const after = await prisma.notification.count({ where: { type: "analytics.daily_brief", createdAt: { gte: since } } });
+    expect(await sendMorningBrief()).toBeNull();
+    expect(await prisma.notification.count({ where: { type: "analytics.daily_brief", createdAt: { gte: since } } })).toBe(after);
+    await prisma.notification.deleteMany({ where: { type: "analytics.daily_brief", createdAt: { gte: new Date(Date.now() - 3_600_000) } } });
   });
 
   it("is reachable over the API", async () => {
