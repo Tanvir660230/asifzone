@@ -1,7 +1,7 @@
-import type { AdminOrderListItem } from "@clothing-brand/shared";
+import { normalizeBdPhone, type AdminOrderListItem } from "@clothing-brand/shared";
 
-/** The last 11 digits: 01XXXXXXXXX, whether it was saved as +8801…, 8801… or 01…. */
-export const phoneKey = (phone: string) => phone.replace(/\D/g, "").slice(-11);
+/** The one canonical 01XXXXXXXXX form (the shared normaliser), however the number was saved. */
+export const phoneKey = (phone: string) => normalizeBdPhone(phone);
 
 export interface PhoneHistory {
   orders: number;

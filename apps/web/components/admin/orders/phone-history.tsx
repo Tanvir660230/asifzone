@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { History } from "lucide-react";
+import { PHONE_REGEX } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { formatStoreDate } from "@/lib/format";
@@ -19,7 +20,7 @@ export function PhoneHistoryCard({ phone, onUse }: { phone: string; onUse: (h: P
   const [history, setHistory] = useState<PhoneHistory | null>(null);
   const [used, setUsed] = useState(false);
   const key = phoneKey(phone ?? "");
-  const complete = /^01\d{9}$/.test(key);
+  const complete = PHONE_REGEX.test(key);
 
   useEffect(() => {
     setHistory(null);
