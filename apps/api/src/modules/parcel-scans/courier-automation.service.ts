@@ -4,6 +4,8 @@ import { getTimezone } from "../../domain/config/commerce-settings";
 import { syncCourierPayouts } from "../../domain/shipments/courier-evidence";
 import { notify } from "../../lib/notify";
 import { captureError } from "../../lib/observability/error-capture";
+import { AppError } from "../../lib/app-error";
+import { ProviderNotConfiguredError } from "../../providers/errors";
 import { orderWhereContext } from "../orders/order.service";
 import { parcelQueueWhere } from "../orders/parcel-queues";
 
@@ -29,6 +31,11 @@ export interface CourierAutomationSummary {
   message: string | null;
   startedAt: string;
   finishedAt: string | null;
+}
+
+/** The courier has no credentials on this store (Steadfast's own "not configured", or the registry's). */
+function courierNotConnected(err: unknown): boolean {
+  return err instanceof ProviderNotConfiguredError || (err instanceof AppError && /not configured/i.test(err.message));
 }
 
 async function countQueues() {
@@ -73,10 +80,15 @@ export async function runCourierAutomation(opts: { payouts?: boolean; now?: Date
         notes.push(`${payoutProblems} payout(s) couldn't be read`);
       }
     } catch (err) {
-      outcome = outcome === "FAILED" ? "FAILED" : "PARTIAL";
-      // The technical detail goes to the error log; the operators see what it means.
-      captureError(err, { msg: "[courier-automation] payout sync failed" });
-      notes.push("Couldn't reach the courier to check payouts — will try again tomorrow");
+      if (courierNotConnected(err)) {
+        // A store without a courier account (Nasihamart before it books with Steadfast): nothing to check, not a failure.
+        notes.push("No courier account is connected — payouts not checked");
+      } else {
+        outcome = outcome === "FAILED" ? "FAILED" : "PARTIAL";
+        // The technical detail goes to the error log; the operators see what it means.
+        captureError(err, { msg: "[courier-automation] payout sync failed" });
+        notes.push("Couldn't reach the courier to check payouts — will try again tomorrow");
+      }
     }
   }
 

@@ -29,3 +29,20 @@ describe("homepage sections reorder", () => {
     }
   });
 });
+
+describe("single-instance sections", () => {
+  it("can be added when the store has none (never published from the Studio), and only once", async () => {
+    const owner = await asOwner();
+    const saved = await prisma.homepageSection.findMany({ where: { type: "TRUST_STRIP" } });
+    await prisma.homepageSection.deleteMany({ where: { type: "TRUST_STRIP" } });
+    try {
+      const config = { items: [{ icon: "Truck", label: "Nationwide Delivery" }] };
+      const first = await owner.post("/api/homepage-sections", { type: "TRUST_STRIP", config, isActive: true });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+      expect((await owner.post("/api/homepage-sections", { type: "TRUST_STRIP", config, isActive: true })).status).toBe(400);
+    } finally {
+      await prisma.homepageSection.deleteMany({ where: { type: "TRUST_STRIP" } });
+      for (const r of saved) await prisma.homepageSection.create({ data: r as never });
+    }
+  });
+});

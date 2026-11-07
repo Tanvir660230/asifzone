@@ -5,6 +5,7 @@ const courier = vi.hoisted(() => ({
   statuses: new Map<string, string>(),
   calls: [] as string[],
   rateLimitOn: new Set<string>(),
+  failOn: new Set<string>(),
   delayMs: 0,
 }));
 vi.mock("../../providers/courier/steadfast", async () => {
@@ -20,6 +21,7 @@ vi.mock("../../providers/courier/steadfast", async () => {
       courier.calls.push(cid);
       if (courier.delayMs) await new Promise((r) => setTimeout(r, courier.delayMs));
       if (courier.rateLimitOn.has(cid)) throw new CourierRateLimitedError(30_000);
+      if (courier.failOn.has(cid)) throw new Error("Steadfast status check failed: HTTP 502");
       return courier.statuses.get(cid) ?? "in_review";
     }),
   };
@@ -163,6 +165,18 @@ describe("age-based polling", () => {
     await syncPendingCourierStatuses({ orderIds: [order.id] });
     expect(await prisma.courierStatusChange.findFirstOrThrow({ where: { consignmentId } })).toMatchObject({ toStatus: "delivered_approval_pending", source: "POLL" });
     expect((await orderRow(order.id)).status).toBe("SHIPPED"); // approval-pending is never final
+  });
+
+  it("stops the run when Steadfast fails several checks in a row; the parcels not reached stay due", async () => {
+    const parcels = await Promise.all(Array.from({ length: 5 }, () => booked()));
+    for (const p of parcels) courier.failOn.add(p.consignmentId);
+    try {
+      const result = await syncPendingCourierStatuses({ orderIds: parcels.map((p) => p.order.id) });
+      expect(result).toMatchObject({ courierDown: true, checked: 3, due: 5 });
+      expect(courier.calls).toHaveLength(3);
+    } finally {
+      for (const p of parcels) courier.failOn.delete(p.consignmentId);
+    }
   });
 
   it("does a bounded amount of work per run, oldest-due first", async () => {

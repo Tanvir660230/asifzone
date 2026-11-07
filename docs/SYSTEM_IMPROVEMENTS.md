@@ -13,7 +13,15 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | 2026-11-07 | A timeline note on a RETURNED order counted as a new RETURNED move, re-dating the uncollected write-off | `loadExtras` took the latest RETURNED history row; every cancel/void note writes one | `returnedAt` is when the order last moved into RETURNED (`enteredStatusAt`), notes don’t move it |
 | 2026-11-07 | A mistaken return charge could not be removed; only its journal was reversed by hand | HV2NHQ, CUFVSN (journals 22387, 22388) | A real `VOIDED` payment status: "Entered by mistake" on the order's Payments, with a reason; it counts nowhere and the books follow on the next sweep (docs/PAYMENT_LEDGER.md §5d) |
 | 2026-11-07 | A payout for a refused parcel left the order without its return charge | 31 parcels, 3,194 found only by a hand query | Posting a payout records the return charge on every refused parcel it names, at the payout’s figure (not the webhook’s); the receive screen prefers the payout figure |
+| 2026-11-07 | A script file that failed to download (weak connection, or a page from before a deploy) left the page half-working; only a crash screen reloaded | ~90 ChunkLoadError + 35 truncated-script SyntaxErrors on product/category pages in 7 days | The error listener reloads the page once (at most once a minute) for a missing chunk or a cut-off `/_next/static` file |
+| 2026-11-07 | Review dates caused a hydration mismatch on cached product pages | React #418 on /product/azhaar-elite, /product/royal-amber | "x days ago" is filled in after the page loads |
+| 2026-11-07 | Wallet-extension and in-app-browser noise filled the error list | `window.ethereum…`, `Non-error thrown: {}` | Dropped as noise |
 | 2026-11-07 | An EPS session expired while EPS was timing out, so a payment taken during the outage would be lost | EPS API timeouts since 11-06; 3 sessions expired with no successful verify in the logs | Before expiring, EPS is asked once more: paid → settled, no record → expired, no answer → kept open up to 24 h, then expired with an error to check in the EPS portal |
+| 2026-11-07 | Inventory costing could not start on the opening day before 6 am Dhaka | `COSTING_BEFORE_OPENING`, Nasihamart 2026-11-07 | The check compares the store’s business date with the opening date |
+| 2026-11-07 | A single-instance homepage section missing from the database could not be added | TRUST_STRIP on Nasihamart | It can be created once when no row of its type exists |
+| 2026-11-07 | Two copies of one Steadfast webhook arriving together were both processed; the second failed to log | 51 unique-constraint errors on `CourierWebhookEvent` | The log row is written first and claims the Idempotency-Key; the second copy is a duplicate |
+| 2026-11-07 | A Steadfast outage logged one error per parcel per sweep | 4,896 "HTTP 502" + 279 timeouts on 11-02..11-06 | Three failed checks in a row end the run; the rest stay due |
+| 2026-11-07 | An EPS outage logged one error per stuck session every 5 minutes | 39 "Could not start the payment session" in reconciliation | The sweep stops at the first "EPS not answering" and tries again next run |
 
 ## Next
 
@@ -25,5 +33,3 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | Medium | Which item the customer kept is not captured when one of several came back | 5 parcels could not be closed from the money alone | Ask for the kept item when the amount looks like a partial sale |
 | Medium | `cod_amount` below the booked COD can still be wrong | CV4FU4 pushed 150, payout 100 | Show it as the courier's claim until the payout confirms it |
 | Low | Stock counts have no clear "this is everything I have" marker | The last full count had to be found in old chat messages | A named full count with a date, shown on the stock page |
-| Low | Inventory costing can't start on the opening day before 6 am Dhaka | `activateInventoryCostingInTx` compares a UTC instant with the opening date at UTC midnight (`COSTING_BEFORE_OPENING`, Nasihamart 2026-11-07) | Compare business dates in the store's timezone |
-| Low | A singleton section missing from the database can't be added through the API | `createHomepageSection` refuses TRUST_STRIP; only a Studio publish creates it | Allow create when no row of that type exists |
