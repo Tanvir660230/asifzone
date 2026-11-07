@@ -405,6 +405,28 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
       if (order.deletedAt) return "NOT_YET";
       // A posted payout is what the rider really handed over; the webhook figure is only used until one arrives.
       const paidOut = await courierPaidOutFor(tx, orderId);
+      // The webhook's claim was booked as the charge before the payout came, and the payout says otherwise: the payout
+      // corrects it, once — the claim is cancelled (VOIDED, kept for the record) and the payout's figure recorded. Only
+      // this function's own row; anything a person entered or decided is left alone.
+      const claim = await tx.payment.findUnique({ where: { idempotencyKey: key }, select: { id: true, amount: true, status: true, recordedByAdminId: true } });
+      if (paidOut && claim && claim.status === "SUCCEEDED" && !claim.recordedByAdminId && !claim.amount.equals(paidOut)) {
+        const payoutKey = `courier-payout:${orderId}`;
+        if (await tx.payment.findUnique({ where: { idempotencyKey: payoutKey }, select: { id: true } })) return "SKIPPED";
+        const claimed = fromMajor(claim.amount.toString(), currency);
+        const paid = fromMajor(paidOut.toString(), currency);
+        await tx.payment.update({
+          where: { id: claim.id },
+          data: { status: "VOIDED", voidedAt: new Date(), voidReason: `Steadfast's payout paid ${noteMoney(paid)}, not the ${noteMoney(claimed)} it reported` },
+        });
+        if (paid.amount > 0) {
+          await tx.payment.create({
+            data: { orderId, provider: "COD", purpose: "RETURN_CHARGE", status: "SUCCEEDED", amount: toMajor(paid), note: "Steadfast payout: collected by the rider on a refused parcel", idempotencyKey: payoutKey },
+          });
+        }
+        await timelineNote(tx, orderId, order.status, `Return charge corrected from Steadfast's payout: ${noteMoney(claimed)} reported, ${noteMoney(paid)} paid out`);
+        await refreshPaymentStatus(tx, orderId, currency);
+        return "SETTLED";
+      }
       const source = paidOut ?? row.courierCollectedAmount;
       if (!source) return "NOT_YET";
       const collected = fromMajor(source.toString(), currency);
@@ -416,9 +438,9 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
         (order.status === "CANCELLED" && order.courierConsignmentId !== null) ||
         (order.status === "PARTIALLY_DELIVERED" && row.partialDeliveryReconciledAt !== null && row.items.every((i) => i.returnedQuantity >= i.quantity));
       if (!keptNothing) return "NOT_YET";
-      if (await tx.payment.findUnique({ where: { idempotencyKey: key }, select: { id: true } })) return "SKIPPED";
+      if (claim) return "SKIPPED";
       // A person cancelled a courier charge on this order: their decision stands, nothing is put back automatically.
-      if (await tx.payment.count({ where: { orderId, provider: "COD", status: "VOIDED" } })) return "SKIPPED";
+      if (await tx.payment.count({ where: { orderId, provider: "COD", status: "VOIDED", voidedByAdminId: { not: null } } })) return "SKIPPED";
       const byHand = await tx.payment.count({ where: { orderId, provider: "COD", status: "SUCCEEDED", amount: { gt: 0 } } });
       if (byHand > 0) return "SKIPPED";
       await tx.payment.create({
