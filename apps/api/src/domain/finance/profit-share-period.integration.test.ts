@@ -178,6 +178,11 @@ describe("corrections", () => {
     expect(down, JSON.stringify(down)).toMatchObject({ kind: "PROFIT_RESTATEMENT_DOWN", status: "POLICY_REVIEW", amount: -1_250, sharePct: 25 });
     expect((await api().post(`/equity/adjustments/${down.id}/approve`)).body.details.code).toBe("ADJUSTMENT_NEEDS_POLICY");
     expect(await owed(A)).toBe(before);
+    // The owner may decide to keep the partner’s share as it was: rejecting the lower figure takes nothing back.
+    const rejected = await api().post(`/equity/adjustments/${down.id}/reject`, { reason: "partner keeps the original share" });
+    expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
+    expect(rejected.body).toMatchObject({ status: "REJECTED", amount: -1_250 });
+    expect(await owed(A)).toBe(before);
   });
 
   it("T20 a share's journal can't be reversed or corrected by hand", async () => {
@@ -210,6 +215,8 @@ describe("corrections", () => {
     const prop = await api().post("/equity/adjustments", { kind: "DUPLICATE_POSTING", partnerId: A.id, relatedEntryId: entry, reason: "posted twice, already paid" });
     expect(prop.body).toMatchObject({ status: "POLICY_REVIEW", amount: -2_000 });
     expect((await api().post(`/equity/adjustments/${prop.body.id}/approve`)).body.details.code).toBe("ADJUSTMENT_NEEDS_POLICY");
+    expect(await owed(A)).toBe(0);
+    expect((await api().post(`/equity/adjustments/${prop.body.id}/reject`, { reason: "written off" })).body.status).toBe("REJECTED");
     expect(await owed(A)).toBe(0);
   });
 });
