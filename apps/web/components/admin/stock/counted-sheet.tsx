@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -37,6 +38,7 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
   const [tried, setTried] = useState(false);
   const [problem, setProblem] = useState<StockProblem | null>(null);
   const [result, setResult] = useState<CountResult | null>(null);
+  const [fullCount, setFullCount] = useState(false);
 
   const all = useMemo(() => ORDER.flatMap((k) => overview.groups.find((g) => g.key === k)?.items.map((i) => ({ ...i, group: k })) ?? []), [overview]);
   const byId = useMemo(() => new Map(all.map((i) => [i.variantId, i])), [all]);
@@ -65,12 +67,15 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
   const enteredIds = new Set(entered.map((i) => i.variantId));
   const grids = byProduct(all.filter((i) => i.group === "FINISHED")).filter((p) => p.items.length > 1 && p.items.some((i) => enteredIds.has(i.variantId)));
   const partial = grids.filter((p) => p.items.some((i) => !enteredIds.has(i.variantId)));
-  const valid = entered.length > 0 && problems.length === 0 && !badInput && partial.length === 0 && date <= todayLocal();
+  // A full count ("this is everything I have") has every item on the sheet — 0 for what isn't there.
+  const notCounted = fullCount ? all.filter((i) => !enteredIds.has(i.variantId)) : [];
+  const valid = entered.length > 0 && problems.length === 0 && !badInput && partial.length === 0 && notCounted.length === 0 && date <= todayLocal();
 
   const save = useMutation({
     mutationFn: () => {
       const body: stockApi.CountBody = {
         date,
+        ...(fullCount ? { fullCount: true } : {}),
         ...(grids.length ? { products: grids.map((p) => p.productId) } : {}),
         lines: entered.map((i) => {
           const d = diffOf(i);
@@ -153,6 +158,18 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
         {partial.length > 0 && (
           <p className={tried ? "ui-field-error" : "text-sm text-warning-700"} role={tried ? "alert" : undefined} data-testid="counted-partial-grid">
             Count every size of {partial.map((p) => p.name).join(", ")} — enter 0 for a size you have none of.
+          </p>
+        )}
+        <label className="flex items-start gap-2.5 rounded-xl border border-line-subtle px-3 py-2.5 text-sm text-fg">
+          <Checkbox checked={fullCount} onChange={(e) => setFullCount(e.target.checked)} className="mt-0.5" data-testid="counted-full" />
+          <span>
+            <span className="font-medium">This is everything I have</span>
+            <span className="block text-xs text-fg-muted">A full count: every item below gets a number (0 for none). The stock page shows the date of the last one.</span>
+          </span>
+        </label>
+        {fullCount && notCounted.length > 0 && (
+          <p className={tried ? "ui-field-error" : "text-sm text-warning-700"} role={tried ? "alert" : undefined} data-testid="counted-full-missing">
+            {num(notCounted.length)} still to count for a full count — enter 0 for an item you have none of.
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-end">

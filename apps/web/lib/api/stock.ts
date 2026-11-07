@@ -113,6 +113,8 @@ export interface PurchaseResult { receiptId: string | null; invoiceId: string | 
 export type CountReason = "DAMAGED" | "LOST" | "SAMPLE" | "FOUND" | "COUNT_FIX";
 export interface CountBody {
   date?: string;
+  /** Every item on the sheet: "this is everything I have". */
+  fullCount?: boolean;
   /** Products counted as a whole grid: every size must be on the sheet (0 when none). */
   products?: string[];
   lines: Array<{ variantId: string; counted: number; reason?: CountReason | null; note?: string | null }>;

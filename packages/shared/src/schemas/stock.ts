@@ -153,6 +153,8 @@ export type StockCountReason = (typeof STOCK_COUNT_REASONS)[number];
  * silently kept at its old figure (inventory recovery F-c). */
 export const stockCountsSchema = z.object({
   date: businessDate.optional(),
+  /** "This is everything I have": every stock item is on the sheet (0 for none). The stock page shows the last one. */
+  fullCount: z.boolean().optional(),
   products: z.array(id).max(100).optional(),
   lines: z
     .array(z.object({ variantId: id, counted: z.number().int().min(0).max(10_000_000), reason: z.enum(STOCK_COUNT_REASONS).optional().nullable(), note: optionalText(300) }))
