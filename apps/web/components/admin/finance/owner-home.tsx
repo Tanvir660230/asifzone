@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Banknote, CalendarCheck, CheckCircle2, ChevronRight, FileText, HandCoins, Landmark, Plus, Receipt, Smartphone, type LucideIcon } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getErrorMessage } from "@/lib/api-client";
@@ -48,17 +48,36 @@ export function OwnerHome() {
   const d = q.data;
   const current = !month || (d ? month === d.today.slice(0, 7) : false);
   const stockGain = current ? alerts.data?.alerts.find((a) => a.key === "inventory.gains" && (a.amount ?? 0) > 0) : undefined;
+  // Before the books are set up there is nothing to add up: say so and lead to the page that starts them, instead of a
+  // technical error ("No account is mapped to …").
+  const errorCode = (q.error as { details?: { code?: string } } | null)?.details?.code;
+  const notStarted = q.isError && (errorCode === "MAPPING_MISSING" || errorCode === "BOOKS_NOT_STARTED" || alerts.data?.alerts.some((a) => a.key === "books.not_started"));
 
   return (
     <div className="space-y-7" data-testid="owner-home">
       <div className="flex items-center justify-between gap-3">
-        <Select aria-label="Month" className="min-w-0 flex-1 sm:w-auto sm:flex-none" value={month ?? d?.month.month ?? ""} onChange={(e) => setMonth(e.target.value)} disabled={!d}>
-          {(d ? lastMonths(d.today, 6) : []).map((m, i) => <option key={m} value={m}>{i === 0 ? `This month (${monthName(m)})` : monthName(m, { month: "long", year: "numeric" })}</option>)}
-        </Select>
+        {d ? (
+          <Select aria-label="Month" className="min-w-0 flex-1 sm:w-auto sm:flex-none" value={month ?? d.month.month} onChange={(e) => setMonth(e.target.value)}>
+            {lastMonths(d.today, 6).map((m, i) => <option key={m} value={m}>{i === 0 ? `This month (${monthName(m)})` : monthName(m, { month: "long", year: "numeric" })}</option>)}
+          </Select>
+        ) : (
+          <span />
+        )}
         <Button className="shrink-0 rounded-full" onClick={() => setAdding({})} data-testid="owner-add"><Plus className="h-4 w-4" /> New</Button>
       </div>
 
-      {q.isError && <Alert variant="danger" title="Couldn't load your numbers" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "Try again in a moment.")}</Alert>}
+      {notStarted && (
+        <div className="rounded-2xl border border-line-subtle bg-surface p-6 text-center shadow-sm" data-testid="owner-home-not-started">
+          <CalendarCheck className="mx-auto h-8 w-8 text-fg-muted" aria-hidden="true" />
+          <h2 className="mt-3 text-lg font-semibold text-fg">Your books haven&apos;t started yet</h2>
+          <p className="mx-auto mt-1 max-w-md text-sm text-fg-muted">Choose the day your books start and what you had that day. From then on every sale, cost and payment is added up here by itself.</p>
+          <Link href="/admin/finance/opening" className={buttonVariants({ className: "mt-4 rounded-full" })} data-testid="owner-home-start">
+            Start the books
+          </Link>
+        </div>
+      )}
+
+      {q.isError && !notStarted && <Alert variant="danger" title="Couldn't load your numbers" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "Try again in a moment.")}</Alert>}
 
       {!d && !q.isError && <HomeSkeleton />}
 
