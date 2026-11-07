@@ -172,7 +172,7 @@ describe("Inbox AI — drafts instead", () => {
 
   it("delivery time comes from the store's delivery estimate", async () => {
     const { lastId } = await thread("WHATSAPP", [{ body: "Chittagong e koto din lagbe?" }]);
-    const { model, toolResults } = scripted([tool("delivery_charges", {})], [respond("auto", "delivery_charge", "Dhakar baire 3-5 din lage.")]);
+    const { model, toolResults } = scripted([tool("delivery_charges", {})], [respond("auto", "delivery_charge", "Dhakar baire 2-5 din lage.")]);
     expect(await assistConversation(lastId, model)).toBe("auto");
     expect(toolResults()).toContain("Outside Dhaka: 2–5 business days");
   });
