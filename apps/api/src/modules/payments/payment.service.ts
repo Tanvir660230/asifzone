@@ -26,6 +26,7 @@ import { getCurrency } from "../../domain/config/commerce-settings";
 import { notifyReplenished, notifyStockMoved } from "../inventory/inventory.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { captureError } from "../../lib/observability/error-capture";
+import { logger } from "../../lib/observability/logger";
 import { getProviders } from "../../providers/registry";
 import { gatewayIdForPaymentMethod } from "../../providers/capabilities";
 
@@ -636,7 +637,14 @@ export async function reconcileStuckEpsSessions(): Promise<number> {
   let recovered = 0;
   for (const { gatewayTransactionRef } of stuck) {
     try {
-      const validation = await getProviders().payments.adapter("EPS_PG").verify(gatewayTransactionRef);
+      const check = await getProviders().payments.adapter("EPS_PG").check(gatewayTransactionRef);
+      // EPS not answering (outage, token failure): the rest of this run would fail the same way — one log line, try
+      // again in 5 minutes (before, every stuck session logged its own error).
+      if (check.kind === "UNREACHABLE") {
+        logger.warn("[payment-reconciliation-cron] EPS is not answering — stopping this run; the sessions stay ACTIVE and are checked again next run");
+        break;
+      }
+      const validation = check.kind === "FOUND" ? check.result : null;
       const verified =
         validation && validation.status.toLowerCase() === "success" && validation.merchantTransactionId === gatewayTransactionRef;
       if (verified) {

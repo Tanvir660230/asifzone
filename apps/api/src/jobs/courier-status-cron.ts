@@ -18,8 +18,8 @@ export async function startCourierStatusCron() {
     QUEUE_NAME,
     async () => {
       const sweep = await syncPendingCourierStatuses();
-      if (sweep.changed > 0 || sweep.rateLimited || sweep.due > sweep.checked) {
-        logger.info(`[courier-status-cron] checked ${sweep.checked} of ${sweep.due} due, ${sweep.changed} changed, level ${sweep.level}${sweep.rateLimited ? ", stopped on a rate limit" : ""}`);
+      if (sweep.changed > 0 || sweep.rateLimited || sweep.courierDown || sweep.due > sweep.checked) {
+        logger.info(`[courier-status-cron] checked ${sweep.checked} of ${sweep.due} due, ${sweep.changed} changed, level ${sweep.level}${sweep.rateLimited ? ", stopped on a rate limit" : ""}${sweep.courierDown ? ", stopped: Steadfast is failing" : ""}`);
       }
       // Courier costs (docs/COURIER_COSTS.md): legs of recently touched orders (status changes by staff, manual carriers).
       await syncRecentShipments();
