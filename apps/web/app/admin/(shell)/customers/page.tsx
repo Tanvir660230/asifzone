@@ -596,7 +596,7 @@ export default function CustomersPage() {
                   </SortableHeader>
                 </th>
                 <th className="px-4 py-3">Phone</th>
-                <th className="hidden px-4 py-3 xl:table-cell">Email</th>
+                <th className="hidden px-4 py-3 2xl:table-cell">Email</th>
                 <th aria-sort={ariaSortFor("totalOrders")} className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
@@ -670,7 +670,7 @@ export default function CustomersPage() {
                       </button>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
-                    <td className="hidden max-w-[220px] truncate px-4 py-3.5 text-ink-500 xl:table-cell" title={customer.email ?? undefined}>{customer.email ?? "—"}</td>
+                    <td className="hidden max-w-[220px] truncate px-4 py-3.5 text-ink-500 2xl:table-cell" title={customer.email ?? undefined}>{customer.email ?? "—"}</td>
                     <td className="px-4 py-3.5 text-right tabular-nums text-ink-700">{customer.totalOrders}</td>
                     <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900"><SpentValue customer={customer} /></td>
                     <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">

@@ -85,7 +85,9 @@ export function StockHub() {
     if (s !== params.toString()) router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
   }, [debouncedSearch, params, pathname, router]);
   // wide screens show the item (or the activity) beside the list; phones switch between Stock and Activity
-  const wide = useMediaQuery("(min-width: 1024px)");
+  // Two columns (the list beside the item / activity) only from 1440: with the admin sidebar and the Stock menu beside
+  // it, a 1280 laptop left the list ~290px wide. Below that the Stock | Activity switch and the item sheet are used.
+  const wide = useMediaQuery("(min-width: 1440px)");
   const [phoneView, setPhoneView] = useState<"stock" | "activity">("stock");
   const [countFor, setCountFor] = useState<string[] | null>(null);
   // ?bought=<variant> / ?count=<variant> (from Materials' row actions) open that sheet once the overview is in, then
@@ -219,7 +221,7 @@ export function StockHub() {
           {!wide && (
             <SegmentedControl aria-label="View" size="md" value={phoneView} onChange={setPhoneView} options={[{ value: "stock", label: "Stock", testId: "stock-view-stock" }, { value: "activity", label: "Activity", testId: "stock-view-activity" }]} />
           )}
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="grid gap-8 min-[1440px]:grid-cols-[minmax(0,1fr)_24rem]">
             <div className={cn("min-w-0 space-y-8", !wide && phoneView !== "stock" && "hidden")}>
               {!search.trim() && (
                 <TodayList
@@ -241,7 +243,7 @@ export function StockHub() {
               <StockList hasFillToOrder={groupOf("FILL_TO_ORDER").length > 0} q={debouncedSearch} selectedId={wide ? itemOf?.variantId ?? null : null} onOpen={setItemOf} />
             </div>
             {/* the side column: the item being looked at, else what happened */}
-            <aside className={cn("min-w-0 lg:sticky lg:top-6 lg:self-start", !wide && phoneView !== "activity" && "hidden")}>
+            <aside className={cn("min-w-0 min-[1440px]:sticky min-[1440px]:top-6 min-[1440px]:self-start", !wide && phoneView !== "activity" && "hidden")}>
               {wide && itemOf ? (
                 <ItemRail item={itemOf} showCost={showCost} canAdjust={can("inventory.adjust")} actions={itemActions(itemOf)} onClose={() => setItemOf(null)} />
               ) : (
