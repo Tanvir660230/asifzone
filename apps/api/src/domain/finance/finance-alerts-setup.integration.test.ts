@@ -7,6 +7,9 @@ import { financeAlerts } from "./finance-alerts.service";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { postOpeningBalances, saveOpeningLines } from "./opening-balances.service";
 import type { FinanceActor } from "./finance-audit";
+import { addDays } from "@clothing-brand/shared";
+import { confirmZeroSpendDays, createCampaign, recordDaySpend } from "./ads.service";
+import { createFinancialAccount } from "./financial-accounts.service";
 
 // Finance alerts before the books have started: an installation with no Financial Opening Date (or with opening balances
 // still a draft) records nothing — every other finance page reads empty. The alert names that and links to the page that
@@ -48,5 +51,25 @@ describe("alerts: the books haven't started", () => {
     expect(await startAlert()).toBeDefined();
     await postOpeningBalances(OWNER);
     expect(await startAlert()).toBeUndefined();
+  });
+});
+
+describe("alerts: ad spend missing", () => {
+  it("says profit looks higher while a running campaign has days without spend, and clears once they are recorded", async () => {
+    const { business } = await getFinanceContext();
+    const today = businessToday(business);
+    const first = `${today.slice(0, 7)}-01`;
+    const yesterday = addDays(today, -1);
+    if (yesterday <= addDays(first, 1)) return; // the first days of a month have no gap to show yet
+    const account = await createFinancialAccount({ kind: "AD_PLATFORM", name: "Alerts Meta", provider: "Meta", accountReference: "act_alerts" } as never, OWNER);
+    const campaign = await createCampaign({ financialAccountId: (account as { id: string }).id, name: "Alerts push", startDate: first } as never, OWNER);
+    const id = (campaign as { id: string }).id;
+    await recordDaySpend(id, { date: first, amount: 300 } as never, OWNER);
+    const alert = (await financeAlerts()).alerts.find((a) => a.key === "ads.missing");
+    const missing: string[] = [];
+    for (let d = addDays(first, 1); d <= yesterday; d = addDays(d, 1)) missing.push(d);
+    expect(alert).toMatchObject({ severity: "warning", count: missing.length, href: "/admin/finance/ads" });
+    await confirmZeroSpendDays(id, { dates: missing, reason: "paused" }, OWNER);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "ads.missing")).toBeUndefined();
   });
 });

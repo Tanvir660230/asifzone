@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Prisma } from "@prisma/client";
-import { applyCostOperation, averageUnitCostMinor, divRound, EMPTY_POSITION, recipeStandardCosts, type CostOperation, type CostPosition } from "./costing.service";
+import { applyCostOperation, costingStartsBeforeOpening, averageUnitCostMinor, divRound, EMPTY_POSITION, recipeStandardCosts, type CostOperation, type CostPosition } from "./costing.service";
 
 // Financial Core Phase 4A (docs/FINANCE_PHASE_4.md §13): the moving weighted-average method, figure by figure. Every
 // expected value below is computed by hand (BDT: 2 minor digits; the average is major units × 10^6).
@@ -304,5 +304,15 @@ describe("recipe standard cost", () => {
     expect(r.get("v6")).toBe(30_162); // 6.6 × 38.125 = 251.625 + 50 = 301.625 → 301.62 (half to even)
     expect(r.get("vx")).toBeNull();
     expect(r.has("other")).toBe(false);
+  });
+});
+
+describe("costingStartsBeforeOpening", () => {
+  const opening = new Date("2026-11-07T00:00:00Z"); // a @db.Date: the opening day at UTC midnight
+  it("allows the opening day before 6 am in Dhaka (still the previous day in UTC)", () => {
+    expect(costingStartsBeforeOpening(new Date("2026-11-06T20:30:00Z"), opening, "Asia/Dhaka")).toBe(false); // 02:30 on 7 Nov in Dhaka
+  });
+  it("refuses the day before the opening date in the store's timezone", () => {
+    expect(costingStartsBeforeOpening(new Date("2026-11-06T17:30:00Z"), opening, "Asia/Dhaka")).toBe(true); // 23:30 on 6 Nov in Dhaka
   });
 });

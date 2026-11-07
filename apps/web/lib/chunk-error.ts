@@ -6,6 +6,16 @@ export function isChunkLoadError(error: unknown): boolean {
   return error.name === "ChunkLoadError" || /Loading (CSS )?chunk [\w-]+ failed/i.test(error.message);
 }
 
+/** One of the site's own script files arrived cut off (a dropped mobile connection mid-download): the browser reports a
+ * SyntaxError at that file, with no stack ("Unexpected end of input", "Invalid or unexpected token"). Same cure as a
+ * missing chunk. */
+export function isTruncatedScriptError(error: unknown, filename: string | undefined): boolean {
+  if (!filename || !/\/_next\/static\//.test(filename)) return false;
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return name === "SyntaxError" || /^(Uncaught )?SyntaxError/.test(message);
+}
+
 /** Session key holding when the page last reloaded itself for a chunk error. */
 export const CHUNK_RELOAD_KEY = "chunk-reload-at";
 const RELOAD_GUARD_MS = 60_000;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isChunkLoadError, shouldReloadForChunkError } from "./chunk-error";
+import { isChunkLoadError, shouldReloadForChunkError, isTruncatedScriptError } from "./chunk-error";
 
 describe("isChunkLoadError", () => {
   it("recognises webpack's failed chunk downloads", () => {
@@ -20,5 +20,17 @@ describe("shouldReloadForChunkError", () => {
     expect(shouldReloadForChunkError(null, now)).toBe(true);
     expect(shouldReloadForChunkError(String(now - 5_000), now)).toBe(false);
     expect(shouldReloadForChunkError(String(now - 120_000), now)).toBe(true);
+  });
+});
+
+describe("isTruncatedScriptError", () => {
+  it("is a SyntaxError at one of the site's own script files", () => {
+    expect(isTruncatedScriptError(new SyntaxError("Unexpected end of input"), "https://asifzone.com/_next/static/chunks/4640-abc.js")).toBe(true);
+    expect(isTruncatedScriptError("Uncaught SyntaxError: Invalid or unexpected token", "https://asifzone.com/_next/static/chunks/app/page.js")).toBe(true);
+  });
+  it("is not one elsewhere, nor another kind of error", () => {
+    expect(isTruncatedScriptError(new SyntaxError("Unexpected token"), "https://connect.facebook.net/fbevents.js")).toBe(false);
+    expect(isTruncatedScriptError(new SyntaxError("x"), undefined)).toBe(false);
+    expect(isTruncatedScriptError(new TypeError("x"), "https://asifzone.com/_next/static/chunks/a.js")).toBe(false);
   });
 });

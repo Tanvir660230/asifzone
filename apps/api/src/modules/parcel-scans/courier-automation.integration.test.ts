@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { ORDER_QUEUE_FILTERS, businessDate } from "@clothing-brand/shared";
 import { getTimezone } from "../../domain/config/commerce-settings";
 import { prisma } from "../../config/prisma";
+import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { changeOrderStatus, listOrders } from "../orders/order.service";
 import { runCourierAutomation } from "./courier-automation.service";
@@ -68,8 +69,10 @@ describe("courier automation", () => {
     const first = await runCourierAutomation({ payouts: false });
     expect(first.outcome).toBe("OK");
     expect(first.stuckInTransit).toBeGreaterThanOrEqual(1);
-    // With live providers off the payout read fails: reported on the run, everything else still done.
-    const second = await runCourierAutomation();
+    // A courier account (keys set) with live providers off: the payout read fails — reported on the run, everything
+    // else still done. (With no keys at all the store has no courier account: courier-automation-unconfigured test.)
+    const restore = overrideIntegrationsForTests({ STEADFAST_API_KEY: "test-key", STEADFAST_SECRET_KEY: "test-secret" });
+    const second = await runCourierAutomation().finally(restore);
     expect(second.outcome).toBe("PARTIAL");
     expect(second.message).toMatch(/payouts/);
     expect(second.day).toBe(first.day);
