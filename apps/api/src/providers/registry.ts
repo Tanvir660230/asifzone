@@ -86,6 +86,7 @@ const epsGateway: EpsGateway = {
   key: "eps",
   createSession: (params) => eps.initEpsSession(params).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.transactionId })),
   verify: (merchantTransactionId) => eps.verifyEpsTransaction(merchantTransactionId),
+  check: (merchantTransactionId) => eps.checkEpsTransaction(merchantTransactionId),
 };
 
 const GATEWAYS: GatewayById = { SSLCOMMERZ: sslcommerzGateway, EPS_PG: epsGateway };
