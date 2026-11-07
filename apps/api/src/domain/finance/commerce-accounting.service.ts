@@ -75,6 +75,19 @@ export interface OrderExtras {
   returnedAt?: Date | null;
 }
 
+/** When the order last moved INTO `status`: the first row of the final run of that status. A timeline note is written as a
+ * history row with the order's current status, so "the latest row with that status" would move with every note. */
+export function enteredStatusAt(rows: Array<{ status: string; createdAt: Date }>, status: string): Date | null {
+  let at: Date | null = null;
+  let prev: string | null = null;
+  for (const r of rows) {
+    if (r.status === status && prev !== status) at = r.createdAt;
+    else if (r.status !== status) at = null;
+    prev = r.status;
+  }
+  return at;
+}
+
 async function loadExtras(o: OrderFact, ctx: FinanceContext): Promise<OrderExtras> {
   const cur = ctx.business.baseCurrency;
   const [refunds, rrs, credits, estimates, variants, returned] = await Promise.all([
@@ -86,10 +99,10 @@ async function loadExtras(o: OrderFact, ctx: FinanceContext): Promise<OrderExtra
       select: { key: true, estimatedUnitCost: true },
     }),
     prisma.productVariant.findMany({ where: { id: { in: o.lines.map((l) => l.variantId) } }, select: { id: true, costPrice: true, product: { select: { costPrice: true } } } }),
-    o.status === "RETURNED" ? prisma.orderStatusHistory.findFirst({ where: { orderId: o.id, status: "RETURNED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }) : null,
+    o.status === "RETURNED" ? prisma.orderStatusHistory.findMany({ where: { orderId: o.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { status: true, createdAt: true } }) : null,
   ]);
   return {
-    returnedAt: returned?.createdAt ?? null,
+    returnedAt: returned ? enteredStatusAt(returned, "RETURNED") : null,
     refundPayment: new Map(refunds.map((r) => [r.id, r.payment?.provider ?? null])),
     returnRequests: rrs
       .filter((r) => Array.isArray(r.lines))
