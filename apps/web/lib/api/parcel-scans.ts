@@ -1,4 +1,6 @@
 import type {
+  BulkReceiveParcelsInput,
+  BulkReceiveRow,
   CorrectParcelReceiptInput,
   ParcelReceiptView,
   ParcelResolveResult,
@@ -12,6 +14,16 @@ import { apiFetch } from "../api-client";
 import { idempotencyKeyFor } from "../idempotency";
 
 /** Dispatch and return scanning (Order Operations phase 4) — /api/parcel-scans. */
+
+/** Many returned parcels at once (dryRun = the preview, nothing changes). The confirm reuses one Idempotency-Key per
+ * selection, so a retried confirm receives nothing twice. */
+export function bulkReceiveParcels(input: Omit<BulkReceiveParcelsInput, "note"> & { note?: string | null }) {
+  return apiFetch<{ rows: BulkReceiveRow[] }>("/api/parcel-scans/receive-bulk", {
+    method: "POST",
+    body: input,
+    ...(input.dryRun ? {} : { idempotencyKey: idempotencyKeyFor("parcel-receive-bulk", { orderIds: input.orderIds, condition: input.condition }) }),
+  });
+}
 
 /** What a scanned code names — changes nothing. */
 export function resolveCode(code: string, mode: ParcelScanKind) {
