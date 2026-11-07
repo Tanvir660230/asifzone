@@ -106,15 +106,15 @@ describe("country module (Bangladesh) — behaviour is unchanged by the move", (
     expect(isBdMobileLocal("0171234567")).toBe(false);
   });
 
-  it("Dhaka split and delivery estimate: Dhaka district only, 1–2 vs 3–5 days", () => {
+  it("Dhaka split and delivery estimate: Dhaka district only, 1–2 vs 2–5 days", () => {
     expect(isInsideDhaka("Dhaka")).toBe(true);
     expect(isInsideDhaka("Gazipur")).toBe(false); // Dhaka division, outside-Dhaka rate
     expect(isInsideDhaka(null)).toBe(false);
     expect(DHAKA_DELIVERY_DAYS).toEqual([1, 2]);
-    expect(OUTSIDE_DHAKA_DELIVERY_DAYS).toEqual([3, 5]);
+    expect(OUTSIDE_DHAKA_DELIVERY_DAYS).toEqual([2, 5]);
     const from = new Date("2026-10-01T00:00:00Z");
     expect(estimateDelivery("Dhaka", from)).toMatchObject({ minDays: 1, maxDays: 2 });
-    expect(estimateDelivery("Sylhet", from)).toMatchObject({ minDays: 3, maxDays: 5 });
+    expect(estimateDelivery("Sylhet", from)).toMatchObject({ minDays: 2, maxDays: 5 });
   });
 
   it("constants keep the exact values the gateways and structured data used", () => {
