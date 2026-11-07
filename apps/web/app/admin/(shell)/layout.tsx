@@ -160,7 +160,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
 
               <button
                 onClick={() => setPaletteOpen(true)}
-                className="flex h-10 w-10 items-center justify-center gap-2 rounded-full text-fg-muted transition-[border-color,box-shadow,background-color] duration-fast ease-smooth hover:bg-ink-900/[0.05] sm:w-[min(480px,38vw)] sm:justify-start sm:rounded-xl sm:border sm:border-line sm:bg-canvas sm:px-3 sm:hover:border-line-strong sm:hover:bg-surface sm:hover:shadow-xs"
+                className="flex h-10 w-10 items-center justify-center gap-2 rounded-full text-fg-muted transition-[border-color,box-shadow,background-color] duration-fast ease-smooth hover:bg-ink-900/[0.05] sm:w-[min(480px,30vw)] sm:justify-start sm:rounded-xl sm:border sm:border-line sm:bg-canvas sm:px-3 sm:hover:border-line-strong sm:hover:bg-surface sm:hover:shadow-xs"
                 aria-label="Search"
               >
                 <Search size={16} className="shrink-0" />
