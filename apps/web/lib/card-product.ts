@@ -4,7 +4,7 @@ import type { Product } from "@clothing-brand/shared";
  * A product as a listing card needs it. Listings (home sections, category, search) send their products to client-side
  * cards, and everything on the object travels to the phone inside the page. The long texts (description, SEO), the
  * category's own banner/SEO record and each variant's bookkeeping dates were ~35% of every card and are never shown
- * on one (measured on Asif Zone's home page, 2026-11-08: 4.2 KB a product). The product page loads the full product
+ * on one (measured on a live home page, 2026-11-08: 4.2 KB a product). The product page loads the full product
  * itself, so nothing is lost there. Same shape, so every card and helper keeps working.
  */
 export function cardProduct(p: Product): Product {
