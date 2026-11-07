@@ -266,6 +266,22 @@ describe("payments, refunds, returns", () => {
     expect(await prisma.orderStatusHistory.count({ where: { orderId: o.id, note: { contains: "cancelled (entered by mistake)" } } })).toBe(1);
   });
 
+  it("a note written on a returned order later does not re-date its uncollected write-off", async () => {
+    const v = await costedVariant(200);
+    const o = await placeOrder([{ variantId: v.id, quantity: 1 }]);
+    await deliver(o.id, "SHIPPED");
+    await updateOrderStatus(o.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await updateOrderStatus(o.id, { status: "RETURNED" }, admin);
+    await projectOrder(o.id);
+    const journals = () => prisma.journalLine.count({ where: { partyId: o.id } });
+    const before = await journals();
+    // A bookkeeping note three days later is a history row with the current status, not a new move to RETURNED.
+    await prisma.orderStatusHistory.create({ data: { orderId: o.id, status: "RETURNED", note: "Payment cancelled (entered by mistake)", createdAt: new Date(Date.now() + 3 * 86_400_000) } });
+    await projectOrder(o.id);
+    expect(await journals()).toBe(before);
+    await agrees(o.id);
+  });
+
   it("partial, multiple and repeated refunds reduce revenue exactly as the dashboard does; a repeat records one refund", async () => {
     const v = await costedVariant(300);
     const o = await paidOnline([{ variantId: v.id, quantity: 2 }]);
