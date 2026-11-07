@@ -13,6 +13,9 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | 2026-11-07 | An EPS session expired while EPS was timing out, so a payment taken during the outage would be lost | EPS API timeouts since 11-06; 3 sessions expired with no successful verify in the logs | Before expiring, EPS is asked once more: paid → settled, no record → expired, no answer → kept open up to 24 h, then expired with an error to check in the EPS portal |
 | 2026-11-07 | Inventory costing could not start on the opening day before 6 am Dhaka | `COSTING_BEFORE_OPENING`, Nasihamart 2026-11-07 | The check compares the store’s business date with the opening date |
 | 2026-11-07 | A single-instance homepage section missing from the database could not be added | TRUST_STRIP on Nasihamart | It can be created once when no row of its type exists |
+| 2026-11-07 | Two copies of one Steadfast webhook arriving together were both processed; the second failed to log | 51 unique-constraint errors on `CourierWebhookEvent` | The log row is written first and claims the Idempotency-Key; the second copy is a duplicate |
+| 2026-11-07 | A Steadfast outage logged one error per parcel per sweep | 4,896 "HTTP 502" + 279 timeouts on 11-02..11-06 | Three failed checks in a row end the run; the rest stay due |
+| 2026-11-07 | An EPS outage logged one error per stuck session every 5 minutes | 39 "Could not start the payment session" in reconciliation | The sweep stops at the first "EPS not answering" and tries again next run |
 
 ## Next
 
