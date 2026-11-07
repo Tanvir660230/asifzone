@@ -101,7 +101,8 @@ describe("navigation manifest — coverage of the app", () => {
   });
 
   it("every admin page has a navigation node (or is a declared deprecated route)", () => {
-    const missing = routes.filter((r) => !deprecated.has(r) && !NAV_NODES.some((n) => n.route === r));
+    // The catch-all is the admin's own "not found" for addresses that aren't pages, not a page of its own.
+    const missing = routes.filter((r) => r !== "/admin/[...missing]" && !deprecated.has(r) && !NAV_NODES.some((n) => n.route === r));
     expect(missing).toEqual([]);
   });
 
