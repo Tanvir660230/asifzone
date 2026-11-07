@@ -8,6 +8,7 @@ import {
   handOverFromListSchema,
   linkParcelCodeSchema,
   PARCEL_SCAN_KINDS,
+  bulkReceiveParcelsSchema,
   receiveParcelSchema,
   recordScanSchema,
   resolveParcelCodeSchema,
@@ -22,6 +23,7 @@ import * as scans from "./parcel-scan.service";
 import { latestCourierAutomation, runCourierAutomation } from "./courier-automation.service";
 import { linkParcelCode, resolveParcelCode } from "./parcel-resolve.service";
 import { correctParcelReceipt, getParcelView, receiveParcel } from "./parcel-receive.service";
+import { bulkReceiveParcels } from "./parcel-bulk-receive.service";
 
 /** /api/parcel-scans — dispatch and return scanning (Order Operations phase 4) and the scanner page's receive and
  * inspect. parcels.scan for scanning and looking (a scan records a physical handover / receipt only); returns.manage to
@@ -53,6 +55,16 @@ parcelScanRouter.post(
     if (!key) throw AppError.badRequest("Idempotency-Key header is required", { code: "IDEMPOTENCY_KEY_REQUIRED" });
     const result = await receiveParcel(req.body, req.admin!, key);
     res.status(result.replayed ? 200 : 201).json(result);
+  }),
+);
+/** Many parcels back at once (preview with dryRun). The Idempotency-Key names the batch: a retried confirm returns each
+ * parcel's first receipt instead of receiving it twice. */
+parcelScanRouter.post(
+  "/receive-bulk", requirePermission("returns.manage"), validate(bulkReceiveParcelsSchema),
+  asyncHandler(async (req, res) => {
+    const key = idempotencyKeyOf(req);
+    if (!key && !req.body.dryRun) throw AppError.badRequest("Idempotency-Key header is required", { code: "IDEMPOTENCY_KEY_REQUIRED" });
+    res.json(await bulkReceiveParcels(req.body, req.admin!, `bulk:${key ?? "preview"}`));
   }),
 );
 parcelScanRouter.post(
