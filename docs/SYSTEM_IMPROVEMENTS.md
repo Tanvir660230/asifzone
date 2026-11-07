@@ -10,6 +10,7 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | 2026-11-06 | Courier estimates were re-booked every sweep while a parcel waited for the order status | About 1,700 journals a day, one parcel at 14 revisions, amounts unchanged | A waiting estimate keeps its date; a new one takes the courier's first report for that booking |
 | 2026-11-06 | A partial push with `cod_amount` equal to the booked COD could be taken as money collected | 999 pushed, rider collected 100 | That figure is ignored; the payout line says what was collected |
 | 2026-11-06 | The same return charge could be entered twice | HV2NHQ 120 twice; CUFVSN 100 + 60 | A second charge through the courier is refused, entered or re-marked |
+| 2026-11-07 | An EPS session expired while EPS was timing out, so a payment taken during the outage would be lost | EPS API timeouts since 11-06; 3 sessions expired with no successful verify in the logs | Before expiring, EPS is asked once more: paid → settled, no record → expired, no answer → kept open up to 24 h, then expired with an error to check in the EPS portal |
 
 ## Next
 
