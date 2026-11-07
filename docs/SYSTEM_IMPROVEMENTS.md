@@ -23,3 +23,5 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | Medium | Which item the customer kept is not captured when one of several came back | 5 parcels could not be closed from the money alone | Ask for the kept item when the amount looks like a partial sale |
 | Medium | `cod_amount` below the booked COD can still be wrong | CV4FU4 pushed 150, payout 100 | Show it as the courier's claim until the payout confirms it |
 | Low | Stock counts have no clear "this is everything I have" marker | The last full count had to be found in old chat messages | A named full count with a date, shown on the stock page |
+| Low | Inventory costing can't start on the opening day before 6 am Dhaka | `activateInventoryCostingInTx` compares a UTC instant with the opening date at UTC midnight (`COSTING_BEFORE_OPENING`, Nasihamart 2026-11-07) | Compare business dates in the store's timezone |
+| Low | A singleton section missing from the database can't be added through the API | `createHomepageSection` refuses TRUST_STRIP; only a Studio publish creates it | Allow create when no row of that type exists |
