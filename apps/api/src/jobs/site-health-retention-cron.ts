@@ -3,6 +3,8 @@ import { createQueue, queueConnection } from "../lib/queue";
 import { logger } from "../lib/observability/logger";
 import { purgeOldSiteHealthData } from "../modules/ops/web-vitals.service";
 import { purgeOldCourierHealthData } from "../modules/courier/courier-health.service";
+import { storeContext } from "../domain/metrics/store-time";
+import { DAILY_SCHEDULES, repeatFor } from "./daily-schedules";
 
 const QUEUE_NAME = "site-health-retention";
 
@@ -24,5 +26,6 @@ export async function startSiteHealthRetentionCron() {
   );
 
   // 22:45 UTC = 4:45 AM Bangladesh time, after the storage trash purge.
-  await queue.upsertJobScheduler("site-health-retention", { pattern: "45 22 * * *" }, { name: "purge" });
+  const { timezone } = await storeContext();
+  await queue.upsertJobScheduler("site-health-retention", repeatFor(DAILY_SCHEDULES.siteHealthRetention, timezone), { name: "purge" });
 }

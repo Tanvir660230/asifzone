@@ -4,9 +4,9 @@
  * is compared "by this time". The brief reads the day's pulse, sales and best channel, the queues now and the anomalies.
  */
 import { addDays, businessDate, businessDayStartUtc, resolveBusinessRange } from "@clothing-brand/shared";
+import { prisma } from "../../config/prisma";
 import { cacheSwr } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
-import { notify } from "../../lib/notify";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { storeContext } from "../../domain/metrics/store-time";
 import { detectAnomaly, type Anomaly } from "./anomalies";
@@ -127,14 +127,22 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
   });
 }
 
-/** The morning notification: yesterday's brief in the admin bell, linking to the daily pulse. */
-export async function sendMorningBrief(now: Date = new Date()): Promise<DailyBriefReport> {
+/** The morning notification: yesterday's brief in the admin bell, linking to the daily pulse. Once per store day: the job is
+ * retried when a busy minute makes it fail (jobs/daily-schedules.ts), and a retry after a brief went out sends nothing. */
+export async function sendMorningBrief(now: Date = new Date()): Promise<DailyBriefReport | null> {
+  const { timezone } = await storeContext();
+  const today = businessDate(now, timezone);
+  const sentToday = { gte: businessDayStartUtc(today, timezone), lt: businessDayStartUtc(addDays(today, 1), timezone) };
+  if (await prisma.notification.findFirst({ where: { type: "analytics.daily_brief", createdAt: sentToday }, select: { id: true } })) return null;
   const brief = await getDailyBrief(undefined, now);
-  notify({
-    type: "analytics.daily_brief",
-    title: brief.headline,
-    body: [...brief.lines, ...(brief.watch.length ? [`Watch: ${brief.watch.join("; ")}`] : [])].join("\n"),
-    link: "/admin/analytics/operations",
+  // Awaited (not notify()'s fire-and-forget) so a failed write fails the job and the retry sends it.
+  await prisma.notification.create({
+    data: {
+      type: "analytics.daily_brief",
+      title: brief.headline,
+      body: [...brief.lines, ...(brief.watch.length ? [`Watch: ${brief.watch.join("; ")}`] : [])].join("\n"),
+      link: "/admin/analytics/operations",
+    },
   });
   return brief;
 }

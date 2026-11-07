@@ -653,15 +653,46 @@ export async function reconcileStuckEpsSessions(): Promise<number> {
 /** Called from the reconciliation cron. A session that sat ACTIVE past its window with no gateway
  * signal ever arriving (closed tab, crash, lost connection) is marked EXPIRED rather than left
  * ACTIVE forever — otherwise the one-ACTIVE-session-per-order index would permanently block retry. */
+/** How long past its window an EPS session is kept open while EPS does not answer at all (an outage), so a payment EPS
+ * took during the outage still settles when EPS is back. After that it expires with an error for a person to check. */
+export const EPS_UNREACHABLE_GRACE_MS = 24 * 60 * 60 * 1000;
+
 export async function expireStalePaymentSessions(): Promise<number> {
+  const now = Date.now();
   const stale = await prisma.paymentSession.findMany({
-    where: { status: "ACTIVE", expiresAt: { lt: new Date() } },
-    select: { id: true },
+    where: { status: "ACTIVE", expiresAt: { lt: new Date(now) } },
+    select: { id: true, provider: true, gatewayTransactionRef: true, expiresAt: true },
     take: 500,
   });
   if (!stale.length) return 0;
 
-  const ids = stale.map((s) => s.id);
+  // An EPS session is asked one last time before it expires: EPS has no webhook, so a payment it took while the
+  // reconciliation could not reach it would otherwise be lost (the customer paid, the order never appears).
+  const ids: string[] = [];
+  for (const s of stale) {
+    if (s.provider === "EPS_PG") {
+      const check = await getProviders()
+        .payments.adapter("EPS_PG")
+        .check(s.gatewayTransactionRef)
+        .catch(() => ({ kind: "UNREACHABLE" as const }));
+      if (check.kind === "FOUND" && check.result.status.toLowerCase() === "success" && check.result.merchantTransactionId === s.gatewayTransactionRef) {
+        try {
+          await settlePaymentSession(s.gatewayTransactionRef, check.result.epsTransactionId || s.gatewayTransactionRef, check.result.amount, check.result);
+        } catch (err) {
+          captureError(err, { msg: `[payment-reconciliation-cron] EPS confirms session ${s.gatewayTransactionRef} paid but it did not settle:` });
+        }
+        continue;
+      }
+      if (check.kind === "UNREACHABLE") {
+        if (s.expiresAt.getTime() > now - EPS_UNREACHABLE_GRACE_MS) continue; // try again on the next run
+        captureError(new Error(`EPS never answered for session ${s.gatewayTransactionRef}; it expired without confirmation — check it in the EPS portal`), {
+          msg: "[payment-reconciliation-cron] EPS session expired unconfirmed",
+        });
+      }
+    }
+    ids.push(s.id);
+  }
+  if (!ids.length) return 0;
   const result = await prisma.paymentSession.updateMany({
     where: { id: { in: ids }, status: "ACTIVE" },
     data: { status: "EXPIRED" },

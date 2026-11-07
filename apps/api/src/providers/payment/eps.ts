@@ -292,10 +292,32 @@ interface EpsVerifyResponse {
   ErrorCode?: string | null;
 }
 
+/** What EPS says about a transaction: its record (FOUND), that it has none / refuses it (NO_RECORD: the customer never
+ * paid), or nothing at all (UNREACHABLE: timeout, network, bad JSON) — which says nothing about the money. */
+export type EpsCheck = { kind: "FOUND"; result: EpsValidationResult } | { kind: "NO_RECORD" } | { kind: "UNREACHABLE" };
+
 /** Confirms a success/fail/cancel redirect is genuine by re-checking the transaction against EPS's
  * own records — never trust the callback's query params alone. */
 export async function verifyEpsTransaction(merchantTransactionId: string): Promise<EpsValidationResult | null> {
-  let token = await getEpsToken();
+  // A token failure still throws here (the callback routes answer it with their friendly message).
+  const check = await lookupEpsTransaction(merchantTransactionId, await getEpsToken());
+  return check.kind === "FOUND" ? check.result : null;
+}
+
+/** For the expiry sweep: never throws; a token failure is EPS not answering. */
+export async function checkEpsTransaction(merchantTransactionId: string): Promise<EpsCheck> {
+  let token: string;
+  try {
+    token = await getEpsToken();
+  } catch (err) {
+    captureError(err, { msg: `[eps] token request failed while checking ${merchantTransactionId}:` });
+    return { kind: "UNREACHABLE" };
+  }
+  return lookupEpsTransaction(merchantTransactionId, token);
+}
+
+async function lookupEpsTransaction(merchantTransactionId: string, firstToken: string): Promise<EpsCheck> {
+  let token = firstToken;
   const hash = signHash(merchantTransactionId);
   const query = new URLSearchParams({ merchantTransactionId });
 
@@ -316,16 +338,19 @@ export async function verifyEpsTransaction(merchantTransactionId: string): Promi
     // "could not verify" (the caller treats null as unverified), so resolve to that instead of
     // throwing an unhandled exception out of a gateway callback route.
     captureError(err, { msg: `[eps] verify request failed for ${merchantTransactionId}:` });
-    return null;
+    return { kind: "UNREACHABLE" };
   }
   if (data.ErrorMessage || data.ErrorCode || !data.MerchantTransactionId || !data.TotalAmount) {
-    return null;
+    return { kind: "NO_RECORD" };
   }
 
   return {
-    merchantTransactionId: data.MerchantTransactionId,
-    epsTransactionId: data.EpsTransactionId ?? "",
-    amount: Number(data.TotalAmount),
-    status: data.Status ?? "",
+    kind: "FOUND",
+    result: {
+      merchantTransactionId: data.MerchantTransactionId,
+      epsTransactionId: data.EpsTransactionId ?? "",
+      amount: Number(data.TotalAmount),
+      status: data.Status ?? "",
+    },
   };
 }

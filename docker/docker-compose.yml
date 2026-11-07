@@ -41,7 +41,10 @@ services:
       # Phase 1: this installation's id — namespaces its Redis cache keys, locks and BullMQ queues (install:<id>:…), so
       # installations can share one Redis server. Required (deploy.sh preflight checks it too).
       INSTALL_ID: ${INSTALL_ID:?set INSTALL_ID in docker/.env}
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clothing_brand}?schema=public
+      # An explicit Prisma pool: the default (2 × CPUs + 1) was too small for the API's background jobs plus admin pages, and
+      # the 09:00 jobs failed with "Timed out fetching a new connection" (jobs/daily-schedules.ts). 15 per store stays far
+      # below Postgres' 100; raise DB_POOL_SIZE in docker/.env only if the error log shows pool timeouts again.
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clothing_brand}?schema=public&connection_limit=${DB_POOL_SIZE:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
       # This stack's own Redis by default; set REDIS_URL to share a Redis server between installations (INSTALL_ID keeps
       # their keys apart).
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
