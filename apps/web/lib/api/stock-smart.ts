@@ -65,6 +65,8 @@ export interface StockToday {
   } | null;
   count: { due: Array<{ variantId: string; sku: string; name: string; unit: string }>; minutes: number } | null;
   approvals: Array<{ id: string; variantId: string; name: string; difference: number; reason: string; value: number | null; requestedBy: string | null; countedOn: string }>;
+  /** The last count marked "this is everything I have". */
+  lastFullCount: { date: string; items: number; by: string | null } | null;
 }
 
 export interface StockApproval {

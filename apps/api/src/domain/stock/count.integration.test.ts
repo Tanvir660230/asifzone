@@ -17,7 +17,8 @@ import { ensureManufacturingSetup } from "../manufacturing/manufacturing-setup.s
 import { createMaterial } from "../manufacturing/materials.service";
 import { recordStockCount, stockCheck } from "../finance/stock-check.service";
 import { listRoutes, routePermission } from "../../test-routes";
-import { expectedOnShelf, recordCounts, reservedNotDispatched } from "./count.service";
+import { expectedOnShelf, lastFullCount, recordCounts, reservedNotDispatched } from "./count.service";
+import { stockHub } from "./stock-hub.service";
 
 // Stock hub Task 6 (docs/STOCK_HUB.md §2 "Counted"): expected on the shelf = stock + units on orders not yet booked with
 // the courier; a difference is booked at the running average as DAMAGED / LOST (loss) or ADJUSTMENT (found, count fix).
@@ -195,5 +196,21 @@ describe("Counted — review fixes", () => {
     expect(again.lines[0]).toMatchObject({ expected: 4, counted: 5, difference: 1 });
     expect(await prisma.stockCount.count({ where: { variantId: p } })).toBe(1);
     expect(await stock(p)).toBe(5); // the adjustment is booked once too (its source is the line)
+  });
+});
+
+describe("Counted — a full count", () => {
+  it("needs every item on the sheet; the last one is what the stock page shows", async () => {
+    const { business } = await getFinanceContext();
+    const items = (await stockHub({ canSeeCost: false })).groups.flatMap((g) => g.items);
+    expect(items.length).toBeGreaterThan(1);
+    const line = (i: (typeof items)[number]) => ({ variantId: i.variantId, counted: i.expectedOnShelf });
+    await expect(recordCounts({ fullCount: true, lines: items.slice(1).map(line) }, OWNER, `full-miss-${RUN}`)).rejects.toMatchObject({ details: { code: "COUNT_NOT_FULL" } });
+    // A count of some items only is not a full count, and does not change the last one.
+    const before = await lastFullCount(business.id);
+    await recordCounts({ lines: [line(items[0]!)] }, OWNER, `full-part-${RUN}`);
+    expect(await lastFullCount(business.id)).toEqual(before);
+    await recordCounts({ fullCount: true, lines: items.map(line) }, OWNER, `full-all-${RUN}`);
+    expect(await lastFullCount(business.id)).toMatchObject({ items: items.length, by: expect.any(String) });
   });
 });
