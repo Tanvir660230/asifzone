@@ -31,7 +31,7 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 
 | Priority | Gap | Evidence | Suggested fix |
 |---|---|---|---|
-| High | Nothing proves a return reached the shop | Steadfast only sends `assigned` and `processing`; 1 of 81 parcels was scanned | Make the return scan the daily habit, and hold stock as *coming back* until it is scanned |
+| High | Nothing proves a return reached the shop | Steadfast only sends `assigned` and `processing` | Partly done 2026-11-08: the morning brief and Operations list refused parcels not scanned back after the store’s follow-up days; still open: a Steadfast return-status source |
 | Medium | The storefront home page is heavy on a phone | Asif Zone: 757 KB HTML (111 KB gzipped), 85 images; 341 KB of it is product data for the cards (variants 101 KB) — measured 2026-11-07 | A slim card shape (name, price, first image, stock, variant ids) passed to client cards across the 3 presets; lazy-load images below the first screen |
 | Medium | Each deploy builds images on the 1-vCPU VPS | The #71 deploy was OOM-killed; builds take minutes and briefly load the live server | Build images in CI (GHCR), the VPS only pulls; keep the previous tag for a one-command rollback |
 | Low | Meta ad spend never imports by itself | The sealed token can’t be parsed; spend comes only from CSV | Owner reconnects Meta in Settings › Integrations; the new “Ad spend missing” alert shows the gap meanwhile |

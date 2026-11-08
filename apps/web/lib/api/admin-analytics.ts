@@ -892,6 +892,9 @@ export interface OpsQueues {
   withCourierCod: number;
   stuckWithCourier: number;
   partialToReconcile: number;
+  /** Refused parcels reported coming back longer ago than the store's follow-up days, not scanned in yet. */
+  returnsNotBack: number;
+  returnNotBackDays: number;
 }
 
 export interface OpsStaffRow {
