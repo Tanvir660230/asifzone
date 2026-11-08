@@ -13,6 +13,7 @@ import { lockOrder } from "./confirmation.service";
  */
 
 export { parseSelfConfirmCode, selfConfirmCode };
+export { SELF_CONFIRM_WAIT_MINUTES } from "./self-confirm-code";
 
 export interface SelfConfirmView {
   orderNumber: string;

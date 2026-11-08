@@ -205,8 +205,9 @@ export default function SmsNotificationsPage() {
                     <span>
                       <span className="font-medium">Let customers confirm by SMS link</span>
                       <span className="mt-0.5 block text-xs text-ink-400">
-                        Cash-on-delivery orders get a link in this SMS. Customers who confirm (or cancel) there leave the call list on
-                        their own — you only call the rest. Adds one link to each message.
+                        Cash-on-delivery orders get a link in this SMS. The order then waits 2 hours in Call later: customers who confirm (or
+                        cancel) there never need a call; the rest come up in Call now. With the default wording the message becomes a
+                        short &ldquo;confirm here&rdquo; text.
                       </span>
                     </span>
                   </label>

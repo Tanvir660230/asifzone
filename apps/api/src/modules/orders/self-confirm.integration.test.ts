@@ -6,7 +6,7 @@ import { cleanupFixtures, createStockedProduct, ownerId, stockOf, trackOrder } f
 import { createManualOrder, updateOrderStatus } from "./order.service";
 import { getProviders } from "../../providers/registry";
 import { deliverCustomerOrderSms } from "../../lib/order-sms";
-import { confirmBySelf, getSelfConfirmView, parseSelfConfirmCode, selfConfirmCode } from "./self-confirm";
+import { SELF_CONFIRM_WAIT_MINUTES, confirmBySelf, getSelfConfirmView, parseSelfConfirmCode, selfConfirmCode } from "./self-confirm";
 
 // The order-placed SMS can carry a signed link: the customer confirms (or cancels) the order themselves, so staff only
 // call the ones who didn't. The link is a capability — the order number plus an HMAC — and changes a PENDING
@@ -154,6 +154,16 @@ describe("the order-placed SMS carries the link only when switched on", () => {
     try {
       const body = await placedBody(o);
       expect(body).toContain(`/c/${selfConfirmCode(o.orderNumber)}`);
+      // The store's default wording becomes the short "confirm here" message — no "we'll call you" next to the link.
+      const tail = `অর্ডার #${o.orderNumber}, মোট ৳${Number(o.total)}। নিশ্চিত করতে চাপুন: `;
+      expect(body).toContain(tail);
+      expect(body.endsWith(`/c/${selfConfirmCode(o.orderNumber)}`)).toBe(true);
+      expect(body).not.toContain("যোগাযোগ");
+      // Not called straight away: the order waits in Call later for SELF_CONFIRM_WAIT_MINUTES, then comes up if unconfirmed.
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: o.id }, select: { followUpAt: true } });
+      const waitMs = (row.followUpAt?.getTime() ?? 0) - Date.now();
+      expect(waitMs).toBeGreaterThan((SELF_CONFIRM_WAIT_MINUTES - 2) * 60_000);
+      expect(waitMs).toBeLessThanOrEqual(SELF_CONFIRM_WAIT_MINUTES * 60_000);
       expect(await placedBody(o, { paymentMethod: "EPS" })).not.toContain("/c/");
       await setSms({ customerOrderPlacedTemplate: "Order {orderNumber} received." });
       expect(await placedBody(o)).toMatch(new RegExp(`^Order ${o.orderNumber} received\. .+/c/${o.orderNumber}\.`));

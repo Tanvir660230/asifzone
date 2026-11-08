@@ -21,3 +21,7 @@ export function parseSelfConfirmCode(code: string): string | null {
   if (sig.length !== SIG_LENGTH) return null;
   return constantTimeEqual(sig, sign(orderNumber)) ? orderNumber : null;
 }
+
+/** After the link goes out, the order waits this long in Call later before anyone calls: most customers who will confirm
+ * do it within minutes, and every one of them is a call (and its cost) saved. Unconfirmed, it comes up in Call now. */
+export const SELF_CONFIRM_WAIT_MINUTES = 120;

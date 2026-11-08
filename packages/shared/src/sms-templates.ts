@@ -11,11 +11,17 @@ export const DEFAULT_CUSTOMER_SMS_TEMPLATES: Record<CustomerSmsTouchpoint, strin
   CANCELLED: "{storeName}: দুঃখিত, আপনার অর্ডার #{orderNumber} বাতিল করা হয়েছে। কোনো প্রশ্ন থাকলে আমাদের সাথে যোগাযোগ করুন।",
 };
 
+/** The order-placed SMS when the confirm link goes out and the store kept the default wording: short (Bangla SMS parts
+ * are 70 characters, the link is ~50), and no "we'll call you" next to a link that saves the call. */
+export const DEFAULT_PLACED_WITH_LINK_TEMPLATE = "{storeName}: অর্ডার #{orderNumber}, মোট ৳{total}। নিশ্চিত করতে চাপুন: {confirmLink}";
+
 export interface OrderSmsVars {
   orderNumber: string;
   total: number;
   storeName: string;
   customerName: string;
+  /** The customer's own confirm-your-order link (order-placed SMS only, when the store switched it on). */
+  confirmLink?: string;
 }
 
 /** `{placeholder}` substitution, not a full template engine — the vocabulary is fixed (order

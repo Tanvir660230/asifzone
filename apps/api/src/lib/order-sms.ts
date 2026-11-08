@@ -1,12 +1,13 @@
 import type { Order } from "@prisma/client";
-import { DEFAULT_CUSTOMER_SMS_TEMPLATES, renderOrderSms, type CustomerSmsTouchpoint } from "@clothing-brand/shared";
+import { DEFAULT_CUSTOMER_SMS_TEMPLATES, DEFAULT_PLACED_WITH_LINK_TEMPLATE, renderOrderSms, type CustomerSmsTouchpoint } from "@clothing-brand/shared";
 import * as smsTemplates from "./sms-templates";
 import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { getSettings } from "../modules/settings/settings.service";
 import { captureError } from "./observability/error-capture";
 import { getProviders } from "../providers/registry";
 import { env } from "../config/env";
-import { selfConfirmCode } from "../modules/orders/self-confirm-code";
+import { SELF_CONFIRM_WAIT_MINUTES, selfConfirmCode } from "../modules/orders/self-confirm-code";
+import { prisma } from "../config/prisma";
 
 export type CustomerTouchpoint = CustomerSmsTouchpoint;
 type SmsSettings = Awaited<ReturnType<typeof getSmsSettings>>;
@@ -37,7 +38,7 @@ export async function deliverCustomerOrderSms(order: OrderSmsFacts, touchpoint: 
   if (!smsSettings[TOGGLE_KEY[touchpoint]]) return "disabled";
 
   const customTemplate = smsSettings[TEMPLATE_KEY[touchpoint]] as string | null;
-  const template = customTemplate?.trim() ? customTemplate : DEFAULT_CUSTOMER_SMS_TEMPLATES[touchpoint];
+  let template = customTemplate?.trim() ? customTemplate : DEFAULT_CUSTOMER_SMS_TEMPLATES[touchpoint];
   // The customer confirms their own order from this link (modules/orders/self-confirm.ts): only on the order-placed SMS of
   // a pending cash-on-delivery order, and only when the store switched it on. A template without {confirmLink} still gets
   // it, at the end, so an owner's own wording keeps working.
@@ -45,6 +46,7 @@ export async function deliverCustomerOrderSms(order: OrderSmsFacts, touchpoint: 
     touchpoint === "PLACED" && smsSettings.customerSelfConfirmEnabled && order.status === "PENDING" && order.paymentMethod === "COD"
       ? `${env.webOrigin.replace(/\/$/, "")}/c/${selfConfirmCode(order.orderNumber)}`
       : undefined;
+  if (confirmLink && !customTemplate?.trim()) template = DEFAULT_PLACED_WITH_LINK_TEMPLATE;
   let body = renderOrderSms(template, {
     orderNumber: order.orderNumber,
     total: Number(order.total),
@@ -54,6 +56,14 @@ export async function deliverCustomerOrderSms(order: OrderSmsFacts, touchpoint: 
   });
   if (confirmLink && !template.includes("{confirmLink}")) body = `${body} নিশ্চিত করুন: ${confirmLink}`;
   await getProviders().sms.send({ to: order.customerPhone, body });
+  if (confirmLink) {
+    // Give the customer time to confirm before anyone calls: the order waits in Call later, then comes up in Call now if
+    // it's still pending. Only an order nobody has scheduled yet — a staff follow-up time is never moved.
+    await prisma.order.updateMany({
+      where: { orderNumber: order.orderNumber, status: "PENDING", followUpAt: null },
+      data: { followUpAt: new Date(Date.now() + SELF_CONFIRM_WAIT_MINUTES * 60_000) },
+    });
+  }
   return "sent";
 }
 
