@@ -1,6 +1,6 @@
 /**
  * The bell's two lists. "activity" is the routine stream — every new order, every courier status change, every low-stock
- * tick — tens a day on a busy store (Asif Zone: ~100/day, 2026-11). It has its own tab and never counts towards the
+ * tick — tens a day on a busy store (~100 a day on a live store, 2026-11). It has its own tab and never counts towards the
  * bell's badge, so what needs a person (the morning brief, parcels needing a look, paid-but-cancelled orders, overpaid
  * orders, finance alerts) is not buried. Every other type is "important" — a new type is important until listed here.
  */
