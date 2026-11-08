@@ -6,6 +6,7 @@ import { cleanupFixtures, createStockedProduct, ownerId, stockOf, trackOrder } f
 import { createManualOrder, updateOrderStatus } from "./order.service";
 import { getProviders } from "../../providers/registry";
 import { deliverCustomerOrderSms } from "../../lib/order-sms";
+import { updateSmsSettings } from "../sms-settings/sms-settings.service";
 import { SELF_CONFIRM_WAIT_MINUTES, confirmBySelf, getSelfConfirmView, parseSelfConfirmCode, selfConfirmCode } from "./self-confirm";
 
 // The order-placed SMS can carry a signed link: the customer confirms (or cancels) the order themselves, so staff only
@@ -138,8 +139,9 @@ describe("the order-placed SMS carries the link only when switched on", () => {
       send.mockRestore();
     }
   }
+  // Through the service, so its Redis cache is dropped (a direct DB write would be shadowed by a cached copy).
   async function setSms(data: Record<string, unknown>) {
-    await prisma.smsNotificationSetting.upsert({ where: { id: "singleton" }, create: { id: "singleton", ...data }, update: data });
+    await updateSmsSettings(data as never);
   }
 
   it("off: today's message, no link", async () => {
