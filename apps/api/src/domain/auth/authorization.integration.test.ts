@@ -570,7 +570,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +5: product families (list, create, read, save, delete; catalog.manage) — docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §3
     // +1: cancel a COD / manual payment entered by mistake (docs/PAYMENT_LEDGER.md, VOIDED)
     // +1: receive many returned parcels at once (preview + confirm)
-    expect(routes).toHaveLength(814);
+    // +1: cancellations before sending — reasons, channel, landing page, product (order-outcomes programme PR 2)
+    expect(routes).toHaveLength(815);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

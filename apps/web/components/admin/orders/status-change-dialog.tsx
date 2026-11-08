@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Ban, Info, TriangleAlert } from "lucide-react";
-import { transitionNeedsReason, transitionReasonMissing, canTransitionOrder, describeOrderTransitionConsequences, describeRefusedTransition, type Order, type OrderStatus, type OrderTransitionConsequence } from "@clothing-brand/shared";
+import { CANCEL_REASON_CHOICES, CANCEL_REASON_LABELS, cancelReasonNote, transitionNeedsReason, transitionReasonMissing, canTransitionOrder, describeOrderTransitionConsequences, describeRefusedTransition, type Order, type OrderStatus, type OrderTransitionConsequence } from "@clothing-brand/shared";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -178,6 +178,33 @@ export function StatusChangeDialog({
                   ? "Why is this going back to Packed?"
                   : "Note for the timeline (optional)"}
             </Label>
+            {reasonKind === "cancel" && (
+              // One tap writes a reason the Cancellations report understands; staff can add detail after it.
+              <div className="mb-2 mt-1 flex flex-wrap gap-1.5" role="group" aria-label="Common reasons" data-testid="cancel-reason-chips">
+                {CANCEL_REASON_CHOICES.map((r) => {
+                  const phrase = cancelReasonNote(r);
+                  const on = note.trim().toLowerCase().startsWith(phrase.toLowerCase());
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        const chosen = CANCEL_REASON_CHOICES.map(cancelReasonNote).find((c) => note.trim().toLowerCase().startsWith(c.toLowerCase()));
+                        const rest = (chosen ? note.trim().slice(chosen.length) : note.trim()).replace(/^[:\s—-]+/, "");
+                        setNote(rest ? `${phrase}: ${rest}` : phrase);
+                      }}
+                      className={cn(
+                        "min-h-[32px] rounded-full border px-3 text-[13px] transition-colors",
+                        on ? "border-ink-900 bg-ink-900 text-white" : "border-line-strong bg-surface text-ink-700 hover:border-ink-400",
+                      )}
+                    >
+                      {CANCEL_REASON_LABELS[r]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <Textarea
               id="status-change-note"
               rows={2}

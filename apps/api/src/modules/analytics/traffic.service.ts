@@ -60,7 +60,7 @@ export async function sessionStarts(range: Pick<BusinessRange, "startUtc" | "end
 }
 
 /** The first pageview of each given session, whenever it was. */
-async function firstTouchOf(sessionIds: string[]): Promise<Map<string, FirstTouch>> {
+export async function firstTouchOf(sessionIds: string[]): Promise<Map<string, FirstTouch>> {
   const out = new Map<string, FirstTouch>();
   for (let i = 0; i < sessionIds.length; i += BATCH) {
     const ids = sessionIds.slice(i, i + BATCH);
