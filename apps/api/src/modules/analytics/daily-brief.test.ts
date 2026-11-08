@@ -25,7 +25,7 @@ const base: BriefInput = {
   netSales: 18400,
   cashIn: 20100,
   topChannel: { label: "Facebook ads", orders: 12, conversionRate: 0.031 },
-  queues: { awaitingConfirmation: 5, onHold: 2, holdsDue: 3, readyToBook: 7, withCourier: 40, withCourierCod: 31000, stuckWithCourier: 0, partialToReconcile: 0 },
+  queues: { awaitingConfirmation: 5, onHold: 2, holdsDue: 3, readyToBook: 7, withCourier: 40, withCourierCod: 31000, stuckWithCourier: 0, partialToReconcile: 0, returnsNotBack: 0, returnNotBackDays: 14 },
   anomalies: [],
 };
 
@@ -57,6 +57,11 @@ describe("composeBrief", () => {
     expect(b.todo.join(" ")).not.toMatch(/checks not run/);
   });
 
+  it("says when refused parcels haven't come back, so they are chased", () => {
+    const b = composeBrief({ ...base, queues: { ...base.queues, returnsNotBack: 5 } });
+    expect(b.todo).toContain("5 refused parcels not back after 14 days — scan them in, or ask Steadfast where they are");
+  });
+
   it("puts anomalies first, in plain words", () => {
     const b = composeBrief({
       ...base,
@@ -76,7 +81,7 @@ describe("composeBrief", () => {
       netSales: 0,
       cashIn: 0,
       topChannel: null,
-      queues: { awaitingConfirmation: 0, onHold: 0, holdsDue: 0, readyToBook: 0, withCourier: 0, withCourierCod: 0, stuckWithCourier: 0, partialToReconcile: 0 },
+      queues: { awaitingConfirmation: 0, onHold: 0, holdsDue: 0, readyToBook: 0, withCourier: 0, withCourierCod: 0, stuckWithCourier: 0, partialToReconcile: 0, returnsNotBack: 0, returnNotBackDays: 14 },
     });
     expect(b.headline).toBe("Tuesday: no orders");
     expect(b.lines).toEqual([]);

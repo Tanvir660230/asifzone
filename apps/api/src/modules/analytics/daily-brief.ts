@@ -90,6 +90,7 @@ export function composeBrief(input: BriefInput): DailyBrief {
   if (queues.readyToBook) todo.push(`${plural(queues.readyToBook, "confirmed order")} not sent to the courier yet`);
   if (queues.awaitingConfirmation) todo.push(`${plural(queues.awaitingConfirmation, "order")} waiting to be confirmed`);
   if (queues.stuckWithCourier) todo.push(`${plural(queues.stuckWithCourier, "parcel")} with the courier for over 5 days`);
+  if (queues.returnsNotBack) todo.push(`${plural(queues.returnsNotBack, "refused parcel")} not back after ${count(queues.returnNotBackDays)} days — scan them in, or ask Steadfast where they are`);
   if (queues.partialToReconcile) todo.push(`${plural(queues.partialToReconcile, "part delivery", "part deliveries")} to reconcile`);
   return { headline, lines, unusual, todo, watch: [...unusual, ...todo] };
 }

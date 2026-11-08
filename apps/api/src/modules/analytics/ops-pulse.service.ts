@@ -13,6 +13,8 @@ import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { storeContext, utcInstant } from "../../domain/metrics/store-time";
 import { OPERATIONAL_ORDER_WHERE } from "../../domain/metrics/sale-order";
 import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
+import { orderWhereContext } from "../orders/order.service";
+import { parcelQueueWhere } from "../orders/parcel-queues";
 import { compareOps, countOps, hourlyPlaced, OPS_COUNT_KEYS, type OpsCounts, type OpsEvent, type OpsEventKind, type OrderSource } from "./ops-pulse";
 
 const CACHE_TTL_SECONDS = 60;
@@ -125,6 +127,11 @@ export interface OpsQueues {
   /** Of those, booked more than STUCK_WITH_COURIER_DAYS ago. */
   stuckWithCourier: number;
   partialToReconcile: number;
+  /** Refused / cancelled-after-booking parcels reported coming back longer ago than the store's follow-up days and not
+   * scanned in yet (the Orders "Return overdue" queue). Nothing else proves they reached the shop. */
+  returnsNotBack: number;
+  /** The store's follow-up days for that (Settings: returnNotBackDays). */
+  returnNotBackDays: number;
 }
 
 /** The work waiting right now (point in time). */
@@ -132,7 +139,8 @@ export async function opsQueues(now: Date = new Date()): Promise<OpsQueues> {
   const { currency } = await storeContext();
   const stuckBefore = new Date(now.getTime() - STUCK_WITH_COURIER_DAYS * 86_400_000);
   const withCourier = { ...OPERATIONAL_ORDER_WHERE, status: { in: [...WITH_COURIER_STATUSES] }, courierBookedAt: { not: null } };
-  const [awaitingConfirmation, onHold, holdsDue, readyToBook, parcels, stuckWithCourier, partialToReconcile] = await Promise.all([
+  const ctx = await orderWhereContext(now);
+  const [awaitingConfirmation, onHold, holdsDue, readyToBook, parcels, stuckWithCourier, partialToReconcile, returnsNotBack] = await Promise.all([
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: null } }),
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: { not: null } } }),
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: { lte: now } } }),
@@ -140,6 +148,7 @@ export async function opsQueues(now: Date = new Date()): Promise<OpsQueues> {
     prisma.order.findMany({ where: withCourier, select: { id: true } }),
     prisma.order.count({ where: { ...withCourier, courierBookedAt: { not: null, lt: stuckBefore } } }),
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PARTIALLY_DELIVERED", partialDeliveryReconciledAt: null } }),
+    prisma.order.count({ where: { deletedAt: null, ...parcelQueueWhere("returnOverdue", ctx.now, ctx.parcel) } }),
   ]);
   const cod = await codToCollectFor(parcels.map((p) => p.id));
   const withCourierCodMinor = [...cod.values()].reduce((sum, v) => sum + fromMajor(String(v), currency).amount, 0);
@@ -152,6 +161,8 @@ export async function opsQueues(now: Date = new Date()): Promise<OpsQueues> {
     withCourierCod: toMajor(money(withCourierCodMinor, currency)),
     stuckWithCourier,
     partialToReconcile,
+    returnsNotBack,
+    returnNotBackDays: ctx.parcel.returnNotBackDays,
   };
 }
 
