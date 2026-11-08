@@ -146,7 +146,8 @@ test("a bigger quantity picked on one variant never carries over to a lower-stoc
   await main.getByRole("group", { name: "Color" }).first().getByRole("button", { name: "White", exact: true }).click(); // only 2 in stock
   await main.getByRole("button", { name: "Buy Now", exact: true }).first().click();
   await expect(page).toHaveURL(/\/checkout/);
-  await expect(page.getByText(`${name} × 2`)).toBeAttached(); // not × 5
+  // The checkout line shows the quantity in its stepper: 2 (all there is), not 5.
+  await expect(page.getByTestId("checkout-line").filter({ hasText: name }).first().getByTestId("checkout-line-qty")).toHaveText("2");
 });
 
 test("Escape or ✕ closes the popup without adding anything", async ({ page }) => {
