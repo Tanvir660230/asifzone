@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
 import { sessionSet } from "@/lib/safe-storage";
+import { CheckoutLines } from "@/components/storefront/checkout-lines";
 
 const checkoutFormSchema = checkoutSchema.omit({ items: true, couponCode: true });
 type CheckoutFormValues = ReturnType<typeof checkoutFormSchema.parse>;
@@ -66,6 +68,9 @@ function CheckoutForm() {
   const searchParams = useSearchParams();
   const cartItems = useCartStore((s) => s.items);
   const clearCart = useCartStore((s) => s.clear);
+  const updateQuantity = useCartStore((s) => s.updateQuantity);
+  const removeItem = useCartStore((s) => s.removeItem);
+  const setExpressItem = useExpressCheckoutStore((s) => s.setItem);
   const expressItem = useExpressCheckoutStore((s) => s.item);
   const clearExpressItem = useExpressCheckoutStore((s) => s.clear);
   const isExpress = expressItem !== null;
@@ -441,28 +446,32 @@ function CheckoutForm() {
                 </span>
               </span>
               <span className="flex items-center gap-2 lg:hidden">
+                {/* Closed on a phone, the summary still shows what is being bought. */}
+                {!summaryOpen && (
+                  <span className="flex -space-x-2" aria-hidden="true" data-testid="checkout-summary-thumbs">
+                    {items.slice(0, 3).map((i) => (
+                      <span key={i.variantId} className="relative h-8 w-8 overflow-hidden rounded-full border-2 border-cream-50 bg-ink-100">
+                        {i.imageUrl && <Image src={resolveImageUrl(i.imageUrl)} alt="" fill sizes="32px" className="object-cover" />}
+                      </span>
+                    ))}
+                  </span>
+                )}
                 <span className="text-sm font-medium text-ink-900">{money(quote?.total)}</span>
                 <ChevronDown size={16} className={cn("text-ink-400 transition-transform duration-200", summaryOpen && "rotate-180")} />
               </span>
             </button>
 
             <div className={cn("space-y-4 px-5 pb-5", summaryOpen ? "block" : "hidden", "lg:block")}>
-              <div className="space-y-2 text-sm">
-                {items.map((item) => {
-                  const isEligible = Boolean(coupon) && coupon!.eligibleProductIds.length > 0 && coupon!.eligibleProductIds.includes(item.productId);
-                  return (
-                    <div key={item.variantId} className="flex justify-between text-ink-600">
-                      <span>
-                        {item.productName} × {item.quantity}
-                        {isEligible && (
-                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium ui-caps text-success-700">Coupon</span>
-                        )}
-                      </span>
-                      <span>{money(quoteLineAmount(quote, item.variantId) ?? undefined)}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              <CheckoutLines
+                items={items}
+                lineAmount={(variantId) => quoteLineAmount(quote, variantId)}
+                couponProductIds={coupon?.eligibleProductIds ?? []}
+                onQuantity={(variantId, quantity) => {
+                  if (isExpress) setExpressItem({ ...expressItem!, quantity: Math.max(1, Math.min(quantity, expressItem!.maxStock)) });
+                  else updateQuantity(variantId, Math.max(1, quantity));
+                }}
+                onRemove={isExpress ? undefined : removeItem}
+              />
 
               <div>
                 <div className="flex gap-2">
