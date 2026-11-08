@@ -1,5 +1,5 @@
 /**
- * Client idempotency keys (Phase 9, docs/PHASE_9_AUDIT.md D-2/D-3). Money-creating requests — checkout, a manual order, a
+ * Client idempotency keys (Phase 9, docs/history/PHASE_9_AUDIT.md D-2/D-3). Money-creating requests — checkout, a manual order, a
  * refund, a manual payment — send an `Idempotency-Key` the API stores on a unique column, so a double click or a retry
  * after a timeout returns the first result instead of creating a second order/refund/payment. The database is the
  * backstop, with or without Redis.

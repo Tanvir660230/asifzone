@@ -1,6 +1,6 @@
 /**
  * Provider registry — the ONLY place that decides which concrete implementation backs each capability (Phase 12 W2/W3,
- * docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §14). Everything else asks `getProviders()`.
+ * docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §14). Everything else asks `getProviders()`.
  *
  * Implementations are referenced through module namespaces and called at call time, so a test's `vi.mock` of a provider
  * module still takes effect, and the moved implementations keep their exact behaviour (timeouts, retries, dev

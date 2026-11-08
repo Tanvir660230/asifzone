@@ -47,7 +47,7 @@ Concretely, at the end of Phase 12:
   `packages/ui-tokens`, `packages/config`.
 - **SSOT chain (unchanged by this phase):** DB truth → domain service → pure engine (`packages/shared/src/engines`) →
   read model (`ProductReadModel`) → API → admin / storefront / reports.
-- **Configuration owners (Phase 7, `docs/PHASE_7_SIGNOFF.md` §1) — ALREADY CORRECT:**
+- **Configuration owners (Phase 7, `docs/history/PHASE_7_SIGNOFF.md` §1) — ALREADY CORRECT:**
 
   | Concept | Owner | Reader |
   |---|---|---|
@@ -95,7 +95,7 @@ contact/address strings, static brand assets.
 | I-15 | `docker/migrate-to-new-vps.sh` (21), `docker/zero-downtime-migrate.sh` (21), `.github/workflows/migrate-vps.yml` (3) | one-off Asif Zone VPS migration tooling | D Infrastructure / G Historical | **DECISION REQUIRED (D-14)**: retire (move to `docs/history/` or delete) — not part of the reusable deployment path. |
 | I-16 | `deploy_vps.py`, `inspect_vps.py` | legacy shared-hosting paths and repo URL | D / G | Same as I-15 (target is the retired Hostinger account). |
 | I-17 | `.gitignore:17` | `/AsifZone Eps/` | D (local tooling) | Harmless; keep or genericize. |
-| I-18 | `docs/CLOUDFLARE_SETUP.md`, `docs/TARGET_ARCHITECTURE.md`, `docs/MASTER_ARCHITECTURE_AUDIT.md`, `docs/PHASE_7_AUDIT.md` | narrative references | F Documentation / G Historical | Keep (historical record). New docs use "the store". |
+| I-18 | `docs/CLOUDFLARE_SETUP.md`, `docs/TARGET_ARCHITECTURE.md`, `docs/MASTER_ARCHITECTURE_AUDIT.md`, `docs/history/PHASE_7_AUDIT.md` | narrative references | F Documentation / G Historical | Keep (historical record). New docs use "the store". |
 | I-19 | Package scope `@clothing-brand/*`, DB name `clothing_brand` | naming | D / H | **H Legitimate fixed value** for the package scope (internal name, not visible identity). DB name: §13 (env-driven). |
 
 **Result:** application runtime code contains **no** functional dependency on the Asif Zone identity. Identity already
@@ -539,7 +539,7 @@ the `StoreSetting.shippingFee*` compatibility mirror.
 | **W4** | Move SMS, email, push, Meta, Steadfast, SSLCommerz, EPS implementations under `providers/**` verbatim; old paths re-export; switch `payment.service` (remove duplicated ternary), `customer.service`, `order.service`, `campaign.service`, outbox consumers, stock-alert, wishlist, auth to the registry; guard 2; timeouts if D-6; S-6 masking | W2 |
 | **W5** | Presentation re-pointing: footer address/badges, terms jurisdiction, contact, JSON-LD, gateway payload city/country, OTP text (D-13), placeholders, neutral icons (D-9), SKU default (D-8), e2e/test fixtures (I-10, I-11); guard 1; provider-status endpoint + admin hiding (D-4) | W3, W4 |
 | **W6** | Deployment: `POSTGRES_DB`/`COMPOSE_PROJECT_NAME` parameterization, nginx template, backup scripts, per-store env template `deploy/store.env.example`, per-store runbook, retire legacy tooling (D-14); remove transition re-exports; guard 5, 6 | W4, W5 |
-| **W7** | Second-store proof: full suite + Playwright against a second seeded identity with different provider selection; mutation run; sign-off doc `docs/PHASE_12_SIGNOFF.md` | W1–W6 |
+| **W7** | Second-store proof: full suite + Playwright against a second seeded identity with different provider selection; mutation run; sign-off doc `docs/history/PHASE_12_SIGNOFF.md` | W1–W6 |
 
 ## 28. Acceptance criteria
 
@@ -578,4 +578,4 @@ the `StoreSetting.shippingFee*` compatibility mirror.
 `packages/shared/src/{schemas/common,schemas/order,schemas/settings,delivery,engines/shipping,engines/money,format,sku,sections,sms-templates,customer-sms-templates,permissions}.ts`;
 `packages/ui-tokens/src/*`; `docker/{docker-compose.yml,deploy.sh,backup.sh,gdrive-backup.sh,gdrive-restore.sh,migrate-to-new-vps.sh,zero-downtime-migrate.sh}`;
 `docker/nginx/nginx.conf`; `.github/workflows/{ci,migrate-vps,validate-nginx}.yml`; `deploy_vps.py`; `inspect_vps.py`;
-`*.env.example`; `docs/PHASE_7_SIGNOFF.md`; `docs/PHASE_11_IMPLEMENTATION_CONTRACT.md`.
+`*.env.example`; `docs/history/PHASE_7_SIGNOFF.md`; `docs/history/PHASE_11_IMPLEMENTATION_CONTRACT.md`.

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-// Phase 12 (docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §21): the provider boundary. Application/domain code reaches providers
+// Phase 12 (docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §21): the provider boundary. Application/domain code reaches providers
 // only through providers/registry.ts (+ the capability types and error vocabulary); only the registry selects; only
 // config/env.ts and providers/** read provider credentials; nothing credential-shaped reaches the web app or the schema.
 // Every rule is a pure function over {path, text} so its own mutation check (a planted violation) runs here too.

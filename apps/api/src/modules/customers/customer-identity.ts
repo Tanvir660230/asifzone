@@ -1,5 +1,5 @@
 /**
- * Customer identity rules (Phase 11 — BD-11.1, BD-11.6 a, BD-11.7; docs/PHASE_11_IMPLEMENTATION_CONTRACT.md §0, §5.1).
+ * Customer identity rules (Phase 11 — BD-11.1, BD-11.6 a, BD-11.7; docs/history/PHASE_11_IMPLEMENTATION_CONTRACT.md §0, §5.1).
  *
  * The one principle: **unverified contact data never grants access.**
  * - A phone is a login identifier only once an OTP to that exact phone succeeded (`phoneVerifiedAt`); a partial unique index

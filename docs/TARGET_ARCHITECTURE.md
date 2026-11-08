@@ -567,7 +567,7 @@ removed at sign-off because no rule approves it; low stock stays per variant.
 
 ## 16d. Phase 4 scope — Payment Ledger (order payment & refund SSOT)
 
-**Why this phase.** The Phase 4 audit ([PHASE_4_AUDIT.md](PHASE_4_AUDIT.md)) found every remaining S1 defect in the
+**Why this phase.** The Phase 4 audit ([PHASE_4_AUDIT.md](history/PHASE_4_AUDIT.md)) found every remaining S1 defect in the
 payment and refund truth:
 - `Order.paymentStatus` had six direct writers and no derivation.
 - COD collection, manual payments and free exchanges set `PAID` with no money record.
@@ -606,7 +606,7 @@ APIs: Phase 7. Outbox events: Phase 8. Refund permissions: Phase 10.
 
 ## 16e. Phase 5 scope — Metrics & Analytics SSOT
 
-**Why this phase.** The Phase 5 audit ([PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md)) traced 85 functions:
+**Why this phase.** The Phase 5 audit ([PHASE_5_METRICS_AUDIT.md](history/PHASE_5_METRICS_AUDIT.md)) traced 85 functions:
 - About 40 private definitions of "a sale".
 - Revenue computed as `Σ total` of placed orders (unrealised COD, no returns or refunds, trashed and exchange orders
   included).
@@ -664,7 +664,7 @@ doesn't need materialisation, and the read-time loader selects only orders with 
 
 ## 16f. Phase 6 scope — Historical order-line facts
 
-**Why this phase.** The Phase 6 audit ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)) found the remaining places where history
+**Why this phase.** The Phase 6 audit ([PHASE_6_AUDIT.md](history/PHASE_6_AUDIT.md)) found the remaining places where history
 changes when current data changes:
 - historical COGS and margin used **today's** cost price (and missing cost counted as 0);
 - category and brand reports used **today's** product relationships;
@@ -689,7 +689,7 @@ changes when current data changes:
 
 ## 16g. Phase 7 scope — Commerce settings & configuration SSOT
 
-**Why this phase.** The Phase 7 audit ([PHASE_7_AUDIT.md](PHASE_7_AUDIT.md)) found that every configuration concept already
+**Why this phase.** The Phase 7 audit ([PHASE_7_AUDIT.md](history/PHASE_7_AUDIT.md)) found that every configuration concept already
 had one storage owner, but the reads did not:
 - 8 readers re-declared `|| "BDT"`;
 - SSLCommerz and Meta hard-coded `"BDT"`;
@@ -698,7 +698,7 @@ had one storage owner, but the reads did not:
 - a settings save left the storefront's copy stale for 5 minutes;
 - the currency writer accepted any string.
 
-**Delivered** ([PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)):
+**Delivered** ([PHASE_7_SIGNOFF.md](history/PHASE_7_SIGNOFF.md)):
 - `domain/config/commerce-settings`, the one currency/timezone reader over `StoreSetting` (no new table);
 - validated currency;
 - the store currency in every money path;
@@ -715,11 +715,11 @@ configurable SMS copy, country pack, `ProviderConfig` and per-provider currency 
 
 ## 16h. Phase 8 scope — Outbox & reliable side effects
 
-**Why this phase.** The Phase 8 audit ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md)) found every order / transition / payment side
+**Why this phase.** The Phase 8 audit ([PHASE_8_AUDIT.md](history/PHASE_8_AUDIT.md)) found every order / transition / payment side
 effect fired post-commit and fire-and-forget, with no retry: customer and admin SMS, the receipt email, and the Meta
 enqueue. It also found D8 loyalty points, which are business truth, written after commit.
 
-**Delivered** ([PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)):
+**Delivered** ([PHASE_8_SIGNOFF.md](history/PHASE_8_SIGNOFF.md)):
 - `OutboxEvent` (a slimmer, delivery-state-carrying form of §6's `DomainEvent`, one row per consumer intent), written
   only in the business transaction;
 - a `SKIP LOCKED` dispatcher over the existing BullMQ connection;
@@ -734,7 +734,7 @@ reliability, a separate worker process (§14).
 
 ## 16i. Phase 9 scope — Commerce reliability & operational hardening
 
-**Why this phase.** The Phase 9 audit ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md)) found:
+**Why this phase.** The Phase 9 audit ([PHASE_9_AUDIT.md](history/PHASE_9_AUDIT.md)) found:
 - an exchange could ship a replacement without taking the original back (D-1);
 - checkout, refunds, manual payments and manual orders were sent without an idempotency key (D-2, D-3);
 - courier booking was unlocked, so it could create duplicate consignments (D-4);
@@ -742,7 +742,7 @@ reliability, a separate worker process (§14).
 - manual points adjustments were unlocked, and nothing detected loyalty drift (D-6, D-7);
 - automated tests reached live providers (D-8).
 
-**Delivered** ([PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)):
+**Delivered** ([PHASE_9_SIGNOFF.md](history/PHASE_9_SIGNOFF.md)):
 - a provider guard: `liveProvidersEnabled()` plus a network guard under vitest and `LIVE_PROVIDERS=off`, with a
   Playwright pre-flight check;
 - client `Idempotency-Key`s on every money-creating web call;
@@ -758,14 +758,14 @@ campaigns through the outbox, a separate worker, the bounded settings-cache race
 
 ## 16j. Phase 10 scope — Roles, permissions & authorization
 
-**Why this phase.** The Phase 10 audit ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md)) found:
+**Why this phase.** The Phase 10 audit ([PHASE_10_AUDIT.md](history/PHASE_10_AUDIT.md)) found:
 - admin role and active flag trusted from a 15-min JWT (R16), so deactivation and demotion were not immediate;
 - admin/customer token separation that depended on configuration only;
 - customer order responses carrying staff-only data, including notes labelled "not visible to the customer";
 - no permission vocabulary: two role strings checked at 60 route sites and in 15 web files;
 - no last-owner protection.
 
-**Delivered** ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). This is §15's permission model:
+**Delivered** ([PHASE_10_SIGNOFF.md](history/PHASE_10_SIGNOFF.md)). This is §15's permission model:
 - `packages/shared/src/permissions.ts` (35 permissions and the role map). The initial mapping reproduced the
   pre-Phase-10 OWNER/STAFF boundary exactly, verified on all 299 admin routes. The owner's decisions then made
   permanent coupon / category delete OWNER-only (PD-10.1) and kept STAFF's financial capabilities (PD-10.2);
@@ -782,7 +782,7 @@ encryption (ProviderConfig), per-request customer token revocation.
 
 ## 16k. Phase 11 scope — Production readiness: identity integrity, sessions, observability, safe operations
 
-**Why this phase.** The Phase 11 audit and contract ([PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md))
+**Why this phase.** The Phase 11 audit and contract ([PHASE_11_IMPLEMENTATION_CONTRACT.md](history/PHASE_11_IMPLEMENTATION_CONTRACT.md))
 found that unverified contact data granted access:
 - OTP login by an unverified, non-unique phone;
 - registration silently claiming guest and OTP records;
@@ -793,7 +793,7 @@ found that unverified contact data granted access:
 It also found non-revocable customer sessions, no observability, deploys that started code before migrating, and
 rate-limit gaps.
 
-**Delivered** ([PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)):
+**Delivered** ([PHASE_11_SIGNOFF.md](history/PHASE_11_SIGNOFF.md)):
 - `Customer.phoneVerifiedAt` and a partial unique index;
 - proof-before-claim (`CustomerClaim`);
 - verified-only guest attachment;

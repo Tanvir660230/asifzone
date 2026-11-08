@@ -1,5 +1,5 @@
 /**
- * Commerce settings — the ONE resolution path for the store's currency and timezone (docs/PHASE_7_AUDIT.md).
+ * Commerce settings — the ONE resolution path for the store's currency and timezone (docs/history/PHASE_7_AUDIT.md).
  *
  *   StoreSetting.currency / .timezone (storage owner; schema column defaults are the only system defaults)
  *     → settings.service getSettings() (the Redis-cached row; updateSettings is the only writer)

@@ -348,7 +348,7 @@ export async function insertOrderRecord(
   const currency = await getCurrency();
 
   const order = await prisma.$transaction(async (tx) => {
-    // Phase 6: cost and attribution as the catalog stands when the line is written (docs/PHASE_6_AUDIT.md). Phase 4B: a
+    // Phase 6: cost and attribution as the catalog stands when the line is written (docs/history/PHASE_6_AUDIT.md). Phase 4B: a
     // costed variant's line takes the moving average at its stock exit below (recordSale), in this same transaction.
     const lineSnapshots = await captureLineSnapshots(tx, snapshots.map((s) => s.variantId), currency);
     const created = await tx.order.create({

@@ -1,7 +1,7 @@
 import { ProviderConfigError } from "./errors";
 
 /**
- * Provider selection — pure decision logic (Phase 12 W5, docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §15, D-4b).
+ * Provider selection — pure decision logic (Phase 12 W5, docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §15, D-4b).
  *
  * Input: the raw `*_PROVIDER` / `PAYMENT_GATEWAYS` strings (env.providers). Output: which implementation backs each
  * capability, or a ProviderConfigError naming the offending variables (never a value).

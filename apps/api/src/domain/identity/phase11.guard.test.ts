@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-// Phase 11 architecture guards (docs/PHASE_11_IMPLEMENTATION_CONTRACT.md §9, §12).
+// Phase 11 architecture guards (docs/history/PHASE_11_IMPLEMENTATION_CONTRACT.md §9, §12).
 
 const API = join(__dirname, "..", "..");
 const MIGRATIONS = join(API, "..", "prisma", "migrations");

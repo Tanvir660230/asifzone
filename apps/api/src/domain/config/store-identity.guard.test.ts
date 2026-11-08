@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-// Phase 12 (docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §21 guards 1, 9, 10): runtime code carries no store identity, and
+// Phase 12 (docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §21 guards 1, 9, 10): runtime code carries no store identity, and
 // identity has exactly one owner — StoreSetting (Phase 7), extended in place rather than duplicated into a StoreProfile.
 // Tests, e2e specs and docs may name stores freely; only runtime code is scanned.
 

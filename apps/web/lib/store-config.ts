@@ -1,5 +1,5 @@
 /**
- * The store's commerce configuration in the web app (Phase 7, docs/PHASE_7_AUDIT.md): currency and timezone come from the
+ * The store's commerce configuration in the web app (Phase 7, docs/history/PHASE_7_AUDIT.md): currency and timezone come from the
  * store settings the root layout already fetches (`StoreConfig` sets them before any child renders), never from code, the
  * browser or an env var. Formatters (lib/format.ts) read them; nothing else should.
  */

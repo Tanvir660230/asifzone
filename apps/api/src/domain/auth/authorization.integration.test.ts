@@ -14,7 +14,7 @@ import { createOrder, holdOrderForFollowUp, updateOrderStatus } from "../../modu
 import { listRoutes, routePermission } from "../../test-routes";
 import { cacheDelByPrefix } from "../../config/redis";
 
-// Phase 10 (docs/PHASE_10_AUDIT.md): who may perform which action, on which resource. Authentication resolves the admin from
+// Phase 10 (docs/history/PHASE_10_AUDIT.md): who may perform which action, on which resource. Authentication resolves the admin from
 // the database on every request; every admin route states one permission; customers reach only their own resources and
 // never staff-only data.
 

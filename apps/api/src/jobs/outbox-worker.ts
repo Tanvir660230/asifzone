@@ -6,7 +6,7 @@ import { logger } from "../lib/observability/logger";
 import { storeContext } from "../domain/metrics/store-time";
 import { DAILY_SCHEDULES, repeatFor } from "./daily-schedules";
 
-/** Phase 8 outbox transport (docs/PHASE_8_AUDIT.md). One BullMQ queue carries three job kinds:
+/** Phase 8 outbox transport (docs/history/PHASE_8_AUDIT.md). One BullMQ queue carries three job kinds:
  *   dispatch  every 3 s (job scheduler — one schedule however many API instances run): reap expired claims, claim due
  *             outbox rows (SKIP LOCKED — concurrent dispatchers never take the same row) and enqueue a `deliver` job each;
  *   deliver   one outbox event → processOutboxEvent (idempotent; retry/failure state is kept on the row, so BullMQ itself

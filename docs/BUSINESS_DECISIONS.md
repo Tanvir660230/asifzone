@@ -260,7 +260,7 @@ overrides the interpretation where they differ.
 
 ## Phase 6 implementation notes (interpretations, recorded 2026-09-30)
 
-Phase 6 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)) freezes the order-line facts reports need. These readings follow from
+Phase 6 ([PHASE_6_AUDIT.md](history/PHASE_6_AUDIT.md)) freezes the order-line facts reports need. These readings follow from
 the owner's Phase 6 brief ("never fabricate historical values"; "old orders remain explicitly unknown"); the owner may
 overrule any of them with a new dated entry.
 
@@ -274,7 +274,7 @@ overrule any of them with a new dated entry.
 
 ## Phase 7 implementation notes (interpretations, recorded 2026-09-30)
 
-Phase 7 ([PHASE_7_AUDIT.md](PHASE_7_AUDIT.md), [PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)) adds no business rule beyond
+Phase 7 ([PHASE_7_AUDIT.md](history/PHASE_7_AUDIT.md), [PHASE_7_SIGNOFF.md](history/PHASE_7_SIGNOFF.md)) adds no business rule beyond
 these readings; the owner may overrule any with a new dated entry.
 
 | ID | Interpretation | Why |
@@ -286,8 +286,8 @@ these readings; the owner may overrule any with a new dated entry.
 
 ## Phase 11 decisions (owner, 2026-10-01)
 
-Phase 11 ([PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md),
-[PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)).
+Phase 11 ([PHASE_11_IMPLEMENTATION_CONTRACT.md](history/PHASE_11_IMPLEMENTATION_CONTRACT.md),
+[PHASE_11_SIGNOFF.md](history/PHASE_11_SIGNOFF.md)).
 
 | ID | Decision |
 |---|---|
@@ -322,7 +322,7 @@ as explicit Phase 11 policy. P11-8 still needs the owner.
 
 ## Phase 10 implementation notes and open decisions (recorded 2026-10-01)
 
-Phase 10 ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md), [PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)) keeps every role capability
+Phase 10 ([PHASE_10_AUDIT.md](history/PHASE_10_AUDIT.md), [PHASE_10_SIGNOFF.md](history/PHASE_10_SIGNOFF.md)) keeps every role capability
 exactly as it was (TARGET §15). It records these readings; the owner may overrule any of them with a new dated entry.
 
 | ID | Interpretation | Why |
@@ -340,7 +340,7 @@ exactly as it was (TARGET §15). It records these readings; the owner may overru
 
 ## Phase 9 implementation notes (interpretations, recorded 2026-10-01)
 
-Phase 9 ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md), [PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)) adds no business rule beyond
+Phase 9 ([PHASE_9_AUDIT.md](history/PHASE_9_AUDIT.md), [PHASE_9_SIGNOFF.md](history/PHASE_9_SIGNOFF.md)) adds no business rule beyond
 these readings; the owner may overrule any with a new dated entry.
 
 | ID | Interpretation | Why |
@@ -351,7 +351,7 @@ these readings; the owner may overrule any with a new dated entry.
 
 ## Phase 8 implementation notes (interpretations, recorded 2026-09-30)
 
-Phase 8 ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md), [PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)) adds no business rule beyond
+Phase 8 ([PHASE_8_AUDIT.md](history/PHASE_8_AUDIT.md), [PHASE_8_SIGNOFF.md](history/PHASE_8_SIGNOFF.md)) adds no business rule beyond
 these readings; the owner may overrule either with a new dated entry.
 
 | ID | Interpretation | Why |

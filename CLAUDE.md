@@ -1,6 +1,6 @@
 # Asif Zone — working rules
 
-pnpm + turbo monorepo: `apps/web` (Next.js 15, React 19, Tailwind 3, Framer Motion), `apps/api` (Express + Prisma + Postgres, Vitest), `packages/ui-tokens` (design tokens). Read `docs/MASTER_SYSTEM_INVENTORY.md` for the platform map.
+pnpm + turbo monorepo: `apps/web` (Next.js 15, React 19, Tailwind 3, Framer Motion), `apps/api` (Express + Prisma + Postgres, Vitest), `packages/ui-tokens` (design tokens). Read `docs/MASTER_SYSTEM_INVENTORY.md` for the platform map; `docs/README.md` indexes all docs.
 
 ## Skill & tool workflow
 

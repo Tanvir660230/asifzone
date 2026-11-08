@@ -26,7 +26,7 @@ import {
 } from "../../modules/customers/customer.service";
 import { signInAdminWithGoogleIdentity } from "../../modules/auth/auth.service";
 
-// Phase 11 (docs/PHASE_11_IMPLEMENTATION_CONTRACT.md §0, §5.1, §9): unverified contact data never grants access.
+// Phase 11 (docs/history/PHASE_11_IMPLEMENTATION_CONTRACT.md §0, §5.1, §9): unverified contact data never grants access.
 
 const CODE = "246810";
 const made = { customers: new Set<string>(), phones: new Set<string>(), admins: [] as string[] };

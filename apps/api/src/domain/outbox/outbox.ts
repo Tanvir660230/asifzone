@@ -1,5 +1,5 @@
 /**
- * The transactional outbox writer (Phase 8, docs/PHASE_8_AUDIT.md) — the ONLY code that creates OutboxEvent rows. It takes
+ * The transactional outbox writer (Phase 8, docs/history/PHASE_8_AUDIT.md) — the ONLY code that creates OutboxEvent rows. It takes
  * a TRANSACTION client, so an intent can only be recorded inside the business transaction it follows: if that commits,
  * the intent is durable; if it rolls back, no intent exists; if recording the intent fails, the business change rolls back.
  */

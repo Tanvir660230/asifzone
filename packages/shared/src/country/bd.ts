@@ -1,6 +1,6 @@
 /**
  * Bangladesh — the ONE home of every Bangladesh-specific rule and reference dataset (Phase 12 W1,
- * docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §10). Moved here verbatim; behaviour is unchanged.
+ * docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §10). Moved here verbatim; behaviour is unchanged.
  *
  * This is not a country framework: there is no runtime country switch and nothing selects "a country".
  * It only gives the existing Bangladesh behaviour a single owner, enforced by

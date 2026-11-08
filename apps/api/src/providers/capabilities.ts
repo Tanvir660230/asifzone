@@ -1,5 +1,5 @@
 /**
- * Capability interfaces (Phase 12 W2, docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §8, §16).
+ * Capability interfaces (Phase 12 W2, docs/history/PHASE_12_IMPLEMENTATION_CONTRACT.md §8, §16).
  *
  * Application and domain code depends on these — never on a concrete provider module. Each interface exposes exactly
  * what today's providers actually do (the capability matrix), nothing aspirational:

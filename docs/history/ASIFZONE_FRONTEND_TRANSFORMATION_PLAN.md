@@ -1,7 +1,7 @@
 # Asif Zone — Frontend Transformation Plan
 
 Status: **implemented and verified** (see the report) · Branch `feat/storefront-transformation` (off `origin/main` 050ca3e) · Worktree `C:/dev/asifzone-storefront`
-Companion report: `docs/ASIFZONE_FRONTEND_TRANSFORMATION_REPORT.md` (written at the end).
+Companion report: `docs/history/ASIFZONE_FRONTEND_TRANSFORMATION_REPORT.md` (written at the end).
 
 Legend for every claim below: **[V]** verified in code or a running browser · **[M]** measured (numbers from a script in `apps/web/scripts/`) · **[A]** assumption · **[R]** recommendation.
 

@@ -24,7 +24,7 @@ import { resolveStoreRange, storeContext } from "../metrics/store-time";
 import { quoteCart } from "../pricing/pricing.service";
 import { getCommerceSettings, getCurrency, getTimezone } from "./commerce-settings";
 
-// Phase 7 (docs/PHASE_7_AUDIT.md): currency and timezone resolve through one path over the one owner; money paths and
+// Phase 7 (docs/history/PHASE_7_AUDIT.md): currency and timezone resolve through one path over the one owner; money paths and
 // display use them; settings updates never leave a stale copy and never touch historical facts.
 
 let admin: string;

@@ -2,7 +2,7 @@
 
 **Status:** Phase 5, Steps 1–2 deliverable (2026-09-30), branch `phase-5/metrics-ssot`. This document was written
 before any Phase 5 code changed. Audited revision: `phase-4/payment-ledger` @ `b368c75`. The canonical definitions this
-audit leads to are in [METRICS_REGISTRY.md](METRICS_REGISTRY.md).
+audit leads to are in [METRICS_REGISTRY.md](../METRICS_REGISTRY.md).
 
 **Method.** I read every function that reads `Order`, `OrderItem`, `Payment`, `Refund`, `ReturnRequest`,
 `StockMovement` or `ProductVariant.stock` to produce a number: 85 functions in `analytics.service.ts`, `bi.service.ts`,
