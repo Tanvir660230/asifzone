@@ -17,7 +17,7 @@ never writes `docker/.env`, which lives on the server.
 |---|---|---|
 | 1. Backup | `pg_dump -U postgres clothing_brand \| gzip` → `~/backups/predeploy/predeploy-<sha>-<ts>.sql.gz` | stop; nothing changed |
 | 2. Verify backup | file present, ≥ `MIN_BACKUP_BYTES` (1024), `gzip -t` passes | stop; nothing changed |
-| 3. Build | `docker compose build api web` (old containers keep serving) | stop; old containers still serving |
+| 3. Build | with `PREBUILT_TAG` (set by CI): download `ghcr.io/tanvir660230/asifzone-{api,web}:<sha>` and tag them as compose's own image names; otherwise, or if that fails, `docker compose build api`, then `web` (old containers keep serving) | stop; old containers still serving |
 | 4. Migrate | `docker compose run --rm api npx prisma migrate deploy`, **new** image, **before** switching | stop; old containers still serving (old code works on the expanded schema) |
 | 5. Switch | `docker compose up -d api web` (brief downtime) | stop |
 | 6. Readiness | poll `GET /health/ready` inside the api container every 3 s for up to **120 s**: PostgreSQL, Redis, outbox dispatcher | **fail the deploy** |
@@ -25,6 +25,11 @@ never writes `docker/.env`, which lives on the server.
 
 - **Liveness vs readiness:** `GET /health` is liveness (the process is up). `GET /health/ready` is readiness (it can
   serve traffic). A process can be alive but not ready, for example with Redis down or the dispatcher not yet ticking.
+- **Ready-made images:** on a push to main, the `images` job in `.github/workflows/ci.yml` builds the api and web images
+  once on a GitHub runner and pushes them to GitHub's registry (one image serves every store). Each store's deploy job
+  logs in with the job's own token, downloads them and logs out, so the 1-vCPU VPS no longer builds both images for each
+  store. No secret to set up. If the images job, the login or the download fails, `deploy.sh` builds on the server as
+  before. A manual `bash docker/deploy.sh` (no `PREBUILT_TAG`) always builds on the server.
 - **Testing the script:** each step is a shell function. Tests replace them with stubs via
   `DEPLOY_HOOKS=<file>` (`apps/api/src/domain/identity/deploy-script.test.ts`).
 

@@ -146,6 +146,44 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The api and web images, built once per commit on a GitHub runner and pushed to GitHub's registry (one image serves
+  # every store — Phase 1A). The deploy jobs then only download them, instead of the 1-vCPU VPS building both images for
+  # each store in turn (slow, and it ran out of memory on 2026-10-24). If this job fails, the deploys still run and build
+  # on the server as before (docker/deploy.sh falls back on its own).
+  images:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ghcr.io/tanvir660230/asifzone-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ghcr.io/tanvir660230/asifzone-web:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
   # Deploy — one job per store, each behind its own GitHub Environment with a required reviewer (blueprint tab 13
   # G-2 / DA-2): a push to main deploys nothing until the owner approves that store's job, and approving one store never
   # deploys another. The job is held by GitHub before it reaches the VPS runner, so no step (fetch, backup, migrate)
@@ -161,11 +199,15 @@ jobs:
   # gate). It never writes docker/.env.
   #
   # Separate concurrency groups: one shared group keeps only one waiting job and cancels the older one, which would drop
-  # a store's deploy. Builds still run one at a time on the VPS through flock (two at once ran it out of memory).
+  # a store's deploy. Deploys still run one at a time on the VPS through flock (two builds at once ran it out of memory).
   deploy-asifzone:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, images]
+    # Runs even when the images job failed (the server then builds them itself); never when the tests failed.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && !cancelled() && needs.test.result == 'success'
     runs-on: [self-hosted, vps]
+    permissions:
+      contents: read
+      packages: read
     environment: production-asifzone
     concurrency:
       group: deploy-asifzone
@@ -176,14 +218,25 @@ jobs:
         run: |
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
-          flock /tmp/store-deploy.lock bash docker/deploy.sh
+          # The images CI built for this commit; a failed registry login just means building here as before.
+          if [ -n "$PREBUILT_TAG" ]; then echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || PREBUILT_TAG=""; fi
+          PREBUILT_TAG="$PREBUILT_TAG" flock /tmp/store-deploy.lock bash docker/deploy.sh && rc=0 || rc=$?
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          exit $rc
         env:
           DEPLOY_SHA: ${{ github.sha }}
+          PREBUILT_TAG: ${{ needs.images.result == 'success' && github.sha || '' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
 
   deploy-nasihamart:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, images]
+    # Runs even when the images job failed (the server then builds them itself); never when the tests failed.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && !cancelled() && needs.test.result == 'success'
     runs-on: [self-hosted, vps]
+    permissions:
+      contents: read
+      packages: read
     environment: production-nasihamart
     concurrency:
       group: deploy-nasihamart
@@ -194,15 +247,26 @@ jobs:
         run: |
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
-          flock /tmp/store-deploy.lock bash docker/deploy.sh
+          # The images CI built for this commit; a failed registry login just means building here as before.
+          if [ -n "$PREBUILT_TAG" ]; then echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || PREBUILT_TAG=""; fi
+          PREBUILT_TAG="$PREBUILT_TAG" flock /tmp/store-deploy.lock bash docker/deploy.sh && rc=0 || rc=$?
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          exit $rc
         env:
           DEPLOY_SHA: ${{ github.sha }}
+          PREBUILT_TAG: ${{ needs.images.result == 'success' && github.sha || '' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
 
   # The third installation (docs/installations/tahafi.md). Skipped until its first deployment has created /opt/tahafi.
   deploy-tahafi:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, images]
+    # Runs even when the images job failed (the server then builds them itself); never when the tests failed.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && !cancelled() && needs.test.result == 'success'
     runs-on: [self-hosted, vps]
+    permissions:
+      contents: read
+      packages: read
     environment: production-tahafi
     concurrency:
       group: deploy-tahafi
@@ -214,6 +278,13 @@ jobs:
           cd /opt/tahafi
           git fetch origin main
           git merge --ff-only "$DEPLOY_SHA"
-          flock /tmp/store-deploy.lock bash docker/deploy.sh
+          # The images CI built for this commit; a failed registry login just means building here as before.
+          if [ -n "$PREBUILT_TAG" ]; then echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || PREBUILT_TAG=""; fi
+          PREBUILT_TAG="$PREBUILT_TAG" flock /tmp/store-deploy.lock bash docker/deploy.sh && rc=0 || rc=$?
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          exit $rc
         env:
           DEPLOY_SHA: ${{ github.sha }}
+          PREBUILT_TAG: ${{ needs.images.result == 'success' && github.sha || '' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}

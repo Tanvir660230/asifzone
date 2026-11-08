@@ -14,7 +14,7 @@ const posix = (p: string) => p.replace(/\\/g, "/");
 /** Phase 12 (W10): a real deploy has the store's own inputs in docker/.env; the harness passes them as environment. */
 const STORE_ENV = { INSTALL_ID: "store-a", SERVER_NAME: "store.example", SERVER_ALIASES: "www.store.example", CERT_NAME: "store.example", GDRIVE_REMOTE: "gdrive:store-backups" };
 
-function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fail"; ready?: "ok" | "never"; storeEnv?: Record<string, string> }) {
+function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fail"; ready?: "ok" | "never"; storeEnv?: Record<string, string>; pull?: "ok" | "fail"; prebuilt?: string }) {
   const dir = mkdtempSync(join(tmpdir(), "p11-deploy-"));
   const calls = posix(join(dir, "calls.log"));
   const hooks = join(dir, "hooks.sh");
@@ -22,7 +22,10 @@ function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fai
     hooks,
     [
       `do_backup() { echo backup >> "${calls}"; ${stubs.backup === "fail" ? "return 1" : stubs.backup === "empty" ? ': > "$BACKUP_FILE"' : 'printf "pg_dump output %.0s" $(seq 1 50) | gzip > "$BACKUP_FILE"'}; }`,
-      `do_build() { echo build >> "${calls}"; }`,
+      // With `pull`, the real do_build runs (registry first, local build as the fallback); otherwise it is stubbed whole.
+      stubs.pull
+        ? `do_pull_images() { echo pull >> "${calls}"; ${stubs.pull === "fail" ? "return 1" : "true"}; }\ndo_build_local() { echo build >> "${calls}"; }`
+        : `do_build() { echo build >> "${calls}"; }`,
       `do_migrate() { echo migrate >> "${calls}"; ${stubs.migrate === "fail" ? "return 1" : "true"}; }`,
       `do_switch() { echo switch >> "${calls}"; }`,
       `do_ready_probe() { echo ready >> "${calls}"; ${stubs.ready === "never" ? "return 1" : "true"}; }`,
@@ -30,7 +33,7 @@ function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fai
     ].join("\n"),
   );
   const res = spawnSync(BASH, [posix(SCRIPT)], {
-    env: { ...process.env, ENV_FILE: posix(join(dir, "missing.env")), ...(stubs.storeEnv ?? STORE_ENV), DEPLOY_HOOKS: posix(hooks), BACKUP_FILE: posix(join(dir, "backup.sql.gz")), MIN_BACKUP_BYTES: "20", READY_TIMEOUT: "2", READY_POLL: "1", DEPLOY_SHA: "test" },
+    env: { ...process.env, ENV_FILE: posix(join(dir, "missing.env")), ...(stubs.storeEnv ?? STORE_ENV), DEPLOY_HOOKS: posix(hooks), BACKUP_FILE: posix(join(dir, "backup.sql.gz")), MIN_BACKUP_BYTES: "20", READY_TIMEOUT: "2", READY_POLL: "1", DEPLOY_SHA: "test", PREBUILT_TAG: stubs.prebuilt ?? "" },
     encoding: "utf8",
     timeout: 30_000,
   });
@@ -85,5 +88,52 @@ describe("deploy script (brief downtime, no blue/green)", () => {
     expect(r.calls).not.toContain("proxy");
     expect(r.out).toMatch(/readiness did not become healthy/);
     expect(r.out).toMatch(/Rollback/);
+  });
+});
+
+describe("ready-made images from CI (PREBUILT_TAG)", () => {
+  it("downloads the images CI built instead of building on the server", () => {
+    const r = deploy({ pull: "ok", prebuilt: "abc123" });
+    expect(r.code).toBe(0);
+    expect(r.calls).toEqual(["backup", "pull", "migrate", "switch", "ready", "proxy"]);
+    expect(r.out).toContain("using the images CI built for abc123");
+  });
+
+  it("falls back to building on the server when the download fails, and the deploy still goes through", () => {
+    const r = deploy({ pull: "fail", prebuilt: "abc123" });
+    expect(r.code).toBe(0);
+    expect(r.calls).toEqual(["backup", "pull", "build", "migrate", "switch", "ready", "proxy"]);
+    expect(r.out).toContain("building on this server instead");
+  });
+
+  it("without a tag it builds on the server as before and never touches the registry", () => {
+    const r = deploy({ pull: "ok" });
+    expect(r.code).toBe(0);
+    expect(r.calls).toEqual(["backup", "build", "migrate", "switch", "ready", "proxy"]);
+  });
+});
+
+describe("the name a downloaded image is given", () => {
+  /** Runs deploy.sh's compose_image_name against a fake `compose config --images` that prints `lines`. */
+  function imageName(svc: string, lines: string[]) {
+    const dir = mkdtempSync(join(tmpdir(), "p11-images-"));
+    const fake = posix(join(dir, "compose.sh"));
+    writeFileSync(fake, `printf '%s\n' ${lines.map((l) => `'${l}'`).join(" ")}\n`);
+    const hooks = join(dir, "hooks.sh");
+    writeFileSync(hooks, `if n="$(compose_image_name ${svc})"; then echo "NAME=$n"; else echo "NONE"; fi; exit 0\n`);
+    const res = spawnSync(BASH, [posix(SCRIPT)], { env: { ...process.env, COMPOSE: `bash ${fake}`, DEPLOY_HOOKS: posix(hooks), ENV_FILE: posix(join(dir, "missing.env")) }, encoding: "utf8", timeout: 30_000 });
+    return res.stdout.trim();
+  }
+  const real = ["postgres:16-alpine", "redis:7-alpine", "asifzone-api", "asifzone-web", "nginx:1.27-alpine", "certbot/certbot:latest"];
+
+  it("is the service's own built-image name, never one of its dependencies", () => {
+    expect(imageName("api", real)).toBe("NAME=asifzone-api");
+    expect(imageName("web", real)).toBe("NAME=asifzone-web");
+  });
+
+  it("refuses when the name is missing or not unique (the deploy then builds on the server)", () => {
+    expect(imageName("api", ["postgres:16-alpine", "redis:7-alpine"])).toBe("NONE");
+    expect(imageName("api", ["asifzone-api", "other-api"])).toBe("NONE");
+    expect(imageName("api", ["ghcr.io/x/asifzone-api:1"])).toBe("NONE");
   });
 });

@@ -3,7 +3,8 @@
 #
 #   1. backup      pg_dump of the live database (before anything changes)
 #   2. verify      the backup exists, is not tiny, and is a valid gzip — otherwise stop (nothing changed yet)
-#   3. build       new images while the old containers keep serving
+#   3. build       new images while the old containers keep serving — pulled ready-made from the registry when CI built
+#                  them for this commit (PREBUILT_TAG), else built here as before
 #   4. migrate     `prisma migrate deploy` with the NEW image against the live DB — before any new code serves traffic.
 #                  Migrations are additive (expand/contract), so the old code keeps working on the expanded schema.
 #   5. switch      start the new api/web containers
@@ -29,7 +30,39 @@ BACKUP_FILE="${BACKUP_FILE:-$BACKUP_DIR/predeploy-$SHA-$(date +%Y%m%d-%H%M%S).sq
 
 do_backup()        { $COMPOSE exec -T postgres pg_dump -U postgres "$POSTGRES_DB" | gzip > "$BACKUP_FILE"; }
 # one image at a time: building api and web together ran the VPS out of memory (2026-10-24, the build was killed)
-do_build()         { $COMPOSE build api && $COMPOSE build web; }
+do_build_local()   { $COMPOSE build api && $COMPOSE build web; }
+# CI builds the api and web images once per commit (one image serves every store) and pushes them to the registry; the
+# server then only downloads them — no minutes-long build on the 1-vCPU VPS for each of the stores. Each image is
+# tagged with the name compose would have built, so migrate/switch below use it unchanged.
+PREBUILT_TAG="${PREBUILT_TAG:-}"
+IMAGE_REPO="${IMAGE_REPO:-ghcr.io/tanvir660230/asifzone}"
+# The name compose gives a service's built image: "<project>-<service>", no registry, no tag. `config --images <svc>` also
+# lists the service's dependencies (postgres, redis…), so only an exact "-<svc>" name is accepted, and exactly one —
+# tagging a downloaded image as the wrong service (say postgres) must be impossible.
+compose_image_name() {
+  local names
+  names="$($COMPOSE config --images 2>/dev/null | grep -xE "[a-z0-9][a-z0-9_.-]*-$1" || true)"
+  [ -n "$names" ] && [ "$(printf '%s\n' "$names" | wc -l | tr -d ' ')" = 1 ] || return 1
+  printf '%s' "$names"
+}
+do_pull_images() {
+  local svc target src
+  for svc in api web; do
+    target="$(compose_image_name "$svc")" || return 1
+    src="$IMAGE_REPO-$svc:$PREBUILT_TAG"
+    docker pull -q "$src" && docker tag "$src" "$target" || return 1
+    docker rmi "$src" >/dev/null 2>&1 || true # drop only the extra name; the image stays under $target
+  done
+}
+# A ready-made image when there is one; any problem with it (registry down, not logged in, missing tag) falls back to
+# building here, so a deploy never fails because of the registry.
+do_build() {
+  if [ -n "$PREBUILT_TAG" ]; then
+    if do_pull_images; then echo "    using the images CI built for $PREBUILT_TAG"; return 0; fi
+    echo "    could not download the ready-made images — building on this server instead" >&2
+  fi
+  do_build_local
+}
 do_migrate()       { $COMPOSE run --rm api npx prisma migrate deploy; }
 do_switch()        { $COMPOSE up -d api web; }
 do_ready_probe()   { $COMPOSE exec -T api node -e "fetch('http://localhost:4000/health/ready').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"; }
