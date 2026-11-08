@@ -1,4 +1,4 @@
--- Phase 8 (docs/history/PHASE_8_AUDIT.md): transactional outbox. Additive only — a new enum and a new table; no existing data
+-- Phase 8 (docs/PHASE_8_AUDIT.md): transactional outbox. Additive only — a new enum and a new table; no existing data
 -- changes.
 CREATE TYPE "OutboxStatus" AS ENUM ('PENDING', 'ENQUEUED', 'PROCESSING', 'PROCESSED', 'FAILED');
 

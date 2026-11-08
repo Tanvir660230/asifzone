@@ -1,4 +1,4 @@
--- Phase 6 (docs/history/PHASE_6_AUDIT.md): historical order-line facts. Additive, nullable columns; no FKs (history outlives
+-- Phase 6 (docs/PHASE_6_AUDIT.md): historical order-line facts. Additive, nullable columns; no FKs (history outlives
 -- the catalog). Cost, category and brand are NOT backfilled — today's catalog is not history, so older lines stay
 -- explicitly unknown ("not recorded"). productIdSnapshot is backfilled from the variant's product: a variant never
 -- changes product, so that is the true historical fact.
