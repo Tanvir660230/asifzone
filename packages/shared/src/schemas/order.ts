@@ -115,6 +115,12 @@ export const adminCreateOrderSchema = z.object({
   notes: nullableString(500),
   /** Same stale-quote guard as checkout (see checkoutSchema.quoteToken). */
   quoteToken: z.string().max(128).optional(),
+  /** Staff pricing on a phone order (orders.adjust_price): deliver free, and/or the amount the customer agreed to pay —
+   * the order total is set to exactly this; the difference is the order's price adjustment (a discount when lower). */
+  freeDelivery: z.boolean().optional(),
+  finalTotal: z.coerce.number().min(0).max(10_000_000).optional(),
+  /** Why (shown on the order timeline), e.g. "regular customer". */
+  pricingNote: nullableString(300),
 });
 
 function csvToStatusArray(value: unknown) {

@@ -121,6 +121,8 @@ export interface OrderPricingSnapshot {
   taxableAmount?: number;
   taxAmount?: number;
   shippingTaxAmount?: number;
+  /** Staff price adjustment set when the order was entered (createManualOrder); 0 / absent otherwise. */
+  priceAdjustment?: number;
 }
 
 /** One order line = one unit price. A cart line that is partly flash-priced (D4) becomes two snapshots. */
@@ -383,6 +385,7 @@ export async function insertOrderRecord(
         taxableAmount: pricing.taxableAmount ?? null,
         taxAmount: pricing.taxAmount ?? null,
         shippingTaxAmount: pricing.shippingTaxAmount ?? null,
+        priceAdjustment: pricing.priceAdjustment ?? 0,
         status: init.status,
         items: {
           create: snapshots.map((s) => ({
@@ -573,6 +576,8 @@ export async function createOrder(
     initialStatus?: "CONFIRMED";
     /** D24: a staff-entered phone order confirmed on the call (insertOrderRecord confirms it in the same transaction). */
     confirmByAdminId?: string;
+    /** Staff pricing on a manual order: free delivery and/or an agreed final total (applyStaffPricing). */
+    staffPricing?: StaffPricing;
   } = {},
 ) {
   // Idempotency: one lock-and-dedupe mechanism, keyed by the Idempotency-Key header when the client sends one (durable:
@@ -586,7 +591,8 @@ export async function createOrder(
     if (existing) return existing;
   }
 
-  const pricing = await deriveOrderPricing(input, customerId);
+  const derived = await deriveOrderPricing(input, customerId);
+  const pricing = opts.staffPricing ? applyStaffPricing(derived, opts.staffPricing, await getCurrency()) : derived;
 
   const lockKey = key ? namespace.lock(`order-idem:${key}`) : input.sessionId ? namespace.lock(`order-create:${input.sessionId}`) : null;
   const findDuplicate = () =>
@@ -649,6 +655,44 @@ export async function createOrder(
   }
 }
 
+export interface StaffPricing {
+  freeDelivery: boolean;
+  finalTotal?: number;
+}
+
+/**
+ * Staff pricing on a phone order: many customers pay a little less, or get delivery free. Applied to the server's own
+ * quote, before the order is written, with the one totals formula (computeOrderTotals) — so the order, the courier's
+ * COD amount and the books all carry the same number from the start, exactly as a later "Adjust price" would.
+ *   freeDelivery: the delivery charge is waived (shippingFee keeps the zone's fee, shippingWaived = true).
+ *   finalTotal:   the total becomes exactly this; the difference from the computed total is the price adjustment.
+ */
+export function applyStaffPricing<P extends DerivedOrderPricing>(pricing: P, staff: StaffPricing, currency: string): P {
+  const m = (v: number | undefined) => fromMajor(String(v ?? 0), currency);
+  const exclusive = pricing.taxMode === "EXCLUSIVE";
+  if (staff.freeDelivery && exclusive && (pricing.shippingTaxAmount ?? 0) > 0) {
+    throw AppError.badRequest("Free delivery can't be set here while tax is charged on delivery — adjust the final amount instead");
+  }
+  const shippingWaived = Boolean(pricing.shippingWaived) || staff.freeDelivery;
+  const base = computeOrderTotals({
+    subtotal: m(pricing.subtotal),
+    bundleDiscount: m(pricing.bundleDiscount),
+    couponDiscount: m(pricing.couponDiscount),
+    shippingCharged: shippingWaived ? m(0) : m(pricing.shippingFee),
+    taxAdded: exclusive ? m(pricing.taxAmount) : m(0),
+    priceAdjustment: m(0),
+  });
+  const computed = toMajor(base.total);
+  const priceAdjustment = staff.finalTotal === undefined ? 0 : Math.round((staff.finalTotal - computed) * 100) / 100;
+  if (priceAdjustment < -100000 || priceAdjustment > 100000) throw AppError.badRequest("That final amount is too far from the order's price");
+  return { ...pricing, shippingWaived, priceAdjustment, total: staff.finalTotal ?? computed };
+}
+
+function staffPricingNote(staff: StaffPricing, reason: string | null): string {
+  const parts = [staff.freeDelivery ? "free delivery" : null, staff.finalTotal !== undefined ? `agreed total ${staff.finalTotal}` : null].filter(Boolean);
+  return parts.length ? ` — ${parts.join(", ")}${reason ? ` (${reason})` : ""}` : "";
+}
+
 /** The admin "Create order" page's entrypoint — for phone/Facebook orders a staff member types in
  * themselves. Deliberately a thin wrapper around createOrder rather than a parallel implementation:
  * routing through the exact same stock-decrement/pricing/snapshot transaction is what guarantees a
@@ -657,10 +701,17 @@ export async function createOrder(
  * to the same UNPAID-until-collected state as any other COD order unless staff tick "paid"; then the
  * payment ledger records a MANUAL settlement inside the order's own insert transaction (never a
  * separate follow-up write that could half-apply). */
-export async function createManualOrder(input: AdminCreateOrderInput, adminId: string, idempotencyKey?: string | null) {
+export async function createManualOrder(input: AdminCreateOrderInput, adminId: string, idempotencyKey?: string | null, permissions?: readonly string[]) {
+  const staffPricing = input.freeDelivery || input.finalTotal !== undefined ? { freeDelivery: Boolean(input.freeDelivery), finalTotal: input.finalTotal } : undefined;
+  // Setting the price on entry is the same power as Adjust price afterwards (orders.adjust_price).
+  if (staffPricing && permissions && !permissions.includes("orders.adjust_price")) {
+    throw new AppError(403, "Changing the price or delivery charge needs the Adjust price permission", { code: "FORBIDDEN" });
+  }
+  const pricingWords = staffPricing ? staffPricingNote(staffPricing, input.pricingNote ?? null) : "";
   const order = await createOrder(input, input.customerId ?? null, {
     changedByAdminId: adminId,
-    statusNote: "Order manually entered from the admin panel",
+    statusNote: `Order manually entered from the admin panel${pricingWords}`,
+    staffPricing,
     idempotencyKey,
     markPaidByAdminId: input.markPaid ? adminId : undefined,
     confirmByAdminId: input.confirmNow ? adminId : undefined,
