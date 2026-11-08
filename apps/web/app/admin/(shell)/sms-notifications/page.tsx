@@ -85,6 +85,7 @@ export default function SmsNotificationsPage() {
       adminOrderAlertEnabled: s.adminOrderAlertEnabled,
       adminDailyBriefEnabled: s.adminDailyBriefEnabled,
       customerReviewRequestEnabled: s.customerReviewRequestEnabled,
+      customerSelfConfirmEnabled: s.customerSelfConfirmEnabled,
       customerOrderPlacedEnabled: s.customerOrderPlacedEnabled,
       customerOrderConfirmedEnabled: s.customerOrderConfirmedEnabled,
       customerOrderShippedEnabled: s.customerOrderShippedEnabled,
@@ -166,7 +167,7 @@ export default function SmsNotificationsPage() {
 
         <FormSection
           title="Customer notifications"
-          description="Each message can be switched off, and its wording edited, independently. Placeholders {customerName}, {orderNumber}, {total} and {storeName} are filled in automatically when the SMS is sent."
+          description="Each message can be switched off, and its wording edited, independently. Placeholders {customerName}, {orderNumber}, {total} and {storeName} are filled in automatically when the SMS is sent. {confirmLink} places the confirm link (order placed only)."
         >
           <div className="space-y-5">
             {CUSTOMER_TOUCHPOINTS.map((t) => (
@@ -198,6 +199,19 @@ export default function SmsNotificationsPage() {
                 />
                 {errors[t.templateField] && (
                   <p className="ui-field-error">{errors[t.templateField]?.message}</p>
+                )}
+                {t.touchpoint === "PLACED" && (
+                  <label className="mt-3 flex items-start gap-2 border-t border-ink-100 pt-3 text-sm text-ink-900" data-testid="self-confirm-toggle">
+                    <Checkbox className="mt-0.5" {...register("customerSelfConfirmEnabled")} />
+                    <span>
+                      <span className="font-medium">Let customers confirm by SMS link</span>
+                      <span className="mt-0.5 block text-xs text-ink-400">
+                        Cash-on-delivery orders get a link in this SMS. The order then waits 2 hours in Call later: customers who confirm (or
+                        cancel) there never need a call; the rest come up in Call now. With the default wording the message becomes a
+                        short &ldquo;confirm here&rdquo; text.
+                      </span>
+                    </span>
+                  </label>
                 )}
               </div>
             ))}

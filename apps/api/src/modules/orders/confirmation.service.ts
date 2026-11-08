@@ -33,7 +33,7 @@ import { callNowWhere, getConfirmationPolicy, staleWhere } from "./confirmation-
 const claimTtlMs = CONFIRMATION_CLAIM_MINUTES * 60_000;
 type Tx = Prisma.TransactionClient;
 
-async function lockOrder(tx: Tx, orderId: string) {
+export async function lockOrder(tx: Tx, orderId: string) {
   const [row] = await tx.$queryRaw<
     Array<{
       status: string;

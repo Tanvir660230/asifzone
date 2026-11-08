@@ -211,3 +211,13 @@ export const quoteRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many price checks, please slow down and try again shortly" },
 });
+
+/** The customer's confirm-your-order link (/api/order-confirm/:code): the signed code is the key; this only stops a client
+ * hammering it (or trying codes). */
+export const selfConfirmRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests for this link, please try again shortly" },
+});

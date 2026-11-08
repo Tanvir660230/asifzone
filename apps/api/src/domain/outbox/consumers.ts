@@ -36,7 +36,7 @@ const orderIdPayload = z.object({ orderId: z.string().min(1) });
 async function orderFacts(orderId: string) {
   return prisma.order.findUnique({
     where: { id: orderId },
-    select: { orderNumber: true, total: true, customerName: true, customerPhone: true, customerEmail: true, deletedAt: true },
+    select: { orderNumber: true, total: true, customerName: true, customerPhone: true, customerEmail: true, deletedAt: true, status: true, paymentMethod: true },
   });
 }
 
