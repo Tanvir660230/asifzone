@@ -30,3 +30,22 @@ export function getPaymentLink(token: string) {
 export function startPaymentLink(token: string, provider: "SSLCOMMERZ" | "EPS_PG") {
   return apiFetch<{ gatewayUrl: string }>(`/api/pay/${encodeURIComponent(token)}/start`, { method: "POST", body: { provider } });
 }
+
+// ─── The customer's confirm-your-order link from the order-placed SMS — public; the signed code is the key ──────────
+
+export interface SelfConfirmView {
+  orderNumber: string;
+  status: string;
+  total: number;
+  shippingArea: string;
+  items: { name: string; variantLabel: string; quantity: number; imageUrl: string | null }[];
+  canAct: boolean;
+}
+
+export function getSelfConfirm(code: string) {
+  return apiFetch<{ order: SelfConfirmView }>(`/api/order-confirm/${encodeURIComponent(code)}`);
+}
+
+export function actOnSelfConfirm(code: string, action: "confirm" | "cancel") {
+  return apiFetch<{ order: SelfConfirmView }>(`/api/order-confirm/${encodeURIComponent(code)}`, { method: "POST", body: { action } });
+}
