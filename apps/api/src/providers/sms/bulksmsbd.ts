@@ -24,6 +24,14 @@ function toBulkSmsBdNumber(phone: string): string {
   return toBdInternationalDigits(phone);
 }
 
+/** The error for a rejected message. BulkSMSBD echoes the API key back in some rejections ("… using this <key> key",
+ * code 1015, seen on live 2026-11-07), and the message lands in the error log and the outbox's lastError — the key never
+ * does. */
+export function bulkSmsRejection(data: unknown, apiKey: string | undefined | null): string {
+  const text = JSON.stringify(data);
+  return `[sms] BulkSMSBD rejected the message: ${apiKey ? text.split(apiKey).join("[redacted]") : text}`;
+}
+
 // No BULKSMSBD_API_KEY configured yet: log instead of sending, same fallback spirit as
 // providers/email/resend.ts, so local dev/CI never needs a real account.
 export async function sendSms({ to, body }: SmsInput): Promise<void> {
@@ -55,7 +63,7 @@ export async function sendSms({ to, body }: SmsInput): Promise<void> {
   // BulkSMSBD responds HTTP 200 even on failure — the real status is response_code (202 = accepted). An unreadable body is
   // treated as transient; any other response code is the provider rejecting this message.
   if (!data) throw new SmsProviderError("[sms] BulkSMSBD returned an unreadable response", true);
-  if (data.response_code !== 202) throw new SmsProviderError(`[sms] BulkSMSBD rejected the message: ${JSON.stringify(data)}`, false);
+  if (data.response_code !== 202) throw new SmsProviderError(bulkSmsRejection(data, env.bulkSmsBd.apiKey), false);
 }
 
 const BULKSMSBD_BALANCE_ENDPOINT = "https://bulksmsbd.net/api/getBalanceApi";
