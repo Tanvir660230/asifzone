@@ -120,7 +120,11 @@ withdrawing an earlier consent reloads the page so no loaded pixel keeps running
 
 The scripts load under the nonce-based Content-Security-Policy (`lib/security/csp.ts`): they are created from our
 bundle, so `'strict-dynamic'` trusts them, and their beacon hosts are in `connect-src`. A new provider needs its
-beacon/iframe hosts added there.
+beacon/iframe hosts added there. The same goes for Meta's Conversions API Gateway: once a gateway is attached to the
+pixel in Events Manager, fbevents.js also posts each event to the gateway host (Tahafi's: `capig.datah04.com` plus an
+AWS fallback), so those exact hosts are in `connect-src` (`META_CAPI_GATEWAY`). If the gateway is moved or a store gets
+its own, the browser console shows "violates the following Content Security Policy directive: connect-src" for the new
+host — add it there.
 
 ## Configuration
 

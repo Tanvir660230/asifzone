@@ -26,12 +26,22 @@ export interface CspOptions {
   isDev: boolean;
 }
 
+/**
+ * Meta's Conversions API Gateway for the pixel (set up in Events Manager, hosted for us by Datahash). Once a gateway is
+ * attached to the pixel, Meta's fbevents.js also posts every event to the gateway host and its AWS fallback; without
+ * these hosts the browser blocks those requests and the gateway never sees the events (Meta's own troubleshooting guide:
+ * "add the gateway subdomain to the CSP"). Exact hosts, not wildcards: *.on.aws would allow any AWS-hosted app.
+ * Seen on tahafi.com 2026-11-08; a store whose pixel has no gateway simply never calls them.
+ */
+const META_CAPI_GATEWAY = ["https://capig.datah04.com", "https://c3-8e86efd19c8c4086ae8a47d63bd9492e.ecs.us-east-1.on.aws"];
+
 const TRACKING_CONNECT = [
   "https://www.facebook.com",
   "https://connect.facebook.net",
   "https://*.tiktok.com",
   "https://*.tiktokw.us",
   "https://*.clarity.ms",
+  ...META_CAPI_GATEWAY,
 ];
 const LIVE_CHAT = ["https://*.tawk.to", "wss://*.tawk.to"];
 const GOOGLE_SIGN_IN = "https://accounts.google.com";
