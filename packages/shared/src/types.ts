@@ -1124,6 +1124,7 @@ export interface SmsNotificationSettings {
   id: string;
   adminAlertPhones: string;
   adminOrderAlertEnabled: boolean;
+  adminDailyBriefEnabled: boolean;
   customerOrderPlacedEnabled: boolean;
   customerOrderConfirmedEnabled: boolean;
   customerOrderShippedEnabled: boolean;

@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { Permission } from "@clothing-brand/shared";
+import { ACTIVITY_NOTIFICATION_TYPES, type NotificationView, type Permission } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { can, type AdminIdentity } from "../../domain/auth/authorization";
@@ -36,28 +36,36 @@ export function notificationScope(identity: AdminIdentity): Prisma.NotificationW
   return { OR: allowed };
 }
 
-/** Visible to this admin and not yet read by them. */
-function unreadWhere(identity: AdminIdentity): Prisma.NotificationWhereInput {
-  return { AND: [notificationScope(identity), { reads: { none: { adminId: identity.adminId } } }] };
+/** One of the bell's two lists (shared/notification-kinds.ts): the routine activity stream, or everything else. */
+function viewWhere(view: NotificationView): Prisma.NotificationWhereInput {
+  const activity = [...ACTIVITY_NOTIFICATION_TYPES];
+  return view === "activity" ? { type: { in: activity } } : { type: { notIn: activity } };
 }
 
-export function countUnreadNotifications(identity: AdminIdentity) {
-  return prisma.notification.count({ where: unreadWhere(identity) });
+/** Visible to this admin, in this list, and not yet read by them. */
+function unreadWhere(identity: AdminIdentity, view: NotificationView): Prisma.NotificationWhereInput {
+  return { AND: [notificationScope(identity), viewWhere(view), { reads: { none: { adminId: identity.adminId } } }] };
 }
 
-export async function listNotifications(identity: AdminIdentity) {
-  const [rows, unreadCount] = await Promise.all([
+/** The bell's badge: unread important notifications only — the activity stream never adds to it. */
+export function countUnreadNotifications(identity: AdminIdentity, view: NotificationView = "important") {
+  return prisma.notification.count({ where: unreadWhere(identity, view) });
+}
+
+export async function listNotifications(identity: AdminIdentity, view: NotificationView = "important") {
+  const [rows, unreadCount, activityUnread] = await Promise.all([
     prisma.notification.findMany({
-      where: notificationScope(identity),
+      where: { AND: [notificationScope(identity), viewWhere(view)] },
       orderBy: { createdAt: "desc" },
       take: LIST_SIZE,
       include: { reads: { where: { adminId: identity.adminId }, select: { readAt: true } } },
     }),
-    countUnreadNotifications(identity),
+    countUnreadNotifications(identity, "important"),
+    countUnreadNotifications(identity, "activity"),
   ]);
   // `readAt` is this admin's own read time — the shape the bell already renders.
   const items = rows.map(({ reads, readAt: _legacy, ...n }) => ({ ...n, readAt: reads[0]?.readAt ?? null }));
-  return { items, unreadCount };
+  return { items, view, unreadCount, activityUnread };
 }
 
 export async function markNotificationRead(identity: AdminIdentity, id: string) {
@@ -70,8 +78,10 @@ export async function markNotificationRead(identity: AdminIdentity, id: string) 
   });
 }
 
-export async function markAllNotificationsRead(identity: AdminIdentity) {
-  const unread = await prisma.notification.findMany({ where: unreadWhere(identity), select: { id: true } });
+/** "Mark all read" on the list in front of the admin; without a view, both lists. */
+export async function markAllNotificationsRead(identity: AdminIdentity, view?: NotificationView) {
+  const where = view ? unreadWhere(identity, view) : { AND: [notificationScope(identity), { reads: { none: { adminId: identity.adminId } } }] };
+  const unread = await prisma.notification.findMany({ where, select: { id: true } });
   if (unread.length) {
     await prisma.notificationRead.createMany({ data: unread.map((n) => ({ notificationId: n.id, adminId: identity.adminId })), skipDuplicates: true });
   }

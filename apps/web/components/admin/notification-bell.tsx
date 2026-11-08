@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bell, PackageX, ShoppingBag } from "lucide-react";
+import { AlertTriangle, Bell, Newspaper, PackageX, ShoppingBag, Truck } from "lucide-react";
+import type { NotificationView } from "@clothing-brand/shared";
 import * as notificationsApi from "@/lib/api/notifications";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { useAttentionCounts } from "@/hooks/use-attention-counts";
 import { attentionKeys } from "@/lib/query-keys";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -15,6 +17,18 @@ const ICON_BY_TYPE: Record<string, typeof ShoppingBag> = {
   "order.created": ShoppingBag,
   "product.low_stock": PackageX,
   "order.cancelled_but_paid": AlertTriangle,
+  "order.overpaid": AlertTriangle,
+  "order.courier_update": Truck,
+  "order.courier_booked": Truck,
+  "courier.attention": Truck,
+  "analytics.daily_brief": Newspaper,
+};
+
+/** Two lists (shared/notification-kinds.ts): what needs a person, and the routine stream of new orders, courier updates
+ * and low-stock ticks. Only the first counts on the badge, so a busy day's hundred order pings don't bury the brief. */
+const EMPTY_TEXT: Record<NotificationView, string> = {
+  important: "Nothing needs you right now.",
+  activity: "No activity yet.",
 };
 
 export function NotificationBell() {
@@ -25,11 +39,12 @@ export function NotificationBell() {
   // full-screen overlay, so locking page scroll behind it would be the wrong call here.
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: () => setOpen(false), lockScroll: false });
   const queryClient = useQueryClient();
+  const [view, setView] = useState<NotificationView>("important");
 
   const attention = useAttentionCounts();
-  const { data } = useQuery({
-    queryKey: ["notifications"],
-    queryFn: notificationsApi.listNotifications,
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["notifications", view],
+    queryFn: () => notificationsApi.listNotifications(view),
     enabled: open,
   });
   const invalidate = () => {
@@ -42,7 +57,7 @@ export function NotificationBell() {
     onSuccess: invalidate,
   });
   const markAllMutation = useMutation({
-    mutationFn: notificationsApi.markAllNotificationsRead,
+    mutationFn: () => notificationsApi.markAllNotificationsRead(view),
     onSuccess: invalidate,
   });
 
@@ -56,6 +71,7 @@ export function NotificationBell() {
 
   const items = data?.items ?? [];
   const unreadCount = data?.unreadCount ?? attention.unreadNotifications;
+  const viewUnread = view === "important" ? unreadCount : (data?.activityUnread ?? 0);
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -99,20 +115,40 @@ export function NotificationBell() {
           // against the toolbar (its backdrop blur makes it the containing block), so 100% is the toolbar's bottom edge.
           className="absolute right-0 top-full z-50 mt-2 flex max-h-[70dvh] w-[min(92vw,400px)] flex-col overflow-hidden rounded-xl border border-ink-100/70 bg-cream-50 shadow-floatLg animate-modal-in max-md:fixed max-md:inset-x-2 max-md:top-[calc(100%+6px)] max-md:mt-0 max-md:w-auto"
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-3">
-            <span className="text-sm font-medium text-ink-900">Notifications</span>
-            {unreadCount > 0 && (
-              <button
-                onClick={() => markAllMutation.mutate()}
-                className="text-xs text-brass-600 hover:underline"
-                disabled={markAllMutation.isPending}
-              >
-                Mark all read
-              </button>
-            )}
+          <div className="flex shrink-0 flex-col gap-2.5 border-b border-ink-100 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-ink-900">Notifications</span>
+              {viewUnread > 0 && (
+                <button
+                  onClick={() => markAllMutation.mutate()}
+                  className="text-xs text-brass-600 hover:underline"
+                  disabled={markAllMutation.isPending}
+                >
+                  Mark all read
+                </button>
+              )}
+            </div>
+            <SegmentedControl<NotificationView>
+              aria-label="Which notifications"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "important", label: <TabLabel text="Important" count={data ? unreadCount : attention.unreadNotifications} />, testId: "notifications-important" },
+                { value: "activity", label: <TabLabel text="Activity" count={data?.activityUnread ?? 0} />, testId: "notifications-activity" },
+              ]}
+            />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {items.length === 0 && <p className="px-4 py-8 text-center text-sm text-ink-400">No notifications yet.</p>}
+            {isLoading && <p className="px-4 py-8 text-center text-sm text-ink-400">Loading…</p>}
+            {isError && (
+              <div className="px-4 py-8 text-center text-sm text-ink-500">
+                Couldn&rsquo;t load notifications.{" "}
+                <button onClick={() => refetch()} className="text-brass-600 hover:underline">
+                  Try again
+                </button>
+              </div>
+            )}
+            {data && items.length === 0 && <p className="px-4 py-8 text-center text-sm text-ink-400">{EMPTY_TEXT[view]}</p>}
             {items.map((n) => {
               const Icon = ICON_BY_TYPE[n.type] ?? Bell;
               const content = (
@@ -125,7 +161,9 @@ export function NotificationBell() {
                   <Icon size={16} className="mt-0.5 shrink-0 text-brass-500" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-ink-900">{n.title}</p>
-                    {n.body && <p className="mt-0.5 truncate text-xs text-ink-500">{n.body}</p>}
+                    {/* Important items (the brief, parcels needing a look) are read here, so they get their lines; the
+                        routine stream stays one line each. */}
+                    {n.body && <p className={cn("mt-0.5 text-xs text-ink-500", view === "important" ? "line-clamp-4 whitespace-pre-line" : "truncate")}>{n.body}</p>}
                     <p className="mt-0.5 text-[11px] text-ink-400">{timeAgo(n.createdAt)}</p>
                   </div>
                   {!n.readAt && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brass-400" />}
@@ -157,5 +195,14 @@ export function NotificationBell() {
         </div>
       )}
     </div>
+  );
+}
+
+function TabLabel({ text, count }: { text: string; count: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {text}
+      {count > 0 && <span className="text-[11px] font-semibold tabular-nums text-ink-500">{count > 99 ? "99+" : count}</span>}
+    </span>
   );
 }

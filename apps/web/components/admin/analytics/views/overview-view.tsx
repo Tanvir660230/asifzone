@@ -89,7 +89,7 @@ export default function ExecutiveOverviewPage() {
   const { data: overview, isLoading: overviewLoading } = useQuery({ queryKey: ["bi-overview"], queryFn: biApi.getExecutiveOverview });
   const { data: insights } = useQuery({ queryKey: ["bi-overview-insights"], queryFn: biApi.getAutomatedInsights });
   const { data: customerInsights } = useQuery({ queryKey: ["bi-overview-customers"], queryFn: analyticsApi.getCustomerInsights });
-  const { data: activity } = useQuery({ queryKey: ["bi-overview-activity"], queryFn: notificationsApi.listNotifications, refetchInterval: 30_000 });
+  const { data: activity } = useQuery({ queryKey: ["bi-overview-activity"], queryFn: () => notificationsApi.listNotifications("activity"), refetchInterval: 30_000 });
 
   // Realised net sales, orders realised, the daily series and the prior-period comparison — all computed by the server's metrics
   // engine for exactly the picked business dates (docs/METRICS_REGISTRY.md); nothing is summed here.
@@ -510,8 +510,8 @@ export default function ExecutiveOverviewPage() {
             <Bell size={16} className="text-ink-400" />
             <CardTitle>Recent activity</CardTitle>
           </div>
-          {activity && activity.unreadCount > 0 && (
-            <span className="rounded-full bg-brass-50 px-2 py-0.5 text-xs font-semibold text-brass-600">{activity.unreadCount} unread</span>
+          {activity && activity.activityUnread > 0 && (
+            <span className="rounded-full bg-brass-50 px-2 py-0.5 text-xs font-semibold text-brass-600">{activity.activityUnread} unread</span>
           )}
         </CardHeader>
         <CardContent>

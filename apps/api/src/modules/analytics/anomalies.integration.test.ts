@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { addDays } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, trackOrder } from "../../test-fixtures";
 import { createManualOrder } from "../orders/order.service";
+import { getProviders } from "../../providers/registry";
+import { getSmsSettings, updateSmsSettings } from "../sms-settings/sms-settings.service";
 import { getAnomalies, getDailyBrief, sendMorningBrief } from "./anomalies.service";
 
 // A fixed Dhaka Wednesday long ago, with four earlier Wednesdays of 12 orders each, and only 2 orders on the day.
@@ -73,6 +75,30 @@ describe("anomalies and the daily brief", () => {
     expect(await sendMorningBrief()).toBeNull();
     expect(await prisma.notification.count({ where: { type: "analytics.daily_brief", createdAt: { gte: since } } })).toBe(after);
     await prisma.notification.deleteMany({ where: { type: "analytics.daily_brief", createdAt: { gte: new Date(Date.now() - 3_600_000) } } });
+  });
+
+  it("texts the brief to the alert phones only when the owner switched it on", async () => {
+    const before = await getSmsSettings();
+    const send = vi.spyOn(getProviders().sms, "send").mockResolvedValue(undefined as never);
+    try {
+      await updateSmsSettings({ adminAlertPhones: "01711000001,01811000002", adminDailyBriefEnabled: false });
+      await sendMorningBrief(NEXT_NOON);
+      expect(send).not.toHaveBeenCalled();
+
+      await updateSmsSettings({ adminDailyBriefEnabled: true });
+      await sendMorningBrief(NEXT_NOON);
+      expect(send).toHaveBeenCalledTimes(2);
+      const body = send.mock.calls[0]![0].body;
+      expect(body).toMatch(/: Wed: 2 orders, BDT [\d,]+ sales/);
+      expect(body.length).toBeLessThanOrEqual(160);
+
+      // A failed text never fails the brief.
+      send.mockRejectedValueOnce(new Error("sms down"));
+      await expect(sendMorningBrief(NEXT_NOON)).resolves.not.toBeNull();
+    } finally {
+      send.mockRestore();
+      await updateSmsSettings({ adminAlertPhones: before.adminAlertPhones, adminDailyBriefEnabled: before.adminDailyBriefEnabled });
+    }
   });
 
   it("is reachable over the API", async () => {
