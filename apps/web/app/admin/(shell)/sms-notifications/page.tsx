@@ -84,6 +84,7 @@ export default function SmsNotificationsPage() {
       adminAlertPhones: s.adminAlertPhones,
       adminOrderAlertEnabled: s.adminOrderAlertEnabled,
       adminDailyBriefEnabled: s.adminDailyBriefEnabled,
+      customerReviewRequestEnabled: s.customerReviewRequestEnabled,
       customerOrderPlacedEnabled: s.customerOrderPlacedEnabled,
       customerOrderConfirmedEnabled: s.customerOrderConfirmedEnabled,
       customerOrderShippedEnabled: s.customerOrderShippedEnabled,
@@ -202,6 +203,16 @@ export default function SmsNotificationsPage() {
             ))}
           </div>
         </FormSection>
+        <FormSection
+          title="Review requests"
+          description="Two days after an order is delivered, one SMS asks the customer to rate what they bought. The link opens their order's products with stars — no account needed. Reviews wait for your approval in Reviews before they show."
+        >
+          <label className="flex items-center gap-2 text-sm font-medium text-ink-900" data-testid="review-request-toggle">
+            <Checkbox {...register("customerReviewRequestEnabled")} />
+            Ask for a review two days after delivery
+          </label>
+        </FormSection>
+
 
         <FormSection
           title="Payment confirmation email"

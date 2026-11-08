@@ -30,3 +30,20 @@ export function getPaymentLink(token: string) {
 export function startPaymentLink(token: string, provider: "SSLCOMMERZ" | "EPS_PG") {
   return apiFetch<{ gatewayUrl: string }>(`/api/pay/${encodeURIComponent(token)}/start`, { method: "POST", body: { provider } });
 }
+
+// ─── The customer's review link from the SMS two days after delivery — public; the signed code is the key ───────────
+
+export interface ReviewLinkView {
+  orderNumber: string;
+  firstName: string;
+  canReview: boolean;
+  items: { productId: string; name: string; imageUrl: string | null; reviewed: boolean; rating: number | null }[];
+}
+
+export function getReviewLink(code: string) {
+  return apiFetch<{ order: ReviewLinkView }>(`/api/review-link/${encodeURIComponent(code)}`);
+}
+
+export function submitReviewLink(code: string, input: { productId: string; rating: number; body?: string }) {
+  return apiFetch<{ review: { id: string; rating: number; status: string } }>(`/api/review-link/${encodeURIComponent(code)}`, { method: "POST", body: input });
+}

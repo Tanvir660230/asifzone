@@ -53,6 +53,15 @@ export const retryPaymentRateLimit = rateLimit({
 
 /** Public payment-link reads and starts (/api/pay/:token). The token is unguessable (256 bits), so this only stops a
  * client from hammering the endpoint or the gateway init behind it. */
+/** The customer's review link (/api/review-link/:code): the signed code is the key; this stops hammering it. */
+export const reviewLinkRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests for this link, please try again shortly" },
+});
+
 export const paymentLinkRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 30,

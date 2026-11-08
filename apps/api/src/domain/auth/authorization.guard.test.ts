@@ -34,6 +34,8 @@ const PUBLIC_ROUTES = [
   "GET /health",
   "GET /health/ready",
   "GET /api/pay/:token", // payment link (docs/ORDER_ADJUSTMENTS.md §11): the 256-bit token is the capability; rate-limited
+  "GET /api/review-link/:code", // the customer's review link from the SMS two days after delivery: the HMAC-signed code is the key; rate-limited
+  "POST /api/review-link/:code", // a review of a product in that delivered order only (modules/reviews/review-request.ts)
   "POST /api/pay/:token/start", // Phase 11: readiness — booleans only (postgres / redis / outbox dispatcher)
   "GET /api/v1/ops/attention", // Phase 11: counts only; gated by requireOpsReadOrMonitorToken (ops.read or the monitor token)
   "POST /api/auth/login",

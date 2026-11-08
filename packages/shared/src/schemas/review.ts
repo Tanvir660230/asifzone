@@ -18,6 +18,14 @@ export const createReviewSchema = z.object({
   images: z.array(reviewImageRefSchema).max(REVIEW_IMAGE_LIMIT, `Up to ${REVIEW_IMAGE_LIMIT} photos`).default([]),
 });
 
+/** A review from the SMS link (modules/reviews/review-request.ts): stars are enough — many customers won't type. */
+export const linkReviewSchema = z.object({
+  productId: z.string().min(1).max(40),
+  rating: z.number().int().min(1).max(5),
+  body: z.string().trim().max(2000).optional().default(""),
+});
+export type LinkReviewInput = z.input<typeof linkReviewSchema>;
+
 export const moderateReviewSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
 });
