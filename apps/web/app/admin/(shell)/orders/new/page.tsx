@@ -98,6 +98,10 @@ export default function NewOrderPage() {
   const [markPaid, setMarkPaid] = useState(false);
   // D24: a phone order is confirmed on the call — on by default, untick to leave it Pending.
   const [confirmNow, setConfirmNow] = useState(true);
+  // Staff pricing (orders.adjust_price): deliver free, and/or the amount the customer agreed to pay on the call.
+  const [freeDelivery, setFreeDelivery] = useState(false);
+  const [customerPays, setCustomerPays] = useState("");
+  const [pricingNote, setPricingNote] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
@@ -249,6 +253,15 @@ export default function NewOrderPage() {
     }
   }
 
+  // What the order totals before any agreed amount: the quote, less the delivery charge when it is waived here.
+  const waivedHere = freeDelivery && quote?.shipping.resolved && !quote.shipping.waived ? quote.shipping.charged : 0;
+  const computedTotal = quote ? quote.total - waivedHere : 0;
+  const agreed = customerPays.trim() === "" ? undefined : Number(customerPays);
+  const agreedValid = agreed !== undefined && Number.isFinite(agreed) && agreed >= 0;
+  const finalTotal = agreedValid ? agreed : computedTotal;
+  const agreedDiff = agreedValid ? Math.round((agreed! - computedTotal) * 100) / 100 : 0;
+  const staffPricing = perms.adjustPrice && (freeDelivery || agreedValid);
+
   async function onSubmit(values: FormValues) {
     setSubmitError(null);
     if (items.length === 0) {
@@ -264,6 +277,7 @@ export default function NewOrderPage() {
       items: baseRequest.items,
       // The quote staff are looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
+      ...(staffPricing ? { freeDelivery, finalTotal: agreedValid ? agreed : undefined, pricingNote: pricingNote.trim() || null } : {}),
     };
     try {
       // Same payload again (double click, retry after a timeout) = same Idempotency-Key = the same order (Phase 9).
@@ -530,7 +544,7 @@ export default function NewOrderPage() {
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
           <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting || (perms.ready && !perms.manage)}>
-            {isSubmitting ? "Creating order…" : `Create order — ${money(quote?.total)}`}
+            {isSubmitting ? "Creating order…" : `Create order — ${staffPricing ? formatPrice(finalTotal) : money(quote?.total)}`}
           </Button>
         </form>
 
@@ -607,9 +621,24 @@ export default function NewOrderPage() {
                   <span>{formatPrice(quote.tax.addedToTotal)}</span>
                 </div>
               )}
+              {staffPricing && waivedHere > 0 && (
+                <div className="flex justify-between text-success-600">
+                  <span>Free delivery</span>
+                  <span>−{formatPrice(waivedHere)}</span>
+                </div>
+              )}
+              {staffPricing && agreedDiff !== 0 && (
+                <div className={cn("flex justify-between", agreedDiff < 0 ? "text-success-600" : "text-ink-600")} data-testid="agreed-diff">
+                  <span>{agreedDiff < 0 ? "Agreed discount" : "Agreed extra"}</span>
+                  <span>
+                    {agreedDiff < 0 ? "−" : "+"}
+                    {formatPrice(Math.abs(agreedDiff))}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between border-t border-ink-100 pt-1.5 text-base text-ink-900">
                 <span>Total</span>
-                <span className="font-medium">{items.length === 0 ? formatPrice(0) : money(quote?.total)}</span>
+                <span className="font-medium" data-testid="order-total">{items.length === 0 ? formatPrice(0) : staffPricing ? formatPrice(finalTotal) : money(quote?.total)}</span>
               </div>
               {quote?.warnings
                 .filter((w) => w.code !== "ADDRESS_REQUIRED" && w.code !== "NO_SHIPPING_ZONE")
@@ -619,6 +648,34 @@ export default function NewOrderPage() {
                   </p>
                 ))}
             </div>
+
+            {perms.adjustPrice && items.length > 0 && (
+              <div className="space-y-3 border-t border-ink-100 pt-4" data-testid="staff-pricing">
+                <p className="text-sm font-medium text-ink-900">Price agreed on the call</p>
+                <label className="flex items-center gap-2 text-sm text-ink-700">
+                  <Checkbox checked={freeDelivery} onChange={(e) => setFreeDelivery(e.target.checked)} data-testid="free-delivery" />
+                  Free delivery
+                </label>
+                <div>
+                  <Label htmlFor="customerPays">Customer pays (optional)</Label>
+                  <Input
+                    id="customerPays"
+                    inputMode="decimal"
+                    placeholder={computedTotal ? String(computedTotal) : "Total"}
+                    value={customerPays}
+                    onChange={(e) => setCustomerPays(e.target.value.replace(/[^\d.]/g, ""))}
+                    data-testid="customer-pays"
+                  />
+                  <p className="mt-1 text-xs text-ink-400">The order total becomes exactly this — the courier collects it. Leave empty to keep the price.</p>
+                </div>
+                {staffPricing && (
+                  <div>
+                    <Label htmlFor="pricingNote">Reason (optional)</Label>
+                    <Input id="pricingNote" placeholder="e.g. regular customer" maxLength={300} value={pricingNote} onChange={(e) => setPricingNote(e.target.value)} />
+                  </div>
+                )}
+              </div>
+            )}
 
             <label className="flex items-center gap-2 border-t border-ink-100 pt-4 text-sm text-ink-700">
               <Checkbox checked={confirmNow} onChange={(e) => setConfirmNow(e.target.checked)} />

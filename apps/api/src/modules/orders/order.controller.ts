@@ -69,7 +69,7 @@ export const retryPayment = asyncHandler(async (req: Request, res: Response) => 
 // --- admin ---
 
 export const createManual = asyncHandler(async (req: Request, res: Response) => {
-  const order = await orderService.createManualOrder(req.body, req.admin!.adminId, idempotencyKeyOf(req));
+  const order = await orderService.createManualOrder(req.body, req.admin!.adminId, idempotencyKeyOf(req), req.admin!.permissions);
   res.status(201).json({ order });
 });
 
