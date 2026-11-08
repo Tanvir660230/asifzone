@@ -28,6 +28,7 @@ import {
   type PaymentPosition,
   type OrderPaymentSummary,
   type ReclassifyPaymentInput,
+  type VoidPaymentInput,
   type RecordPaymentInput,
   type RecordRefundInput,
   type CompleteRefundInput,
@@ -299,6 +300,16 @@ export async function orderMoneyInTx(tx: Db, orderId: string) {
 
 /** The body of recordManualPayment, in the caller's transaction (the scanner's parcel receipt records the courier's money
  * with the inspection, all or nothing). Same rules, same timeline note. */
+/** A parcel has one courier return charge: the rider collects once, so a second is the same money entered again. */
+async function assertNoCourierReturnCharge(tx: Db, orderId: string, currency: string) {
+  const existing = await tx.payment.findFirst({ where: { orderId, purpose: "RETURN_CHARGE", provider: "COD", status: "SUCCEEDED" }, select: { amount: true } });
+  if (existing) {
+    throw new AppError(409, `A return charge through the courier is already recorded on this order (${noteMoney(fromMajor(existing.amount.toString(), currency))})`, {
+      code: "RETURN_CHARGE_ALREADY_RECORDED",
+    });
+  }
+}
+
 export async function recordManualPaymentInTx(tx: Db, orderId: string, input: RecordPaymentInput, adminId: string, idempotencyKey: string | null, currency: string) {
   const order = await lockOrder(tx, orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before recording a payment");
@@ -309,6 +320,7 @@ export async function recordManualPaymentInTx(tx: Db, orderId: string, input: Re
     }
     if (amount.amount <= 0) throw AppError.badRequest("Amount must be positive");
     const via = input.via ?? "COURIER";
+    if (via === "COURIER") await assertNoCourierReturnCharge(tx, orderId, currency);
     const note = [via === "COURIER" ? "Through the courier" : null, input.method, input.note].filter(Boolean).join(" — ") || null;
     const created = await tx.payment.create({
       data: {
@@ -366,7 +378,20 @@ export async function recordManualPaymentInTx(tx: Db, orderId: string, input: Re
  * with every unit back. Then the whole collection is the refused parcel's charge — courier cost recovered (a COD row,
  * purpose RETURN_CHARGE). One per order (idempotencyKey `courier-collected:<orderId>`). Skipped when staff already
  * recorded courier cash on the order by hand (never counted twice); when the customer kept something, the collection pays
- * for what they kept and staff record it (the form is prefilled). Safe to call any number of times. */
+ * for what they kept and staff record it (the form is prefilled). Safe to call any number of times. The amount is the
+ * order's posted payout lines when there are any (posting a payout calls this for each of its orders), else the webhook's
+ * reported collection. */
+/** What the courier's posted payouts paid for this order: the sum of its matched settlement lines (the rider's real
+ * collection, more reliable than the webhook's `cod_amount`). Null when no posted payout names the order. */
+export async function courierPaidOutFor(db: Db | typeof prisma, orderId: string): Promise<Prisma.Decimal | null> {
+  const agg = await db.clearingSettlementLine.aggregate({
+    where: { orderId, outsideSale: false, settlement: { status: "POSTED" } },
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+  return agg._count._all > 0 ? (agg._sum.amount ?? new Prisma.Decimal(0)) : null;
+}
+
 export async function settleCourierCollected(orderId: string): Promise<"SETTLED" | "NOT_YET" | "SKIPPED"> {
   const currency = await storeCurrency();
   const key = `courier-collected:${orderId}`;
@@ -377,8 +402,34 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
         where: { id: orderId },
         select: { courierCollectedAmount: true, partialDeliveryReconciledAt: true, items: { select: { quantity: true, returnedQuantity: true } } },
       });
-      if (order.deletedAt || !row.courierCollectedAmount) return "NOT_YET";
-      const collected = fromMajor(row.courierCollectedAmount.toString(), currency);
+      if (order.deletedAt) return "NOT_YET";
+      // A posted payout is what the rider really handed over; the webhook figure is only used until one arrives.
+      const paidOut = await courierPaidOutFor(tx, orderId);
+      // The webhook's claim was booked as the charge before the payout came, and the payout says otherwise: the payout
+      // corrects it, once — the claim is cancelled (VOIDED, kept for the record) and the payout's figure recorded. Only
+      // this function's own row; anything a person entered or decided is left alone.
+      const claim = await tx.payment.findUnique({ where: { idempotencyKey: key }, select: { id: true, amount: true, status: true, recordedByAdminId: true } });
+      if (paidOut && claim && claim.status === "SUCCEEDED" && !claim.recordedByAdminId && !claim.amount.equals(paidOut)) {
+        const payoutKey = `courier-payout:${orderId}`;
+        if (await tx.payment.findUnique({ where: { idempotencyKey: payoutKey }, select: { id: true } })) return "SKIPPED";
+        const claimed = fromMajor(claim.amount.toString(), currency);
+        const paid = fromMajor(paidOut.toString(), currency);
+        await tx.payment.update({
+          where: { id: claim.id },
+          data: { status: "VOIDED", voidedAt: new Date(), voidReason: `Steadfast's payout paid ${noteMoney(paid)}, not the ${noteMoney(claimed)} it reported` },
+        });
+        if (paid.amount > 0) {
+          await tx.payment.create({
+            data: { orderId, provider: "COD", purpose: "RETURN_CHARGE", status: "SUCCEEDED", amount: toMajor(paid), note: "Steadfast payout: collected by the rider on a refused parcel", idempotencyKey: payoutKey },
+          });
+        }
+        await timelineNote(tx, orderId, order.status, `Return charge corrected from Steadfast's payout: ${noteMoney(claimed)} reported, ${noteMoney(paid)} paid out`);
+        await refreshPaymentStatus(tx, orderId, currency);
+        return "SETTLED";
+      }
+      const source = paidOut ?? row.courierCollectedAmount;
+      if (!source) return "NOT_YET";
+      const collected = fromMajor(source.toString(), currency);
       if (collected.amount <= 0) return "NOT_YET";
       // A refused parcel received on the scanner before Steadfast reported it is Cancelled (after shipping): the customer
       // kept nothing either.
@@ -387,7 +438,9 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
         (order.status === "CANCELLED" && order.courierConsignmentId !== null) ||
         (order.status === "PARTIALLY_DELIVERED" && row.partialDeliveryReconciledAt !== null && row.items.every((i) => i.returnedQuantity >= i.quantity));
       if (!keptNothing) return "NOT_YET";
-      if (await tx.payment.findUnique({ where: { idempotencyKey: key }, select: { id: true } })) return "SKIPPED";
+      if (claim) return "SKIPPED";
+      // A person cancelled a courier charge on this order: their decision stands, nothing is put back automatically.
+      if (await tx.payment.count({ where: { orderId, provider: "COD", status: "VOIDED", voidedByAdminId: { not: null } } })) return "SKIPPED";
       const byHand = await tx.payment.count({ where: { orderId, provider: "COD", status: "SUCCEEDED", amount: { gt: 0 } } });
       if (byHand > 0) return "SKIPPED";
       await tx.payment.create({
@@ -397,11 +450,16 @@ export async function settleCourierCollected(orderId: string): Promise<"SETTLED"
           purpose: "RETURN_CHARGE",
           status: "SUCCEEDED",
           amount: toMajor(collected),
-          note: "Steadfast: collected by the rider on a refused parcel",
+          note: paidOut ? "Steadfast payout: collected by the rider on a refused parcel" : "Steadfast: collected by the rider on a refused parcel",
           idempotencyKey: key,
         },
       });
-      await timelineNote(tx, orderId, order.status, `Return charge recorded automatically: Steadfast reported ${noteMoney(collected)} collected by the rider — courier cost recovered, not owed back`);
+      await timelineNote(
+        tx,
+        orderId,
+        order.status,
+        `Return charge recorded automatically: Steadfast ${paidOut ? "paid out" : "reported"} ${noteMoney(collected)} collected by the rider — courier cost recovered, not owed back`,
+      );
       await refreshPaymentStatus(tx, orderId, currency);
       return "SETTLED";
     });
@@ -430,6 +488,7 @@ export async function reclassifyPayment(orderId: string, paymentId: string, inpu
       if (!RETURN_CHARGE_ORDER_STATUSES.includes(order.status)) {
         throw AppError.badRequest("A return charge is recorded only for a refused parcel — partly delivered, returned or cancelled", { code: "PAYMENT_NOT_ALLOWED" });
       }
+      if (payment.provider === "COD") await assertNoCourierReturnCharge(tx, orderId, currency);
       const position = await loadPosition(tx, order, currency);
       if (amount.amount > position.refundable.amount) {
         throw AppError.badRequest(`Part of this payment was already refunded or credited — only ${noteMoney(position.refundable)} of the order's money is still held`, {
@@ -441,6 +500,58 @@ export async function reclassifyPayment(orderId: string, paymentId: string, inpu
     await tx.payment.update({ where: { id: paymentId }, data: { purpose: input.purpose } });
     const what = input.purpose === "RETURN_CHARGE" ? "marked as the return charge — courier cost recovered, not owed back" : "marked as order money again";
     await timelineNote(tx, orderId, order.status, `Payment of ${noteMoney(amount)} ${what}${input.reason ? ` (${input.reason})` : ""}`, adminId);
+    await refreshPaymentStatus(tx, orderId, currency);
+  });
+  return getOrderPaymentSummary(orderId);
+}
+
+/** Cancels a COD / MANUAL payment entered by mistake (POST /orders/:id/payments/:paymentId/void). The row stays, marked
+ * VOIDED with who, when and why; it then counts nowhere: the payment position, the order's payment status, the books (the
+ * commerce projection withdraws its event on the next sweep) and analytics only read SUCCEEDED rows. Refused when money
+ * from it was refunded or credited, when a refund names it, on a deleted order, and (unless confirmed) when the courier's
+ * posted payout covers money that would then be missing from the order. A voided courier return charge is never
+ * recreated automatically (settleCourierCollected skips an order with one). */
+export async function voidPayment(orderId: string, paymentId: string, input: VoidPaymentInput, adminId: string) {
+  const currency = await storeCurrency();
+  await prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, orderId);
+    if (order.deletedAt) throw AppError.badRequest("Restore this order before changing its payments", { code: "PAYMENT_NOT_ALLOWED" });
+    const payment = await tx.payment.findFirst({ where: { id: paymentId, orderId } });
+    if (!payment) throw AppError.notFound("Payment not found on this order");
+    if (payment.status === "VOIDED") return;
+    if (payment.status !== "SUCCEEDED" || (payment.provider !== "COD" && payment.provider !== "MANUAL")) {
+      throw AppError.badRequest("Only cash on delivery or manually recorded money can be cancelled — refund an online payment instead", { code: "PAYMENT_NOT_ALLOWED" });
+    }
+    if (await tx.refund.count({ where: { paymentId } })) {
+      throw AppError.badRequest("A refund was recorded against this payment — cancel the refund first", { code: "PAYMENT_HAS_REFUND" });
+    }
+    const amount = fromMajor(payment.amount.toString(), currency);
+    if (payment.purpose === "ORDER") {
+      const position = await loadPosition(tx, order, currency);
+      if (amount.amount > position.refundable.amount) {
+        throw AppError.badRequest(`Part of this payment was already refunded or credited — only ${noteMoney(position.refundable)} of the order's money is still held`, {
+          code: "PAYMENT_ALREADY_REFUNDED",
+          refundable: toMajor(position.refundable),
+        });
+      }
+    }
+    if (payment.provider === "COD" && !input.confirmPayout) {
+      const paidOut = await courierPaidOutFor(tx, orderId);
+      if (paidOut && paidOut.gt(0)) {
+        const others = await tx.payment.aggregate({ where: { orderId, provider: "COD", status: "SUCCEEDED", id: { not: paymentId } }, _sum: { amount: true } });
+        const remaining = others._sum.amount ?? new Prisma.Decimal(0);
+        if (remaining.lt(paidOut)) {
+          throw new AppError(409, `Steadfast's payout paid ${noteMoney(fromMajor(paidOut.toString(), currency))} for this parcel — without this payment the order would show less than the courier paid. Confirm to cancel it anyway.`, {
+            code: "PAYOUT_COVERS_PAYMENT",
+            paidOut: Number(paidOut),
+            remaining: Number(remaining),
+          });
+        }
+      }
+    }
+    await tx.payment.update({ where: { id: paymentId }, data: { status: "VOIDED", voidedAt: new Date(), voidedByAdminId: adminId, voidReason: input.reason } });
+    const what = payment.purpose === "RETURN_CHARGE" ? "Return charge" : "Payment";
+    await timelineNote(tx, orderId, order.status, `${what} of ${noteMoney(amount)} cancelled (entered by mistake): ${input.reason}`, adminId);
     await refreshPaymentStatus(tx, orderId, currency);
   });
   return getOrderPaymentSummary(orderId);
@@ -707,6 +818,7 @@ export async function creditRefundDueToStore(orderId: string, input: { amount?: 
 
 const PAYMENT_SELECT = {
   id: true,
+  voidReason: true,
   orderId: true,
   provider: true,
   status: true,
@@ -773,6 +885,7 @@ export async function summarizeOrderPayments(orderIds: string[]): Promise<Map<st
         purpose: p.purpose,
         amount: Number(p.amount),
         note: p.note,
+        voidReason: p.voidReason,
         backfilled: p.backfilled,
         settledAt: p.settledAt.toISOString(),
         recordedBy: p.recordedByAdmin?.name ?? null,

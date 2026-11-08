@@ -414,3 +414,53 @@ describe("autopilot (§15): payouts in, posted when every parcel is accounted fo
     expect((await owner().get("/center/autopilot")).body.lastRun.ownerDrawings).toMatchObject({ taken: 0 });
   });
 });
+
+describe("courier money safety (2026-11-06)", () => {
+  it("with no courier report on file, a booked estimate still keeps its date across polls", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 500 });
+    const o = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
+    for (const s of ["CONFIRMED", "PROCESSING", "PACKED", "SHIPPED"] as const) await updateOrderStatus(o.id, { status: s }, admin);
+    await prisma.order.update({ where: { id: o.id }, data: { courierConsignmentId: `CN-${RUN}-nolog`, courierBookedAt: new Date(Date.now() - 3 * 86_400_000), courierStatus: "delivered_approval_pending", courierStatusSyncedAt: new Date(Date.now() - 3_600_000) } });
+    await projectOrder(o.id);
+    await prisma.order.update({ where: { id: o.id }, data: { courierStatusSyncedAt: new Date() } });
+    await projectOrder(o.id);
+    expect(await chargeEvents(o.id)).toHaveLength(1);
+  });
+
+  it("a report from an earlier booking of the order never dates this one", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 500 });
+    const o = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
+    for (const s of ["CONFIRMED", "PROCESSING", "PACKED", "SHIPPED"] as const) await updateOrderStatus(o.id, { status: s }, admin);
+    const old = `CN-${RUN}-old`;
+    const current = `CN-${RUN}-new`;
+    const reported = new Date(Date.now() - 86_400_000);
+    await prisma.courierStatusChange.createMany({
+      data: [
+        { consignmentId: old, orderId: o.id, fromStatus: "pending", toStatus: "delivered", source: "POLL", observedAt: new Date(Date.now() - 20 * 86_400_000) },
+        { consignmentId: current, orderId: o.id, fromStatus: "pending", toStatus: "delivered", source: "POLL", observedAt: reported },
+      ],
+    });
+    await prisma.order.update({ where: { id: o.id }, data: { courierConsignmentId: current, courierBookedAt: new Date(Date.now() - 3 * 86_400_000), courierStatus: "delivered", courierStatusSyncedAt: new Date() } });
+    await projectOrder(o.id);
+    const evs = await chargeEvents(o.id);
+    expect(new Date(evs[0]!.occurredAt).getTime()).toBe(reported.getTime());
+    await prisma.courierStatusChange.deleteMany({ where: { consignmentId: { in: [old, current] } } });
+  });
+
+  it("while the order waits for the courier's final word, polling never re-books the estimate", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 500 });
+    const o = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
+    for (const s of ["CONFIRMED", "PROCESSING", "PACKED", "SHIPPED"] as const) await updateOrderStatus(o.id, { status: s }, admin);
+    const consignment = `CN-${RUN}-poll`;
+    const reported = new Date(Date.now() - 86_400_000);
+    await prisma.order.update({ where: { id: o.id }, data: { courierConsignmentId: consignment, courierBookedAt: new Date(Date.now() - 3 * 86_400_000), courierStatus: "delivered_approval_pending", courierStatusSyncedAt: new Date(Date.now() - 3_600_000) } });
+    await prisma.courierStatusChange.create({ data: { consignmentId: consignment, orderId: o.id, fromStatus: "pending", toStatus: "delivered_approval_pending", source: "POLL", observedAt: reported } });
+    await projectOrder(o.id);
+    await prisma.order.update({ where: { id: o.id }, data: { courierStatusSyncedAt: new Date() } });
+    await projectOrder(o.id);
+    const evs = await chargeEvents(o.id);
+    expect(evs).toHaveLength(1);
+    expect(new Date(evs[0]!.occurredAt).getTime()).toBe(reported.getTime());
+    await prisma.courierStatusChange.deleteMany({ where: { consignmentId: consignment } });
+  });
+});

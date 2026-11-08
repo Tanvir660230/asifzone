@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeBrief, type BriefInput } from "./daily-brief";
+import { BRIEF_SMS_MAX, composeBrief, type BriefInput } from "./daily-brief";
 
 const counts = (p: Partial<BriefInput["day"]> = {}): BriefInput["day"] => ({
   placed: 0,
@@ -25,7 +25,7 @@ const base: BriefInput = {
   netSales: 18400,
   cashIn: 20100,
   topChannel: { label: "Facebook ads", orders: 12, conversionRate: 0.031 },
-  queues: { awaitingConfirmation: 5, onHold: 2, holdsDue: 3, readyToBook: 7, withCourier: 40, withCourierCod: 31000, stuckWithCourier: 0, partialToReconcile: 0 },
+  queues: { awaitingConfirmation: 5, onHold: 2, holdsDue: 3, readyToBook: 7, withCourier: 40, withCourierCod: 31000, stuckWithCourier: 0, partialToReconcile: 0, returnsNotBack: 0, returnNotBackDays: 14 },
   anomalies: [],
 };
 
@@ -42,6 +42,24 @@ describe("composeBrief", () => {
 
   it("lists what needs doing now, most urgent first, and skips empty queues", () => {
     expect(composeBrief(base).watch).toEqual(["3 call-backs are due", "7 confirmed orders not sent to the courier yet", "5 orders waiting to be confirmed"]);
+  });
+
+  it("leads the to-do with the books' own warnings, critical first; info items stay on Home", () => {
+    const b = composeBrief({
+      ...base,
+      moneyAlerts: [
+        { severity: "warning", title: "Ad spend missing — profit looks higher than it is", count: 6 },
+        { severity: "info", title: "Finance checks not run this week", count: 1 },
+        { severity: "critical", title: "Financial events failed to post", count: 2 },
+      ],
+    });
+    expect(b.todo.slice(0, 2)).toEqual(["Financial events failed to post (2)", "Ad spend missing — profit looks higher than it is (6)"]);
+    expect(b.todo.join(" ")).not.toMatch(/checks not run/);
+  });
+
+  it("says when refused parcels haven't come back, so they are chased", () => {
+    const b = composeBrief({ ...base, queues: { ...base.queues, returnsNotBack: 5 } });
+    expect(b.todo).toContain("5 refused parcels not back after 14 days — scan them in, or ask Steadfast where they are");
   });
 
   it("puts anomalies first, in plain words", () => {
@@ -63,10 +81,20 @@ describe("composeBrief", () => {
       netSales: 0,
       cashIn: 0,
       topChannel: null,
-      queues: { awaitingConfirmation: 0, onHold: 0, holdsDue: 0, readyToBook: 0, withCourier: 0, withCourierCod: 0, stuckWithCourier: 0, partialToReconcile: 0 },
+      queues: { awaitingConfirmation: 0, onHold: 0, holdsDue: 0, readyToBook: 0, withCourier: 0, withCourierCod: 0, stuckWithCourier: 0, partialToReconcile: 0, returnsNotBack: 0, returnNotBackDays: 14 },
     });
     expect(b.headline).toBe("Tuesday: no orders");
     expect(b.lines).toEqual([]);
     expect(b.watch).toEqual([]);
+  });
+
+  it("fits the brief in one plain SMS with the store name in front", () => {
+    const b = composeBrief(base);
+    expect(b.sms).toBe("Tue: 34 orders, BDT 18,400 sales, 25 delivered. Now: 5 to confirm, 7 to send, 3 call-backs.");
+    const busy = composeBrief({ ...base, day: counts({ placed: 1234, delivered: 999 }), netSales: 12_345_678, queues: { ...base.queues, awaitingConfirmation: 999, readyToBook: 999, holdsDue: 999, stuckWithCourier: 999 } });
+    expect(`A Long Store Name Ltd: ${busy.sms}`.length).toBeLessThanOrEqual(BRIEF_SMS_MAX);
+    expect(/^[ -~]*$/.test(busy.sms)).toBe(true);
+    const quiet = composeBrief({ ...base, queues: { ...base.queues, awaitingConfirmation: 0, readyToBook: 0, holdsDue: 0 } });
+    expect(quiet.sms.endsWith("Nothing waiting.")).toBe(true);
   });
 });

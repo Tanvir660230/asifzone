@@ -27,6 +27,7 @@ import type { FinanceActor } from "../finance/finance-audit";
 import { businessToday, getFinanceContext } from "../finance/finance-context";
 import { businessDateOf, financeError } from "../finance/finance-values";
 import { recordStockCountInTx } from "../finance/stock-check.service";
+import { stockHub } from "./stock-hub.service";
 import { financeTransaction } from "../finance/finance-tx";
 import { holdLossForApprovalInTx } from "./count-approval.service";
 import { claimEntry, completeEntry, findEntry, fingerprintOf, releaseEntry, renewLease, saveSteps, unitOf, variantLabel } from "./hub-entry";
@@ -79,11 +80,25 @@ interface CountLine {
 }
 interface CountSteps {
   lines: CountLine[];
+  /** The counter said this is everything in the shop (every stock item on the sheet). */
+  fullCount?: boolean;
 }
 
 const lineSource = (entryId: string, i: number) => ({ type: "StockHubEntry", id: countSource(entryId, i) });
 /** A count line: `<entry id>:<line>` — the StockCount and the stock movement it makes carry it, so a retry finds them. */
 const countSource = (entryId: string, i: number) => `${entryId}:${i}`;
+
+/** The last count the counter marked as everything in the shop: when, how many items, by whom. Null when there is none. */
+export async function lastFullCount(businessId: string): Promise<{ date: string; items: number; by: string | null } | null> {
+  const entry = await prisma.stockHubEntry.findFirst({
+    where: { businessId, kind: "COUNT", completedAt: { not: null }, steps: { path: ["fullCount"], equals: true } },
+    orderBy: [{ entryDate: "desc" }, { completedAt: "desc" }],
+    select: { entryDate: true, steps: true, createdByAdminId: true },
+  });
+  if (!entry) return null;
+  const by = entry.createdByAdminId ? await prisma.adminUser.findUnique({ where: { id: entry.createdByAdminId }, select: { name: true } }) : null;
+  return { date: businessDateOf(entry.entryDate), items: ((entry.steps as unknown as CountSteps).lines ?? []).length, by: by?.name ?? null };
+}
 
 /** Records a count (see the file header). */
 export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, key: string | null) {
@@ -101,6 +116,15 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
     const listed = new Set(ids);
     const missing = grid.filter((g) => !listed.has(g.id)).map((g) => g.sku);
     if (missing.length) throw financeError(400, "COUNT_SCOPE_INCOMPLETE", `Not on the sheet: ${missing.join(", ")} — enter 0 for a size you have none of`, { missing });
+  }
+  // A full count says "this is everything I have": every item on the stock page is on the sheet, 0 for what isn't there.
+  if (input.fullCount) {
+    const listed = new Set(ids);
+    const hub = await stockHub({ canSeeCost: false });
+    const missing = hub.groups.flatMap((g) => g.items).filter((i) => !listed.has(i.variantId)).map((i) => i.sku);
+    if (missing.length) {
+      throw financeError(400, "COUNT_NOT_FULL", `A full count has every item — not on the sheet: ${missing.slice(0, 12).join(", ")}${missing.length > 12 ? ` and ${missing.length - 12} more` : ""}. Enter 0 for what you have none of.`, { missing });
+    }
   }
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: ids } },
@@ -133,6 +157,7 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
   }
 
   const initial: CountSteps = {
+    ...(input.fullCount ? { fullCount: true } : {}),
     lines: input.lines.map((l) => {
       const v = byId.get(l.variantId)!;
       return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), counted: l.counted, reason: l.reason ?? null, note: l.note, fillToOrder: v.product.fillToOrder };

@@ -31,14 +31,17 @@ afterAll(async () => {
 });
 
 const mine = (items: Array<{ id: string; readAt: Date | null }>) => items.filter((n) => Object.values(ids).includes(n.id));
+/** Both of the bell's lists (important + activity) — the visibility and read-state rules are the same in each. */
+const all = async (identity: AdminIdentity) => [...(await listNotifications(identity, "important")).items, ...(await listNotifications(identity, "activity")).items];
+const unreadAll = async (identity: AdminIdentity) => (await countUnreadNotifications(identity, "important")) + (await countUnreadNotifications(identity, "activity"));
 
 describe("notification read state (DR-15)", () => {
   it("one admin reading a notification leaves it unread for the others", async () => {
-    const staffBefore = await countUnreadNotifications(staff);
+    const staffBefore = await unreadAll(staff);
     await markNotificationRead(owner, ids["order.created"]!);
-    expect(await countUnreadNotifications(staff)).toBe(staffBefore);
-    const ownerView = mine((await listNotifications(owner)).items);
-    const staffView = mine((await listNotifications(staff)).items);
+    expect(await unreadAll(staff)).toBe(staffBefore);
+    const ownerView = mine(await all(owner));
+    const staffView = mine(await all(staff));
     expect(ownerView.find((n) => n.id === ids["order.created"])!.readAt).not.toBeNull();
     expect(staffView.find((n) => n.id === ids["order.created"])!.readAt).toBeNull();
   });
@@ -46,8 +49,8 @@ describe("notification read state (DR-15)", () => {
   it("reading twice is harmless, and mark-all only marks the caller's own", async () => {
     await markNotificationRead(owner, ids["order.created"]!);
     await markAllNotificationsRead(staff);
-    expect(await countUnreadNotifications(staff)).toBe(0);
-    const ownerView = mine((await listNotifications(owner)).items);
+    expect(await unreadAll(staff)).toBe(0);
+    const ownerView = mine(await all(owner));
     expect(ownerView.filter((n) => n.readAt === null).length).toBe(3);
   });
 
@@ -57,11 +60,25 @@ describe("notification read state (DR-15)", () => {
     expect(notificationPermission("product.low_stock")).toBe("inventory.read");
     expect(notificationPermission("system.notice")).toBeNull();
     const ordersOnly: AdminIdentity = { adminId: staff.adminId, role: "STAFF", permissions: ["orders.read"] };
-    const seen = mine((await listNotifications(ordersOnly)).items).map((n) => n.id);
+    const seen = mine(await all(ordersOnly)).map((n) => n.id);
     expect(seen.sort()).toEqual([ids["order.created"]!, ids["system.notice"]!].sort());
     const paymentsOnly: AdminIdentity = { adminId: staff.adminId, role: "STAFF", permissions: ["payments.read"] };
-    const seen2 = mine((await listNotifications(paymentsOnly)).items).map((n) => n.id);
+    const seen2 = mine(await all(paymentsOnly)).map((n) => n.id);
     expect(seen2.sort()).toEqual([ids["order.cancelled_but_paid"]!, ids["system.notice"]!].sort());
+  });
+
+  it("keeps the routine stream in its own list, out of the bell's badge", async () => {
+    const important = mine((await listNotifications(owner, "important")).items).map((n) => n.id);
+    const activity = mine((await listNotifications(owner, "activity")).items).map((n) => n.id);
+    expect(important.sort()).toEqual([ids["order.cancelled_but_paid"]!, ids["system.notice"]!].sort());
+    expect(activity.sort()).toEqual([ids["order.created"]!, ids["product.low_stock"]!].sort());
+    const badge = await countUnreadNotifications(owner);
+    await prisma.notification.create({ data: { type: "order.created", title: `DR15 extra ${RUN}` } }).then((n) => (ids.extra = n.id));
+    expect(await countUnreadNotifications(owner)).toBe(badge);
+    // Mark-all on one list leaves the other alone.
+    await markAllNotificationsRead(owner, "activity");
+    expect(await countUnreadNotifications(owner, "activity")).toBe(0);
+    expect(await countUnreadNotifications(owner, "important")).toBe(badge);
   });
 
   it("refuses to mark a notification the admin may not see", async () => {

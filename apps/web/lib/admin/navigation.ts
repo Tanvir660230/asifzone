@@ -115,7 +115,7 @@ export const MAX_NAV_DEPTH = 3;
 /** Analytics (Blueprint V2 DR-26): six tabs; each folds in the BI pages it replaced, whose old paths redirect to the
  * tab's view (`?view=`). */
 const ANALYTICS_TABS: Array<[slug: string, label: string, keywords: string[], deprecated: string[]]> = [
-  ["overview", "Overview", ["analytics", "reports", "export", "ai insights", "lifetime", "ltv"], ["/admin/bi/overview", "/admin/bi/ai-insights?view=insights", "/admin/bi/lifetime?view=lifetime", "/admin/bi/reports?reports=1"]],
+  ["overview", "Overview", ["analytics", "reports", "export", "ai insights", "lifetime", "ltv"], ["/admin/analytics", "/admin/bi/overview", "/admin/bi/ai-insights?view=insights", "/admin/bi/lifetime?view=lifetime", "/admin/bi/reports?reports=1"]],
   ["sales", "Sales", ["revenue", "sales analytics", "profit", "margin", "cogs", "financial"], ["/admin/bi/sales", "/admin/bi/financial?view=financial"]],
   ["products", "Products", ["product analytics", "stock turnover", "inventory intel", "search", "queries", "zero results"], ["/admin/bi/products", "/admin/bi/inventory?view=inventory", "/admin/bi/search?view=search"]],
   ["customers", "Customers", ["cohort", "retention", "rfm", "customer analytics", "behavior", "heatmap"], ["/admin/bi/customers", "/admin/bi/behavior?view=behavior"]],
@@ -363,7 +363,7 @@ export const NAV_NODES: readonly NavNode[] = [
     ],
   },
   // Blueprint P2.5: every published product's one-page order form for ads (/lp/<slug>)
-  { id: "marketing.landing-pages", label: "Landing pages", kind: "page", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages", capability: "promotions.manage", order: -0.5, keywords: ["lp", "landing page", "ad link", "facebook ad", "order form"] },
+  { id: "marketing.landing-pages", label: "Landing pages", kind: "page", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages", capability: "promotions.manage", order: -0.5, keywords: ["lp", "landing page", "ad link", "facebook ad", "order form"], deprecatedRoutes: ["/admin/marketing"] },
   { id: "marketing.landing-page-detail", label: "Landing page", kind: "detail", parent: "marketing", domain: "grow", route: "/admin/marketing/landing-pages/[id]", capability: "promotions.manage", order: -0.4, visibility: "hidden" },
   // Blueprint tab 2 §2: one Discounts entry, its three pages as tabs (URLs kept).
   { id: "marketing.discounts", label: "Discounts", kind: "page", parent: "marketing", domain: "grow", index: "/admin/flash-sales", capability: "promotions.manage", order: 0, keywords: ["discount", "offer", "sale", "promo"] },
@@ -642,6 +642,8 @@ export const NAV_NODES: readonly NavNode[] = [
     parent: "finance.selling",
     domain: "manage",
     route: "/admin/payments/overview",
+    // A typed /admin/payments (no page of its own) opens the monitor.
+    deprecatedRoutes: ["/admin/payments"],
     capability: "payments.view",
     order: 4,
     description: "Today's gateway success rate, failures and refund risk.",
@@ -833,6 +835,8 @@ export const NAV_NODES: readonly NavNode[] = [
     parent: "reports.profit",
     domain: "manage",
     route: "/admin/finance/profit",
+    // "Reports" is a sidebar group: a typed /admin/reports opens Profit.
+    deprecatedRoutes: ["/admin/reports"],
     capability: "finance.view",
     order: 0,
     description: "Daily profit, sales and ad spend for any period, with a chart — and what each order and product earned.",
@@ -1060,7 +1064,7 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "manage",
     index: "/admin/finance/profit",
-    activeFor: ["/admin/analytics", "/admin/bi", "/admin/ai-assistant"],
+    activeFor: ["/admin/analytics", "/admin/bi", "/admin/ai-assistant", "/admin/reports"],
     icon: "reports",
     order: 90,
     goKey: "a",

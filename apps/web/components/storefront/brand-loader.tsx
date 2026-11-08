@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { storeLayout } from "@/lib/theme-layout";
-import { MihrabLoader } from "./presets/mihrab/loader";
+import { HoneyLoader } from "./presets/honey/loader";
 import { TahafiLoader } from "./presets/tahafi/loader";
 
 /** Zero-data-dependency loading state — shown instantly by Next.js while a route segment's
@@ -9,7 +9,7 @@ import { TahafiLoader } from "./presets/tahafi/loader";
  * full-height spinner would push the layout around instead of just sitting where the form goes. */
 export function BrandLoader({ label = "Loading", compact = false }: { label?: string; compact?: boolean }) {
   const layout = storeLayout();
-  if (layout === "mihrab") return <MihrabLoader label={label} compact={compact} />;
+  if (layout === "honey") return <HoneyLoader label={label} compact={compact} />;
   if (layout === "tahafi") return <TahafiLoader label={label} compact={compact} />;
   return (
     <div

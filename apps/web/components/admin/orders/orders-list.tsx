@@ -395,10 +395,11 @@ export function OrdersList(props: OrdersListProps) {
               <SortableHeader column="orderNumber" label="Order" props={props} />
               {shows("product") && <TableHeaderCell className="px-3 py-2.5">Product</TableHeaderCell>}
               <SortableHeader column="customerName" label="Customer" props={props} />
-              {shows("payment") && <SortableHeader column="paymentStatus" label="Payment" props={props} />}
+              {shows("payment") && <SortableHeader column="paymentStatus" label="Payment" props={props} className="hidden 2xl:table-cell" />}
               {shows("total") && <SortableHeader column="total" label="Total" props={props} align="right" />}
               <SortableHeader column="status" label="Status" props={props} />
-              {shows("courier") && <TableHeaderCell className="px-3 py-2.5">Courier</TableHeaderCell>}
+              {/* On a 1280 laptop the courier sits under the status (compact): the full column only fits from 2xl. */}
+              {shows("courier") && <TableHeaderCell className="hidden px-3 py-2.5 2xl:table-cell">Courier</TableHeaderCell>}
               {shows("placed") && <SortableHeader column="createdAt" label="Placed" props={props} className="hidden 2xl:table-cell" />}
               <TableHeaderCell align="right" className="px-3 py-2.5">
                 <span className="sr-only">Actions</span>
@@ -447,20 +448,31 @@ export function OrdersList(props: OrdersListProps) {
                   <CustomerCell order={order} commands={commands} perms={perms} risk={risk[order.id]} />
                 </TableCell>
                 {shows("payment") && (
-                  <TableCell className={pad}>
+                  <TableCell className={cn("hidden 2xl:table-cell", pad)}>
                     <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
                   </TableCell>
                 )}
                 {shows("total") && (
                   <TableCell align="right" className={cn("font-medium text-ink-900", pad)}>
                     {formatPrice(order.total)}
+                    {/* On a 1280 laptop how it's paid sits under the amount; the Payment column fits from 2xl. */}
+                    {shows("payment") && (
+                      <div className="mt-1 flex justify-end font-normal 2xl:hidden">
+                        <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
+                      </div>
+                    )}
                   </TableCell>
                 )}
                 <TableCell className={pad}>
                   <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                  {shows("courier") && order.courierConsignmentId && (
+                    <div className="mt-1 2xl:hidden">
+                      <CourierCell order={order} compact />
+                    </div>
+                  )}
                 </TableCell>
                 {shows("courier") && (
-                  <TableCell className={pad}>
+                  <TableCell className={cn("hidden 2xl:table-cell", pad)}>
                     <CourierCell order={order} />
                   </TableCell>
                 )}
@@ -539,12 +551,15 @@ export function OrdersList(props: OrdersListProps) {
                 </div>
 
                 {/* Where it stands, and the single most common next step one tap away; everything else in the ⋯ menu. */}
-                <div className="mt-2.5 flex items-center gap-1.5">
-                  <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
-                  {order.courierConsignmentId && <CourierCell order={order} compact />}
-                  {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} />}
-                  <OrderRiskBadge risk={risk[order.id]} />
-                  <span className="flex-1" />
+                {/* Two groups: where it stands (wraps under itself on a narrow phone) and the actions, which never get cut off. */}
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                    <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                    {order.courierConsignmentId && <CourierCell order={order} compact />}
+                    {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} />}
+                    <OrderRiskBadge risk={risk[order.id]} />
+                  </div>
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
                   {!order.deletedAt && (
                     <a
                       href={`tel:${order.customerPhone}`}
@@ -578,6 +593,7 @@ export function OrdersList(props: OrdersListProps) {
                     </Button>
                   ) : null}
                   <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} readOnly={readOnly} />
+                  </div>
                 </div>
               </article>
             );

@@ -146,7 +146,8 @@ test("a bigger quantity picked on one variant never carries over to a lower-stoc
   await main.getByRole("group", { name: "Color" }).first().getByRole("button", { name: "White", exact: true }).click(); // only 2 in stock
   await main.getByRole("button", { name: "Buy Now", exact: true }).first().click();
   await expect(page).toHaveURL(/\/checkout/);
-  await expect(page.getByText(`${name} × 2`)).toBeAttached(); // not × 5
+  // The checkout line shows the quantity in its stepper: 2 (all there is), not 5.
+  await expect(page.getByTestId("checkout-line").filter({ hasText: name }).first().getByTestId("checkout-line-qty")).toHaveText("2");
 });
 
 test("Escape or ✕ closes the popup without adding anything", async ({ page }) => {
@@ -178,7 +179,7 @@ test("product card quick add asks for the options when there is a real choice", 
   const card = page.locator("div.group").filter({ has: page.getByRole("link", { name: name }) }).first();
   await expect(card).toBeVisible();
   if (!isMobile) await card.hover();
-  // The classic card names it "Quick add to cart", the mihrab preset "Choose options" ("Add to bag" when there is no
+  // The classic card names it "Quick add to cart", the honey preset "Choose options" ("Add to bag" when there is no
   // choice) — same button, same behaviour.
   await card.getByRole("button", { name: /^(Quick add to cart|Choose options)$/ }).click();
   const dialog = picker(page);

@@ -11,8 +11,8 @@ describe("themeColorHex", () => {
   });
 
   it("prefers the theme's own values", () => {
-    const override = tokens.themes.nasihamart!.cssVariables["--color-cream-100"]!;
-    expect(themeColorHex("nasihamart", "canvas")).toBe(hex(override));
+    const override = tokens.themes.tahafi!.cssVariables["--color-cream-100"]!;
+    expect(themeColorHex("tahafi", "canvas")).toBe(hex(override));
   });
 
   it("falls back to white for an unknown colour", () => {

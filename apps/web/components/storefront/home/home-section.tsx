@@ -36,15 +36,16 @@ import { TestimonialsSection } from "@/components/storefront/testimonials-sectio
 import { NewsletterSection } from "@/components/storefront/newsletter-section";
 import { ImageGallerySection } from "@/components/storefront/image-gallery-section";
 import {
-  MihrabBrandStory,
-  MihrabCategoryArches,
-  MihrabFlashSale,
-  MihrabHero,
-  MihrabProductRail,
-  MihrabPromoBanner,
-  MihrabTrustRow,
-  MihrabValues,
-} from "@/components/storefront/presets/mihrab/sections";
+  HoneyBrandStory,
+  HoneyCategoryTiles,
+  HoneyFlashSale,
+  HoneyHero,
+  HoneyProductRail,
+  HoneyPromoBanner,
+  HoneyTrustRow,
+  HoneyValues,
+  HERO_TILES,
+} from "@/components/storefront/presets/honey/sections";
 import { TahafiHero } from "@/components/storefront/presets/tahafi/hero";
 import { TahafiCategoryIndex, TahafiLookbook, TahafiPromiseLine } from "@/components/storefront/presets/tahafi/sections";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
@@ -84,7 +85,7 @@ export function HomeSection({ section, data, layout }: { section: RenderableSect
 
 function renderSection(section: RenderableSection, data: HomeSectionData, layout: StoreLayout, appearance: SectionAppearance | undefined) {
   const { storeName, tagline } = data;
-  const mihrab = layout === "mihrab";
+  const honey = layout === "honey";
   const tahafi = layout === "tahafi";
   switch (section.type) {
     case "HERO": {
@@ -104,13 +105,13 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
         mobileImageUrl: config.mobileImageUrl,
         imageAltText: config.imageAltText,
       };
-      if (mihrab) return <MihrabHero {...props} />;
+      if (honey) return <HoneyHero {...props} categories={data.tree} />;
       if (tahafi) return <TahafiHero {...props} />;
       return <Hero {...props} tone={appearance?.tone} layout={appearance?.layout} />;
     }
     case "TRUST_STRIP": {
       const config = section.config as TrustStripConfig;
-      if (mihrab) return <MihrabTrustRow items={config.items} />;
+      if (honey) return <HoneyTrustRow items={config.items} />;
       if (tahafi) return <TahafiPromiseLine items={config.items} />;
       return <TrustStrip items={config.items} />;
     }
@@ -122,15 +123,16 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
       const config = section.config as ProductCarouselConfig;
       const products = data.carouselProducts.get(section.id) ?? [];
       const href = carouselListingHref(config);
-      if (mihrab) return <MihrabProductRail heading={config.heading} subtitle={config.subtitle} products={products} href={href} />;
+      if (honey) return <HoneyProductRail heading={config.heading} subtitle={config.subtitle} products={products} href={href} />;
       return <ProductCarouselSection heading={config.heading} subtitle={config.subtitle} href={href} products={products} rows={appearance?.rows} />;
     }
     case "FLASH_SALE":
       if (!data.flashSale) return null;
-      return mihrab ? <MihrabFlashSale flashSale={data.flashSale} /> : <FlashSaleSection flashSale={data.flashSale} />;
+      return honey ? <HoneyFlashSale flashSale={data.flashSale} /> : <FlashSaleSection flashSale={data.flashSale} />;
     case "CATEGORY_GRID": {
       const config = section.config as CategoryGridConfig;
-      if (mihrab) return <MihrabCategoryArches categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
+      // The hero's small tiles already show the first categories (not when a banner carousel replaces it).
+      if (honey) return <HoneyCategoryTiles categories={data.banners.length > 0 ? data.tree : data.tree.slice(HERO_TILES)} heading={config.heading} subtitle={config.subtitle} />;
       if (tahafi) return <TahafiCategoryIndex categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
       return <CategoryGrid categories={data.tree} heading={config.heading} subtitle={config.subtitle} />;
     }
@@ -147,13 +149,13 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
         imageUrl: config.imageUrl,
         imageAltText: config.imageAltText,
       };
-      if (mihrab) return <MihrabBrandStory {...props} imageSide={appearance?.layout === "image-right" ? "right" : "left"} />;
+      if (honey) return <HoneyBrandStory {...props} imageSide={appearance?.layout === "image-right" ? "right" : "left"} />;
       return <BrandStory {...props} tone={appearance?.tone} layout={appearance?.layout} />;
     }
     case "VALUES_GRID": {
       const config = section.config as ValuesGridConfig;
       const props = { storeName, eyebrow: config.eyebrow, heading: config.heading, items: config.items };
-      return mihrab ? <MihrabValues {...props} /> : <ValuesGrid {...props} />;
+      return honey ? <HoneyValues {...props} /> : <ValuesGrid {...props} />;
     }
     case "SMART_RECOMMENDATIONS": {
       const config = section.config as SmartRecommendationsConfig;
@@ -169,7 +171,7 @@ function renderSection(section: RenderableSection, data: HomeSectionData, layout
         linkUrl: config.linkUrl,
         ctaLabel: config.ctaLabel,
       };
-      if (mihrab) return <MihrabPromoBanner {...props} />;
+      if (honey) return <HoneyPromoBanner {...props} />;
       return <PromoBannerSection {...props} imageAltText={config.imageAltText} tone={appearance?.tone} width={appearance?.width} align={appearance?.align} />;
     }
     case "RICH_TEXT": {

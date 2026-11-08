@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/toast";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as scansApi from "@/lib/api/parcel-scans";
 import { getOrderExceptions, getOrderStats } from "@/lib/api/admin-orders";
+import { Alert } from "@/components/ui/alert";
 import { formatCount, formatPrice, formatStoreDate, storeCurrencySymbol } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { invalidateOrderQueries, orderKeys } from "@/components/admin/orders/order-domain";
@@ -59,6 +60,16 @@ type View =
   | { kind: "parcel"; parcel: ParcelView; code: string | null; matchedBy: ParcelResolveResult["matchedBy"] };
 
 const decides = (p: ParcelView) => p.receive.mode === "DECIDE_OUTCOME" || p.receive.mode === "RECONCILE";
+
+/** The courier handed over at least one item's price for a parcel that is being decided: more than a refused parcel's
+ * delivery charge, so the customer most likely kept something. The figure the payout (or Steadfast) gives; null when the
+ * viewer can't see money or there is none. */
+function keptLikely(p: ParcelView): number | null {
+  if (!decides(p) || !p.money || !p.lines.length) return null;
+  const collected = p.money.paidOut ?? p.money.courierReported;
+  if (collected === null || collected <= 0) return null;
+  return collected >= Math.min(...p.lines.map((l) => l.unitPrice)) ? collected : null;
+}
 
 export function ReceiveStation() {
   const queryClient = useQueryClient();
@@ -111,7 +122,8 @@ export function ReceiveStation() {
 
   const openParcel = useCallback(async (orderId: string, scanned: string | null, matchedBy: ParcelResolveResult["matchedBy"]) => {
     const parcel = await scansApi.getParcel(orderId);
-    setForm({ outcome: null, lines: Object.fromEntries(parcel.lines.map((l) => [l.orderItemId, { ...EMPTY }])), money: { actual: "", charge: "", reason: "", note: "" }, note: "" });
+    // Money that pays for an item: start on "kept some", so the person says which one instead of receiving it all back.
+    setForm({ outcome: keptLikely(parcel) !== null ? "PARTIAL" : null, lines: Object.fromEntries(parcel.lines.map((l) => [l.orderItemId, { ...EMPTY }])), money: { actual: "", charge: "", reason: "", note: "" }, note: "" });
     setView({ kind: "parcel", parcel, code: scanned, matchedBy });
     return parcel;
   }, []);
@@ -394,6 +406,11 @@ export function ReceiveStation() {
             {parcel.receive.message}
           </div>
 
+          {keptLikely(parcel) !== null && (
+            <Alert variant="warning" title="The customer probably kept something" data-testid="kept-likely">
+              The courier collected {formatPrice(keptLikely(parcel)!)} — at least one item&apos;s price, more than a delivery charge. Say which items the customer kept; only what is in your hand goes back into stock.
+            </Alert>
+          )}
           {parcel.receive.mode === "DECIDE_OUTCOME" && (
             <fieldset>
               <legend className="text-sm font-semibold text-fg">Did the customer keep anything?</legend>
@@ -603,6 +620,8 @@ function MoneyPanel({ parcel, form, setForm, plan }: { parcel: ParcelView; form:
   const symbol = storeCurrencySymbol();
   const actual = form.money.actual.trim() === "" ? null : Number(form.money.actual);
   const diff = actual === null || !Number.isFinite(actual) ? null : actual - plan.expected;
+  // The payout is the rider’s real collection; the webhook figure is only a claim until a payout arrives.
+  const suggested = m.paidOut ?? m.courierReported;
   const set = (patch: Partial<FormState["money"]>) => setForm((f) => ({ ...f, money: { ...f.money, ...patch } }));
   return (
     <section className="rounded-xl border border-line-subtle p-3.5" aria-label="Money from the courier" data-testid="money-panel">
@@ -612,12 +631,17 @@ function MoneyPanel({ parcel, form, setForm, plan }: { parcel: ParcelView; form:
           <dt className="text-xs text-fg-muted">Expected COD</dt>
           <dd className="font-semibold tabular-nums text-fg" data-testid="expected-cod">{formatPrice(m.expectedCod)}</dd>
         </div>
-        {m.courierReported !== null && (
+        {m.paidOut !== null ? (
+          <div>
+            <dt className="text-xs text-fg-muted">Steadfast paid out</dt>
+            <dd className="font-semibold tabular-nums text-fg" data-testid="paid-out">{formatPrice(m.paidOut)}</dd>
+          </div>
+        ) : m.courierReported !== null ? (
           <div>
             <dt className="text-xs text-fg-muted">Steadfast says collected</dt>
             <dd className="font-semibold tabular-nums text-fg">{formatPrice(m.courierReported)}</dd>
           </div>
-        )}
+        ) : null}
         {diff !== null && (
           <div>
             <dt className="text-xs text-fg-muted">Difference</dt>
@@ -640,9 +664,9 @@ function MoneyPanel({ parcel, form, setForm, plan }: { parcel: ParcelView; form:
             <label className="block text-xs font-medium text-fg">
               Actually received ({symbol})
               <Input className="mt-1" inputMode="decimal" placeholder="Leave empty if none" value={form.money.actual} onChange={(e) => set({ actual: e.target.value.replace(/[^\d.]/g, "") })} data-testid="money-actual" />
-              {m.courierReported !== null && form.money.actual === "" && (
-                <button type="button" className="mt-1 text-xs font-medium text-fg underline-offset-2 hover:underline" onClick={() => set({ actual: String(m.courierReported) })}>
-                  Use Steadfast&apos;s {formatPrice(m.courierReported)}
+              {suggested !== null && form.money.actual === "" && (
+                <button type="button" className="mt-1 text-xs font-medium text-fg underline-offset-2 hover:underline" onClick={() => set({ actual: String(suggested) })} data-testid="money-use-suggested">
+                  Use {m.paidOut !== null ? "the payout’s" : "Steadfast’s"} {formatPrice(suggested)}
                 </button>
               )}
             </label>

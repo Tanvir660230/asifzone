@@ -15,7 +15,7 @@ import type { MetaServerEvent } from "../lib/meta/capi";
 import type { TikTokServerEvent } from "./events/tiktok-events";
 import type { CreateConsignmentInput, SteadfastBulkResultItem, SteadfastConsignment, SteadfastFraudCheck } from "./courier/steadfast";
 import type { MailInput } from "./email/resend";
-import type { EpsValidationResult, InitEpsSessionParams } from "./payment/eps";
+import type { EpsCheck, EpsValidationResult, InitEpsSessionParams } from "./payment/eps";
 import type { InitSessionParams, SslValidationResult } from "./payment/sslcommerz";
 import type { PushInput } from "./push/web-push";
 import type { SmsInput } from "./sms/bulksmsbd";
@@ -110,6 +110,8 @@ export interface EpsGateway extends PaymentGateway {
   readonly id: "EPS_PG";
   /** EPS's verify API, by merchant transaction id (callbacks and the reconciliation cron). */
   verify(merchantTransactionId: string): Promise<EpsValidationResult | null>;
+  /** The same lookup, telling "EPS has no such payment" apart from "EPS did not answer" (the expiry sweep). */
+  check(merchantTransactionId: string): Promise<EpsCheck>;
 }
 
 export interface GatewayById {

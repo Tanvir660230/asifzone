@@ -65,6 +65,16 @@ describe("Steadfast webhook body", () => {
   });
 });
 
+describe("retries", () => {
+  it("two copies of one event arriving together: one is processed, the other is a duplicate, one log row", async () => {
+    const { consignmentId } = await shipped();
+    const key = `race-${consignmentId}`;
+    const results = await Promise.all([handleSteadfastWebhook(partial(consignmentId, 100), { idempotencyKey: key }), handleSteadfastWebhook(partial(consignmentId, 100), { idempotencyKey: key })]);
+    expect(results.sort()).toEqual(["APPLIED", "DUPLICATE"]);
+    expect(await prisma.courierWebhookEvent.count({ where: { idempotencyKey: key } })).toBe(1);
+  });
+});
+
 describe("refused parcel — the rider collected the delivery charge", () => {
   it("collected 100 → kept on the order; once every unit is reconciled back it is the return charge, nothing owed back", async () => {
     const { order, consignmentId } = await shipped();
@@ -126,6 +136,23 @@ describe("refused parcel — the rider collected the delivery charge", () => {
     // A cancelled push's cod_amount is the booked COD, not money collected — ignored.
     await handleSteadfastWebhook({ ...partial(consignmentId, 1000), status: "cancelled" });
     expect(await collectedOf(order.id)).toBeNull();
+  });
+
+  it("a partial push whose cod_amount is still the booked COD says nothing about what was collected", async () => {
+    const { order, consignmentId } = await shipped();
+    await handleSteadfastWebhook(partial(consignmentId, 1000));
+    expect(await collectedOf(order.id)).toBeNull();
+    await updateOrderStatus(order.id, { status: "RETURNED" }, admin);
+    expect((await getOrderPaymentSummary(order.id)).returnCharge).toBe(0);
+  });
+
+  it("on a partly prepaid order the booked COD is the total less the prepayment, and that figure is ignored too", async () => {
+    const { order, consignmentId } = await shipped();
+    await prisma.payment.create({ data: { orderId: order.id, provider: "MANUAL", purpose: "ORDER", status: "SUCCEEDED", amount: 100, settledAt: new Date() } });
+    await handleSteadfastWebhook(partial(consignmentId, 900));
+    expect(await collectedOf(order.id)).toBeNull();
+    await handleSteadfastWebhook(partial(consignmentId, 100));
+    expect(await collectedOf(order.id)).toBe(100);
   });
 
   it("unknown consignments and bodies without one are logged and ignored", async () => {

@@ -34,7 +34,7 @@ The shared visual foundation for the storefront, customer account, and admin. Fe
 | Theme | Preset | Character |
 |---|---|---|
 | `default` | `classic` | Neutral editorial. True-neutral grays, Playfair titles, pill controls, the radius scale below. |
-| `nasihamart` | `mihrab` | Night navy, ivory and sand; Instrument Sans in two widths (condensed headings, no serif); a pointed arch framing the photography; left-aligned catalogue layout, two-row header, light footer, no bottom tab bar. See `docs/brand/nasihamart/THEME_BLUEPRINT.md`. |
+| `nasihamart` | `honey` | A tidy, app-like food shop, light only: soft off-white page, white cards, the logo's orange on buying actions only with ink type, a honey tint on the top offer, green for savings, a search field in the header, a + on every card, a five-tab phone bar with a bag bar above it. Manrope with Hind Siliguri for Bangla. See `docs/brand/nasihamart/THEME_BLUEPRINT.md`. |
 | `tahafi` | `tahafi` | Olive-black, cream and sand with olive actions and small brass marks; Instrument Serif titles over Geist; 4:5 frameless product cards; the hero's small line hangs on a brass-threaded hang-tag over the photograph. See `docs/brand/tahafi/THEME_BLUEPRINT.md`. |
 
 ### 2a. Component tokens and recipes

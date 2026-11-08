@@ -90,7 +90,7 @@ export default function FinanceAccountsPage() {
                     <Button size="sm" variant="ghost" onClick={() => decide.mutate({ id: m.id, approve: false })}>{m.receiverAdminId ? "Cancel" : "Reject"}</Button>
                     {/* A handover waits for the person receiving the cash — they confirm it in My cash. */}
                     {m.receiverAdminId ? (
-                      <a href="/admin/finance/my-cash" className="self-center text-xs text-ink-500 hover:underline">Waiting for the receiver to confirm</a>
+                      <Link href="/admin/finance/my-cash" className="self-center text-xs text-ink-500 hover:underline">Waiting for the receiver to confirm</Link>
                     ) : (
                       <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ id: m.id, approve: true })}>Approve</Button>
                     )}

@@ -173,6 +173,24 @@ export async function financeAlerts() {
   // Until the opening balances are posted the books record nothing — every other finance page reads empty.
   if (!business.openingDate) add({ key: "books.not_started", severity: "critical", title: "The books haven't started", detail: "Choose the date your books start — nothing is recorded in Finance until then.", count: 1, href: "/admin/finance/opening", action: "Start the books" });
   else if (openingBatch?.status !== "POSTED") add({ key: "books.not_started", severity: "warning", title: "Opening balances not posted", detail: `Books start on ${business.openingDate}. Enter what you had and owed that day, then post it — sales are recorded from then on.`, count: 1, href: "/admin/finance/opening", action: "Finish starting the books" });
+  // Days a running campaign has no spend recorded this month (Meta import failing, CSV not imported): profit counts
+  // those days at zero ad cost, so it reads higher than it is (live 2026-11: nothing after 10-31). Month-end blocks on
+  // the same gaps; this says so on the day.
+  if (business.openingDate) {
+    const gaps = await adSpendGaps(today.slice(0, 7)).catch(() => []);
+    const days = [...new Set(gaps.flatMap((g) => g.missing))].sort();
+    if (days.length) {
+      add({
+        key: "ads.missing",
+        severity: "warning",
+        title: "Ad spend missing — profit looks higher than it is",
+        detail: `${days.length} day${days.length === 1 ? "" : "s"} from ${days[0]} without spend for ${gaps.slice(0, 3).map((g) => g.name).join(", ")}${gaps.length > 3 ? " …" : ""}. Reconnect Meta in Settings › Integrations or import the ads CSV; confirm a day as zero if nothing ran.`,
+        count: days.length,
+        href: "/admin/finance/ads",
+        action: "Record ad spend",
+      });
+    }
+  }
   add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
   // The courier holds the cash for delivered COD parcels until it pays out — money the owner should chase.
   // Blueprint P1.2: the owner may snooze this reminder until a date (chasing Steadfast takes time).

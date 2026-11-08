@@ -23,6 +23,7 @@ interface UiTokens {
       /** The theme's dark colour mode on the storefront (empty when it has none), and inside its dark-designed bands. */
       darkModeVariables: Record<string, string>;
       darkModeBandVariables: Record<string, string>;
+      darkAlways: boolean;
     }
   >;
   DEFAULT_THEME: string;

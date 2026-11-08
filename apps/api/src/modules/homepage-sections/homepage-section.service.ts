@@ -99,7 +99,8 @@ function parseConfig(type: HomepageSectionType, config: unknown) {
 }
 
 export async function createHomepageSection(input: CreateHomepageSectionInput) {
-  if (isSingleton(input.type)) {
+  // A single-instance section can be added once: when its row is missing (never published from the Studio).
+  if (isSingleton(input.type) && (await prisma.homepageSection.count({ where: { type: input.type } })) > 0) {
     throw AppError.badRequest(`"${input.type}" only supports a single instance — toggle or edit it instead`);
   }
   const config = parseConfig(input.type, input.config);

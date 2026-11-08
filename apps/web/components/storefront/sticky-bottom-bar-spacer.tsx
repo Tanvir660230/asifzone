@@ -15,19 +15,19 @@ import { storeLayout } from "@/lib/theme-layout";
  * product page rather than pathname/cart-state driven, so its space is reserved conservatively
  * whenever on a product page instead of trying to mirror its exact toggle here. */
 export function StickyBottomBarSpacer() {
-  const { showCartBar, showCartBarOnPhone, onProductPage, onCheckoutPage } = useBottomDockState();
+  const { showCartBarOnDesktop, showCartBarOnPhone, onProductPage, onCheckoutPage } = useBottomDockState();
   // Nothing is docked at the bottom of the checkout (components/storefront/mobile-bottom-nav.tsx).
   if (onCheckoutPage) return null;
 
   // Painted as the footer, so the space under it continues the footer instead of showing a strip of another colour beneath
   // it: the classic footer's own band (same classes, same data-band, in whichever colour the theme gives it), or the
-  // mihrab footer's sand.
-  const mihrab = storeLayout() === "mihrab";
+  // honey footer's white.
+  const honey = storeLayout() === "honey";
   return (
     <div
       aria-hidden
-      data-band={mihrab ? undefined : "footer"}
-      className={cn(mihrab ? "bg-cream-200" : "ui-band-inverse bg-ink-950", showCartBarOnPhone || onProductPage ? "h-[calc(var(--dock-offset)+4rem)]" : "h-[var(--dock-offset)]", showCartBar ? "lg:h-16" : "lg:h-0")}
+      data-band={honey ? undefined : "footer"}
+      className={cn(honey ? "bg-surface" : "ui-band-inverse bg-ink-950", showCartBarOnPhone || onProductPage ? "h-[calc(var(--dock-offset)+4rem)]" : "h-[var(--dock-offset)]", showCartBarOnDesktop ? "lg:h-16" : "lg:h-0")}
     />
   );
 }

@@ -1,3 +1,4 @@
+import { cardProduct, cardProducts } from "@/lib/card-product";
 import type {
   Banner,
   BundleForProduct,
@@ -122,7 +123,8 @@ export function listStorefrontProducts(params: Partial<StorefrontProductQuery> =
   if (params.minPrice !== undefined) query.set("minPrice", String(params.minPrice));
   if (params.maxPrice !== undefined) query.set("maxPrice", String(params.maxPrice));
 
-  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`, REVALIDATE_SECONDS, ["products:listing"]);
+  // Listings feed cards only: send them the card shape (lib/card-product.ts), not the full product.
+  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`, REVALIDATE_SECONDS, ["products:listing"]).then(cardProducts);
 }
 
 export interface StorefrontFacets {
@@ -239,7 +241,7 @@ export function getActivePaymentMethodsSafe() {
 }
 
 export function getSimilarProducts(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/similar`, REVALIDATE_SECONDS, [`product:${productId}`]);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/similar`, REVALIDATE_SECONDS, [`product:${productId}`]).then(cardProducts);
 }
 
 export function getFrequentlyBoughtTogether(productId: string) {
@@ -247,23 +249,23 @@ export function getFrequentlyBoughtTogether(productId: string) {
     `/api/products/${encodeURIComponent(productId)}/frequently-bought-together`,
     REVALIDATE_SECONDS,
     [`product:${productId}`],
-  );
+  ).then(cardProducts);
 }
 
 export function getCompleteYourLook(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/complete-your-look`, REVALIDATE_SECONDS, [`product:${productId}`]);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/complete-your-look`, REVALIDATE_SECONDS, [`product:${productId}`]).then(cardProducts);
 }
 
 export function getBudgetAlternatives(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/budget-alternatives`, REVALIDATE_SECONDS, [`product:${productId}`]);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/budget-alternatives`, REVALIDATE_SECONDS, [`product:${productId}`]).then(cardProducts);
 }
 
 export function getUpgradeOptions(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/upgrade-options`, REVALIDATE_SECONDS, [`product:${productId}`]);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/upgrade-options`, REVALIDATE_SECONDS, [`product:${productId}`]).then(cardProducts);
 }
 
 export function getPremiumAlternatives(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/premium-alternatives`, REVALIDATE_SECONDS, [`product:${productId}`]);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/premium-alternatives`, REVALIDATE_SECONDS, [`product:${productId}`]).then(cardProducts);
 }
 
 /** The active cross-sell bundle (if any) anchored on this product's category, plus the live
@@ -273,13 +275,13 @@ export function getBundleForProduct(productId: string) {
     `/api/bundles/for-product/${encodeURIComponent(productId)}`,
     REVALIDATE_SECONDS,
     [`product:${productId}`],
-  );
+  ).then(({ result }) => ({ result: result && { ...result, suggestedProducts: result.suggestedProducts.map(cardProduct) } }));
 }
 
 /** Server-side, unfiltered "Trending Now" — distinct from the client-only `fetchTrendingProducts`
  * (used on the homepage with a visitor-specific price budget from localStorage). */
 export function getTrendingProducts() {
-  return storefrontFetch<{ items: Product[] }>("/api/products/storefront/trending");
+  return storefrontFetch<{ items: Product[] }>("/api/products/storefront/trending").then(cardProducts);
 }
 
 /** Real, aggregate urgency signals (views/purchases/velocity) for a single product's PDP. */
@@ -348,7 +350,7 @@ export async function fetchPopularSearches(limit = 8) {
 /** One of the hand-pickable lists (related / frequentlyBought / crossSell / upsell / recommended): the admin's picks, or
  * the automatic list when none are picked. Short cache like the other recommendation calls. */
 export function getProductRail(productId: string, key: "related" | "frequentlyBought" | "crossSell" | "upsell" | "recommended") {
-  return storefrontFetch<{ source: "curated" | "auto"; items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/rail/${key}`, REVALIDATE_SECONDS, [`product:${productId}`]);
+  return storefrontFetch<{ source: "curated" | "auto"; items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/rail/${key}`, REVALIDATE_SECONDS, [`product:${productId}`]).then(cardProducts);
 }
 
 /** The live campaign landing page at /lp/<slug>, or null when there is none — the route then shows the product's own

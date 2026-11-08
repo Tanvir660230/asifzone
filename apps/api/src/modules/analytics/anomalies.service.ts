@@ -4,13 +4,18 @@
  * is compared "by this time". The brief reads the day's pulse, sales and best channel, the queues now and the anomalies.
  */
 import { addDays, businessDate, businessDayStartUtc, resolveBusinessRange } from "@clothing-brand/shared";
+import { prisma } from "../../config/prisma";
 import { cacheSwr } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
-import { notify } from "../../lib/notify";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { storeContext } from "../../domain/metrics/store-time";
 import { detectAnomaly, type Anomaly } from "./anomalies";
-import { composeBrief, type DailyBrief } from "./daily-brief";
+import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
+import { getSettings } from "../settings/settings.service";
+import { getSmsSettings } from "../sms-settings/sms-settings.service";
+import { BRIEF_SMS_MAX, composeBrief, type DailyBrief } from "./daily-brief";
+import { financeAlerts } from "../../domain/finance/finance-alerts.service";
 import { comparisonDates, countOps, type OpsCountKey } from "./ops-pulse";
 import { getOpsPulse, loadOpsEvents } from "./ops-pulse.service";
 import { getChannelPerformance, sessionStarts } from "./traffic.service";
@@ -105,11 +110,13 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
   const dayStart = businessDayStartUtc(date, timezone);
   // A finished day barely changes (a late delivery at most): cached per day, refreshed in the background (phase 5).
   return cacheSwr(`analytics:v1:daily-brief:${timezone}:${date}`, { freshSeconds: date === today ? 60 : 300, staleSeconds: date === today ? 10 * 60 : 24 * 3600 }, async () => {
-  const [pulse, metrics, channels, anomalies] = await Promise.all([
+  const [pulse, metrics, channels, anomalies, money] = await Promise.all([
     getOpsPulse(date, now),
     computeMetrics({ metrics: ["realised_net_sales", "payments_received"], range: { from: date, to: date } }, now),
     getChannelPerformance(undefined, dayStart, dayStart),
     getAnomalies(date, now),
+    // The brief must still go out when the books can't be read (not started, a failing check): no money lines then.
+    financeAlerts().catch(() => null),
   ]);
   const top = channels.channels.filter((c) => c.channel !== null && c.orders > 0).sort((a, b) => b.orders - a.orders)[0];
   const brief = composeBrief({
@@ -122,19 +129,49 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
     topChannel: top ? { label: top.label, orders: top.orders, conversionRate: top.conversionRate } : null,
     queues: pulse.queues,
     anomalies: anomalies.anomalies,
+    moneyAlerts: money?.alerts.map((a) => ({ severity: a.severity, title: a.title, count: a.count })),
   });
   return { date, partialDay: date === today, ...brief };
   });
 }
 
-/** The morning notification: yesterday's brief in the admin bell, linking to the daily pulse. */
-export async function sendMorningBrief(now: Date = new Date()): Promise<DailyBriefReport> {
+/** The morning notification: yesterday's brief in the admin bell, linking to the daily pulse. Once per store day: the job is
+ * retried when a busy minute makes it fail (jobs/daily-schedules.ts), and a retry after a brief went out sends nothing. */
+export async function sendMorningBrief(now: Date = new Date()): Promise<DailyBriefReport | null> {
+  const { timezone } = await storeContext();
+  const today = businessDate(now, timezone);
+  const sentToday = { gte: businessDayStartUtc(today, timezone), lt: businessDayStartUtc(addDays(today, 1), timezone) };
+  if (await prisma.notification.findFirst({ where: { type: "analytics.daily_brief", createdAt: sentToday }, select: { id: true } })) return null;
   const brief = await getDailyBrief(undefined, now);
-  notify({
-    type: "analytics.daily_brief",
-    title: brief.headline,
-    body: [...brief.lines, ...(brief.watch.length ? [`Watch: ${brief.watch.join("; ")}`] : [])].join("\n"),
-    link: "/admin/analytics/operations",
+  // Awaited (not notify()'s fire-and-forget) so a failed write fails the job and the retry sends it.
+  await prisma.notification.create({
+    data: {
+      type: "analytics.daily_brief",
+      title: brief.headline,
+      body: [...brief.lines, ...(brief.watch.length ? [`Watch: ${brief.watch.join("; ")}`] : [])].join("\n"),
+      link: "/admin/analytics/operations",
+    },
   });
+  await textMorningBrief(brief);
   return brief;
+}
+
+/** The same brief as one SMS to the admin alert phones, when the owner switched it on (SMS notifications › Admin alerts).
+ * After the bell row, and never throwing: the bell row is the once-a-day marker, so a failed text is logged, not retried —
+ * a retry would skip the brief anyway, and a text must not go out twice. */
+async function textMorningBrief(brief: DailyBriefReport): Promise<void> {
+  try {
+    const sms = await getSmsSettings();
+    const phones = sms.adminAlertPhones.split(",").map((p) => p.trim()).filter(Boolean);
+    if (!sms.adminDailyBriefEnabled || !phones.length) return;
+    const { storeName } = await getSettings();
+    // An old cached brief (from before `sms` existed) falls back to its headline.
+    const body = `${storeName}: ${brief.sms ?? brief.headline}`.slice(0, BRIEF_SMS_MAX);
+    const results = await Promise.allSettled(phones.map((to) => getProviders().sms.send({ to, body })));
+    results.forEach((r, i) => {
+      if (r.status === "rejected") captureError(r.reason, { msg: `[daily-brief] SMS to ${phones[i]} failed:` });
+    });
+  } catch (err) {
+    captureError(err, { msg: "[daily-brief] SMS skipped:" });
+  }
 }

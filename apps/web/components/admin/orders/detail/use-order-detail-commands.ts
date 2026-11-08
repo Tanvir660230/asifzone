@@ -123,8 +123,26 @@ export function useOrderDetailCommands(orderId: string) {
     },
     onError: fail("Failed to change the payment"),
   });
+  // A COD / manual payment entered by mistake. PAYOUT_COVERS_PAYMENT is answered in the form (confirm), not toasted.
+  const voidPayment = useMutation({
+    mutationFn: ({ paymentId, ...input }: { paymentId: string; reason: string; confirmPayout?: boolean }) => paymentsAdminApi.voidPayment(orderId, paymentId, input),
+    onSuccess: () => {
+      refresh();
+      toast.success("Payment cancelled");
+    },
+    onError: (err: unknown) => {
+      if (payoutCovers(err)) return;
+      fail("Failed to cancel the payment")(err);
+    },
+  });
 
-  return { details, hold, clearHold, price, reconcile, receiveReturn, refund, completeRefund, payment, remark, storeCredit };
+  return { details, hold, clearHold, price, reconcile, receiveReturn, refund, completeRefund, payment, remark, voidPayment, storeCredit };
+}
+
+/** The server refused to cancel courier money a posted payout covers until the person confirms. */
+export function payoutCovers(err: unknown): boolean {
+  const d = (err as { details?: { code?: string } } | null)?.details;
+  return Boolean(d && d.code === "PAYOUT_COVERS_PAYMENT");
 }
 
 export type OrderDetailCommands = ReturnType<typeof useOrderDetailCommands>;

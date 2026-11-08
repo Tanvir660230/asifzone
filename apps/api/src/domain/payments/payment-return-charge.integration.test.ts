@@ -40,7 +40,7 @@ describe("return charge — a refused free-delivery parcel", () => {
   it("the owner's case: 120 the rider collected, entered as COD collected, then Returned → re-marked, nothing owed back", async () => {
     const order = await freeDeliveryOrder();
     await updateOrderStatus(order.id, { status: "PARTIALLY_DELIVERED" }, admin);
-    const { payment } = await recordManualPayment(order.id, { amount: 120, kind: "COD_COLLECTED" }, admin);
+    const payment = (await recordManualPayment(order.id, { amount: 120, kind: "COD_COLLECTED" }, admin)).payment!;
     await updateOrderStatus(order.id, { status: "RETURNED" }, admin);
 
     // Before: the ledger counts the charge as order money and asks for it back.
@@ -95,6 +95,25 @@ describe("return charge — a refused free-delivery parcel", () => {
     const gateway = await prisma.payment.create({ data: { orderId: order.id, provider: "EPS_PG", status: "SUCCEEDED", amount: 10 } });
     await refused(reclassifyPayment(order.id, gateway.id, { purpose: "RETURN_CHARGE" }, admin), 400, "PAYMENT_NOT_ALLOWED");
     await refused(reclassifyPayment(order.id, "nope", { purpose: "RETURN_CHARGE" }, admin), 404);
+  });
+
+  it("a parcel has one courier return charge: the same money entered again is refused", async () => {
+    const order = await freeDeliveryOrder();
+    await updateOrderStatus(order.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await recordManualPayment(order.id, { amount: 120, kind: "RETURN_CHARGE", via: "COURIER" }, admin);
+    await refused(recordManualPayment(order.id, { amount: 120, kind: "RETURN_CHARGE", via: "COURIER" }, admin), 409, "RETURN_CHARGE_ALREADY_RECORDED");
+    await refused(recordManualPayment(order.id, { amount: 60, kind: "RETURN_CHARGE", via: "COURIER" }, admin), 409, "RETURN_CHARGE_ALREADY_RECORDED");
+    // Paid to the shop directly is a different payment, so it can still be recorded.
+    await recordManualPayment(order.id, { amount: 50, kind: "RETURN_CHARGE", via: "DIRECT" }, admin);
+    expect((await getOrderPaymentSummary(order.id)).returnCharge).toBe(170);
+  });
+
+  it("re-marking COD money as a second courier return charge is refused too", async () => {
+    const order = await freeDeliveryOrder();
+    await updateOrderStatus(order.id, { status: "PARTIALLY_DELIVERED" }, admin);
+    await recordManualPayment(order.id, { amount: 120, kind: "RETURN_CHARGE", via: "COURIER" }, admin);
+    const cash = (await recordManualPayment(order.id, { amount: 120, kind: "COD_COLLECTED" }, admin)).payment!;
+    await refused(reclassifyPayment(order.id, cash.id, { purpose: "RETURN_CHARGE" }, admin), 409, "RETURN_CHARGE_ALREADY_RECORDED");
   });
 
   it("HTTP: POST /payments kind RETURN_CHARGE and PATCH /payments/:id", async () => {

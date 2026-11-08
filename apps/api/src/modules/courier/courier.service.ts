@@ -12,6 +12,7 @@ import { getCurrency } from "../../domain/config/commerce-settings";
 import { getSettings } from "../settings/settings.service";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
+import { isUniqueViolation } from "../../domain/stock/hub-entry";
 import { getProviders } from "../../providers/registry";
 import { CourierOutcomeUnknownError, CourierRateLimitedError } from "../../providers/errors";
 import { currentPollLevel, OPEN_PARCEL_WHERE, TERMINAL_COURIER_STATUSES } from "./courier-health.service";
@@ -662,8 +663,26 @@ export async function recordWebhookRejection(reason: "not_configured" | "missing
 export async function handleSteadfastWebhook(payload: unknown, meta: { idempotencyKey?: string | null } = {}) {
   const event = parseSteadfastWebhook(payload);
   const idempotencyKey = meta.idempotencyKey?.trim().slice(0, 200) || null;
-  // Steadfast sends the same Idempotency-Key on every retry of one event: the first one is the one that counts.
-  if (idempotencyKey && (await prisma.courierWebhookEvent.findUnique({ where: { idempotencyKey }, select: { id: true } }))) return "DUPLICATE";
+  // Steadfast sends the same Idempotency-Key on every retry of one event: the first one is the one that counts. The log
+  // row is written first and claims the key, so two retries arriving together can't both be processed (the second hits
+  // the unique key and is a duplicate) — before, both passed a read check and the second failed to log.
+  const logData = {
+    idempotencyKey,
+    notificationType: event.notificationType,
+    consignmentId: event.consignmentId,
+    status: event.status,
+    codAmount: event.codAmount,
+    deliveryCharge: event.deliveryCharge,
+    trackingMessage: event.trackingMessage,
+    payload: (payload && typeof payload === "object" ? payload : { body: String(payload) }) as Prisma.InputJsonValue,
+  };
+  let logId: string | null = null;
+  try {
+    logId = (await prisma.courierWebhookEvent.create({ data: { ...logData, outcome: "RECEIVED" }, select: { id: true } })).id;
+  } catch (err) {
+    if (idempotencyKey && isUniqueViolation(err)) return "DUPLICATE";
+    captureError(err, { msg: "[steadfast-webhook] could not log the event:" });
+  }
 
   let orderId: string | null = null;
   let verifiedStatus: string | null = null;
@@ -672,7 +691,7 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     if (!event.consignmentId) return outcome;
     const order = await prisma.order.findFirst({
       where: { courierConsignmentId: event.consignmentId },
-      select: { id: true, orderNumber: true, status: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true },
+      select: { id: true, orderNumber: true, status: true, total: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true },
     });
     outcome = "NO_ORDER";
     if (!order) return outcome;
@@ -684,7 +703,9 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     await applyCourierStatus(order, status, "WEBHOOK");
     // What the rider collected on a partial delivery (PAYMENT_LEDGER §5b) — the body's cod_amount is accepted only when
     // Steadfast's own status API also says partial_delivered, so a mistyped or replayed body can't put money on an order.
-    if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null) {
+    // Steadfast often leaves cod_amount at the booked COD on these pushes (2026-11-06: 999 pushed, 100 collected), so that
+    // figure is never taken as money; the payout line is what says what was collected.
+    if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null && event.codAmount < (await bookedCod(order))) {
       await recordCourierCollected(order, event.codAmount);
     }
     outcome = "APPLIED";
@@ -693,24 +714,18 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     outcome = "FAILED";
     throw err;
   } finally {
-    await prisma.courierWebhookEvent
-      .create({
-        data: {
-          idempotencyKey,
-          notificationType: event.notificationType,
-          consignmentId: event.consignmentId,
-          orderId,
-          status: event.status,
-          verifiedStatus,
-          codAmount: event.codAmount,
-          deliveryCharge: event.deliveryCharge,
-          trackingMessage: event.trackingMessage,
-          payload: (payload && typeof payload === "object" ? payload : { body: String(payload) }) as Prisma.InputJsonValue,
-          outcome,
-        },
-      })
-      .catch((err) => captureError(err, { msg: "[steadfast-webhook] could not log the event:" }));
+    if (logId) {
+      await prisma.courierWebhookEvent
+        .update({ where: { id: logId }, data: { orderId, verifiedStatus, outcome } })
+        .catch((err) => captureError(err, { msg: "[steadfast-webhook] could not record the outcome:" }));
+    }
   }
+}
+
+/** The COD Steadfast was booked for: the order total less what was prepaid other than through the courier. */
+async function bookedCod(order: { id: string; total: Prisma.Decimal }) {
+  const prepaid = await prisma.payment.aggregate({ where: { orderId: order.id, status: "SUCCEEDED", purpose: "ORDER", provider: { not: "COD" } }, _sum: { amount: true } });
+  return Math.max(0, Number(order.total) - Number(prepaid._sum.amount ?? 0));
 }
 
 /** Keeps Steadfast's reported collection on the order (with a timeline line when it changes), then settles it as the
@@ -743,6 +758,8 @@ export interface CourierSweepResult {
   due: number;
   /** Steadfast answered 429: the run stopped there. */
   rateLimited: boolean;
+  /** Steadfast failed several checks in a row (down / 5xx / timeouts): the run stopped there. */
+  courierDown: boolean;
   /** The poll level used (courier-sync-policy.ts): 0 = full pace. */
   level: number;
   /** Booked orders moved on to SHIPPED that a booking had left behind (blueprint P0.5). */
@@ -754,6 +771,9 @@ export interface CourierSweepResult {
  * COURIER_SWEEP_BUDGET_MS. Each check schedules the parcel's next one from its age and the poll level, so old, quiet
  * parcels stop crowding out fresh ones; a check that fails is rescheduled too, so a broken consignment can't block the
  * head of the queue. A 429 stops the run and leaves the rest due. `orderIds` limits the sweep (tests, targeted re-runs). */
+/** Consecutive failed status checks after which a sweep run treats Steadfast as down and stops. */
+export const COURIER_DOWN_AFTER_FAILURES = 3;
+
 export async function syncPendingCourierStatuses(
   opts: { now?: Date; maxPerRun?: number; budgetMs?: number; orderIds?: string[] } = {},
 ): Promise<CourierSweepResult> {
@@ -781,12 +801,17 @@ export async function syncPendingCourierStatuses(
   let checked = 0;
   let changed = 0;
   let rateLimited = false;
+  // Steadfast down (502s, timeouts): a few failures in a row end the run instead of one error per parcel (4,896 on
+  // 2026-11-05/06). The parcels not reached stay due and are checked on the next run.
+  let failedInARow = 0;
+  let courierDown = false;
   for (const order of batch) {
     if (Date.now() - startedAt > budgetMs) break;
     const nextPollAt = new Date(Date.now() + pollIntervalMs(now.getTime() - (order.courierBookedAt ?? order.createdAt).getTime(), level));
     try {
       const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId!);
       checked++;
+      failedInARow = 0;
       if (status !== order.courierStatus) {
         await applyCourierStatus(order, status, "POLL", nextPollAt);
         changed++;
@@ -801,9 +826,15 @@ export async function syncPendingCourierStatuses(
         break;
       }
       checked++;
-      captureError(err, { msg: `[courier-status-cron] failed to refresh order ${order.id}:` });
+      failedInARow++;
       await prisma.order.update({ where: { id: order.id }, data: { courierSyncError: syncErrorMessage(err), courierNextPollAt: nextPollAt } });
+      if (failedInARow >= COURIER_DOWN_AFTER_FAILURES) {
+        courierDown = true;
+        captureError(err, { msg: `[courier-status-cron] Steadfast failed ${failedInARow} checks in a row — stopping this run; the rest stay due:` });
+        break;
+      }
+      if (failedInARow === 1) captureError(err, { msg: `[courier-status-cron] failed to refresh order ${order.id}:` });
     }
   }
-  return { checked, changed, due, rateLimited, level, repaired };
+  return { checked, changed, due, rateLimited, courierDown, level, repaired };
 }

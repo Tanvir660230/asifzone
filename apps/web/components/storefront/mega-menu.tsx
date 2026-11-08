@@ -106,7 +106,7 @@ export function MegaMenu({ categories }: { categories: NavNode[] }) {
       </div>
 
       {/* `mx-auto` centres the row while it fits and starts it at the left (never clipped on both sides) while it doesn't. */}
-      <ul className="mx-auto flex items-center gap-8">
+      <ul className="ml-[var(--nav-start)] mr-auto flex items-center gap-8">
         {visible.map((cat) => (
           <li
             key={cat.id}

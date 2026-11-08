@@ -89,7 +89,7 @@ describe("page sections, FAQ, curated lists and preview", () => {
       const accordion = sections.filter((s) => ["description", "specifications", "material", "care", "shipping", "faq", "highlights", "returns", "warranty", "whatsIncluded", "video"].includes(s.key)).map((s) => s.key);
       expect(accordion).toEqual(["description", "specifications", "material", "care", "shipping", "faq"]);
       // Store-neutral default: dispatch and return wording come from the store's policy on the page (store-policy.test.ts).
-      expect(sectionByKey(sections, "shipping")).toMatchObject({ title: "Shipping & Returns", content: "Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days." });
+      expect(sectionByKey(sections, "shipping")).toMatchObject({ title: "Shipping & Returns", content: "Inside Dhaka: 1–2 days, outside Dhaka: 2–5 days." });
       // Text is only sent for text-type sections.
       expect(sectionByKey(sections, "care")!.content).toBeNull();
     });

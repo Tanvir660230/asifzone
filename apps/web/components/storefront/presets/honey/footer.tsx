@@ -10,7 +10,6 @@ import { shortAddress } from "@/lib/store-identity";
 import { resolveImageUrl } from "@/lib/image-url";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
 import { NewsletterForm } from "../../newsletter-form";
-import { ARCH_PATH } from "./arch";
 
 interface FooterProps {
   categories?: CategoryTreeNode[];
@@ -24,7 +23,7 @@ const LINK = "text-fg-muted transition-colors duration-200 ease-smooth hover:tex
 function LinkColumn({ title, links }: { title: string; links: { href: string; label: string }[] }) {
   return (
     <div>
-      <h2 className="text-sm font-medium text-fg">{title}</h2>
+      <h2 className="text-sm font-semibold text-fg">{title}</h2>
       <ul className="mt-4 space-y-2.5 text-sm">
         {links.map((link, i) => (
           <li key={i}>
@@ -39,10 +38,9 @@ function LinkColumn({ title, links }: { title: string; links: { href: string; la
 }
 
 /**
- * Mihrab footer: a light sand band. The newsletter is a statement on the left, the links are plain columns on the right,
- * and the store's contact details, socials and payment methods sit in one quiet row above the legal line.
+ * Honey footer: white under a hairline, like the header. The newsletter on the left, plain link columns on the right, and the store's contact details, socials and payment methods in one quiet row above the legal line.
  */
-export function MihrabFooter({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
+export function HoneyFooter({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
   const showTracking = useTrackingConfigured();
   const address = shortAddress(settings);
   const categoryLinks = categories.flatMap((c) => [c, ...c.children]).slice(0, 6);
@@ -61,7 +59,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
 
   if (atCheckout) {
     return (
-      <footer className="mt-12 bg-cream-200 text-fg">
+      <footer className="mt-10 border-t border-line-subtle bg-surface text-fg">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 text-xs text-fg-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p>
             © {new Date().getFullYear()} {settings.storeName}
@@ -85,13 +83,13 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
   }
 
   return (
-    <footer className="mt-12 bg-cream-200 text-fg sm:mt-20">
-      <div className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 sm:pt-20 lg:px-8">
+    <footer className="mt-10 border-t border-line-subtle bg-surface text-fg sm:mt-14">
+      <div className="mx-auto max-w-7xl px-4 pb-8 pt-10 sm:px-6 sm:pt-12 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
           <div className="min-w-0 lg:col-span-5">
             {showNewsletter ? (
               <>
-                <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.newsletterHeading || "Stay in touch"}</h2>
+                <h2 className="font-display text-xl">{settings.newsletterHeading || "Stay in touch"}</h2>
                 <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">
                   {settings.newsletterText || "New arrivals and offers by email. Unsubscribe any time."}
                 </p>
@@ -100,7 +98,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
               </>
             ) : (
               <>
-                <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.storeName}</h2>
+                <h2 className="font-display text-xl">{settings.storeName}</h2>
                 <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">{design?.about || settings.tagline}</p>
               </>
             )}
@@ -134,7 +132,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
         </div>
 
         {(contacts.length > 0 || address || socialLinks.length > 0) && (
-          <div className="mt-14 flex flex-col gap-6 border-t border-line-strong pt-8 text-sm md:flex-row md:items-center md:justify-between">
+          <div className="mt-10 flex flex-col gap-6 border-t border-line-subtle pt-6 text-sm md:flex-row md:items-center md:justify-between">
             <ul className="flex flex-wrap gap-x-6 gap-y-2">
               {contacts.map((contact) => (
                 <li key={contact.href}>
@@ -190,11 +188,8 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
           </div>
         )}
 
-        <div className="mt-10 flex flex-col gap-4 border-t border-line-strong pt-6 text-xs text-fg-muted sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-center gap-2.5">
-            <svg aria-hidden viewBox="-2 -2 104 129" className="h-5 w-4 text-fg">
-              <path d={ARCH_PATH} fill="none" stroke="currentColor" strokeWidth="7" />
-            </svg>
+        <div className="mt-8 flex flex-col gap-4 border-t border-line-subtle pt-5 text-xs text-fg-muted sm:flex-row sm:items-center sm:justify-between">
+          <p>
             © {new Date().getFullYear()} {settings.storeName}
           </p>
           <ul className="flex flex-wrap gap-x-5 gap-y-2">

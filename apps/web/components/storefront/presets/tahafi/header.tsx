@@ -22,7 +22,7 @@ interface HeaderProps {
  * account, the logo in a glass capsule, light or dark — and the bar behind them turns to glass once the page scrolls
  * (`.ui-header-float`); on pages inside a tab, Back and Search (PhoneNavBar) on that glass bar. Wide screens: one glass
  * bar — the logo, the pieces as soft pills, search, light/dark, account, bag. The logo is the store's light-page one, or
- * its dark-page one in dark mode. The menu sheet the dock's Shop opens is the mihrab preset's, which reads only tokens.
+ * its dark-page one in dark mode. The menu sheet the dock's Shop opens is the honey preset's, which reads only tokens.
  */
 export function TahafiHeader({ categories, settings }: HeaderProps) {
   const menu = withMenuLinks(categories, settings.storefrontDesign?.header?.menuLinks);

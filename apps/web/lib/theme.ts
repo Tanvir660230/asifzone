@@ -15,7 +15,9 @@ let warnedAbout: string | null = null;
  * offline page. `name` is a colour variable without its prefix: "canvas", "ink-900". With `surface`, as that region
  * (`[data-surface="admin"]`, the Store Console) resolves it — its variables win over the theme's. */
 export function themeColorHex(themeId: ThemeId, name: string, surface?: keyof typeof tokens.surfaces): string {
-  const overrides = tokens.themes[themeId]?.cssVariables ?? {};
+  const theme = tokens.themes[themeId];
+  // A store that is always dark paints the browser bar and the manifest its dark colours.
+  const overrides = { ...theme?.cssVariables, ...(theme?.darkAlways ? theme.darkModeVariables : {}) };
   const region: Record<string, string> = surface ? tokens.surfaces[surface].cssVariables : {};
   let value: string | undefined = `var(--color-${name})`;
   for (let hops = 0; hops < 8 && value; hops += 1) {

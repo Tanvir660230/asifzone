@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, ClipboardList, MoreHorizontal, PackageCheck, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
+import { ChevronDown, ClipboardList, MoreHorizontal, PackageCheck, PackageOpen, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
 import type { AdminOrderListItem, OrderStatus } from "@clothing-brand/shared";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,10 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { orderStatusLabel } from "@/lib/format";
 import { ORDER_STATUSES, nextStatusesFor, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
+import { BulkReceiveDialog } from "./bulk-receive-dialog";
+
+/** Orders whose parcel may be on its way back to the shop (the customer refused it, or it was cancelled after booking). */
+const MAY_COME_BACK = new Set<OrderStatus>(["SHIPPED", "PARTIALLY_DELIVERED", "RETURNED", "CANCELLED"]);
 
 /** Bulk actions for the selected orders, on the shared BulkActionBar. Every action reports per-order results. */
 export function OrdersBulkBar({
@@ -29,6 +33,10 @@ export function OrdersBulkBar({
 }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  // The parcels are fixed when the dialog opens: once received they leave this list (and the selection), but the dialog
+  // must stay to show what happened.
+  const [receiving, setReceiving] = useState<string[] | null>(null);
+  const comingBack = orders.filter((o) => o.courierConsignmentId && MAY_COME_BACK.has(o.status));
   const statusRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
 
@@ -41,88 +49,92 @@ export function OrdersBulkBar({
 
   const more: DropdownMenuItem[] = [
     ...(perms.courier ? [{ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.bulkSync(orders), disabled: commands.pending.sync }] : []),
+    ...(perms.returns && comingBack.length ? [{ label: "These came back…", icon: PackageOpen, onClick: () => setReceiving(comingBack.map((o) => o.id)) }] : []),
     ...(perms.manage && perms.courierConfigured ? [{ label: "Check delivery score", icon: ShieldCheck, onClick: () => commands.checkDeliveryScore(orders), disabled: commands.pending.score }] : []),
   ];
 
   return (
-    <BulkActionBar count={orders.length} itemLabel="orders">
-      {view === "active" ? (
-        <>
-          {perms.manage && (
-            <>
-              <Button ref={statusRef} variant="outline" size="sm" onClick={() => setStatusOpen((v) => !v)} aria-haspopup="menu" aria-expanded={statusOpen} disabled={reachable.length === 0}>
-                Set status <ChevronDown size={13} aria-hidden="true" />
+    <>
+      <BulkActionBar count={orders.length} itemLabel="orders">
+        {view === "active" ? (
+          <>
+            {perms.manage && (
+              <>
+                <Button ref={statusRef} variant="outline" size="sm" onClick={() => setStatusOpen((v) => !v)} aria-haspopup="menu" aria-expanded={statusOpen} disabled={reachable.length === 0}>
+                  Set status <ChevronDown size={13} aria-hidden="true" />
+                </Button>
+                <Popover open={statusOpen} onClose={() => setStatusOpen(false)} anchorRef={statusRef} align="start" role="menu" aria-label="Move selected orders to" className="w-64 p-1.5">
+                  {reachable.map(({ status, count }) => (
+                    <button
+                      key={status}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setStatusOpen(false);
+                        commands.requestStatusChange(orders, status);
+                      }}
+                      className="ui-menu-item"
+                    >
+                      <OrderStatusIcon status={status} size={14} className="shrink-0" />
+                      <span className="flex-1">{orderStatusLabel(status)}</span>
+                      <span className="text-xs tabular-nums opacity-70">
+                        {count} of {orders.length}
+                      </span>
+                    </button>
+                  ))}
+                </Popover>
+              </>
+            )}
+            {(perms.courier || perms.courierNotConnected) && (
+              <Button
+                variant="outline"
+                size="sm"
+                loading={commands.pending.book}
+                onClick={() => (perms.courier ? commands.bulkBook(orders) : commands.explainCourierNotConnected())}
+              >
+                <Truck size={14} /> Book courier
               </Button>
-              <Popover open={statusOpen} onClose={() => setStatusOpen(false)} anchorRef={statusRef} align="start" role="menu" aria-label="Move selected orders to" className="w-64 p-1.5">
-                {reachable.map(({ status, count }) => (
-                  <button
-                    key={status}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setStatusOpen(false);
-                      commands.requestStatusChange(orders, status);
-                    }}
-                    className="ui-menu-item"
-                  >
-                    <OrderStatusIcon status={status} size={14} className="shrink-0" />
-                    <span className="flex-1">{orderStatusLabel(status)}</span>
-                    <span className="text-xs tabular-nums opacity-70">
-                      {count} of {orders.length}
-                    </span>
-                  </button>
-                ))}
-              </Popover>
-            </>
-          )}
-          {(perms.courier || perms.courierNotConnected) && (
-            <Button
-              variant="outline"
-              size="sm"
-              loading={commands.pending.book}
-              onClick={() => (perms.courier ? commands.bulkBook(orders) : commands.explainCourierNotConnected())}
-            >
-              <Truck size={14} /> Book courier
+            )}
+            {perms.scan && orders.some((o) => o.courierConsignmentId) && (
+              <Button variant="outline" size="sm" loading={commands.pending.handOver} onClick={() => commands.handOver(orders)}>
+                <PackageCheck size={14} /> Rider took these
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => commands.openPickList(orders.map((o) => o.id))}>
+              <ClipboardList size={14} /> Pick list
             </Button>
-          )}
-          {perms.scan && orders.some((o) => o.courierConsignmentId) && (
-            <Button variant="outline" size="sm" loading={commands.pending.handOver} onClick={() => commands.handOver(orders)}>
-              <PackageCheck size={14} /> Rider took these
+            <Button variant="outline" size="sm" onClick={() => commands.printLabels(orders.map((o) => o.id))}>
+              <Printer size={14} /> Print labels
             </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={() => commands.openPickList(orders.map((o) => o.id))}>
-            <ClipboardList size={14} /> Pick list
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => commands.printLabels(orders.map((o) => o.id))}>
-            <Printer size={14} /> Print labels
-          </Button>
-          {more.length > 0 && (
-            <>
-              <IconButton ref={moreRef} variant="outline" size="md" aria-label="More bulk actions" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
-                <MoreHorizontal size={16} />
-              </IconButton>
-              <DropdownMenu open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} items={more} align="end" label="More bulk actions" />
-            </>
-          )}
-          {perms.trash && (
-            <Button variant="destructive" size="sm" loading={commands.pending.trash} onClick={() => commands.bulkTrash(orders)}>
-              <Trash2 size={14} /> Trash
+            {more.length > 0 && (
+              <>
+                <IconButton ref={moreRef} variant="outline" size="md" aria-label="More bulk actions" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
+                  <MoreHorizontal size={16} />
+                </IconButton>
+                <DropdownMenu open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} items={more} align="end" label="More bulk actions" />
+              </>
+            )}
+            {perms.trash && (
+              <Button variant="destructive" size="sm" loading={commands.pending.trash} onClick={() => commands.bulkTrash(orders)}>
+                <Trash2 size={14} /> Trash
+              </Button>
+            )}
+          </>
+        ) : perms.trash ? (
+          <>
+            <Button variant="outline" size="sm" loading={commands.pending.restore} onClick={() => commands.bulkRestore(orders)}>
+              <RotateCcw size={14} /> Restore
             </Button>
-          )}
-        </>
-      ) : perms.trash ? (
-        <>
-          <Button variant="outline" size="sm" loading={commands.pending.restore} onClick={() => commands.bulkRestore(orders)}>
-            <RotateCcw size={14} /> Restore
-          </Button>
-          <Button variant="destructive" size="sm" loading={commands.pending.purge} onClick={() => commands.bulkPurge(orders)}>
-            <Trash2 size={14} /> Delete forever
-          </Button>
-        </>
-      ) : null}
-      <IconButton onClick={onClear} aria-label="Clear selection" className="ml-auto">
-        <X size={16} />
-      </IconButton>
-    </BulkActionBar>
+            <Button variant="destructive" size="sm" loading={commands.pending.purge} onClick={() => commands.bulkPurge(orders)}>
+              <Trash2 size={14} /> Delete forever
+            </Button>
+          </>
+        ) : null}
+        <IconButton onClick={onClear} aria-label="Clear selection" className="ml-auto">
+          <X size={16} />
+        </IconButton>
+      </BulkActionBar>
+      <BulkReceiveDialog open={receiving !== null} orderIds={receiving ?? []} onClose={() => setReceiving(null)} onDone={onClear} />
+    </>
   );
 }

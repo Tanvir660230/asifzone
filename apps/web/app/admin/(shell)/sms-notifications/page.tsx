@@ -83,6 +83,7 @@ export default function SmsNotificationsPage() {
     reset({
       adminAlertPhones: s.adminAlertPhones,
       adminOrderAlertEnabled: s.adminOrderAlertEnabled,
+      adminDailyBriefEnabled: s.adminDailyBriefEnabled,
       customerOrderPlacedEnabled: s.customerOrderPlacedEnabled,
       customerOrderConfirmedEnabled: s.customerOrderConfirmedEnabled,
       customerOrderShippedEnabled: s.customerOrderShippedEnabled,
@@ -107,6 +108,7 @@ export default function SmsNotificationsPage() {
   });
 
   const adminOrderAlertEnabled = watch("adminOrderAlertEnabled");
+  const adminDailyBriefEnabled = watch("adminDailyBriefEnabled");
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
@@ -131,22 +133,31 @@ export default function SmsNotificationsPage() {
       <form onSubmit={handleSubmit((values) => updateMutation.mutate(values))} className="space-y-6">
         <FormSection
           title="Admin alerts"
-          description="Get texted on your own phone the moment a new order comes in — handy while you're not watching the dashboard."
+          description="Texts to your own phone: each new order as it comes in, and a short summary of yesterday every morning."
         >
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm text-ink-700">
               <Checkbox {...register("adminOrderAlertEnabled")} />
               Text me when a new order comes in
             </label>
+            <label className="flex items-start gap-2 text-sm text-ink-700">
+              <Checkbox className="mt-0.5" {...register("adminDailyBriefEnabled")} />
+              <span>
+                Text me yesterday&rsquo;s summary every morning
+                <span className="block text-xs text-ink-400">
+                  Around 9 am: orders, sales, deliveries and what&rsquo;s waiting to be confirmed or sent. One SMS per phone a day.
+                </span>
+              </span>
+            </label>
             <div>
               <Label htmlFor="adminAlertPhones">Alert phone number(s)</Label>
               <Input
                 id="adminAlertPhones"
                 placeholder="01712345678, 01898765432"
-                disabled={!adminOrderAlertEnabled}
+                disabled={!adminOrderAlertEnabled && !adminDailyBriefEnabled}
                 {...register("adminAlertPhones")}
               />
-              <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive the alert.</p>
+              <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive these texts.</p>
               {errors.adminAlertPhones && <p className="ui-field-error">{errors.adminAlertPhones.message}</p>}
             </div>
           </div>

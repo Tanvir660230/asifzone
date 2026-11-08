@@ -18,7 +18,7 @@ import { PromoBadge, getProductBadge } from "./promo-badge";
 import { StarRating } from "./star-rating";
 import { VariantPickerDialog } from "./variant-picker-dialog";
 import { storeLayout } from "@/lib/theme-layout";
-import { MihrabProductCard } from "./presets/mihrab/product-card";
+import { HoneyProductCard } from "./presets/honey/product-card";
 import { TahafiProductCard } from "./presets/tahafi/product-card";
 
 interface ProductCardProps {
@@ -31,7 +31,7 @@ interface ProductCardProps {
 
 export function ProductCard(props: ProductCardProps) {
   const layout = storeLayout();
-  if (layout === "mihrab") return <MihrabProductCard {...props} />;
+  if (layout === "honey") return <HoneyProductCard {...props} />;
   if (layout === "tahafi") return <TahafiProductCard {...props} />;
   return <ClassicProductCard {...props} />;
 }

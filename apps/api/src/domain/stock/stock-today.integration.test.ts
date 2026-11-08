@@ -125,6 +125,6 @@ describe("Today", () => {
   it("T-4: GET /stock/today answers for staff", async () => {
     const res = await request(app).get("/api/v1/finance/stock/today").set("Cookie", [`access_token=${signAccessToken({ adminId: staffAdmin, role: "STAFF" })}`, `csrf_token=${CSRF}`]).set("X-CSRF-Token", CSRF);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(["approvals", "count", "fill", "fillProblems", "reorder", "today"]);
+    expect(Object.keys(res.body).sort()).toEqual(["approvals", "count", "fill", "fillProblems", "lastFullCount", "reorder", "today"]);
   });
 });

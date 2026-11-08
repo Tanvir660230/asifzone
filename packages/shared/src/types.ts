@@ -501,7 +501,9 @@ export interface OrderPaymentSummary {
   payments: Array<{
     id: string;
     provider: "SSLCOMMERZ" | "EPS_PG" | "COD" | "MANUAL" | "STORE_CREDIT";
-    status: "SUCCEEDED" | "FAILED";
+    /** VOIDED: entered by mistake and cancelled — counts nowhere. */
+    status: "SUCCEEDED" | "FAILED" | "VOIDED";
+    voidReason?: string | null;
     /** RETURN_CHARGE: a refused parcel's return charge, not order money (§5a). */
     purpose: "ORDER" | "RETURN_CHARGE";
     amount: number;
@@ -1122,6 +1124,7 @@ export interface SmsNotificationSettings {
   id: string;
   adminAlertPhones: string;
   adminOrderAlertEnabled: boolean;
+  adminDailyBriefEnabled: boolean;
   customerOrderPlacedEnabled: boolean;
   customerOrderConfirmedEnabled: boolean;
   customerOrderShippedEnabled: boolean;

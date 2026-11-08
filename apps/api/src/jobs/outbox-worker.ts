@@ -3,6 +3,8 @@ import { createObservedWorker } from "../lib/observability/jobs";
 import { createQueue, queueConnection } from "../lib/queue";
 import { cleanupOutbox, dispatchOutbox, markDispatcherHeartbeat, processOutboxEvent, reapStaleClaims } from "../domain/outbox/processor";
 import { logger } from "../lib/observability/logger";
+import { storeContext } from "../domain/metrics/store-time";
+import { DAILY_SCHEDULES, repeatFor } from "./daily-schedules";
 
 /** Phase 8 outbox transport (docs/history/PHASE_8_AUDIT.md). One BullMQ queue carries three job kinds:
  *   dispatch  every 3 s (job scheduler — one schedule however many API instances run): reap expired claims, claim due
@@ -41,5 +43,6 @@ export async function startOutboxWorker() {
   );
 
   await queue.upsertJobScheduler("outbox-dispatch", { every: 3_000 }, { name: "dispatch" });
-  await queue.upsertJobScheduler("outbox-cleanup", { pattern: "0 3 * * *" }, { name: "cleanup" });
+  const { timezone } = await storeContext();
+  await queue.upsertJobScheduler("outbox-cleanup", repeatFor(DAILY_SCHEDULES.outboxCleanup, timezone), { name: "cleanup" });
 }

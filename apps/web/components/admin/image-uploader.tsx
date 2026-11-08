@@ -226,7 +226,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
     }
   }
 
-  // Product photos fill the installed theme's card/gallery frame (square in classic, 4:5 in mihrab); the thumbnails here
+  // Product photos fill the installed theme's card/gallery frame (square in classic, 4:5 in honey); the thumbnails here
   // take that shape too, so what is cut off is visible before it reaches the store.
   const spec = imageSpec("productPhoto");
   const thumbAspect = `${spec.ratio[0]} / ${spec.ratio[1]}`;

@@ -66,10 +66,10 @@ export function isInsideDhaka(district: string | null | undefined): boolean {
 }
 
 /** Same Dhaka-vs-outside-Dhaka split used for shipping fees — 1–2 business days inside Dhaka,
- * 3–5 outside. Display-only estimate, never stored: the real delivery date depends on real-world
+ * 2–5 outside. Display-only estimate, never stored: the real delivery date depends on real-world
  * logistics, not something we can promise from a formula. */
 export const DHAKA_DELIVERY_DAYS: [number, number] = [1, 2];
-export const OUTSIDE_DHAKA_DELIVERY_DAYS: [number, number] = [3, 5];
+export const OUTSIDE_DHAKA_DELIVERY_DAYS: [number, number] = [2, 5];
 
 export interface DeliveryEstimate {
   minDays: number;

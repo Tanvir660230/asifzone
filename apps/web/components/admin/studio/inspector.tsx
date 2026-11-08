@@ -126,7 +126,7 @@ export function Inspector({ draft, section, layout, categories, checks, emptyOnD
         {tab === "style" && (
           <>
             <FieldList fields={styleFields} config={config} onChange={onConfig} context={context} />
-            {layout === "mihrab" && fields.style.some((f) => f.presets && !f.presets.includes("mihrab")) && (
+            {layout === "honey" && fields.style.some((f) => f.presets && !f.presets.includes("honey")) && (
               <p className="text-xs text-fg-subtle">Some options aren&rsquo;t used by this store&rsquo;s theme, which composes the section its own way.</p>
             )}
           </>
