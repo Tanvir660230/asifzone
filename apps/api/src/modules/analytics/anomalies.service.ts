@@ -14,7 +14,16 @@ import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
 import { getSettings } from "../settings/settings.service";
 import { getSmsSettings } from "../sms-settings/sms-settings.service";
-import { BRIEF_SMS_MAX, composeBrief, type DailyBrief } from "./daily-brief";
+import { BRIEF_SMS_MAX, RUN_OUT_DAYS, composeBrief, type DailyBrief } from "./daily-brief";
+import { allStockItems } from "../../domain/stock/stock-items.service";
+
+/** Ready-made items (not materials) still in stock that run out within RUN_OUT_DAYS at their recent pace. */
+async function runningOutSoon(): Promise<Array<{ name: string; daysLeft: number }>> {
+  const { items } = await allStockItems({ canSeeCost: false });
+  return items
+    .filter((i) => i.group !== "MATERIAL" && i.stock > 0 && i.daysLeft !== null && i.daysLeft <= RUN_OUT_DAYS)
+    .map((i) => ({ name: i.label, daysLeft: i.daysLeft! }));
+}
 import { financeAlerts } from "../../domain/finance/finance-alerts.service";
 import { comparisonDates, countOps, type OpsCountKey } from "./ops-pulse";
 import { getOpsPulse, loadOpsEvents } from "./ops-pulse.service";
@@ -110,13 +119,15 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
   const dayStart = businessDayStartUtc(date, timezone);
   // A finished day barely changes (a late delivery at most): cached per day, refreshed in the background (phase 5).
   return cacheSwr(`analytics:v1:daily-brief:${timezone}:${date}`, { freshSeconds: date === today ? 60 : 300, staleSeconds: date === today ? 10 * 60 : 24 * 3600 }, async () => {
-  const [pulse, metrics, channels, anomalies, money] = await Promise.all([
+  const [pulse, metrics, channels, anomalies, money, runningOut] = await Promise.all([
     getOpsPulse(date, now),
     computeMetrics({ metrics: ["realised_net_sales", "payments_received"], range: { from: date, to: date } }, now),
     getChannelPerformance(undefined, dayStart, dayStart),
     getAnomalies(date, now),
     // The brief must still go out when the books can't be read (not started, a failing check): no money lines then.
     financeAlerts().catch(() => null),
+    // Same rule for stock: a failing stock read leaves the run-out line out, never the brief.
+    runningOutSoon().catch(() => []),
   ]);
   const top = channels.channels.filter((c) => c.channel !== null && c.orders > 0).sort((a, b) => b.orders - a.orders)[0];
   const brief = composeBrief({
@@ -130,6 +141,7 @@ export async function getDailyBrief(dateInput?: string, now: Date = new Date()):
     queues: pulse.queues,
     anomalies: anomalies.anomalies,
     moneyAlerts: money?.alerts.map((a) => ({ severity: a.severity, title: a.title, count: a.count })),
+    runningOut,
   });
   return { date, partialDay: date === today, ...brief };
   });

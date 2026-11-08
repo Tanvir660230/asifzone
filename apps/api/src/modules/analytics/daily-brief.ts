@@ -23,6 +23,22 @@ export interface BriefInput {
   /** The books' own warnings now (finance alerts: ad spend missing, courier money unpaid, events not posted…), most
    * severe first. Absent when the books haven't started or the viewer's store has no finance. */
   moneyAlerts?: Array<{ severity: "critical" | "warning" | "info"; title: string; count: number }>;
+  /** Ready-made items that run out within RUN_OUT_DAYS at their recent pace (Stock hub's own daysLeft). */
+  runningOut?: Array<{ name: string; daysLeft: number }>;
+}
+
+/** How far ahead the brief warns about stock running out — a week is enough time to reorder or restock most items. */
+export const RUN_OUT_DAYS = 7;
+
+/** "4 items run out within 7 days: A (today), B (2 days), C (4 days) and 1 more — reorder in Stock › Today". */
+function runOutLine(items: Array<{ name: string; daysLeft: number }>): string | null {
+  if (!items.length) return null;
+  const sorted = [...items].sort((a, b) => a.daysLeft - b.daysLeft);
+  const when = (d: number) => (d < 1 ? "today" : `${Math.floor(d)} day${Math.floor(d) === 1 ? "" : "s"}`);
+  const named = sorted.slice(0, 3).map((i) => `${i.name} (${when(i.daysLeft)})`).join(", ");
+  const more = sorted.length > 3 ? ` and ${sorted.length - 3} more` : "";
+  const head = sorted.length === 1 ? "1 item runs out" : `${sorted.length} items run out`;
+  return `${head} within ${RUN_OUT_DAYS} days: ${named}${more} — reorder in Stock › Today`;
 }
 
 export interface DailyBrief {
@@ -93,6 +109,8 @@ export function composeBrief(input: BriefInput): DailyBrief {
     todo.push(a.count > 1 ? `${a.title} (${count(a.count)})` : a.title);
   }
   if (queues.holdsDue) todo.push(`${plural(queues.holdsDue, "call-back is", "call-backs are")} due`);
+  const runOut = runOutLine(input.runningOut ?? []);
+  if (runOut) todo.push(runOut);
   if (queues.readyToBook) todo.push(`${plural(queues.readyToBook, "confirmed order")} not sent to the courier yet`);
   if (queues.awaitingConfirmation) todo.push(`${plural(queues.awaitingConfirmation, "order")} waiting to be confirmed`);
   if (queues.stuckWithCourier) todo.push(`${plural(queues.stuckWithCourier, "parcel")} with the courier for over 5 days`);
