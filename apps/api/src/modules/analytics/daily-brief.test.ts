@@ -62,6 +62,22 @@ describe("composeBrief", () => {
     expect(b.todo).toContain("5 refused parcels not back after 14 days — scan them in, or ask Steadfast where they are");
   });
 
+  it("warns which sizes run out within a week, soonest first, at most three by name", () => {
+    const b = composeBrief({
+      ...base,
+      runningOut: [
+        { name: "Cap — White B · L", daysLeft: 4.2 },
+        { name: "Royal Amber · 6ml", daysLeft: 0.6 },
+        { name: "Cap — New A · XL", daysLeft: 2 },
+        { name: "Zayan · 12ml", daysLeft: 6.9 },
+      ],
+    });
+    expect(b.todo).toContain("4 items run out within 7 days: Royal Amber · 6ml (today), Cap — New A · XL (2 days), Cap — White B · L (4 days) and 1 more — reorder in Stock › Today");
+    expect(composeBrief({ ...base, runningOut: [{ name: "Zayan · 12ml", daysLeft: 1 }] }).todo).toContain("1 item runs out within 7 days: Zayan · 12ml (1 day) — reorder in Stock › Today");
+    expect(composeBrief({ ...base, runningOut: [] }).todo.some((t) => t.includes("run out"))).toBe(false);
+    expect(composeBrief(base).todo.some((t) => t.includes("run out"))).toBe(false);
+  });
+
   it("puts anomalies first, in plain words", () => {
     const b = composeBrief({
       ...base,
