@@ -26,5 +26,6 @@ export function renderOrderSms(template: string, vars: OrderSmsVars): string {
     .replaceAll("{customerName}", vars.customerName)
     .replaceAll("{orderNumber}", vars.orderNumber)
     .replaceAll("{total}", String(vars.total))
-    .replaceAll("{storeName}", vars.storeName);
+    .replaceAll("{storeName}", vars.storeName)
+    .replaceAll("{confirmLink}", vars.confirmLink ?? "");
 }

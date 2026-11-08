@@ -5,6 +5,8 @@ import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { getSettings } from "../modules/settings/settings.service";
 import { captureError } from "./observability/error-capture";
 import { getProviders } from "../providers/registry";
+import { env } from "../config/env";
+import { selfConfirmCode } from "../modules/orders/self-confirm-code";
 
 export type CustomerTouchpoint = CustomerSmsTouchpoint;
 type SmsSettings = Awaited<ReturnType<typeof getSmsSettings>>;
@@ -26,7 +28,7 @@ const TEMPLATE_KEY: Record<CustomerTouchpoint, keyof SmsSettings> = {
   CANCELLED: "customerOrderCancelledTemplate",
 };
 
-type OrderSmsFacts = Pick<Order, "orderNumber" | "total" | "customerName" | "customerPhone">;
+type OrderSmsFacts = Pick<Order, "orderNumber" | "total" | "customerName" | "customerPhone"> & Partial<Pick<Order, "status" | "paymentMethod">>;
 
 /** One customer order SMS — awaited by its outbox consumer (Phase 8), which retries a transient failure. The admin's toggle
  * and template are read at send time. Throws on failure (SmsProviderError carries whether a retry can help). */
@@ -36,12 +38,21 @@ export async function deliverCustomerOrderSms(order: OrderSmsFacts, touchpoint: 
 
   const customTemplate = smsSettings[TEMPLATE_KEY[touchpoint]] as string | null;
   const template = customTemplate?.trim() ? customTemplate : DEFAULT_CUSTOMER_SMS_TEMPLATES[touchpoint];
-  const body = renderOrderSms(template, {
+  // The customer confirms their own order from this link (modules/orders/self-confirm.ts): only on the order-placed SMS of
+  // a pending cash-on-delivery order, and only when the store switched it on. A template without {confirmLink} still gets
+  // it, at the end, so an owner's own wording keeps working.
+  const confirmLink =
+    touchpoint === "PLACED" && smsSettings.customerSelfConfirmEnabled && order.status === "PENDING" && order.paymentMethod === "COD"
+      ? `${env.webOrigin.replace(/\/$/, "")}/c/${selfConfirmCode(order.orderNumber)}`
+      : undefined;
+  let body = renderOrderSms(template, {
     orderNumber: order.orderNumber,
     total: Number(order.total),
     storeName: storeSettings.storeName,
     customerName: order.customerName,
+    confirmLink,
   });
+  if (confirmLink && !template.includes("{confirmLink}")) body = `${body} নিশ্চিত করুন: ${confirmLink}`;
   await getProviders().sms.send({ to: order.customerPhone, body });
   return "sent";
 }
