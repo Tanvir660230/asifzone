@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cut the 23 % cancellation rate (426 of 1,829 Asif Zone orders, 30 days to 2026-11-08) and reduce manual work, through six independent PRs.
+**Goal:** Cut cancellations and refused parcels, and reduce manual work (confirmation calls), through six independent PRs.
 
 **Architecture:** Every PR is one worktree off `origin/main`, one migration at most (additive), its own Vitest coverage and desktop + 375 px screenshots of any UI. Each one ships to all three stores (shared code). Owner-facing switches default to OFF unless stated, so merging changes no behaviour until the owner turns a feature on.
 
