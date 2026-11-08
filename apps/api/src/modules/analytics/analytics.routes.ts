@@ -147,6 +147,7 @@ analyticsRouter.get("/ops-pulse", requirePermission("analytics.read"), analytics
 analyticsRouter.get("/ops-daily", requirePermission("analytics.read"), analyticsController.opsDaily);
 // Delivery outcomes (§4.7): success / refusal by district, product, payment, value, customer and channel.
 analyticsRouter.get("/delivery-outcomes", requirePermission("analytics.read"), analyticsController.deliveryOutcomes);
+analyticsRouter.get("/cancellations", requirePermission("analytics.read"), analyticsController.cancellations);
 // Order COD risk (§4.8): the phone's history at this store — per-order customer data, so gated like orders.
 analyticsRouter.get("/order-risk", requirePermission("orders.read"), analyticsController.orderRisk);
 // Anomalies and the daily brief (§4.9).

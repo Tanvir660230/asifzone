@@ -5,6 +5,7 @@ import { AnalyticsTab } from "@/components/admin/analytics/analytics-tab";
 
 const PulseView = lazy(() => import("@/components/admin/analytics/views/pulse-view"));
 const DeliveriesView = lazy(() => import("@/components/admin/analytics/views/deliveries-view"));
+const CancellationsView = lazy(() => import("@/components/admin/analytics/views/cancellations-view"));
 const OperationsView = lazy(() => import("@/components/admin/analytics/views/operations-view"));
 
 export default function AnalyticsOperationsPage() {
@@ -15,6 +16,7 @@ export default function AnalyticsOperationsPage() {
       views={[
         { value: "pulse", label: "Daily pulse", Component: PulseView },
         { value: "deliveries", label: "Deliveries", Component: DeliveriesView },
+        { value: "cancellations", label: "Cancellations", Component: CancellationsView },
         { value: "operations", label: "Speed & staff", Component: OperationsView },
       ]}
     />

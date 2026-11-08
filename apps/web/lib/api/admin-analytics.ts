@@ -1162,3 +1162,27 @@ export interface AdReturnsReport {
 export function getAdReturns(dateFrom: Date, dateTo: Date) {
   return apiFetch<AdReturnsReport>(`/api/analytics/ad-returns${windowParams({ dateFrom, dateTo })}`);
 }
+
+// ─── Cancellations before sending (order-outcomes programme PR 2) ────────────────────────────────────────────────────
+
+export interface CancelBreakdownRow {
+  key: string;
+  label: string;
+  orders: number;
+  cancelled: number;
+  rate: number;
+}
+
+export interface Cancellations {
+  range: { from: string; to: string };
+  totals: { orders: number; cancelledBeforeSending: number; cancelRate: number; refusedAfterSending: number };
+  reasons: Array<{ reason: string; label: string; count: number; share: number }>;
+  byChannel: CancelBreakdownRow[];
+  byLanding: CancelBreakdownRow[];
+  byProduct: CancelBreakdownRow[];
+  minOrders: number;
+}
+
+export function getCancellations(dateFrom: Date, dateTo: Date) {
+  return apiFetch<Cancellations>(`/api/analytics/cancellations${windowParams({ dateFrom, dateTo })}`);
+}

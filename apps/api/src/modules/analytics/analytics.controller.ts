@@ -1,3 +1,4 @@
+import { getCancellations } from "./cancellations.service";
 import type { Request, Response } from "express";
 import type {
   TrackPageViewInput,
@@ -504,6 +505,11 @@ export const channelPerformance = asyncHandler(async (req: Request, res: Respons
 export const deliveryOutcomes = asyncHandler(async (req: Request, res: Response) => {
   const { days, dateFrom, dateTo } = query(req);
   res.json(await getDeliveryOutcomes(days, dateFrom, dateTo));
+});
+
+export const cancellations = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getCancellations(days, dateFrom, dateTo));
 });
 
 export const orderRisk = asyncHandler(async (req: Request, res: Response) => {
