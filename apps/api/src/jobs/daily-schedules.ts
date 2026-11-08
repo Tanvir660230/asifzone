@@ -20,6 +20,8 @@ export const DAILY_SCHEDULES = {
   courierAutomation: { pattern: "23 8 * * *", tz: "store" },
   /** 09:07 store time — yesterday's brief in the bell. */
   dailyBrief: { pattern: "7 9 * * *", tz: "store" },
+  /** Review-request SMS for orders delivered two days ago — late morning, when people read texts. */
+  reviewRequests: { pattern: "17 11 * * *", tz: "store" },
   /** 03:41 store time — processed outbox rows and expired customer sessions (was 03:00 UTC = 09:00 Dhaka). */
   outboxCleanup: { pattern: "41 3 * * *", tz: "store" },
   /** 03:52 store time — the books' reconciliation checks, at night as its comment always said (was 03:30 UTC = 09:30 Dhaka). */

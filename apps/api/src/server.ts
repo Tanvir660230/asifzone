@@ -17,6 +17,7 @@ import { startFinanceReconciliationCron } from "./jobs/finance-reconciliation-cr
 import { startFinanceCommerceSyncCron } from "./jobs/finance-commerce-sync-cron";
 import { startFinanceAutopilotCron } from "./jobs/finance-autopilot-cron";
 import { startDailyBriefCron } from "./jobs/daily-brief-cron";
+import { startReviewRequestCron } from "./jobs/review-request-cron";
 import { startCourierAutomationCron } from "./jobs/courier-automation-cron";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
 import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
@@ -95,6 +96,7 @@ async function main() {
   startFinanceCommerceSyncCron().catch((err) => captureError(err, { msg: "[finance-commerce-sync-cron] failed to start:" }));
   startFinanceAutopilotCron().catch((err) => captureError(err, { msg: "[finance-autopilot-cron] failed to start:" }));
   startDailyBriefCron().catch((err) => captureError(err, { msg: "[daily-brief-cron] failed to start:" }));
+  startReviewRequestCron().catch((err) => captureError(err, { msg: "[review-request-cron] failed to start:" }));
   startCourierAutomationCron().catch((err) => captureError(err, { msg: "[courier-automation-cron] failed to start:" }));
 
   // Stop accepting new connections and let in-flight requests finish before tearing down Prisma —

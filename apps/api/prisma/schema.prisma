@@ -1400,6 +1400,8 @@ model Order {
   /// The Orders list's default order, so an order confirmed or booked today comes back to the top even if it was
   /// placed days ago. A courier poll or an edit that doesn't move the status leaves it alone (unlike updatedAt).
   statusChangedAt DateTime @default(now())
+  /// When the review-request SMS went out (modules/reviews/review-request.ts) — claimed before sending, so never twice.
+  reviewRequestedAt DateTime?
 
   /// Customer confirmation calls (Order Operations phase 3, modules/orders/confirmation.service.ts). The order stays
   /// PENDING until a call confirms or a person cancels; each call is an OrderConfirmationAttempt.
@@ -2864,6 +2866,9 @@ model SmsNotificationSetting {
   customerOrderConfirmedEnabled        Boolean  @default(true)
   customerOrderShippedEnabled          Boolean  @default(true)
   customerOrderDeliveredEnabled        Boolean  @default(true)
+  /// Two days after delivery, one SMS with a link where the customer reviews what they bought (no account needed). Off
+  /// by default: each text costs the store money.
+  customerReviewRequestEnabled         Boolean  @default(false)
   customerOrderCancelledEnabled        Boolean  @default(true)
   /// Separate from the SMS toggles above (this one gates an email, not an SMS) but kept on this
   /// same admin-only settings row rather than the public StoreSetting — same non-public reasoning
