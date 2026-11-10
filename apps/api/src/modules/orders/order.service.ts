@@ -1842,7 +1842,10 @@ export async function reconcilePartialDeliveryInTx(
     },
     include,
   });
-  return { order, keptNothing };
+  // What is due just dropped by the returned items' value: money recorded before reconciling (the rider's partial
+  // collection) may now cover the order, so the stored payment status follows the ledger (live 10CMBC, 2026-11-10).
+  await refreshPaymentStatus(tx, orderId, ctx.currency);
+  return { order: await tx.order.findUniqueOrThrow({ where: { id: orderId }, include }), keptNothing };
 }
 
 /**
