@@ -31,7 +31,7 @@ export interface CspOptions {
  * attached to the pixel, Meta's fbevents.js also posts every event to the gateway host and its AWS fallback; without
  * these hosts the browser blocks those requests and the gateway never sees the events (Meta's own troubleshooting guide:
  * "add the gateway subdomain to the CSP"). Exact hosts, not wildcards: *.on.aws would allow any AWS-hosted app.
- * Seen on tahafi.com 2026-11-08 (Datahash pair) and asifzone.com 2026-11-10 (pixel 1606825430933398: its own gateway
+ * Seen 2026-11-08 (the Datahash pair) and 2026-11-10 (a second store pixel with its own gateway
  * pair); a store whose pixel has no gateway simply never calls them.
  */
 const META_CAPI_GATEWAY = [
