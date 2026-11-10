@@ -240,7 +240,7 @@ function QueueList({ queues }: { queues: OpsPulse["queues"] }) {
       href: "/admin/orders?f.status=CONFIRMED,PROCESSING,PACKED,SHIPPED&f.courier=true",
     },
     { key: "stuck", label: "With the courier over 5 days", value: queues.stuckWithCourier, href: "/admin/orders?f.status=CONFIRMED,PROCESSING,PACKED,SHIPPED&f.courier=true&sort=createdAt", urgent: true },
-    { key: "partial", label: "Part deliveries to reconcile", value: queues.partialToReconcile, href: "/admin/orders?f.status=PARTIALLY_DELIVERED", urgent: true },
+    { key: "partial", label: "Part deliveries to reconcile", value: queues.partialToReconcile, href: "/admin/orders/partials", urgent: true },
     { key: "returns", label: `Refused parcels not back after ${queues.returnNotBackDays} days`, value: queues.returnsNotBack, href: "/admin/orders?f.queue=returnOverdue", urgent: true },
   ];
   return (
