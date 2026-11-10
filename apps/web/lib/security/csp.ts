@@ -16,7 +16,7 @@
  *     admin-authored and may point at any host. Images and media can't run script.
  *   - style keeps 'unsafe-inline': React style props, framer-motion and the Google/Tawk widgets set inline styles.
  *     A CSS injection can't execute script.
- *   - object 'none', base-uri 'self', form-action 'self' (gateways are reached by navigation, not form posts),
+ *   - object 'none', base-uri 'self', form-action 'self' + the Meta pixel's /tr (gateways are reached by navigation),
  *     frame-ancestors 'self' (only our own Product Builder may frame a page).
  */
 export interface CspOptions {
@@ -31,9 +31,17 @@ export interface CspOptions {
  * attached to the pixel, Meta's fbevents.js also posts every event to the gateway host and its AWS fallback; without
  * these hosts the browser blocks those requests and the gateway never sees the events (Meta's own troubleshooting guide:
  * "add the gateway subdomain to the CSP"). Exact hosts, not wildcards: *.on.aws would allow any AWS-hosted app.
- * Seen on tahafi.com 2026-11-08; a store whose pixel has no gateway simply never calls them.
+ * Seen 2026-11-08 (the Datahash pair) and 2026-11-10 (a second store pixel with its own gateway
+ * pair); a store whose pixel has no gateway simply never calls them.
  */
-const META_CAPI_GATEWAY = ["https://capig.datah04.com", "https://c3-8e86efd19c8c4086ae8a47d63bd9492e.ecs.us-east-1.on.aws"];
+const META_CAPI_GATEWAY = [
+  "https://capig.datah04.com",
+  "https://c3-8e86efd19c8c4086ae8a47d63bd9492e.ecs.us-east-1.on.aws",
+  "https://demo-1.conversionsapigateway.com",
+  "https://xd-f1cf3d4fdb19408ea770fc6f80817dcb.ecs.us-east-1.on.aws",
+];
+/** fbevents.js sends an event too large for a beacon as a hidden form posted to /tr (blocked as "form-action" on live). */
+const META_PIXEL_FORM = "https://www.facebook.com/tr/";
 
 const TRACKING_CONNECT = [
   "https://www.facebook.com",
@@ -63,7 +71,7 @@ export function buildContentSecurityPolicy({ nonce, apiOrigin, isDev }: CspOptio
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
-    "form-action": ["'self'"],
+    "form-action": ["'self'", META_PIXEL_FORM],
     "frame-ancestors": ["'self'"],
   };
   // No upgrade-insecure-requests: production is https-only already (nginx redirect + HSTS), and it would break a local

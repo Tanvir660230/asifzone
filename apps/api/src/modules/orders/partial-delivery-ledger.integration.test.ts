@@ -44,6 +44,15 @@ describe("partial delivery — the order charges what the customer kept", () => 
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PARTIALLY_DELIVERED");
   });
 
+  it("money recorded first, reconciled after: the order's stored payment status follows (live 10CMBC, 2026-11-10)", async () => {
+    const { order, itemId } = await partlyDelivered(2);
+    await recordManualPayment(order.id, { amount: 1060, kind: "COD_COLLECTED" }, admin);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).paymentStatus).toBe("PARTIALLY_PAID");
+    await reconcilePartialDelivery(order.id, { items: [{ orderItemId: itemId, returnedQuantity: 1 }] }, admin);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).paymentStatus).toBe("PAID");
+    expect(await getOrderPaymentSummary(order.id)).toMatchObject({ status: "PAID", amountDue: 0 });
+  });
+
   it("kept nothing: the order is Returned — nothing due, nothing for the courier", async () => {
     const { order, itemId } = await partlyDelivered(2, 0);
     await reconcilePartialDelivery(order.id, { items: [{ orderItemId: itemId, returnedQuantity: 2 }] }, admin);
