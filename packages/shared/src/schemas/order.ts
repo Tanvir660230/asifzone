@@ -218,6 +218,12 @@ export const bulkOrderStatusSchema = bulkOrderIdsSchema
   .extend({ status: orderStatusEnum, note: nullableString(500) })
   .superRefine(requireCancellationReason);
 export const bulkCourierBookSchema = bulkOrderIdsSchema;
+/** Link a parcel that already exists on Steadfast (its answer to our booking was lost, or it was made in the panel). */
+export const linkCourierConsignmentSchema = z.object({
+  consignmentId: z.string().trim().regex(/^\d{4,20}$/, "Consignment ID is the number Steadfast shows, digits only"),
+  trackingCode: z.string().trim().regex(/^[A-Za-z0-9]{6,40}$/, "Tracking code is letters and digits, e.g. SFR261111ST…BD"),
+});
+export type LinkCourierConsignmentInput = z.infer<typeof linkCourierConsignmentSchema>;
 export const bulkDeliveryScoreCheckSchema = bulkOrderIdsSchema;
 
 export const updateOrderStatusSchema = z

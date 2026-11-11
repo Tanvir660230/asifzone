@@ -14,6 +14,7 @@ import {
   bulkSyncCourierStatuses,
   checkDeliveryScoresBulk,
   getOrderByIdWithAutoSync,
+  linkSteadfastConsignment,
   refreshSteadfastStatus,
   unlinkCourierBooking,
 } from "../courier/courier.service";
@@ -226,6 +227,10 @@ export const bulkCheckDeliveryScore = asyncHandler(async (req: Request, res: Res
 
 export const refreshCourier = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await refreshSteadfastStatus(req.params.id!) });
+});
+
+export const linkCourier = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await linkSteadfastConsignment(req.params.id!, req.body) });
 });
 
 export const unlinkCourier = asyncHandler(async (req: Request, res: Response) => {

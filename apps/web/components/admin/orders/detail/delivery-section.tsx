@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Copy, ExternalLink, PackageX, RefreshCw, Truck, Unlink } from "lucide-react";
-import { CLOSED_ORDER_STATUSES, PARCEL_CONFLICT_LABEL, courierBookingBlocker, describeParcel, formatVariantLabel, type Order } from "@clothing-brand/shared";
+import { CLOSED_ORDER_STATUSES, PARCEL_CONFLICT_LABEL, courierBookingBlocker, describeParcel, formatVariantLabel, isCourierBookingLost, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -209,6 +209,54 @@ function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: 
 
 /** 5 — getting the parcel to the customer: the courier booking (book, sync, unlink — through the courier abstraction's
  * endpoints), a manual carrier fallback, partial-delivery reconciliation and the courier-loss ledger. */
+/** A booking was sent but the courier's answer was lost (its server failed or timed out). The courier usually made the
+ * parcel anyway (2026-11-11: 16 of 16), so this asks for its consignment ID and tracking code instead of offering Book.
+ * Booking again stays possible from the list — the server checks the courier for the invoice first. */
+function LostBookingPanel({ order, commands, canLink }: { order: Order; commands: OrderCommands; canLink: boolean }) {
+  const [consignmentId, setConsignmentId] = useState("");
+  const [trackingCode, setTrackingCode] = useState("");
+  useEffect(() => {
+    setConsignmentId("");
+    setTrackingCode("");
+  }, [order.id]);
+  const ready = /^\d{4,20}$/.test(consignmentId.trim()) && /^[A-Za-z0-9]{6,40}$/.test(trackingCode.trim());
+
+  return (
+    <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="courier-lost-booking">
+      <div className="flex items-start gap-2 text-sm text-warning-800">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <div className="space-y-1">
+          <p className="font-medium">Sent to {COURIER_PROVIDER_LABEL}, but its answer never came back</p>
+          <p className="text-xs text-warning-700">
+            {COURIER_PROVIDER_LABEL} has most likely created this parcel already. Find invoice{" "}
+            <span className="whitespace-nowrap font-mono font-medium">{order.orderNumber}</span> in the {COURIER_PROVIDER_LABEL} panel and enter its consignment ID and
+            tracking code — the order then moves to Shipped and its label can be printed. Booking again would send a second parcel.
+          </p>
+        </div>
+      </div>
+      {canLink && (
+        <form
+          className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ready) commands.linkCourier(order, consignmentId.trim(), trackingCode.trim());
+          }}
+        >
+          <Field htmlFor="link-consignment" label="Consignment ID">
+            <Input id="link-consignment" inputMode="numeric" autoComplete="off" placeholder="e.g. 319011389" value={consignmentId} onChange={(e) => setConsignmentId(e.target.value)} />
+          </Field>
+          <Field htmlFor="link-tracking" label="Tracking code">
+            <Input id="link-tracking" autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="SFR…BD" value={trackingCode} onChange={(e) => setTrackingCode(e.target.value)} />
+          </Field>
+          <Button type="submit" size="sm" disabled={!ready} loading={commands.pending.link}>
+            Link parcel
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 /** Where the parcel physically is (docs/WAREHOUSE_OPERATIONS.md §2): SHIPPED is set at booking, so this says whether it
  * has actually left, how long it has waited and what to do next — and names facts that disagree. */
 function ParcelStageLine({ order }: { order: Order }) {
@@ -263,6 +311,7 @@ export function DeliverySection({
   useEffect(() => setManual(null), [order.id]);
 
   const booked = Boolean(order.courierConsignmentId);
+  const lostBooking = isCourierBookingLost(order);
   const deleted = Boolean(order.deletedAt);
   const bookBlocker = courierBookingBlocker(order);
   const open = !CLOSED_ORDER_STATUSES.includes(order.status) && order.status !== "DELIVERED" && order.status !== "PARTIALLY_DELIVERED";
@@ -322,6 +371,8 @@ export function DeliverySection({
               )}
             </dl>
           </div>
+        ) : lostBooking ? (
+          <LostBookingPanel order={order} commands={commands} canLink={perms.courier && !deleted} />
         ) : (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-line p-3.5">
             <p className="flex-1 text-sm text-ink-600">Not booked with a courier yet.</p>

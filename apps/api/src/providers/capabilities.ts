@@ -54,6 +54,8 @@ export interface CourierProvider {
   createShipment(input: CreateConsignmentInput): Promise<SteadfastConsignment>;
   createShipments(inputs: CreateConsignmentInput[]): Promise<SteadfastBulkResultItem[]>;
   statusByConsignment(consignmentId: string): Promise<string>;
+  /** The status of the parcel the courier holds for this invoice, or null when it holds none. */
+  statusByInvoice(invoice: string): Promise<string | null>;
   balance(): Promise<number>;
   deliveryScore(phone: string): Promise<SteadfastFraudCheck>;
   /** Owner's books §3.2: the courier's payouts, and one payout with its parcels — raw, parsed by the finance side. */

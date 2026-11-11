@@ -201,6 +201,15 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     },
     onError: (err) => toast.error(errorText(err, "Failed to unlink the courier booking")),
   });
+  const linkMutation = useMutation({
+    mutationFn: ({ order, consignmentId, trackingCode }: { order: OrderRef; consignmentId: string; trackingCode: string }) =>
+      adminOrdersApi.linkCourier(order.id, { consignmentId, trackingCode }),
+    onSuccess: (_, { order }) => {
+      refresh(order.id);
+      toast.success(`${order.orderNumber} linked to its ${COURIER_PROVIDER_LABEL} parcel`);
+    },
+    onError: (err) => toast.error(errorText(err, `Failed to link the ${COURIER_PROVIDER_LABEL} parcel`)),
+  });
   const bulkBookMutation = useMutation({
     mutationFn: (orders: OrderRef[]) => adminOrdersApi.bulkBookCourier(orders.map((o) => o.id)),
     onSettled: () => refresh(),
@@ -355,6 +364,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     syncCourier: (order: OrderRef) => syncMutation.mutate(order),
     bulkSync: (orders: OrderRef[]) => bulkSyncMutation.mutate(orders),
     unlinkCourier,
+    linkCourier: (order: OrderRef, consignmentId: string, trackingCode: string) => linkMutation.mutate({ order, consignmentId, trackingCode }),
     checkDeliveryScore: (orders: OrderRef[], quiet = false) => scoreMutation.mutate({ orders, quiet }),
     printLabels,
     openPickList,
@@ -368,6 +378,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
       book: bookMutation.isPending || bulkBookMutation.isPending,
       sync: syncMutation.isPending || bulkSyncMutation.isPending,
       unlink: unlinkMutation.isPending,
+      link: linkMutation.isPending,
       score: scoreMutation.isPending,
       /** The single order whose delivery score is being checked, for a per-row spinner. */
       scoreOrderId: scoreMutation.isPending && scoreMutation.variables?.orders.length === 1 ? scoreMutation.variables.orders[0]!.id : null,
