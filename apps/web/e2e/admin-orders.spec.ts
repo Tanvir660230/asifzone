@@ -111,7 +111,7 @@ test.describe("orders workspace", () => {
     await items.getByRole("button", { name: "Adjust price" }).click();
     await items.getByLabel(/Price adjustment/).fill("-10");
     await items.getByRole("button", { name: "Save adjustment" }).click();
-    await expect(items.getByText("Price adjustment")).toBeVisible();
+    await expect(items.getByText("Price adjustment", { exact: true })).toBeVisible();
 
     // ── ORD-05 status: only legal moves are offered; consequences shown before confirming ──
     await detail.getByRole("button", { name: "Change status" }).click();
