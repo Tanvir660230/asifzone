@@ -154,6 +154,17 @@ label when estimated. Advanced fields behind "More options", owner-only tools be
 another page, cards around a single table, gradients and glass in the admin, decorative icons, two buttons that do the
 same thing.
 
+**Scale (owner, 2026-11-12: "size efficiency").** The console takes no desktop zoom: from 1024 px its root is 15 px
+(`html:has([data-surface="admin"])`, globals.css), so every rem size tightens together. Body 13.5 px, captions 12 px,
+tables 13 px, page title 22.5 px on one row with its actions. Density tokens (`surfaces.admin.density`): toolbar 52,
+section bar 40, row 40, control 34, page gutter 24. A list page shows about fifteen rows on a laptop. Phones and tablets
+keep the larger reading sizes.
+
+**Navigation — one rule at every width.** The sidebar lists modules only. The bar under the toolbar (`SectionBar`) lists
+the current module's pages. A group's own pages (Catalog setup, Bills to pay, Stock › More) are one row of tabs above the
+page, drawn by the group's layout (`SectionFrame`) from 1024 px and by the page's `<ModuleTabs />` below it. Never a
+second menu column beside the page, and never the same list in two places.
+
 **Page anatomy** — five rows, always in this order: shell (sidebar from the navigation manifest, top bar with search
 Ctrl/⌘ K, Create, bell, account) → header (`PageHeader`: title, one-line description, primary action; back link on record
 pages) → section bar (a section's pages as tabs when 2–6, an inner list when more) → filter row (search left, chips,

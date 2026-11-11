@@ -369,7 +369,7 @@ export function OrdersList(props: OrdersListProps) {
   return (
     <>
       {/* Long pages (up to 200 rows) scroll inside the frame, so the column titles stay in view. */}
-      <TableContainer className="mt-4 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
+      <TableContainer className="mt-3 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
