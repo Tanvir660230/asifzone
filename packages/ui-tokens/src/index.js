@@ -954,8 +954,9 @@ const surfaceDefinitions = {
       inset: "0 0 #0000", // flat fields (a literal "none" would break Tailwind's composed box-shadow list)
       glow: "0 0 0 4px rgba(28,28,30,0.16)",
     },
-    // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
-    density: { sidebar: "248px", "sidebar-collapsed": "84px", header: "64px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
+    // Owner, 2026-11-12 ("size efficiency, clear view"): a working tool, not a showroom. The airy 64/48/36 rhythm showed
+    // six orders on a laptop screen; these are the compact steps of a desktop app, and a list shows fifteen.
+    density: { sidebar: "224px", "sidebar-collapsed": "76px", header: "52px", "section-bar": "40px", page: "24px", "page-compact": "20px", row: "40px", "row-dense": "34px", control: "34px", "filter-bar": "40px" },
   },
   storefront: {},
 };

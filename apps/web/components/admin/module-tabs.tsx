@@ -15,7 +15,7 @@ import { isStockSectionPath } from "@/components/admin/stock/stock-side-nav";
  * A module's own pages (Orders › All orders / Return requests) are the shell's section bar (components/admin/section-bar.tsx),
  * pinned under the toolbar, so here they'd say the same thing twice — only deeper tab sets like Catalog setup's render.
  */
-export function ModuleTabs({ className = "mb-6", "aria-label": ariaLabel }: { className?: string; "aria-label"?: string }) {
+export function ModuleTabs({ className = "mb-6", "aria-label": ariaLabel, frame = false }: { className?: string; "aria-label"?: string; frame?: boolean }) {
   const pathname = usePathname();
   const access = useNavAccess();
   const tabs = sectionTabsFor(pathname, access);
@@ -24,14 +24,25 @@ export function ModuleTabs({ className = "mb-6", "aria-label": ariaLabel }: { cl
   const current = resolveNavNode(pathname);
   const trail = current ? ancestryOf(current).map((n) => n.id) : [];
   const active = tabs.find((t) => trail.includes(t.node.id));
-  // A group shown as an inner list on wide screens (its layout's <InnerNav>) keeps the tabs for phones only.
+  // One row of tabs per screen size (owner, 2026-11-12: one navigation rule). A group's frame (SectionFrame) draws the
+  // row from laptop width up, above every page of the group; the page's own <ModuleTabs /> draws it below that. Groups
+  // without a frame keep the page's row at every width.
   const group = tabs[0]?.node.parent ? navNode(tabs[0].node.parent) : undefined;
+  const framed = Boolean(group?.innerList) || isStockSectionPath(pathname);
+  if (frame) {
+    if (!framed) return null;
+    return (
+      <div className="hidden lg:block">
+        <NavTabs tabs={tabs.map((t) => ({ label: t.node.label, href: t.href }))} activeHref={active?.href} scrollable={tabs.length > 6} className="mb-5" aria-label={ariaLabel ?? group?.label} />
+      </div>
+    );
+  }
   return (
     <NavTabs
       tabs={tabs.map((t) => ({ label: t.node.label, href: t.href }))}
       activeHref={active?.href}
       scrollable={tabs.length > 6}
-      className={cn(className, (group?.innerList || isStockSectionPath(pathname)) && "lg:hidden")}
+      className={cn(className, framed && "lg:hidden")}
       aria-label={ariaLabel}
     />
   );

@@ -32,6 +32,15 @@
     font-size: 18px;
   }
 }
+/* The Store Console is read at a desk all day, row after row: it takes no showroom zoom. One step under the browser's
+   16px from laptop width up, so every rem-based size in the console (type, padding, control heights) tightens together
+   and a list shows more than twice the rows (owner, 2026-11-12: "size efficiency"). The storefront is untouched: the
+   rule only matches a document that holds the admin surface. */
+@media (min-width: 1024px) {
+  html:has([data-surface="admin"]) {
+    font-size: 15px;
+  }
+}
 
 @layer base {
   /* The theme's section rhythm, kept under its own name so a section frame can scale it (.ui-section-frame). */
@@ -873,6 +882,30 @@
   [data-surface="admin"] .ui-overlay {
     @apply bg-ink-950/20 backdrop-blur-[3px];
   }
+  /* A page title names the page; it does not headline it (owner, 2026-11-12: "size efficiency"). From tablet width the
+     title sits on one compact row with its actions, and the page's content starts right under it. */
+  @media (min-width: 640px) {
+    [data-surface="admin"] [data-page-header] {
+      @apply mb-5 items-center;
+    }
+    [data-surface="admin"] [data-page-header] h1 {
+      font-size: 1.5rem;
+      line-height: 1.875rem;
+      letter-spacing: -0.02em;
+    }
+    [data-surface="admin"] [data-page-description] {
+      @apply mt-0.5;
+    }
+  }
+  /* Table rows at the compact row height: the primitives' 12px cell padding becomes 8px, so a one-line row is 40px. */
+  [data-surface="admin"] .ui-table :is(th, td).py-3 {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  [data-surface="admin"] .ui-table thead th.py-3 {
+    padding-top: 0.5625rem;
+    padding-bottom: 0.5625rem;
+  }
 
   /* ── Scroll reveal (components/storefront/reveal.tsx) ────────────────────────────────────────
      A scroll-driven animation: the element rises into place while it enters the viewport. No JavaScript and nothing is
@@ -1151,4 +1184,16 @@
 [data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
   font-size: 0.9375rem;
   line-height: 1.375rem;
+}
+/* From laptop width the console's root is 15px (top of this file), so the same two steps land on 12px captions and
+   13.5px body: the working sizes of a desktop app. Phones and tablets keep the larger reading sizes above. */
+@media (min-width: 1024px) {
+  [data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
+    font-size: 0.8rem;
+    line-height: 1.1rem;
+  }
+  [data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
+    font-size: 0.9rem;
+    line-height: 1.3rem;
+  }
 }
