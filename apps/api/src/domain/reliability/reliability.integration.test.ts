@@ -53,11 +53,20 @@ async function deliveredOrder(customerPhone?: string) {
 /** Consignment ids unique across the whole file (and runs) — the webhook finds its order by consignment id. */
 let consignmentSeq = Math.floor(Date.now() / 1000) * 1000;
 
-function stubSteadfast(behaviour: "success" | "timeout" | "reject" = "success", delayMs = 30) {
+function stubSteadfast(behaviour: "success" | "timeout" | "reject" = "success", delayMs = 30, opts: { knownInvoices?: string[] } = {}) {
   const calls: string[] = [];
   globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
     const url = String(input);
     if (!url.includes("steadfast.invalid")) return realFetch(input as string, init as RequestInit);
+    // Invoice lookups aren't bookings: not counted. Steadfast answers an unknown invoice with 401 "Unauthorized Access".
+    const invoice = url.match(/\/status_by_invoice\/(.+)$/)?.[1];
+    if (invoice) {
+      return (opts.knownInvoices ?? []).includes(decodeURIComponent(invoice))
+        ? new Response(JSON.stringify({ status: 200, delivery_status: "in_review" }), { status: 200 })
+        : new Response("Unauthorized Access", { status: 401 });
+    }
+    const cid = url.match(/\/status_by_cid\/(\d+)$/)?.[1];
+    if (cid) return new Response(JSON.stringify({ status: 200, delivery_status: "in_review" }), { status: 200 });
     calls.push(url);
     await new Promise((r) => setTimeout(r, delayMs));
     if (behaviour === "timeout") throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
@@ -227,6 +236,84 @@ describe("courier booking (D-4)", () => {
       await bookOrderWithSteadfast(order.id); // after the lease an operator may book again
       expect(calls).toHaveLength(1);
       expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).courierSyncError).toBeNull();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  /** An order whose booking answer was lost (timeout), with its lease already lapsed — the 2026-11-11 state. */
+  async function lostBooking() {
+    const order = await bookable();
+    stubSteadfast("timeout", 5);
+    await expect(bookOrderWithSteadfast(order.id)).rejects.toMatchObject({ details: { code: "COURIER_OUTCOME_UNKNOWN" } });
+    await prisma.order.update({ where: { id: order.id }, data: { courierBookingStartedAt: new Date(Date.now() - COURIER_BOOKING_LEASE_MS - 1000) } });
+    return order;
+  }
+
+  it("lost answer, but Steadfast created the parcel: booking again (single or bulk) is refused — no second parcel", async () => {
+    try {
+      const order = await lostBooking();
+      const calls = stubSteadfast("success", 5, { knownInvoices: [order.orderNumber] });
+      await expect(bookOrderWithSteadfast(order.id)).rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/already has a parcel .* link it/) });
+      await prisma.order.update({ where: { id: order.id }, data: { courierBookingStartedAt: new Date(Date.now() - COURIER_BOOKING_LEASE_MS - 1000) } });
+      const bulk = await bookOrdersWithSteadfastBulk([order.id]);
+      expect(bulk.booked).toHaveLength(0);
+      expect(bulk.failed[0]?.reason).toMatch(/already has a parcel/);
+      expect(calls).toHaveLength(0);
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row.courierConsignmentId).toBeNull();
+      expect(row.courierBookingStartedAt).not.toBeNull(); // still held: the lost booking is not forgotten
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("lost answer and Steadfast has no parcel for the invoice: booking again goes through", async () => {
+    try {
+      const order = await lostBooking();
+      const calls = stubSteadfast("success", 5);
+      await bookOrderWithSteadfast(order.id);
+      expect(calls).toHaveLength(1);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).courierConsignmentId).not.toBeNull();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("staff link the parcel Steadfast already holds: the order is booked and SHIPPED, the lost-booking flag cleared", async () => {
+    try {
+      const order = await lostBooking();
+      stubSteadfast("success", 5, { knownInvoices: [order.orderNumber] });
+      const cid = String(++consignmentSeq);
+      const owner = await asOwner();
+      const linked = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `sfr${cid}bd` });
+      expect(linked.status).toBe(200);
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, carrier: "Steadfast", status: "SHIPPED", courierSyncError: null, courierBookingStartedAt: null, courierStatus: "in_review" });
+
+      const other = await lostBooking();
+      stubSteadfast("success", 5);
+      const again = await owner.post(`/api/orders/${other.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD` });
+      expect(again.status).toBe(409); // one consignment, one order
+      const bad = await owner.post(`/api/orders/${other.id}/courier/link`, { consignmentId: "12ab", trackingCode: "x" });
+      expect(bad.status).toBe(400);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("a Steadfast update naming the invoice of a lost booking attaches the parcel; one naming an ordinary unbooked order does not", async () => {
+    try {
+      const order = await lostBooking();
+      const plain = await bookable();
+      stubSteadfast("success", 5);
+      const cid = String(++consignmentSeq);
+      await handleSteadfastWebhook({ consignment_id: Number(cid), invoice: order.orderNumber, tracking_id: `SFR${cid}BD`, notification_type: "tracking_update" });
+      expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, status: "SHIPPED", courierSyncError: null });
+
+      const cid2 = String(++consignmentSeq);
+      await handleSteadfastWebhook({ consignment_id: Number(cid2), invoice: plain.orderNumber, tracking_id: `SFR${cid2}BD` });
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: plain.id } })).courierConsignmentId).toBeNull();
     } finally {
       globalThis.fetch = realFetch;
     }

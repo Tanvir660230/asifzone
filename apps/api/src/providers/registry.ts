@@ -121,13 +121,14 @@ function pushSender(id: ProviderSelection["push"]): PushSender {
 function courierProvider(id: ProviderSelection["courier"]): CourierProvider {
   if (id === "none") {
     const off = async (): Promise<never> => Promise.reject(new ProviderNotConfiguredError("Courier", "COURIER_PROVIDER"));
-    return { id, createShipment: off, createShipments: off, statusByConsignment: off, balance: off, deliveryScore: off, payouts: off, payout: off, returnRequests: off };
+    return { id, createShipment: off, createShipments: off, statusByConsignment: off, statusByInvoice: off, balance: off, deliveryScore: off, payouts: off, payout: off, returnRequests: off };
   }
   return {
     id,
     createShipment: (input) => steadfast.createSteadfastConsignment(input),
     createShipments: (inputs) => steadfast.createBulkSteadfastConsignments(inputs),
     statusByConsignment: (consignmentId) => steadfast.getSteadfastStatusByConsignmentId(consignmentId),
+    statusByInvoice: (invoice) => steadfast.getSteadfastStatusByInvoice(invoice),
     balance: () => steadfast.getSteadfastBalance(),
     deliveryScore: (phone) => steadfast.getSteadfastFraudCheck(phone),
     payouts: () => steadfast.getSteadfastPayments(),

@@ -9,6 +9,8 @@ export interface SteadfastWebhookEvent {
   notificationType: string;
   consignmentId: string | null;
   invoice: string | null;
+  /** Steadfast's tracking code (`tracking_id` in the body). */
+  trackingCode: string | null;
   status: string | null;
   codAmount: number | null;
   deliveryCharge: number | null;
@@ -34,6 +36,7 @@ export function parseSteadfastWebhook(body: unknown): SteadfastWebhookEvent {
     notificationType: (text(b.notification_type, 64) ?? "delivery_status").toLowerCase(),
     consignmentId: consignment && /^\d+$/.test(consignment) ? consignment : null,
     invoice: text(b.invoice, 120),
+    trackingCode: text(b.tracking_id ?? b.tracking_code, 64),
     // "Partial Delivered" / "partial-delivered" / "partial_delivered" → the status API's own spelling.
     status: text(b.status, 64)?.toLowerCase().replace(/[\s-]+/g, "_") ?? null,
     codAmount: amount(b.cod_amount),

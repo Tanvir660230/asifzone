@@ -33,7 +33,7 @@ export type PrimaryOrderAction =
 const TRANSITION_LABEL: Partial<Record<OrderStatus, string>> = { CONFIRMED: "Confirm order", PACKED: "Mark packed", SHIPPED: "Mark shipped" };
 
 export function primaryOrderAction(
-  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment">,
+  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment"> & { courierSyncError?: string | null },
   opts: { courierAvailable: boolean },
 ): PrimaryOrderAction | null {
   const move = (to: OrderStatus): PrimaryOrderAction | null =>
@@ -45,6 +45,8 @@ export function primaryOrderAction(
       break;
     case "CONFIRMED":
     case "PROCESSING":
+      // A lost booking is linked from Delivery & courier, never re-booked from the header (it would send a second parcel).
+      if (isCourierBookingLost(order)) break;
       action = opts.courierAvailable && !order.courierConsignmentId ? { kind: "book_courier", label: "Book courier" } : move("PACKED");
       break;
     case "PACKED":
@@ -56,6 +58,12 @@ export function primaryOrderAction(
   }
   if (!action && (order.payment?.refundDue ?? 0) > 0) action = { kind: "record_refund", label: "Record refund" };
   return action;
+}
+
+/** The booking was sent but the courier's answer was lost (its 500 / a timeout): the parcel may exist on the courier's
+ * side. Mirrors the API's flag (modules/courier/courier.service.ts COURIER_OUTCOME_UNKNOWN_PREFIX). */
+export function isCourierBookingLost(order: { courierConsignmentId: string | null; courierSyncError?: string | null }) {
+  return !order.courierConsignmentId && (order.courierSyncError ?? "").startsWith("Booking outcome unknown");
 }
 
 export interface OrderAttentionFacts {
@@ -104,6 +112,9 @@ export function orderAttentionItems(order: OrderAttentionFacts, fmt: AttentionFo
   }
   // Same scope as the server's "Courier issues" queue: only a parcel still on its way.
   const inFlight = PRE_SHIPMENT_STATUSES.includes(order.status) || order.status === "SHIPPED";
+  if (inFlight && isCourierBookingLost(order)) {
+    items.push({ key: "courier-lost-booking", tone: "danger", label: "Courier booking not confirmed", detail: "Steadfast may already have this parcel — link it from Delivery & courier before booking again." });
+  }
   if (inFlight && order.courierConsignmentId && order.courierSyncError) {
     items.push({ key: "courier-sync", tone: "danger", label: "Courier sync failing", detail: order.courierSyncError });
   }

@@ -177,8 +177,98 @@ async function releaseCourierBooking(orderId: string) {
 async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, detail: string) {
   await prisma.order.update({
     where: { id: orderId },
-    data: { courierSyncError: `Booking outcome unknown (${detail}) — check Steadfast for invoice ${orderNumber} before booking again` },
+    data: { courierSyncError: `${COURIER_OUTCOME_UNKNOWN_PREFIX} (${detail}) — check Steadfast for invoice ${orderNumber} before booking again` },
   });
+}
+
+export const COURIER_OUTCOME_UNKNOWN_PREFIX = "Booking outcome unknown";
+
+/** A booking was sent but its answer was lost (Steadfast 500 / timeout): the parcel may exist on Steadfast's side. */
+export function isCourierOutcomeUnknown(order: { courierConsignmentId: string | null; courierSyncError: string | null }) {
+  return !order.courierConsignmentId && (order.courierSyncError ?? "").startsWith(COURIER_OUTCOME_UNKNOWN_PREFIX);
+}
+
+/** 2026-11-11: a bulk booking of 16 got HTTP 500 back, yet Steadfast had created all 16. Booking such an order again
+ * would send a second parcel, so first ask Steadfast whether it holds the invoice. Returns why booking must stop, or null
+ * when it is safe (no lost booking, or Steadfast has no parcel for the invoice). The claim stays held when it stops. */
+async function existingParcelBlocker(order: { orderNumber: string; courierConsignmentId: string | null; courierSyncError: string | null }): Promise<string | null> {
+  if (!isCourierOutcomeUnknown(order)) return null;
+  let status: string | null;
+  try {
+    status = await getProviders().courier.statusByInvoice(order.orderNumber);
+  } catch (err) {
+    return `Couldn't check Steadfast for invoice ${order.orderNumber} (${err instanceof Error ? err.message : String(err)}) — try again in a few minutes`;
+  }
+  if (status === null) return null;
+  return `Steadfast already has a parcel for ${order.orderNumber} (${status}) — link it with its consignment ID and tracking code instead of booking again`;
+}
+
+export interface ExistingConsignment {
+  consignmentId: string;
+  trackingCode: string;
+  trackingLink?: string | null;
+  courierStatus: string;
+}
+
+/** Saves a consignment Steadfast already holds onto the order and moves the order on exactly as a booking does (SHIPPED,
+ * shipment leg, attar auto-fill). Used when the booking's own answer was lost — linked by staff, or healed by a webhook. */
+async function attachExistingConsignment(
+  order: { id: string; orderNumber: string; status: OrderStatus; courierBookingStartedAt: Date | null },
+  consignment: ExistingConsignment,
+  source: "staff" | "webhook",
+) {
+  const taken = await prisma.order.findFirst({ where: { courierConsignmentId: consignment.consignmentId }, select: { id: true, orderNumber: true } });
+  if (taken && taken.id !== order.id) throw AppError.conflict(`Consignment ${consignment.consignmentId} is already on order ${taken.orderNumber}`);
+  const fillPlan = await planAutoFillSafely([order.id]);
+  const now = new Date();
+  const saved = await prisma.order.updateMany({
+    where: { id: order.id, courierConsignmentId: null },
+    data: {
+      carrier: "Steadfast",
+      trackingNumber: consignment.trackingCode,
+      courierConsignmentId: consignment.consignmentId,
+      courierStatus: consignment.courierStatus,
+      courierTrackingLink: consignment.trackingLink ?? null,
+      // when the booking was actually sent, if we still know it
+      courierBookedAt: order.courierBookingStartedAt ?? now,
+      courierStatusSyncedAt: now,
+      courierBookingStartedAt: null,
+      courierSyncError: null,
+    },
+  });
+  if (saved.count !== 1) throw AppError.conflict("This order is already booked with a courier");
+
+  await shipOnBooking(order.id, order.status);
+  await syncOrderShipmentsSafely(order.id);
+  await fillForBookedOrder(order.id, consignment.consignmentId, fillPlan);
+  notify({
+    type: "order.courier_booked",
+    title: `Order ${order.orderNumber} linked to its Steadfast parcel`,
+    body: `Tracking code ${consignment.trackingCode}${source === "webhook" ? " — found from Steadfast's update" : ""}`,
+    link: `/admin/orders/${order.id}`,
+  });
+}
+
+/** Staff link a parcel that already exists on Steadfast (its answer to our booking was lost, or it was made in the
+ * Steadfast panel). The consignment must be real — Steadfast's own status for it is read first. */
+export async function linkSteadfastConsignment(orderId: string, input: { consignmentId: string; trackingCode: string }) {
+  const order = await getOrderById(orderId);
+  if (order.deletedAt) throw AppError.badRequest("Restore this order before linking a courier parcel");
+  if (order.courierConsignmentId) throw AppError.conflict("This order is already booked with a courier");
+  if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
+    throw AppError.badRequest(`Cannot link a courier parcel to an order that is ${order.status.toLowerCase()}`);
+  }
+  const consignmentId = input.consignmentId.trim();
+  const trackingCode = input.trackingCode.trim().toUpperCase();
+  let courierStatus: string;
+  try {
+    courierStatus = await getProviders().courier.statusByConsignment(consignmentId);
+  } catch (err) {
+    throw AppError.badRequest(`Steadfast couldn't confirm consignment ${consignmentId} — check the number (${err instanceof Error ? err.message : String(err)})`);
+  }
+  const row = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { courierBookingStartedAt: true } });
+  await attachExistingConsignment({ id: order.id, orderNumber: order.orderNumber, status: order.status, courierBookingStartedAt: row.courierBookingStartedAt }, { consignmentId, trackingCode, courierStatus }, "staff");
+  return getOrderById(orderId);
 }
 
 /** Owner, 2026-10-25 (admin audit, docs/BUSINESS_DECISIONS.md D-AA3): a parcel booked with Steadfast is leaving, so the
@@ -265,6 +355,9 @@ export async function bookOrderWithSteadfast(orderId: string) {
   if (!(await claimCourierBooking(orderId))) {
     throw AppError.conflict("This order is already booked with a courier, or a booking for it is in progress");
   }
+  // A lost earlier answer: Steadfast may already hold this parcel. The claim stays held when booking stops here.
+  const existing = await existingParcelBlocker(order);
+  if (existing) throw AppError.conflict(existing);
   // attar bottles still owed for this parcel — read while it is still on the shelf (docs/STOCK_HUB.md §7)
   const fillPlan = await planAutoFillSafely([orderId]);
 
@@ -350,8 +443,14 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   // Claim each order first (Phase 9 D-4): one another booking already holds is skipped, never sent twice.
   const claimed: typeof eligible = [];
   for (const order of eligible) {
-    if (await claimCourierBooking(order.id)) claimed.push(order);
-    else failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "A booking for this order is already in progress" });
+    if (!(await claimCourierBooking(order.id))) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "A booking for this order is already in progress" });
+      continue;
+    }
+    // A lost earlier answer: Steadfast may already hold this parcel — never send it twice (claim stays held).
+    const existing = await existingParcelBlocker(order);
+    if (existing) failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: existing });
+    else claimed.push(order);
   }
   if (!claimed.length) return { booked: [], failed };
   const codAmounts = await codToCollectFor(claimed.map((order) => order.id));
@@ -689,10 +788,21 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
   let outcome = "NO_CONSIGNMENT";
   try {
     if (!event.consignmentId) return outcome;
-    const order = await prisma.order.findFirst({
-      where: { courierConsignmentId: event.consignmentId },
-      select: { id: true, orderNumber: true, status: true, total: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true },
-    });
+    const orderSelect = { id: true, orderNumber: true, status: true, total: true, courierCollectedAmount: true, courierBookedAt: true, createdAt: true } as const;
+    let order = await prisma.order.findFirst({ where: { courierConsignmentId: event.consignmentId }, select: orderSelect });
+    // A booking whose answer was lost: Steadfast's update names our invoice and the consignment it made — attach it
+    // (only to an order still holding that lost booking, and only once Steadfast's own API confirms the consignment).
+    if (!order && event.invoice && event.trackingCode) {
+      const lost = await prisma.order.findFirst({
+        where: { orderNumber: event.invoice, courierConsignmentId: null, courierBookingStartedAt: { not: null }, deletedAt: null, status: { notIn: [...NOT_BOOKABLE_STATUSES] } },
+        select: { id: true, orderNumber: true, status: true, courierConsignmentId: true, courierSyncError: true, courierBookingStartedAt: true },
+      });
+      if (lost && isCourierOutcomeUnknown(lost)) {
+        const courierStatus = await getProviders().courier.statusByConsignment(event.consignmentId);
+        await attachExistingConsignment(lost, { consignmentId: event.consignmentId, trackingCode: event.trackingCode, courierStatus }, "webhook");
+        order = await prisma.order.findFirst({ where: { courierConsignmentId: event.consignmentId }, select: orderSelect });
+      }
+    }
     outcome = "NO_ORDER";
     if (!order) return outcome;
     orderId = order.id;

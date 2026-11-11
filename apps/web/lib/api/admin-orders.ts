@@ -240,6 +240,11 @@ export function refreshCourierStatus(id: string) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/refresh`, { method: "POST" });
 }
 
+/** Link a parcel Steadfast already holds (its answer to our booking was lost, or it was made in the Steadfast panel). */
+export function linkCourier(id: string, body: { consignmentId: string; trackingCode: string }) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/link`, { method: "POST", body });
+}
+
 export function unlinkCourier(id: string) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/unlink`, { method: "POST" });
 }

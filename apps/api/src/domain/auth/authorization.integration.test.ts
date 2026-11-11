@@ -571,7 +571,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: cancel a COD / manual payment entered by mistake (docs/PAYMENT_LEDGER.md, VOIDED)
     // +1: receive many returned parcels at once (preview + confirm)
     // +1: cancellations before sending — reasons, channel, landing page, product (order-outcomes programme PR 2)
-    expect(routes).toHaveLength(815);
+    // +1: link a parcel Steadfast already holds to its order (a booking whose answer was lost, 2026-11-11)
+    expect(routes).toHaveLength(816);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

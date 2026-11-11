@@ -349,6 +349,24 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
   };
 }
 
+/** Whether Steadfast holds a parcel for `invoice` (our orderNumber): its status, or null when it has none. Used after a
+ * booking whose answer was lost (a 500 or a timeout) — Steadfast often created the parcel anyway (2026-11-11: 16 of 16).
+ * Steadfast answers an unknown invoice with HTTP 401 "Unauthorized Access" (checked against the live API), so 401/404
+ * mean "none"; anything else that isn't a status throws — the caller must not book again on a guess. */
+export async function getSteadfastStatusByInvoice(invoice: string): Promise<string | null> {
+  requireConfigured();
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/status_by_invoice/${encodeURIComponent(invoice)}`, { headers: authHeaders() });
+  if (res.status === 401 || res.status === 404) {
+    await res.body?.cancel();
+    return null;
+  }
+  const { data: parsed, rawText } = await readSteadfastResponse(res);
+  const data = parsed as SteadfastEnvelope<never> | null;
+  if (res.ok && data?.status === 200 && data.delivery_status) return data.delivery_status;
+  logger.error(`[steadfast] invoice lookup failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
+  throw AppError.badRequest(`Steadfast invoice lookup failed: ${data?.message ?? `HTTP ${res.status}`}`, { status: res.status });
+}
+
 export async function getSteadfastStatusByConsignmentId(consignmentId: string): Promise<string> {
   requireConfigured();
 

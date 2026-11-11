@@ -28,6 +28,7 @@ import {
   createPaymentLinkSchema,
   sendPaymentLinkSchema,
   receiveReturnedParcelSchema,
+  linkCourierConsignmentSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
@@ -142,6 +143,7 @@ orderRouter.post("/:id/payment-links/:linkId/cancel", requireAdmin, requirePermi
 orderRouter.post("/:id/payment-links/:linkId/send", requireAdmin, requirePermission("payments.record"), validate(sendPaymentLinkSchema), adjustments.adminSendPaymentLink);
 orderRouter.post("/:id/courier/book", requireAdmin, requirePermission("courier.manage"), orderController.bookCourier);
 orderRouter.post("/:id/courier/refresh", requireAdmin, requirePermission("courier.manage"), orderController.refreshCourier);
+orderRouter.post("/:id/courier/link", requireAdmin, requirePermission("courier.manage"), validate(linkCourierConsignmentSchema), orderController.linkCourier);
 orderRouter.post("/:id/courier/unlink", requireAdmin, requirePermission("courier.manage"), orderController.unlinkCourier);
 orderRouter.delete("/:id", requireAdmin, requirePermission("orders.delete"), orderController.remove);
 orderRouter.post("/:id/restore", requireAdmin, requirePermission("orders.delete"), orderController.restore);
