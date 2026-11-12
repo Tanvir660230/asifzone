@@ -91,7 +91,7 @@ export default function InventoryPage() {
   return (
     <div>
       <PageHeader
-        title="Inventory"
+        title="Stock history & adjustments"
         action={
           <div className="flex gap-2">
             <Button

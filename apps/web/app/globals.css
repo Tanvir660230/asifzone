@@ -897,14 +897,18 @@
       @apply mt-0.5;
     }
   }
-  /* Table rows at the compact row height: the primitives' 12px cell padding becomes 8px, so a one-line row is 40px. */
-  [data-surface="admin"] .ui-table :is(th, td).py-3 {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-  }
-  [data-surface="admin"] .ui-table thead th.py-3 {
-    padding-top: 0.5625rem;
-    padding-bottom: 0.5625rem;
+  /* Table rows at the compact row height, for every table in the console, whichever padding step the page wrote
+     (py-3, py-3.5, py-4): a one-line row is 40px. From tablet width only: on a phone a table is a card list
+     (table[data-stack], above) whose cells carry no padding at all. */
+  @media (min-width: 640px) {
+    [data-surface="admin"] table:not([data-surface="storefront"] *) :is(th, td):is(.py-3, .py-3\.5, .py-4) {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    [data-surface="admin"] table:not([data-surface="storefront"] *) thead th:is(.py-3, .py-3\.5, .py-4) {
+      padding-top: 0.5625rem;
+      padding-bottom: 0.5625rem;
+    }
   }
 
   /* ── Scroll reveal (components/storefront/reveal.tsx) ────────────────────────────────────────
