@@ -6,13 +6,13 @@ import { Plus, Trash2, Undo2 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -24,7 +24,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchaseReturn } from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 /** Supplier returns (docs/FINANCE_PHASE_4D.md): goods sent back. Shipping one takes the units out of stock at their average
@@ -70,37 +70,56 @@ export default function SupplierReturnsPage() {
       {list.isLoading && <Skeleton className="h-40 w-full" />}
       {list.isError && <Alert variant="danger" title="Returns couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {list.data?.purchaseReturns.length === 0 && <EmptyState icon={Undo2} title="No supplier returns" description="Create one when goods go back to a supplier." />}
-      <div className="space-y-3">
-        {list.data?.purchaseReturns.map((r) => (
-          <Card key={r.id} className="space-y-3 p-4" data-testid="return-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-sm text-ink-900">{r.number}</p>
-                <p className="text-sm text-ink-600">{r.supplier.displayName} · {r.returnDate} · {r.reason}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {r.total !== null && <span className="text-sm font-medium tabular-nums">{formatPrice(r.total)}</span>}
-                <Badge variant={RETURN_STATUS_BADGE[r.status]}>{RETURN_STATUS_LABEL[r.status]}</Badge>
-              </div>
-            </div>
-            <ul className="space-y-1 text-sm">
-              {r.lines.map((l) => (
-                <li key={l.id} className="flex flex-wrap justify-between gap-2">
-                  <span className="min-w-0"><span className="font-mono text-xs text-ink-600">{l.sku}</span> {l.name}{l.goodsReceipt ? <span className="text-xs text-ink-500"> · from {l.goodsReceipt.number}</span> : null}</span>
-                  <span className="tabular-nums text-ink-700">{l.quantity}{l.value !== null ? ` · ${formatPrice(l.value)}` : ""}</span>
-                </li>
+      {/* A list, so a table: one return per row with its lines under the number. */}
+      {list.data && list.data.purchaseReturns.length > 0 && (
+        <TableContainer>
+          <Table className="min-w-[820px]">
+            <TableHead>
+              <tr>
+                <TableHeaderCell>Return</TableHeaderCell>
+                <TableHeaderCell>Supplier</TableHeaderCell>
+                <TableHeaderCell>Date</TableHeaderCell>
+                <TableHeaderCell align="right">Value</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell align="right"><span className="sr-only">Actions</span></TableHeaderCell>
+              </tr>
+            </TableHead>
+            <tbody>
+              {list.data.purchaseReturns.map((r) => (
+                <TableRow key={r.id} className="align-top" data-testid="return-card">
+                  <TableCell data-cell="title">
+                    <div className="min-w-0 font-normal">
+                      <p className="font-medium text-ink-900">{r.number} <span className="font-normal text-fg-muted">· {r.reason}</span></p>
+                      <ul className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                        {r.lines.map((l) => (
+                          <li key={l.id}>
+                            {l.sku} <span className="text-ink-700">{l.name}</span>
+                            {l.goodsReceipt ? <> · from {l.goodsReceipt.number}</> : null}
+                            <span className="tabular-nums"> · {l.quantity}{l.value !== null ? ` · ${formatPrice(l.value)}` : ""}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {r.cancelledReason && <p className="mt-0.5 text-xs text-fg-muted">Cancelled: {r.cancelledReason}</p>}
+                    </div>
+                  </TableCell>
+                  <TableCell data-label="Supplier">{r.supplier.displayName}</TableCell>
+                  <TableCell data-label="Date" className="whitespace-nowrap text-fg-muted">{formatBookDate(r.returnDate)}</TableCell>
+                  <TableCell data-label="Value" align="right" className="whitespace-nowrap font-medium">{r.total !== null ? formatPrice(r.total) : <span className="font-normal text-fg-subtle">—</span>}</TableCell>
+                  <TableCell data-cell="badge"><Badge variant={RETURN_STATUS_BADGE[r.status]} className="capitalize">{RETURN_STATUS_LABEL[r.status]}</Badge></TableCell>
+                  <TableCell data-cell="action" align="right">
+                    <div className="flex justify-end gap-2">
+                      {r.status === "DRAFT" && can("purchasing.approve") && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ id: r.id, action: "approve" })}>Approve</Button>}
+                      {r.status === "APPROVED" && can("purchasing.receive") && costingActive && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ id: r.id, action: "ship" })} data-testid="ship-return">Ship</Button>}
+                      {r.status === "APPROVED" && can("purchasing.manage") && <Button size="sm" variant="outline" onClick={() => act.mutate({ id: r.id, action: "reopen" })}>Back to draft</Button>}
+                      {(r.status === "DRAFT" || r.status === "APPROVED") && can("purchasing.manage") && <Button size="sm" variant="ghost" onClick={() => setCancelling(r)}>Cancel</Button>}
+                    </div>
+                  </TableCell>
+                </TableRow>
               ))}
-            </ul>
-            {r.cancelledReason && <p className="text-xs text-ink-500">Cancelled: {r.cancelledReason}</p>}
-            <div className="flex flex-wrap gap-2">
-              {r.status === "DRAFT" && can("purchasing.approve") && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ id: r.id, action: "approve" })}>Approve</Button>}
-              {r.status === "APPROVED" && can("purchasing.receive") && costingActive && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ id: r.id, action: "ship" })} data-testid="ship-return">Ship</Button>}
-              {r.status === "APPROVED" && can("purchasing.manage") && <Button size="sm" variant="outline" onClick={() => act.mutate({ id: r.id, action: "reopen" })}>Back to draft</Button>}
-              {(r.status === "DRAFT" || r.status === "APPROVED") && can("purchasing.manage") && <Button size="sm" variant="ghost" onClick={() => setCancelling(r)}>Cancel</Button>}
-            </div>
-          </Card>
-        ))}
-      </div>
+            </tbody>
+          </Table>
+        </TableContainer>
+      )}
       {creating && <ReturnModal onClose={() => setCreating(false)} onDone={() => { refresh(); setCreating(false); }} />}
       {cancelling && <ReasonModal title={`Cancel ${cancelling.number}`} loading={act.isPending} onClose={() => setCancelling(null)} onConfirm={(reason) => act.mutate({ id: cancelling.id, action: "cancel", reason })} />}
     </div>

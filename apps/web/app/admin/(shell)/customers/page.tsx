@@ -368,7 +368,7 @@ export default function CustomersPage() {
         }
       />
 
-      <div className={cn("grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6", allStats ? "mb-6" : "mb-2 sm:mb-6")}>
+      <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6", allStats ? "mb-4" : "mb-2 sm:mb-4")}>
         {stats ? (
           <>
             <StatTile label="Total customers" value={stats.totalCustomers.toLocaleString()} icon={<Users size={18} />} />

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NavTabs } from "@/components/ui/tabs";
 import { ancestryOf, moduleOf, navNode, resolveNavNode, sectionTabsFor } from "@/lib/admin/navigation";
@@ -16,7 +15,7 @@ import { isStockSectionPath } from "@/components/admin/stock/stock-side-nav";
  * A module's own pages (Orders › All orders / Return requests) are the shell's section bar (components/admin/section-bar.tsx),
  * pinned under the toolbar, so here they'd say the same thing twice — only deeper tab sets like Catalog setup's render.
  */
-export function ModuleTabs({ className = "mb-6", "aria-label": ariaLabel, frame = false }: { className?: string; "aria-label"?: string; frame?: boolean }) {
+export function ModuleTabs({ className = "mb-4", "aria-label": ariaLabel, frame = false }: { className?: string; "aria-label"?: string; frame?: boolean }) {
   const pathname = usePathname();
   const access = useNavAccess();
   const tabs = sectionTabsFor(pathname, access);
@@ -33,26 +32,9 @@ export function ModuleTabs({ className = "mb-6", "aria-label": ariaLabel, frame 
   if (frame) {
     if (!framed) return null;
     return (
-      // Capsules, not a second underlined row: the section bar above already underlines the module's pages, and two
-      // identical rows of tabs read as one confused menu.
-      <nav aria-label={ariaLabel ?? group?.label ?? "Section navigation"} className="mb-4 hidden flex-wrap gap-1 lg:flex">
-        {tabs.map((t) => {
-          const on = t.href === active?.href;
-          return (
-            <Link
-              key={t.node.id}
-              href={t.href}
-              aria-current={on ? "page" : undefined}
-              className={cn(
-                "flex h-7 items-center rounded-full px-3 text-[13px] transition-colors duration-fast ease-smooth",
-                on ? "bg-ink-900/[0.08] font-semibold text-fg" : "font-medium text-fg-muted hover:bg-ink-900/[0.045] hover:text-fg",
-              )}
-            >
-              {t.node.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="hidden lg:block">
+        <NavTabs tabs={tabs.map((t) => ({ label: t.node.label, href: t.href }))} activeHref={active?.href} className="mb-4" aria-label={ariaLabel ?? group?.label} />
+      </div>
     );
   }
   return (
