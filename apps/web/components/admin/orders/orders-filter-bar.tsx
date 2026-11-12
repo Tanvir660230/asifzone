@@ -46,12 +46,12 @@ export function CountBadge({ value, inverted }: { value: number | undefined; inv
 
 /** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */
 // Focus uses the global :focus-visible outline (DESIGN_SYSTEM §5.4) — a 40% ring was too faint to see (2.6:1).
-export const tabBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+export const tabBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
 export const tabOn = "bg-ink-900/[0.08] text-fg";
 export const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
 /** Views (work queues): white capsules; a queue that needs a person and has work in it shows an amber dot. */
-const viewBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+const viewBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
 const viewOff = "border-line bg-surface text-fg hover:border-line-strong";
 const viewOn = "border-accent bg-accent text-accent-fg";
 
@@ -80,7 +80,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
       // Sticky from sm up only: on a phone the two pill rows would pin ~40% of the screen, so there it scrolls away.
-      <div className="z-raised -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-3 sm:pt-3 sm:top-chrome sm:-mx-page sm:px-page">
+      <div className="z-raised -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           {canSeeTrash && (
             <div className="hidden sm:block">

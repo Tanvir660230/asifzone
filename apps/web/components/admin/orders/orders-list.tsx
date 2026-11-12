@@ -71,7 +71,7 @@ export interface OrdersListProps {
 /** Cell padding per density: compact fits about twice the rows of comfortable on one screen. */
 const DENSITY_PAD: Record<ListDensity, string> = {
   compact: "px-3 py-1",
-  standard: "px-3 py-2.5",
+  standard: "px-3 py-1.5",
   comfortable: "px-3 py-3.5",
 };
 /** Every column the table can draw: checkbox, order, product, customer, payment, total, status, courier, placed, actions. */
@@ -267,12 +267,18 @@ function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<
 }
 
 /** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
+/** Whether the order changed status after it was placed. The same transaction as the order itself (a phone order
+ * confirmed on creation) is no separate move. */
+function hasMoved(order: AdminOrderListItem): boolean {
+  const moved = order.statusChangedAt;
+  return Boolean(moved) && new Date(moved!).getTime() - new Date(order.createdAt).getTime() >= 1_000;
+}
+
 function MovedLine({ order }: { order: AdminOrderListItem }) {
   const moved = order.statusChangedAt;
-  // Same transaction as the order itself (a phone order confirmed on creation) = no separate move to show.
-  if (!moved || new Date(moved).getTime() - new Date(order.createdAt).getTime() < 1_000) return null;
+  if (!moved || !hasMoved(order)) return null;
   return (
-    <span className="mt-0.5 block text-xs text-fg-subtle" data-testid="order-moved">
+    <span className="mt-0.5 block text-xs text-fg-subtle" data-testid="order-moved" title={`Placed ${formatStoreDate(order.createdAt)} · ${formatStoreTime(order.createdAt)}`}>
       {orderStatusShortLabel(order.status)} {formatStoreDate(moved)} · {formatStoreTime(moved)}
     </span>
   );
@@ -369,7 +375,7 @@ export function OrdersList(props: OrdersListProps) {
   return (
     <>
       {/* Long pages (up to 200 rows) scroll inside the frame, so the column titles stay in view. */}
-      <TableContainer className="mt-4 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
+      <TableContainer className="mt-3 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
@@ -430,8 +436,9 @@ export function OrdersList(props: OrdersListProps) {
                     </button>
                     <AttentionMarker order={order} />
                   </span>
-                  {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. */}
-                  {shows("placed") && density !== "compact" && (
+                  {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. A row is two
+                      lines at most: once the order has moved, the line says when (its tooltip keeps the placed time). */}
+                  {shows("placed") && density !== "compact" && !hasMoved(order) && (
                     <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
                       {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
                     </span>

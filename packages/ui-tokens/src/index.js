@@ -919,13 +919,14 @@ const surfaceDefinitions = {
       "--finance-money-500": "22 128 95",
       "--finance-money-600": "14 107 80",
       "--finance-money-700": "10 86 64",
-      // The money card: deep graphite, the one dark thing on the screen, with a faint light streak across it.
-      "--pass-fill": "linear-gradient(150deg, #2c2c2e 0%, #1c1c1e 55%, #141415 100%)",
-      "--pass-sheen": "linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.07) 46%, rgba(255,255,255,0) 60%)",
-      "--pass-shadow": "inset 0 1px 0 rgba(255,255,255,0.10), 0 0 0 0.5px rgba(0,0,0,0.30), 0 30px 60px -28px rgba(20,20,22,0.55), 0 8px 18px -10px rgba(20,20,22,0.30)",
-      // Text on the money card (RGB channels): white, and a soft grey for the small print.
-      "--pass-fg": "255 255 255",
-      "--pass-fg-muted": "174 174 178",
+      // The money card (owner, 2026-11-12: one look for every module): the same white card as the rest of the console.
+      // The big figure carries the weight, not a dark fill.
+      "--pass-fill": "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.80) 100%)",
+      "--pass-sheen": "none",
+      "--pass-shadow": "inset 0 1px 0 rgba(255,255,255,0.95), 0 0 0 0.5px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04), 0 14px 34px -18px rgba(20,24,40,0.28)",
+      // Text on the money card (RGB channels): the console's own ink and secondary grey.
+      "--pass-fg": "28 28 30",
+      "--pass-fg-muted": "94 94 99",
       // Wallet cards: one white material — the kind shows in a small mark, not a pastel tint.
       "--pass-cash": "#ffffff",
       "--pass-bank": "#ffffff",
@@ -954,8 +955,9 @@ const surfaceDefinitions = {
       inset: "0 0 #0000", // flat fields (a literal "none" would break Tailwind's composed box-shadow list)
       glow: "0 0 0 4px rgba(28,28,30,0.16)",
     },
-    // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
-    density: { sidebar: "248px", "sidebar-collapsed": "84px", header: "64px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
+    // Owner, 2026-11-12 ("size efficiency, clear view"): a working tool, not a showroom. The airy 64/48/36 rhythm showed
+    // six orders on a laptop screen; these are the compact steps of a desktop app, and a list shows fifteen.
+    density: { sidebar: "224px", "sidebar-collapsed": "76px", header: "52px", "section-bar": "40px", page: "24px", "page-compact": "20px", row: "40px", "row-dense": "34px", control: "34px", "filter-bar": "40px" },
   },
   storefront: {},
 };

@@ -7,7 +7,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PackageCheck, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { Alert } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
@@ -27,7 +27,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { GoodsReceipt, PurchasableVariant } from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 /** Goods receipts (docs/FINANCE_PHASE_4D.md): what actually arrived. Posting one brings the stock and its cost in together;
@@ -92,42 +92,60 @@ export default function GoodsReceiptsPage() {
       {list.isLoading && <Skeleton className="h-40 w-full" />}
       {list.isError && <Alert variant="danger" title="Receipts couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {list.data?.goodsReceipts.length === 0 && <EmptyState icon={PackageCheck} title="No goods receipts" description="Receive goods from an approved purchase order." />}
-      <div className="space-y-3">
-        {list.data?.goodsReceipts.map((r) => (
-          <Card key={r.id} className="space-y-3 p-4" data-testid="grn-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-sm text-ink-900">{r.number}</p>
-                <p className="text-sm text-ink-600">
-                  {r.supplier.displayName} · {r.receiptDate}
-                  {r.purchaseOrder ? <> · <Link href={`/admin/finance/purchase-orders/${r.purchaseOrder.id}`} className="underline-offset-4 hover:underline">{r.purchaseOrder.number}</Link></> : " · no order"}
-                  {r.supplierRef ? ` · ref ${r.supplierRef}` : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium tabular-nums">{formatPrice(r.total)}</span>
-                <Badge variant={GRN_STATUS_BADGE[r.status]}>{GRN_STATUS_LABEL[r.status]}</Badge>
-              </div>
-            </div>
-            <ul className="space-y-1 text-sm">
-              {r.lines.map((l) => (
-                <li key={l.id} className="flex flex-wrap justify-between gap-2">
-                  <span className="min-w-0"><span className="font-mono text-xs text-ink-600">{l.sku}</span> {l.name}</span>
-                  <span className="tabular-nums text-ink-700">{l.qtyAccepted} accepted{l.qtyRejected ? ` · ${l.qtyRejected} rejected` : ""} × {formatPrice(l.unitCost)}</span>
-                </li>
+      {/* A list, so a table: one receipt per row with its lines under the number (the card per receipt showed three). */}
+      {list.data && list.data.goodsReceipts.length > 0 && (
+        <TableContainer>
+          <Table className="min-w-[820px]">
+            <TableHead>
+              <tr>
+                <TableHeaderCell>Receipt</TableHeaderCell>
+                <TableHeaderCell>Supplier</TableHeaderCell>
+                <TableHeaderCell>Date</TableHeaderCell>
+                <TableHeaderCell>Order</TableHeaderCell>
+                <TableHeaderCell align="right">Value</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell align="right"><span className="sr-only">Actions</span></TableHeaderCell>
+              </tr>
+            </TableHead>
+            <tbody>
+              {list.data.goodsReceipts.map((r) => (
+                <TableRow key={r.id} className="align-top" data-testid="grn-card">
+                  <TableCell data-cell="title">
+                    <div className="min-w-0 font-normal">
+                      <p className="font-medium text-ink-900">{r.number}{r.supplierRef ? <span className="font-normal text-fg-muted"> · ref {r.supplierRef}</span> : null}</p>
+                      <ul className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                        {r.lines.map((l) => (
+                          <li key={l.id}>
+                            {l.sku} <span className="text-ink-700">{l.name}</span>
+                            <span className="tabular-nums"> · {l.qtyAccepted} accepted{l.qtyRejected ? ` · ${l.qtyRejected} rejected` : ""} × {formatPrice(l.unitCost)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {(r.directReason || r.overReceiptReason || r.reversalReason) && (
+                        <p className="mt-0.5 text-xs text-fg-muted">{[r.directReason && `Without an order: ${r.directReason}`, r.overReceiptReason && `Over-receipt: ${r.overReceiptReason}`, r.reversalReason && `Reversed: ${r.reversalReason}`].filter(Boolean).join(" · ")}</p>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell data-label="Supplier">{r.supplier.displayName}</TableCell>
+                  <TableCell data-label="Date" className="whitespace-nowrap text-fg-muted">{formatBookDate(r.receiptDate)}</TableCell>
+                  <TableCell data-label="Order" className="whitespace-nowrap">
+                    {r.purchaseOrder ? <Link href={`/admin/finance/purchase-orders/${r.purchaseOrder.id}`} className="underline-offset-4 hover:underline">{r.purchaseOrder.number}</Link> : <span className="text-fg-muted">no order</span>}
+                  </TableCell>
+                  <TableCell data-label="Value" align="right" className="whitespace-nowrap font-medium">{formatPrice(r.total)}</TableCell>
+                  <TableCell data-cell="badge"><Badge variant={GRN_STATUS_BADGE[r.status]} className="capitalize">{GRN_STATUS_LABEL[r.status]}</Badge></TableCell>
+                  <TableCell data-cell="action" align="right">
+                    <div className="flex justify-end gap-2">
+                      {r.status === "DRAFT" && can("purchasing.receive") && costingActive && <Button size="sm" loading={post.isPending} onClick={() => post.mutate(r.id)}>Post</Button>}
+                      {r.status === "DRAFT" && can("purchasing.receive") && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate(r.id)}>Delete draft</Button>}
+                      {r.status === "POSTED" && can("purchasing.approve") && <Button size="sm" variant="outline" onClick={() => setReversing(r)}>Reverse</Button>}
+                    </div>
+                  </TableCell>
+                </TableRow>
               ))}
-            </ul>
-            {(r.directReason || r.overReceiptReason || r.reversalReason) && (
-              <p className="text-xs text-ink-500">{[r.directReason && `Without an order: ${r.directReason}`, r.overReceiptReason && `Over-receipt: ${r.overReceiptReason}`, r.reversalReason && `Reversed: ${r.reversalReason}`].filter(Boolean).join(" · ")}</p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {r.status === "DRAFT" && can("purchasing.receive") && costingActive && <Button size="sm" loading={post.isPending} onClick={() => post.mutate(r.id)}>Post</Button>}
-              {r.status === "DRAFT" && can("purchasing.receive") && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate(r.id)}>Delete draft</Button>}
-              {r.status === "POSTED" && can("purchasing.approve") && <Button size="sm" variant="outline" onClick={() => setReversing(r)}>Reverse</Button>}
-            </div>
-          </Card>
-        ))}
-      </div>
+            </tbody>
+          </Table>
+        </TableContainer>
+      )}
       {direct && <DirectReceiptModal costingActive={costingActive} onClose={() => setDirect(false)} onDone={() => { refresh(); setDirect(false); }} />}
       {reversing && <ReasonModal title={`Reverse ${reversing.number}`} hint="The accepted units leave stock again at this receipt's cost and its journal is reversed. Units already sold can't be reversed — return them to the supplier instead." loading={reverse.isPending} onClose={() => setReversing(null)} onConfirm={(reason) => reverse.mutate({ id: reversing.id, reason })} />}
     </div>

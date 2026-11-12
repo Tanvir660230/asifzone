@@ -32,6 +32,15 @@
     font-size: 18px;
   }
 }
+/* The Store Console is read at a desk all day, row after row: it takes no showroom zoom. One step under the browser's
+   16px from laptop width up, so every rem-based size in the console (type, padding, control heights) tightens together
+   and a list shows more than twice the rows (owner, 2026-11-12: "size efficiency"). The storefront is untouched: the
+   rule only matches a document that holds the admin surface. */
+@media (min-width: 1024px) {
+  html:has([data-surface="admin"]) {
+    font-size: 15px;
+  }
+}
 
 @layer base {
   /* The theme's section rhythm, kept under its own name so a section frame can scale it (.ui-section-frame). */
@@ -160,21 +169,6 @@
   [data-surface="admin"]:has([data-area="finance"]) {
     --color-canvas: var(--finance-canvas, 245 245 247);
   }
-  /* On the graphite money card, text is light and links are white. */
-  [data-area="finance"] .liquid-pass {
-    --color-fg: var(--pass-fg);
-    --color-fg-muted: var(--pass-fg-muted);
-    --color-accent: var(--pass-fg);
-    /* the cost shares (ink steps) and up/down colours, lifted so they read on graphite */
-    --color-ink-700: 235 235 240;
-    --color-ink-500: 186 186 192;
-    --color-ink-400: 142 142 148;
-    --color-ink-300: 104 104 110;
-    --color-success-500: 52 199 140;
-    --color-success-700: 120 222 176;
-    --color-danger-600: 255 128 118;
-    color: rgb(var(--color-fg));
-  }
   /* Every plain card in the Store Console is a soft white panel on the warm canvas (no hairline box): the same fill,
      edge and shadow as .liquid. A storefront preview inside the admin keeps the store's own cards. */
   [data-surface="admin"] [data-card="default"]:not([data-surface="storefront"] *) {
@@ -202,7 +196,7 @@
     overflow: hidden;
     background: var(--pass-fill, rgb(var(--color-surface)));
     box-shadow: var(--pass-shadow, none);
-    @apply rounded-3xl;
+    @apply rounded-2xl;
   }
   .liquid-pass::before {
     content: "";
@@ -873,6 +867,34 @@
   [data-surface="admin"] .ui-overlay {
     @apply bg-ink-950/20 backdrop-blur-[3px];
   }
+  /* A page title names the page; it does not headline it (owner, 2026-11-12: "size efficiency"). From tablet width the
+     title sits on one compact row with its actions, and the page's content starts right under it. */
+  @media (min-width: 640px) {
+    [data-surface="admin"] [data-page-header] {
+      @apply mb-5 items-center;
+    }
+    [data-surface="admin"] [data-page-header] h1 {
+      font-size: 1.5rem;
+      line-height: 1.875rem;
+      letter-spacing: -0.02em;
+    }
+    [data-surface="admin"] [data-page-description] {
+      @apply mt-0.5;
+    }
+  }
+  /* Table rows at the compact row height, for every table in the console, whichever padding step the page wrote
+     (py-3, py-3.5, py-4): a one-line row is 40px. From tablet width only: on a phone a table is a card list
+     (table[data-stack], above) whose cells carry no padding at all. */
+  @media (min-width: 640px) {
+    [data-surface="admin"] table:not([data-surface="storefront"] *) :is(th, td):is(.py-3, .py-3\.5, .py-4) {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    [data-surface="admin"] table:not([data-surface="storefront"] *) thead th:is(.py-3, .py-3\.5, .py-4) {
+      padding-top: 0.5625rem;
+      padding-bottom: 0.5625rem;
+    }
+  }
 
   /* ── Scroll reveal (components/storefront/reveal.tsx) ────────────────────────────────────────
      A scroll-driven animation: the element rises into place while it enters the viewport. No JavaScript and nothing is
@@ -1151,4 +1173,16 @@
 [data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
   font-size: 0.9375rem;
   line-height: 1.375rem;
+}
+/* From laptop width the console's root is 15px (top of this file), so the same two steps land on 12px captions and
+   13.5px body: the working sizes of a desktop app. Phones and tablets keep the larger reading sizes above. */
+@media (min-width: 1024px) {
+  [data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
+    font-size: 0.8rem;
+    line-height: 1.1rem;
+  }
+  [data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
+    font-size: 0.9rem;
+    line-height: 1.3rem;
+  }
 }

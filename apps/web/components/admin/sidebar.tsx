@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, MoreHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { MoreHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as settingsApi from "@/lib/api/settings";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -13,7 +13,6 @@ import { useNavAccess, useNavBadges } from "@/hooks/use-nav-access";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { NAV_ICONS } from "./nav-icons";
-import { isStockSectionPath } from "./stock/stock-side-nav";
 
 /**
  * The admin sidebar — rendered entirely from the navigation manifest (lib/admin/navigation.ts): modules grouped by
@@ -84,12 +83,13 @@ export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileO
   const mainGroups = tree.filter((g) => g.domain !== "system");
   const footerModules = tree.find((g) => g.domain === "system")?.modules ?? [];
 
-  function moduleRow(item: NavItem, collapse: boolean) {
+  function moduleRow(item: NavItem, collapse: boolean, showPages: boolean) {
     return (
       <ModuleRow
         key={item.node.id}
         item={item}
         collapse={collapse}
+        showPages={showPages}
         active={item.node.id === activeModuleId}
         trail={trail}
         badge={item.node.badge ? badges[item.node.badge] : 0}
@@ -112,7 +112,7 @@ export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileO
           )}
         </div>
 
-        <nav aria-label="Admin" aria-busy={!access.ready} className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-2", collapse ? "space-y-2.5 px-2" : "space-y-5 px-3")}>
+        <nav aria-label="Admin" aria-busy={!access.ready} className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-2", collapse ? "space-y-2.5 px-2" : "space-y-4 px-2.5")}>
           {/* Until the admin profile arrives nothing is known to be allowed — a neutral placeholder rather than a partial
               menu that rearranges itself a moment later. */}
           {!access.ready && (
@@ -127,13 +127,13 @@ export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileO
               <div key={group.domain}>
                 {group.label && !collapse && <p className="mb-1 px-2.5 text-[11px] font-semibold text-fg-subtle">{group.label}</p>}
                 {group.label && collapse && <div className="mx-4 mb-2 border-t border-ink-900/[0.08]" aria-hidden />}
-                <div className={collapse ? "space-y-0.5" : "space-y-px"}>{group.modules.map((m) => moduleRow(m, collapse))}</div>
+                <div className={collapse ? "space-y-0.5" : "space-y-px"}>{group.modules.map((m) => moduleRow(m, collapse, mobileDrawer))}</div>
               </div>
             ))}
         </nav>
 
         <div className={cn("mb-3 border-t border-ink-900/[0.08] pt-3", collapse ? "mx-2 space-y-0.5" : "mx-3 space-y-px")}>
-          {access.ready && footerModules.map((m) => moduleRow(m, collapse))}
+          {access.ready && footerModules.map((m) => moduleRow(m, collapse, mobileDrawer))}
           {!mobileDrawer && (
             <button
               onClick={toggleCollapsed}
@@ -200,15 +200,17 @@ const rowClass = (active: boolean, collapse: boolean) =>
     "group relative flex transition-colors duration-fast ease-smooth",
     // Collapsed: a tile per module — icon with a short label under it (a navigation rail), so the rail still reads
     // without hovering, not a squeezed text row.
-    collapse ? "h-12 w-full flex-col items-center justify-center gap-1 rounded-xl px-1" : "h-9 items-center gap-2.5 rounded-xl px-3 text-[14.5px]",
+    collapse ? "h-12 w-full flex-col items-center justify-center gap-1 rounded-xl px-1" : "h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px]",
     active ? "bg-ink-100 font-semibold text-fg" : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-fg",
   );
 
-/** One module: its link (the module's index route), and — when it's the active module — its pages, one level deep.
- * Collapsed, the pages open in a flyout beside the rail on hover or keyboard focus. */
+/** One module: its link (the module's index route). The module's pages are the shell's section bar, under the toolbar,
+ * so the desktop sidebar lists modules only and never scrolls; the phone and tablet drawer (`showPages`) still opens
+ * the active module one level. Collapsed, the pages open in a flyout beside the rail on hover or keyboard focus. */
 function ModuleRow({
   item,
   collapse,
+  showPages,
   active,
   trail,
   badge,
@@ -216,6 +218,7 @@ function ModuleRow({
 }: {
   item: NavItem;
   collapse: boolean;
+  showPages: boolean;
   active: boolean;
   trail: Set<string>;
   badge: number;
@@ -223,7 +226,6 @@ function ModuleRow({
 }) {
   const { node, href, children } = item;
   const Icon = node.icon ? NAV_ICONS[node.icon] : undefined;
-  const pathname = usePathname();
   const badges = useNavBadges();
   const childBadge = (child: NavItem) => (child.node.badge ? badges[child.node.badge] : 0);
   const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
@@ -282,14 +284,10 @@ function ModuleRow({
             {formatBadge(badge)}
           </span>
         )}
-        {!collapse && badge === 0 && children.length > 0 && (
-          <ChevronRight size={13} className={cn("ml-auto shrink-0 text-ink-400 transition-transform duration-base ease-smooth", active && "rotate-90")} aria-hidden />
-        )}
       </Link>
 
-      {/* The Stock section lists its pages in its own grouped menu beside the page (StockFrame), so not here as well. */}
-      {!collapse && active && children.length > 0 && (
-        <div className={cn("mb-1 mt-px space-y-px pl-[30px]", isStockSectionPath(pathname) && "lg:hidden")}>
+      {showPages && !collapse && active && children.length > 0 && (
+        <div className="mb-1 mt-px space-y-px pl-[30px]">
           {children.map((child) => {
             const childActive = trail.has(child.node.id);
             return (

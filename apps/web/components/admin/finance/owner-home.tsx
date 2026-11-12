@@ -131,11 +131,11 @@ function MonthCard({ month, last, current, stockGain }: { month: OwnerMonth; las
   const label = current ? `${monthName(month.month)} so far` : monthName(month.month, { month: "long", year: "numeric" });
 
   return (
-    <section className="liquid-pass p-6 sm:p-8" aria-label={`${label}: ${loss ? "loss" : "profit"}`} data-testid="owner-month">
+    <section className="liquid-pass p-5 sm:p-6" aria-label={`${label}: ${loss ? "loss" : "profit"}`} data-testid="owner-month">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-end">
         <div>
           <p className="text-[15px] font-medium text-fg-muted">{label}</p>
-          <p className={cn("mt-1 text-[2.5rem] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[3.5rem]", loss ? "text-danger-600" : "text-fg")}>
+          <p className={cn("mt-1 text-[2.25rem] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[2.75rem]", loss ? "text-danger-600" : "text-fg")}>
             {loss ? `−${formatPrice(-month.profit)}` : formatPrice(month.profit)}
           </p>
           <p className="mt-2 text-[15px] text-fg-muted">

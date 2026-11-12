@@ -93,8 +93,8 @@ export interface NavNode {
   goKey?: string;
   /** Old routes that now live here — the middleware redirects them (query string kept). Same `[param]` names as `route`. */
   deprecatedRoutes?: string[];
-  /** A grouping page whose pages show as a vertical inner list beside the page on wide screens (macOS Settings-style)
-   * instead of a tab row — for long sets like Catalog setup's ten. Its layout renders <InnerNav>. */
+  /** A grouping page whose layout draws its pages as one row of tabs above every page of the group
+   * (components/admin/section-frame.tsx), so the row is there from laptop width up whatever the page renders. */
   innerList?: boolean;
 }
 
