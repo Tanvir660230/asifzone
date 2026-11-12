@@ -7,10 +7,10 @@ import { FileText, Plus } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
@@ -23,7 +23,7 @@ import { useCreateParam } from "@/hooks/use-create-param";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { SupplierInvoice, SupplierInvoiceKind } from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 const errorCode = (err: unknown) => (err instanceof ApiError ? (err.details as { code?: string } | undefined)?.code : undefined);
@@ -74,7 +74,7 @@ export default function SupplierInvoicesPage() {
   }
   const filtered = Boolean(status || kind || q.trim());
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ModuleTabs />
       <PageHeader
         title="Supplier bills"
@@ -104,55 +104,69 @@ export default function SupplierInvoicesPage() {
       {list.isLoading && <Skeleton className="h-40 w-full" />}
       {list.isError && <Alert variant="danger" title="Supplier bills couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {list.data?.invoices.length === 0 && <EmptyState icon={FileText} title={filtered ? "Nothing matches" : "No supplier bills yet"} description={filtered ? "Try other filters." : "Enter a bill when a supplier invoices goods you received or a service you ordered."} />}
-      <div className="space-y-3">
-        {list.data?.invoices.map((i) => (
-          <Card key={i.id} className="space-y-3 p-4" data-testid="invoice-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-mono text-sm text-ink-900">{i.number} <span className="font-sans text-ink-600">· {i.kind === "INVOICE" ? "bill" : "credit note"} {i.supplierRef}</span></p>
-                <p className="text-sm text-ink-600">
-                  {i.supplier.displayName} · {i.invoiceDate}
-                  {i.kind === "INVOICE" && <> · due <span className={i.overdue ? "text-danger-700" : undefined}>{i.dueDate}{i.overdue ? " (overdue)" : ""}</span></>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-right text-sm font-medium tabular-nums">
-                  {i.kind === "CREDIT_NOTE" ? "−" : ""}{formatPrice(i.total)}
-                  {i.status === "POSTED" && i.outstanding !== null && i.settled > 0 && (
-                    <span className="block text-xs font-normal text-ink-500">{i.outstanding === 0 ? (i.kind === "INVOICE" ? "paid in full" : "fully used") : `${formatPrice(i.outstanding)} ${i.kind === "INVOICE" ? "still owed" : "left"}`}</span>
-                  )}
-                </span>
-                <Badge variant={INVOICE_STATUS_BADGE[i.status]}>{INVOICE_STATUS_LABEL[i.status]}</Badge>
-              </div>
-            </div>
-            <ul className="space-y-1 text-sm">
-              {i.lines.map((l) => (
-                <li key={l.id} className="flex flex-wrap justify-between gap-2">
-                  <span className="min-w-0">
-                    <span className="text-xs text-ink-500">{INVOICE_LINE_LABEL[l.lineType]}</span>{" "}
-                    {l.description}
-                    {l.goodsReceipt && !l.description.includes(l.goodsReceipt.number) && <span className="text-ink-500"> · {l.goodsReceipt.number}</span>}
-                    {l.purchaseReturn && !l.description.includes(l.purchaseReturn.number) && <span className="text-ink-500"> · {l.purchaseReturn.number}</span>}
-                    {l.productionOrder && <> · <Link href={`/admin/manufacturing/production-orders/${l.productionOrder.id}`} className="underline-offset-4 hover:underline">open order</Link></>}
-                  </span>
-                  <span className="tabular-nums text-ink-700">
-                    {l.quantity} × {formatPrice(l.unitPrice)}{l.tax ? ` + tax ${formatPrice(l.tax)}` : ""}
-                    {l.priceDifference ? <span className={l.priceDifference > 0 ? "block text-xs text-warning-700" : "block text-xs text-ink-500"}>price difference {formatPrice(l.priceDifference)}</span> : null}
-                  </span>
-                </li>
+      {/* A list, so a table: one bill per row with its lines under the number. The card per bill showed three on a screen. */}
+      {list.data && list.data.invoices.length > 0 && (
+        <TableContainer>
+          <Table className="min-w-[860px]">
+            <TableHead>
+              <tr>
+                <TableHeaderCell>Bill</TableHeaderCell>
+                <TableHeaderCell>Supplier</TableHeaderCell>
+                <TableHeaderCell>Date</TableHeaderCell>
+                <TableHeaderCell>Due</TableHeaderCell>
+                <TableHeaderCell align="right">Amount</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell align="right"><span className="sr-only">Actions</span></TableHeaderCell>
+              </tr>
+            </TableHead>
+            <tbody>
+              {list.data.invoices.map((i) => (
+                <TableRow key={i.id} className="align-top" data-testid="invoice-card">
+                  <TableCell data-cell="title"><div className="min-w-0 font-normal">
+                    <p className="font-medium text-ink-900">
+                      {i.number} <span className="font-normal text-fg-muted">· {i.kind === "INVOICE" ? "bill" : "credit note"} {i.supplierRef}</span>
+                    </p>
+                    <ul className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                      {i.lines.map((l) => (
+                        <li key={l.id}>
+                          {INVOICE_LINE_LABEL[l.lineType]}: <span className="text-ink-700">{l.description}</span>
+                          {l.goodsReceipt && !l.description.includes(l.goodsReceipt.number) && <> · {l.goodsReceipt.number}</>}
+                          {l.purchaseReturn && !l.description.includes(l.purchaseReturn.number) && <> · {l.purchaseReturn.number}</>}
+                          {l.productionOrder && <> · <Link href={`/admin/manufacturing/production-orders/${l.productionOrder.id}`} className="underline-offset-4 hover:underline">open order</Link></>}
+                          <span className="tabular-nums"> · {l.quantity} × {formatPrice(l.unitPrice)}{l.tax ? ` + tax ${formatPrice(l.tax)}` : ""}</span>
+                          {l.priceDifference ? <span className={l.priceDifference > 0 ? "text-warning-700" : undefined}> · price difference {formatPrice(l.priceDifference)}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                    {(i.varianceReason || i.voidReason) && <p className="mt-0.5 text-xs text-fg-muted">{[i.varianceReason && `Price variance approved: ${i.varianceReason}`, i.voidReason && `Voided: ${i.voidReason}`].filter(Boolean).join(" · ")}</p>}
+                  </div></TableCell>
+                  <TableCell data-label="Supplier">{i.supplier.displayName}</TableCell>
+                  <TableCell data-label="Date" className="whitespace-nowrap text-fg-muted">{formatBookDate(i.invoiceDate)}</TableCell>
+                  <TableCell data-label="Due" className="whitespace-nowrap">
+                    {i.kind === "INVOICE" && i.dueDate ? <span className={i.overdue ? "text-danger-700" : "text-fg-muted"}>{formatBookDate(i.dueDate)}{i.overdue ? " (overdue)" : ""}</span> : <span className="text-fg-subtle">—</span>}
+                  </TableCell>
+                  <TableCell data-label="Amount" align="right" className="whitespace-nowrap font-medium">
+                    {i.kind === "CREDIT_NOTE" ? "−" : ""}{formatPrice(i.total)}
+                    {i.status === "POSTED" && i.outstanding !== null && i.settled > 0 && (
+                      <span className="block text-xs font-normal text-fg-muted">{i.outstanding === 0 ? (i.kind === "INVOICE" ? "paid in full" : "fully used") : `${formatPrice(i.outstanding)} ${i.kind === "INVOICE" ? "still owed" : "left"}`}</span>
+                    )}
+                  </TableCell>
+                  <TableCell data-cell="badge"><Badge variant={INVOICE_STATUS_BADGE[i.status]} className="capitalize">{INVOICE_STATUS_LABEL[i.status]}</Badge></TableCell>
+                  <TableCell data-cell="action" align="right">
+                    {can("ap.manage") && i.status !== "VOID" && (
+                      <div className="flex justify-end gap-2">
+                        {i.status === "DRAFT" && <Button size="sm" loading={post.isPending} onClick={() => post.mutate({ invoice: i })} data-testid="invoice-card-post">Post</Button>}
+                        {i.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate(i.id)}>Delete draft</Button>}
+                        {i.status === "POSTED" && <Button size="sm" variant="outline" onClick={() => setVoiding(i)}>Void</Button>}
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
               ))}
-            </ul>
-            {(i.varianceReason || i.voidReason) && <p className="text-xs text-ink-500">{[i.varianceReason && `Price variance approved: ${i.varianceReason}`, i.voidReason && `Voided: ${i.voidReason}`].filter(Boolean).join(" · ")}</p>}
-            {can("ap.manage") && i.status !== "VOID" && (
-              <div className="flex flex-wrap gap-2">
-                {i.status === "DRAFT" && <Button size="sm" loading={post.isPending} onClick={() => post.mutate({ invoice: i })} data-testid="invoice-card-post">Post</Button>}
-                {i.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate(i.id)}>Delete draft</Button>}
-                {i.status === "POSTED" && <Button size="sm" variant="outline" onClick={() => setVoiding(i)}>Void</Button>}
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
+            </tbody>
+          </Table>
+        </TableContainer>
+      )}
       {creating && (
         <SupplierInvoiceModal
           kind={creating}
