@@ -165,6 +165,13 @@ the current module's pages. A group's own pages (Catalog setup, Bills to pay, St
 page, drawn by the group's layout (`SectionFrame`) from 1024 px and by the page's `<ModuleTabs />` below it. Never a
 second menu column beside the page, and never the same list in two places.
 
+**Lists are tables.** A page that lists records (bills, receipts, returns, journals) draws one row per record, never
+a card per record: a document's lines sit as small text under its number in the first cell, dates use `formatBookDate`
+("23 Oct 2026"), the status is a capitalised `Badge`, actions close the row. The first cell's content is wrapped in one
+block so the phone card list stacks it. Cards are for a record with its own figures and progress (a loan, a prepaid
+cost), not for a list. Every admin table gets the compact row padding from tablet width, whatever padding step the page
+wrote. In-page route tabs (`NavTabs`) are capsules; underlined tabs belong to the section bar alone.
+
 **Page anatomy** — five rows, always in this order: shell (sidebar from the navigation manifest, top bar with search
 Ctrl/⌘ K, Create, bell, account) → header (`PageHeader`: title, one-line description, primary action; back link on record
 pages) → section bar (a section's pages as tabs when 2–6, an inner list when more) → filter row (search left, chips,

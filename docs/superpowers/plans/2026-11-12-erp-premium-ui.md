@@ -167,3 +167,14 @@ Per page, the same checklist:
   mockup with real data, and before/after screenshots at every phase gate.
 - **Parallel sessions** editing admin pages in other worktrees. Mitigation: rebase each module PR on
   `origin/main` right before review; keep module PRs short-lived.
+
+## Progress (2026-11-12, draft PR #156)
+
+- [x] Scale: 15 px console root from 1024 px, compact density tokens, one-row page title, compact rows for every table, smaller StatTile.
+- [x] Navigation: one rule (sidebar modules, section bar pages, capsule tabs for a group's pages); second menu columns removed.
+- [x] Orders rows two lines; Supplier bills, Goods receipts, Supplier returns as tables; Journals as one list; store-format dates on those and Expenses.
+- [x] Money and Profit hero on the console's white card (owner: "do what is best"); smaller Dashboard title.
+- [ ] Shared ListPage / RecordPage / FormPage shells; raw `<table>` pages onto `DataTable`.
+- [ ] Page passes not yet done one by one: Products builder, Stock inner pages, Analytics, Marketing, Online store, Settings, Team.
+- [ ] Lint rule against arbitrary font sizes and `uppercase` (459 and 131 existing uses must be cleared first).
+- [ ] Remove the outside-in CSS patches in globals.css once pages no longer need them.
