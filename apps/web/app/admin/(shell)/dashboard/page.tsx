@@ -137,12 +137,12 @@ export default function DashboardPage() {
 
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 lg:space-y-7">
       {/* Greeting — a plain large title on the canvas, the page's one primary action beside it */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-fg-muted">{dateLabel || " "}</p>
-          <h1 className="mt-1 text-[32px] font-semibold leading-tight tracking-tight text-fg sm:text-[34px]">
+          <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-tight text-fg lg:text-[24px]">
             {greeting}
             {admin ? `, ${firstName(admin.name)}` : ""}
           </h1>

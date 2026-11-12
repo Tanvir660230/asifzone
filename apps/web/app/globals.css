@@ -169,21 +169,6 @@
   [data-surface="admin"]:has([data-area="finance"]) {
     --color-canvas: var(--finance-canvas, 245 245 247);
   }
-  /* On the graphite money card, text is light and links are white. */
-  [data-area="finance"] .liquid-pass {
-    --color-fg: var(--pass-fg);
-    --color-fg-muted: var(--pass-fg-muted);
-    --color-accent: var(--pass-fg);
-    /* the cost shares (ink steps) and up/down colours, lifted so they read on graphite */
-    --color-ink-700: 235 235 240;
-    --color-ink-500: 186 186 192;
-    --color-ink-400: 142 142 148;
-    --color-ink-300: 104 104 110;
-    --color-success-500: 52 199 140;
-    --color-success-700: 120 222 176;
-    --color-danger-600: 255 128 118;
-    color: rgb(var(--color-fg));
-  }
   /* Every plain card in the Store Console is a soft white panel on the warm canvas (no hairline box): the same fill,
      edge and shadow as .liquid. A storefront preview inside the admin keeps the store's own cards. */
   [data-surface="admin"] [data-card="default"]:not([data-surface="storefront"] *) {
@@ -211,7 +196,7 @@
     overflow: hidden;
     background: var(--pass-fill, rgb(var(--color-surface)));
     box-shadow: var(--pass-shadow, none);
-    @apply rounded-3xl;
+    @apply rounded-2xl;
   }
   .liquid-pass::before {
     content: "";
