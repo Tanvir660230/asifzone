@@ -108,6 +108,7 @@ export default function NewOrderPage() {
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
@@ -380,17 +381,23 @@ export default function NewOrderPage() {
                   {...register("customerPhone")}
                 />
                 {errors.customerPhone && <p className="ui-field-error">{errors.customerPhone.message}</p>}
-                {!customerId && (
-                  <PhoneHistoryCard
-                    phone={customerPhone ?? ""}
-                    onUse={(h) => {
-                      setValue("customerName", h.last.customerName, { shouldValidate: true });
-                      setValue("shippingDistrict", h.last.shippingDistrict, { shouldValidate: true });
-                      setValue("shippingArea", h.last.shippingArea, { shouldValidate: true });
-                      setValue("shippingAddressLine", h.last.shippingAddressLine, { shouldValidate: true });
-                    }}
-                  />
-                )}
+                <PhoneHistoryCard
+                  phone={customerPhone ?? ""}
+                  customerId={customerId}
+                  isFormEmpty={() => {
+                    const v = getValues();
+                    // A name put in by linking a customer still counts as blank — the address is what is missing.
+                    const nameBlank = !v.customerName?.trim() || (!!customerId && v.customerName === linkedCustomerName);
+                    return nameBlank && !v.shippingDistrict && !v.shippingArea && !v.shippingAddressLine?.trim();
+                  }}
+                  onUse={(a) => {
+                    // A linked customer keeps their account name; otherwise the name the parcel last went under.
+                    if (!customerId || !getValues("customerName")?.trim()) setValue("customerName", a.customerName, { shouldValidate: true });
+                    setValue("shippingDistrict", a.shippingDistrict, { shouldValidate: true });
+                    setValue("shippingArea", a.shippingArea, { shouldValidate: true });
+                    setValue("shippingAddressLine", a.shippingAddressLine, { shouldValidate: true });
+                  }}
+                />
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>
