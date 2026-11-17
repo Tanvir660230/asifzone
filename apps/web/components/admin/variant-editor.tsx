@@ -259,7 +259,7 @@ export function VariantEditor({
             <div className="mt-4 space-y-4">
               {attributes.map((attr) => (
                 <fieldset key={attr.id}>
-                  <legend className="mb-2 text-caption font-semibold uppercase text-fg-muted">{attr.name}</legend>
+                  <legend className="mb-2 text-caption font-semibold text-fg-muted">{attr.name}</legend>
                   <div className="flex flex-wrap gap-2">
                     {attr.values.map((v) => {
                       const checked = selected[attr.id]?.has(v.id) ?? false;
@@ -377,21 +377,21 @@ export function VariantEditor({
                     )}
                     <span className="min-w-0 truncate text-sm font-medium text-fg">{title}</span>
                     {index === 0 ? (
-                      <Badge variant="accent" className="gap-1 px-2 py-0 text-[0.6875rem]">
+                      <Badge variant="accent" className="gap-1 px-2 py-0 text-xs">
                         <Star size={10} className="fill-current" aria-hidden="true" /> Default
                       </Badge>
                     ) : (
-                      <button type="button" onClick={() => move(index, 0)} className="rounded-full px-2 py-0.5 text-[0.6875rem] text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg">
+                      <button type="button" onClick={() => move(index, 0)} className="rounded-full px-2 py-0.5 text-xs text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg">
                         Set as default
                       </button>
                     )}
                     {row.isActive === false && (
-                      <Badge variant="neutral" className="px-2 py-0 text-[0.6875rem]">
+                      <Badge variant="neutral" className="px-2 py-0 text-xs">
                         Off sale
                       </Badge>
                     )}
                     {chips.map((chip) => (
-                      <span key={chip} className="rounded-full bg-surface-muted px-2 py-0.5 text-[0.6875rem] text-ink-600">
+                      <span key={chip} className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-600">
                         {chip}
                       </span>
                     ))}

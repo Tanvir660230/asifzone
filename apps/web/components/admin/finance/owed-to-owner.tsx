@@ -57,7 +57,7 @@ export function OwedToOwner({ canRepay }: { canRepay: boolean }) {
     <Card className="space-y-4 p-5 sm:p-6" data-testid="owed-to-owner">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[17px] font-semibold tracking-tight text-fg">Owed back to the owner</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Owed back to the owner</h2>
           <p className="text-sm text-fg-muted">What the owner paid from their own pocket, to be repaid, line by line.</p>
         </div>
         <div className="flex items-center gap-3">

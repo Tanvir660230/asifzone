@@ -45,7 +45,7 @@ export function ProfitGlance() {
           </p>
         </div>
         <div className="flex flex-col">
-          <div className="flex items-center justify-between text-[13px] font-medium text-fg-muted">
+          <div className="flex items-center justify-between text-sm font-medium text-fg-muted">
             <span>Profit, last 14 days</span>
             <span className="flex items-center gap-0.5 text-accent">Open Profit<ChevronRight className="h-4 w-4" aria-hidden /></span>
           </div>
@@ -72,8 +72,8 @@ function Figure({ label, value }: { label: string; value: number }) {
   const loss = value < 0;
   return (
     <div className="min-w-0">
-      <p className="text-[13px] font-medium text-fg-muted">{label}</p>
-      <p className={cn("mt-1 truncate text-[22px] font-semibold leading-tight tracking-tight tabular-nums sm:text-[26px]", loss ? "text-danger-600" : "text-fg")}>
+      <p className="text-sm font-medium text-fg-muted">{label}</p>
+      <p className={cn("mt-1 truncate text-xl font-semibold leading-tight tracking-tight tabular-nums sm:text-2xl", loss ? "text-danger-600" : "text-fg")}>
         {loss ? `${money(-value)} loss` : money(value)}
       </p>
     </div>

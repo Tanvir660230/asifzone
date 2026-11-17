@@ -15,7 +15,7 @@ export function Breadcrumbs({ className, titleOnLanding = false }: { className?:
   const node = resolveNavNode(pathname);
   if (crumbs.length === 1 && titleOnLanding && node) {
     // The module's own name, as the sidebar writes it.
-    return <p className={cn("min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-fg", className)}>{moduleOf(node).label}</p>;
+    return <p className={cn("min-w-0 truncate text-base font-semibold tracking-[-0.01em] text-fg", className)}>{moduleOf(node).label}</p>;
   }
   if (crumbs.length < 2) return null;
   // The toolbar has room for two: where it sits and the page itself. The page keeps its name; the parent gives way first
@@ -23,7 +23,7 @@ export function Breadcrumbs({ className, titleOnLanding = false }: { className?:
   const shown = crumbs.slice(-2);
   return (
     <nav aria-label="Breadcrumb" className={cn("min-w-0", className)}>
-      <ol className="flex min-w-0 items-center gap-1 text-[13px] text-ink-500">
+      <ol className="flex min-w-0 items-center gap-1 text-sm text-ink-500">
         {shown.map((crumb, i) => (
           <li key={`${crumb.label}-${i}`} className={cn("flex min-w-0 items-center gap-1", i === shown.length - 1 ? "shrink" : "max-w-[10rem] shrink-[6]")}>
             {i > 0 && <ChevronRight size={13} className="shrink-0 text-ink-300" aria-hidden />}

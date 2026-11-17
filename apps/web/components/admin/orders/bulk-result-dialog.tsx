@@ -42,7 +42,7 @@ export function BulkResultDialog({ result, onClose, onOpenOrder }: { result: Bul
       <div className="space-y-4">
         {groups.map(({ key, label, rows, Icon, tone }) => (
           <section key={key} aria-label={label}>
-            <h3 className={`mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${tone}`}>
+            <h3 className={`mb-1.5 flex items-center gap-1.5 text-xs font-semibold ${tone}`}>
               <Icon size={13} aria-hidden="true" /> {label} ({rows.length})
             </h3>
             <ul className="max-h-48 divide-y divide-line-subtle overflow-y-auto rounded-lg border border-line-subtle text-sm">

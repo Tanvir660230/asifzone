@@ -279,7 +279,7 @@ export default function AdminReturnRequestsPage() {
             ) : review.decision === "APPROVED" ? (
               <div className="space-y-3">
               <div className="rounded-xl border border-line-subtle bg-surface-muted p-3.5">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">What happens</p>
+                <p className="mb-2 text-xs font-semibold text-ink-500">What happens</p>
                 <ul className="list-disc space-y-1 pl-4 text-sm text-ink-700">
                   {approvalEffects(review.request).map((t) => (
                     <li key={t}>{t}</li>

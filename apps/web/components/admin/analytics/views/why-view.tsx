@@ -25,7 +25,7 @@ function Bridge({ rows, before, after, fmt }: { rows: Array<{ label: string; val
     </div>
   );
   const line = (label: string, value: string, b: React.ReactNode, strong = false) => (
-    <li key={label} className="flex items-center gap-3 text-[13px]">
+    <li key={label} className="flex items-center gap-3 text-sm">
       <span className={cn("w-40 shrink-0 max-sm:w-28", strong ? "font-semibold text-fg" : "text-fg-muted")}>{label}</span>
       {b}
       <span className={cn("w-24 shrink-0 text-right tabular-nums max-sm:w-20", strong ? "font-semibold text-fg" : "text-fg")}>{value}</span>
@@ -54,11 +54,11 @@ function Movers({ title, data, money = true }: { title: string; data: { up: Move
   const fmt = (v: number) => (money ? taka(v) : count(v));
   const list = (items: Mover[], up: boolean) =>
     items.length === 0 ? (
-      <p className="py-2 text-[13px] text-fg-muted">{up ? "Nothing grew." : "Nothing fell."}</p>
+      <p className="py-2 text-sm text-fg-muted">{up ? "Nothing grew." : "Nothing fell."}</p>
     ) : (
       <ul className="divide-y divide-line">
         {items.map((m) => (
-          <li key={m.key} className="flex items-baseline justify-between gap-3 py-2 text-[13px]">
+          <li key={m.key} className="flex items-baseline justify-between gap-3 py-2 text-sm">
             <span className="min-w-0 truncate text-fg" title={m.key}>
               {m.key}
             </span>
@@ -77,11 +77,11 @@ function Movers({ title, data, money = true }: { title: string; data: { up: Move
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-fg-muted">Up</p>
+          <p className="text-xs font-semibold text-fg-muted">Up</p>
           {list(data.up, true)}
         </div>
         <div>
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-fg-muted">Down</p>
+          <p className="text-xs font-semibold text-fg-muted">Down</p>
           {list(data.down, false)}
         </div>
       </CardContent>
@@ -105,7 +105,7 @@ function Body({ d }: { d: WhyChanged }) {
 
   return (
     <div className="space-y-6">
-      <p className="text-[13px] text-fg-muted">
+      <p className="text-sm text-fg-muted">
         {span(d.range)} compared with {span(d.previous)}, the same number of days just before it.
       </p>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -114,7 +114,7 @@ function Body({ d }: { d: WhyChanged }) {
             <CardTitle>Website orders</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-[14px] leading-relaxed text-fg">{orderSentence}</p>
+            <p className="text-sm leading-relaxed text-fg">{orderSentence}</p>
             <Bridge
               before={o.before}
               after={o.after}
@@ -124,7 +124,7 @@ function Body({ d }: { d: WhyChanged }) {
                 { label: "Conversion", value: o.effects.conversion },
               ]}
             />
-            <p className="text-[12px] leading-relaxed text-fg-muted">
+            <p className="text-xs leading-relaxed text-fg-muted">
               Visits {count(d.numbers.before.sessions)} → {count(d.numbers.after.sessions)} · conversion {conv(d.numbers.before)} → {conv(d.numbers.after)}. Phone and
               admin orders ({count(d.otherOrders.before)} → {count(d.otherOrders.after)}) aren&apos;t part of this split.
             </p>
@@ -135,7 +135,7 @@ function Body({ d }: { d: WhyChanged }) {
             <CardTitle>Net sales</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-[14px] leading-relaxed text-fg">{salesSentence}</p>
+            <p className="text-sm leading-relaxed text-fg">{salesSentence}</p>
             <Bridge
               before={s.before}
               after={s.after}
@@ -145,7 +145,7 @@ function Body({ d }: { d: WhyChanged }) {
                 { label: "Order value", value: s.effects.orderValue },
               ]}
             />
-            <p className="text-[12px] leading-relaxed text-fg-muted">
+            <p className="text-xs leading-relaxed text-fg-muted">
               Delivered / paid orders {count(d.numbers.before.realisedOrders)} → {count(d.numbers.after.realisedOrders)} · average order {aov(d.numbers.before)} →{" "}
               {aov(d.numbers.after)}.
             </p>
@@ -157,7 +157,7 @@ function Body({ d }: { d: WhyChanged }) {
         <Movers title="Districts" data={d.movers.districts} />
         <Movers title="Channels" data={d.movers.channels} />
       </div>
-      <p className="text-[12px] leading-relaxed text-fg-muted">
+      <p className="text-xs leading-relaxed text-fg-muted">
         The split is exact: each part is that factor&apos;s share of the change (log-mean method), and the parts add up to the whole. Products are
         merchandise sales less returns; districts and channels are net sales.
       </p>

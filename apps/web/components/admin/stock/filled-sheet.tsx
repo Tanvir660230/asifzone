@@ -128,7 +128,7 @@ export function FilledSheet({ overview, canFill, onClose }: { overview: StockOve
       {done ? (
         <div className="flex flex-col items-start gap-3 py-2" data-testid="filled-done" role="status">
           <CheckCircle2 className="h-8 w-8 text-success-600" aria-hidden="true" />
-          <p className="text-[15px] text-fg">{num(done.quantity)} × {done.name} {done.replayed ? "were already recorded" : "are in stock"}{done.number && <span className="text-fg-muted"> ({done.number})</span>}</p>
+          <p className="text-base text-fg">{num(done.quantity)} × {done.name} {done.replayed ? "were already recorded" : "are in stock"}{done.number && <span className="text-fg-muted"> ({done.number})</span>}</p>
           {(done.date || done.by) && <p className="text-sm text-fg-muted" data-testid="filled-when">Filled {done.date ? formatBookDate(done.date) : ""}{done.by ? ` by ${done.by}` : ""}{done.wasted ? " · waste recorded" : ""}</p>}
           {done.perBottle !== null && <p className="text-sm text-fg-muted">Cost per bottle <span className="text-lg font-semibold tabular-nums text-fg" data-testid="filled-cost">{formatPrice(done.perBottle)}</span></p>}
         </div>

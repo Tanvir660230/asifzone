@@ -90,7 +90,7 @@ function SortableHeader({ column, label, props, align, className }: { column: So
         type="button"
         onClick={() => props.onSort(column)}
         className={cn(
-          "inline-flex items-center gap-1 whitespace-nowrap font-semibold uppercase tracking-wider transition-colors",
+          "inline-flex items-center gap-1 whitespace-nowrap font-semibold transition-colors",
           active ? "text-ink-900" : "text-ink-500 hover:text-ink-800",
         )}
       >
@@ -155,7 +155,7 @@ function CardItems({ summary }: { summary: OrderListItemSummary }) {
           <Package size={13} className="text-ink-300" aria-hidden="true" />
         )}
       </span>
-      <span className="min-w-0 truncate text-[13px] text-ink-700">
+      <span className="min-w-0 truncate text-sm text-ink-700">
         {name}
         {detail && <span className="text-fg-subtle"> · {detail}</span>}
       </span>
@@ -501,9 +501,9 @@ export function OrdersList(props: OrdersListProps) {
       <div className="mt-3 xl:hidden" aria-busy={props.isFetching || undefined}>
         {!isLoading && items.length > 0 && (
           readOnly ? (
-            <p className="mb-1.5 flex min-h-[40px] items-center px-1 text-[13px] tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</p>
+            <p className="mb-1.5 flex min-h-[40px] items-center px-1 text-sm tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</p>
           ) : (
-            <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-[13px] text-fg-muted">
+            <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-sm text-fg-muted">
               <Checkbox checked={allSelected} onChange={onToggleAll} />
               Select all on this page
               <span className="ml-auto tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</span>
@@ -541,8 +541,8 @@ export function OrdersList(props: OrdersListProps) {
                   )}
                   <button type="button" onClick={() => onOpen(order.id)} className="min-w-0 flex-1 text-left">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-[15px] font-semibold text-fg">{order.customerName}</span>
-                      <span className="shrink-0 text-[15px] font-semibold tabular-nums text-fg">{formatPrice(order.total)}</span>
+                      <span className="truncate text-base font-semibold text-fg">{order.customerName}</span>
+                      <span className="shrink-0 text-base font-semibold tabular-nums text-fg">{formatPrice(order.total)}</span>
                     </span>
                     <span className="mt-0.5 flex items-center justify-between gap-3 text-xs text-fg-subtle">
                       <span className="flex min-w-0 items-center gap-1">

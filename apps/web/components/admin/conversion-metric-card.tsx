@@ -30,16 +30,16 @@ export function ConversionMetricCard({ label, value, caption, icon, tone = "defa
   return (
     <Card className="flex h-full flex-col p-5">
       <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-fg-muted">{label}</p>
+        <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-fg-muted">{label}</p>
         <span className={cn("shrink-0 [&>svg]:h-4 [&>svg]:w-4", t.icon)} aria-hidden>
           {icon}
         </span>
       </div>
 
       <div className="flex flex-wrap items-baseline gap-x-2 pt-2">
-        <p className="text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-fg">{value}</p>
+        <p className="text-2xl font-semibold leading-tight tracking-tight tabular-nums text-fg">{value}</p>
         {hasTrend && (
-          <span className={cn("flex shrink-0 items-center gap-0.5 text-[12.5px] font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
+          <span className={cn("flex shrink-0 items-center gap-0.5 text-xs font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
             {isUp ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
             {Math.abs(trendPct!).toFixed(0)}%
           </span>

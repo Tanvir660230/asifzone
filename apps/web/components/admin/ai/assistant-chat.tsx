@@ -24,15 +24,15 @@ function ResultCard({ card }: { card: AiResultCard }) {
   return (
     <div className="overflow-hidden rounded-xl border border-line-subtle bg-surface">
       <div className="flex items-center justify-between gap-2 border-b border-line-subtle px-3 py-2">
-        <p className="text-[13px] font-medium text-fg">{card.title}</p>
+        <p className="text-sm font-medium text-fg">{card.title}</p>
         {card.href && (
-          <Link href={card.href} className="flex items-center gap-1 text-[12px] font-medium text-accent hover:underline">
+          <Link href={card.href} className="flex items-center gap-1 text-xs font-medium text-accent hover:underline">
             Open <ExternalLink size={12} aria-hidden="true" />
           </Link>
         )}
       </div>
       {card.rows.length > 0 && (
-        <div className="max-h-64 overflow-auto text-[12px]">
+        <div className="max-h-64 overflow-auto text-xs">
           <Table>
             <TableHead>
               <tr>
@@ -76,11 +76,11 @@ function ProposalCard({ proposal, onChange }: { proposal: AiProposalView; onChan
 
   return (
     <div className={cn("rounded-xl border p-3.5", pending ? "border-accent/40 bg-accent/[0.04]" : "border-line-subtle bg-surface")}>
-      <p className="flex items-center gap-1.5 text-[12px] font-medium text-fg-muted">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
         <ShieldCheck size={13} aria-hidden="true" /> Needs your confirmation — nothing has changed yet
       </p>
-      <p className="mt-1 text-[14px] font-semibold text-fg">{proposal.title}</p>
-      <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[13px] text-fg">
+      <p className="mt-1 text-sm font-semibold text-fg">{proposal.title}</p>
+      <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-sm text-fg">
         {proposal.effects.map((e) => (
           <li key={e}>{e}</li>
         ))}
@@ -94,23 +94,23 @@ function ProposalCard({ proposal, onChange }: { proposal: AiProposalView; onChan
             <Button size="sm" variant="ghost" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
               Cancel
             </Button>
-            {!canExecute && <span className="text-[12px] text-fg-muted">Only an owner can confirm.</span>}
+            {!canExecute && <span className="text-xs text-fg-muted">Only an owner can confirm.</span>}
           </>
         ) : proposal.status === "EXECUTED" ? (
-          <span className="flex items-center gap-1 text-[13px] text-success-700">
+          <span className="flex items-center gap-1 text-sm text-success-700">
             <CheckCircle2 size={14} aria-hidden="true" /> Done
           </span>
         ) : proposal.status === "CANCELLED" ? (
-          <span className="flex items-center gap-1 text-[13px] text-fg-muted">
+          <span className="flex items-center gap-1 text-sm text-fg-muted">
             <XCircle size={14} aria-hidden="true" /> Cancelled
           </span>
         ) : (
-          <span className="flex items-center gap-1 text-[13px] text-fg-muted">
+          <span className="flex items-center gap-1 text-sm text-fg-muted">
             <Clock size={14} aria-hidden="true" /> {proposal.status === "FAILED" ? "Couldn't be done" : "Expired — ask again"}
           </span>
         )}
         {proposal.href && (
-          <Link href={proposal.href} className="ml-auto text-[12px] font-medium text-accent hover:underline">
+          <Link href={proposal.href} className="ml-auto text-xs font-medium text-accent hover:underline">
             Open
           </Link>
         )}
@@ -160,17 +160,17 @@ export function AssistantChat({ configured }: { configured: boolean }) {
     <section aria-label="Ask the assistant" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-xs">
       <div className="flex items-center gap-2 border-b border-line-subtle px-5 py-3">
         <Bot size={18} className="text-accent" aria-hidden="true" />
-        <h2 className="text-[15px] font-semibold text-fg">Ask the assistant</h2>
-        <span className="ml-auto text-[12px] text-fg-muted">Reads your store&apos;s data · changes need your confirmation</span>
+        <h2 className="text-base font-semibold text-fg">Ask the assistant</h2>
+        <span className="ml-auto text-xs text-fg-muted">Reads your store&apos;s data · changes need your confirmation</span>
       </div>
       <div className="max-h-[520px] min-h-[160px] space-y-4 overflow-y-auto px-5 py-4" aria-live="polite">
         {turns.length === 0 && (
           <div className="space-y-3">
-            <p className="text-[13px] text-fg-muted">{configured ? "Ask about sales, orders or stock. Try:" : "The assistant needs an Anthropic API key on the server (ANTHROPIC_API_KEY)."}</p>
+            <p className="text-sm text-fg-muted">{configured ? "Ask about sales, orders or stock. Try:" : "The assistant needs an Anthropic API key on the server (ANTHROPIC_API_KEY)."}</p>
             {configured && (
               <div className="flex flex-wrap gap-2">
                 {SUGGESTIONS.map((s) => (
-                  <button key={s} type="button" onClick={() => send(s)} className="rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-fg transition-colors hover:border-line-strong">
+                  <button key={s} type="button" onClick={() => send(s)} className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm text-fg transition-colors hover:border-line-strong">
                     {s}
                   </button>
                 ))}
@@ -181,11 +181,11 @@ export function AssistantChat({ configured }: { configured: boolean }) {
         {turns.map((t, i) =>
           t.from === "admin" ? (
             <div key={i} className="flex justify-end">
-              <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-[14px] text-accent-fg">{t.content}</p>
+              <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm text-accent-fg">{t.content}</p>
             </div>
           ) : (
             <div key={i} className="max-w-[92%] space-y-2">
-              <p className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-ink-900/[0.04] px-3.5 py-2 text-[14px] text-fg">{t.content}</p>
+              <p className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-ink-900/[0.04] px-3.5 py-2 text-sm text-fg">{t.content}</p>
               {t.cards.map((c, j) => (
                 <ResultCard key={j} card={c} />
               ))}
@@ -195,7 +195,7 @@ export function AssistantChat({ configured }: { configured: boolean }) {
             </div>
           ),
         )}
-        {ask.isPending && <p className="text-[13px] text-fg-muted">Looking…</p>}
+        {ask.isPending && <p className="text-sm text-fg-muted">Looking…</p>}
         <div ref={endRef} />
       </div>
       <form onSubmit={onSubmit} className="flex items-end gap-2 border-t border-line-subtle px-4 py-3">

@@ -35,7 +35,7 @@ export function ProductionOverview() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[17px] font-semibold text-fg">Production runs</h2>
+        <h2 className="text-lg font-semibold text-fg">Production runs</h2>
         <Link href="/admin/manufacturing/production-orders"><Button size="sm" variant="outline">All production runs</Button></Link>
       </div>
       {q.isLoading && <Skeleton className="h-64 w-full" />}

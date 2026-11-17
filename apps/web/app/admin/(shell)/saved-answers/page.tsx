@@ -25,14 +25,14 @@ const KEY = ["saved-answers"];
 function PlaceholderChips({ onInsert }: { onInsert: (token: string) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[12px] text-fg-subtle">Insert live value:</span>
+      <span className="text-xs text-fg-subtle">Insert live value:</span>
       {SAVED_ANSWER_PLACEHOLDERS.map((p) => (
         <button
           key={p.key}
           type="button"
           title={`e.g. ${p.example}`}
           onClick={() => onInsert(`{${p.key}}`)}
-          className="rounded-full border border-line px-2 py-0.5 text-[12px] text-fg-muted transition-colors duration-fast hover:border-accent hover:text-accent"
+          className="rounded-full border border-line px-2 py-0.5 text-xs text-fg-muted transition-colors duration-fast hover:border-accent hover:text-accent"
         >
           {p.label}
         </button>
@@ -79,16 +79,16 @@ function AnswerCard({ item, canEdit }: { item: SavedAnswerView; canEdit: boolean
       {dialog}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[15px] font-semibold text-fg">&ldquo;{item.title}&rdquo;</p>
+          <p className="text-base font-semibold text-fg">&ldquo;{item.title}&rdquo;</p>
           {others.length > 0 && (
-            <p className="mt-0.5 text-[12px] text-fg-subtle">
+            <p className="mt-0.5 text-xs text-fg-subtle">
               Also asked as {others.slice(0, 3).map((e) => `“${e}”`).join(", ")}
               {item.exampleCount > others.length + 1 ? ` · ${formatCount(item.exampleCount)} times in all` : ""}
             </p>
           )}
         </div>
         {!suggested && (
-          <p className="shrink-0 text-[12px] tabular-nums text-fg-subtle">
+          <p className="shrink-0 text-xs tabular-nums text-fg-subtle">
             Used {formatCount(item.hits)}×{item.corrections ? ` · rewritten ${formatCount(item.corrections)}×` : ""}
             {item.lastHitAt ? ` · last ${timeAgo(item.lastHitAt)}` : ""}
           </p>
@@ -96,23 +96,23 @@ function AnswerCard({ item, canEdit }: { item: SavedAnswerView; canEdit: boolean
       </div>
 
       {item.autoPausedAt && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-[13px] text-warning-800">
+        <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
           <Pause size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
           Auto-send paused by itself — staff kept rewriting this answer. Check the wording, then turn it back on.
         </p>
       )}
 
       <div className="space-y-1.5">
-        <label htmlFor={`answer-${item.id}`} className="text-[12px] font-medium text-fg-muted">
+        <label htmlFor={`answer-${item.id}`} className="text-xs font-medium text-fg-muted">
           Answer
         </label>
         <Textarea id={`answer-${item.id}`} rows={3} value={answer} disabled={!canEdit} onChange={(e) => setAnswer(e.target.value)} />
         {canEdit && <PlaceholderChips onInsert={(t) => setAnswer((a) => `${a.trimEnd()} ${t}`.trim())} />}
-        {hint && <p className="text-[12px] text-warning-700">{hint}</p>}
+        {hint && <p className="text-xs text-warning-700">{hint}</p>}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-subtle pt-3">
-        <label className="flex items-center gap-2 text-[13px] text-fg">
+        <label className="flex items-center gap-2 text-sm text-fg">
           <Switch
             checked={autoSend}
             disabled={!canEdit}
@@ -124,7 +124,7 @@ function AnswerCard({ item, canEdit }: { item: SavedAnswerView; canEdit: boolean
           />
           <span>
             Send automatically
-            <span className="block text-[12px] text-fg-subtle">Off: it waits as a draft for staff.</span>
+            <span className="block text-xs text-fg-subtle">Off: it waits as a draft for staff.</span>
           </span>
         </label>
         {canEdit && (
@@ -193,29 +193,29 @@ function NewAnswer({ onClose }: { onClose: () => void }) {
         if (title.trim() && answer.trim()) create.mutate();
       }}
     >
-      <p id="new-answer-heading" className="text-[15px] font-semibold text-fg">New answer</p>
+      <p id="new-answer-heading" className="text-base font-semibold text-fg">New answer</p>
       <div className="space-y-1.5">
-        <label htmlFor="new-title" className="text-[12px] font-medium text-fg-muted">
+        <label htmlFor="new-title" className="text-xs font-medium text-fg-muted">
           The question
         </label>
         <Input id="new-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Apnader shop kothay?" />
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="new-examples" className="text-[12px] font-medium text-fg-muted">
+        <label htmlFor="new-examples" className="text-xs font-medium text-fg-muted">
           Other ways customers ask it <span className="font-normal text-fg-subtle">(one per line, optional)</span>
         </label>
         <Textarea id="new-examples" rows={2} value={examples} onChange={(e) => setExamples(e.target.value)} placeholder={"dokan kothay\nshowroom ache?"} />
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="new-answer" className="text-[12px] font-medium text-fg-muted">
+        <label htmlFor="new-answer" className="text-xs font-medium text-fg-muted">
           Answer
         </label>
         <Textarea id="new-answer" rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="e.g. Amader online shop: {website}" />
         <PlaceholderChips onInsert={(t) => setAnswer((a) => `${a.trimEnd()} ${t}`.trim())} />
-        {hint && <p className="text-[12px] text-warning-700">{hint}</p>}
+        {hint && <p className="text-xs text-warning-700">{hint}</p>}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-subtle pt-3">
-        <label className="flex items-center gap-2 text-[13px] text-fg">
+        <label className="flex items-center gap-2 text-sm text-fg">
           <Switch checked={autoSend} onChange={setAutoSend} aria-label="Send automatically" />
           Send automatically
         </label>
@@ -256,7 +256,7 @@ export default function SavedAnswersPage() {
       <ModuleTabs />
       <div className="max-w-3xl space-y-6">
         {data && (
-          <p className="flex items-center gap-2 text-[13px] text-fg-muted">
+          <p className="flex items-center gap-2 text-sm text-fg-muted">
             <BookOpenCheck size={15} className="text-accent" aria-hidden="true" />
             <span>
               <span className="font-semibold tabular-nums text-fg">{formatCount(data.answeredWithoutAi)}</span> questions answered without the AI in the last 30 days
@@ -283,10 +283,10 @@ export default function SavedAnswersPage() {
         {data && data.suggested.length > 0 && (
           <section aria-labelledby="suggested-heading" className="space-y-3">
             <div>
-              <h2 id="suggested-heading" className="flex items-center gap-1.5 text-[15px] font-semibold text-fg">
+              <h2 id="suggested-heading" className="flex items-center gap-1.5 text-base font-semibold text-fg">
                 <Sparkles size={15} className="text-accent" aria-hidden="true" /> Learned — waiting for you
               </h2>
-              <p className="text-[13px] text-fg-muted">Your team gave these answers again and again. Check the wording, then approve.</p>
+              <p className="text-sm text-fg-muted">Your team gave these answers again and again. Check the wording, then approve.</p>
             </div>
             <ul className="space-y-3">
               {data.suggested.map((item) => (
@@ -297,7 +297,7 @@ export default function SavedAnswersPage() {
         )}
         {data && data.approved.length > 0 && (
           <section aria-labelledby="approved-heading" className={cn("space-y-3", data.suggested.length > 0 && "pt-2")}>
-            <h2 id="approved-heading" className="text-[15px] font-semibold text-fg">
+            <h2 id="approved-heading" className="text-base font-semibold text-fg">
               In use · {formatCount(data.approved.length)}
             </h2>
             <ul className="space-y-3">

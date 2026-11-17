@@ -28,7 +28,7 @@ export function ImportPastChats() {
         <label htmlFor="import-days" className="sr-only">
           How far back
         </label>
-        <Select id="import-days" className="h-8 w-auto py-0 text-[13px]" value={days} onChange={(e) => setDays(Number(e.target.value) as (typeof RANGES)[number])}>
+        <Select id="import-days" className="h-8 w-auto py-0 text-sm" value={days} onChange={(e) => setDays(Number(e.target.value) as (typeof RANGES)[number])}>
           {RANGES.map((d) => (
             <option key={d} value={d}>
               Last {d} days

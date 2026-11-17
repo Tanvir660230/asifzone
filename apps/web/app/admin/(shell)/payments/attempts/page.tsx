@@ -138,7 +138,7 @@ export default function PaymentAttemptsPage() {
                     <span className="block truncate text-fg-muted" title={s.lastEvent?.note ?? s.lastEvent?.type ?? undefined}>
                       {s.lastEvent ? (s.lastEvent.note ?? s.lastEvent.type) : "—"}
                     </span>
-                    <span className="block truncate font-mono text-[11px] text-fg-subtle" title={s.gatewayRef}>
+                    <span className="block truncate font-mono text-xs text-fg-subtle" title={s.gatewayRef}>
                       {s.gatewayRef}
                     </span>
                   </TableCell>

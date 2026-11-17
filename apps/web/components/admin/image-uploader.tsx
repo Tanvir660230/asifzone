@@ -342,13 +342,13 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
               <img src={item.previewUrl} alt="" className={cn("h-full w-full object-cover", item.status !== "failed" && "opacity-50")} />
               {item.status === "failed" ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface/90 p-2 text-center backdrop-blur-sm" role="alert">
-                  <p className="text-[11px] font-medium text-danger-700">Couldn&rsquo;t upload {item.file.name}</p>
-                  <p className="line-clamp-2 text-[10px] text-ink-500">{item.error}</p>
+                  <p className="text-xs font-medium text-danger-700">Couldn&rsquo;t upload {item.file.name}</p>
+                  <p className="line-clamp-2 text-xs text-ink-500">{item.error}</p>
                   <div className="flex items-center gap-2">
                     <Button type="button" size="sm" variant="outline" onClick={() => retryItem(item.key)}>
                       <RotateCw size={12} /> Retry
                     </Button>
-                    <button type="button" onClick={() => discardItem(item.key)} className="text-[11px] text-ink-500 underline hover:text-ink-900">
+                    <button type="button" onClick={() => discardItem(item.key)} className="text-xs text-ink-500 underline hover:text-ink-900">
                       Remove
                     </button>
                   </div>
@@ -358,7 +358,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                   <div className="h-1.5 overflow-hidden rounded-full bg-ink-900/20" role="progressbar" aria-valuenow={Math.round(item.progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`Uploading ${item.file.name}`}>
                     <div className="h-full rounded-full bg-ink-900 transition-all duration-150" style={{ width: `${Math.round(item.progress * 100)}%` }} />
                   </div>
-                  <p className="mt-1 text-center text-[10px] font-medium text-ink-900">{item.status === "queued" ? "Waiting…" : `${Math.round(item.progress * 100)}%`}</p>
+                  <p className="mt-1 text-center text-xs font-medium text-ink-900">{item.status === "queued" ? "Waiting…" : `${Math.round(item.progress * 100)}%`}</p>
                 </div>
               )}
             </div>
@@ -449,14 +449,14 @@ function SortableThumb({ id, aspect, isMain, onSetMain, children }: SortableThum
         <GripVertical size={14} />
       </button>
       {isMain ? (
-        <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-ink-900/80 px-2 py-0.5 text-[10px] font-medium text-cream-50 backdrop-blur-sm">
+        <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-ink-900/80 px-2 py-0.5 text-xs font-medium text-cream-50 backdrop-blur-sm">
           <Star size={10} className="fill-current" aria-hidden="true" /> Cover
         </span>
       ) : (
         <button
           type="button"
           onClick={onSetMain}
-          className="absolute bottom-1.5 left-1.5 rounded-full bg-ink-900/70 px-2 py-0.5 text-[10px] font-medium text-cream-50 backdrop-blur-sm opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+          className="absolute bottom-1.5 left-1.5 rounded-full bg-ink-900/70 px-2 py-0.5 text-xs font-medium text-cream-50 backdrop-blur-sm opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
         >
           Make cover
         </button>
@@ -470,14 +470,14 @@ function PhotoFit({ spec, width, height }: { spec: ImageSpec; width: number; hei
   const verdict = checkFit(spec, width, height);
   if (verdict.kind === "ok") {
     return (
-      <p className="flex items-center gap-1 text-[10px] tabular-nums text-fg-subtle" data-testid="photo-fit" data-fit="ok">
+      <p className="flex items-center gap-1 text-xs tabular-nums text-fg-subtle" data-testid="photo-fit" data-fit="ok">
         <CircleCheck size={11} className="shrink-0 text-success-600" aria-hidden="true" />
         {width} × {height} px
       </p>
     );
   }
   return (
-    <p className="flex items-start gap-1 text-[10px] leading-snug text-warning-700" data-testid="photo-fit" data-fit={verdict.kind} title={verdict.message}>
+    <p className="flex items-start gap-1 text-xs leading-snug text-warning-700" data-testid="photo-fit" data-fit={verdict.kind} title={verdict.message}>
       <TriangleAlert size={11} className="mt-px shrink-0" aria-hidden="true" />
       {verdict.short}
     </p>

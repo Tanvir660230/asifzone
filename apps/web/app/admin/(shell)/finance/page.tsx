@@ -69,7 +69,7 @@ function FinanceMap() {
   return (
     <section aria-labelledby="finance-map-title" data-testid="finance-map">
       <div className="mb-1 flex items-center gap-2">
-        <h2 id="finance-map-title" className="text-[17px] font-semibold tracking-tight text-fg">Everything in Money and Books</h2>
+        <h2 id="finance-map-title" className="text-lg font-semibold tracking-tight text-fg">Everything in Money and Books</h2>
       </div>
       <p className="mb-4 text-sm text-fg-muted">Every finance page, grouped the way the menu is. Not sure where something lives? Start here.</p>
       <div className="gap-x-10 md:columns-2">

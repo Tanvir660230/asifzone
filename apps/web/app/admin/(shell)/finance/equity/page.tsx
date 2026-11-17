@@ -87,7 +87,7 @@ export default function EquityPage() {
           {owner ? <OwnerSection owner={owner} canAct={can("finance.transact")} onEdit={() => setEditing(owner)} /> : (
             <Card className="flex flex-wrap items-center justify-between gap-3 p-5 sm:p-6">
               <div className="min-w-0">
-                <h2 className="text-[17px] font-semibold tracking-tight text-fg">Who owns the business?</h2>
+                <h2 className="text-lg font-semibold tracking-tight text-fg">Who owns the business?</h2>
                 <p className="text-sm text-fg-muted">Add the owner to see everything they have put in and taken out, in one place.</p>
               </div>
               {can("finance.configure") && <Button size="sm" onClick={() => setEditing("owner")} data-testid="add-owner"><Crown className="h-4 w-4" /> Add the owner</Button>}
@@ -104,7 +104,7 @@ export default function EquityPage() {
 
           <Card className="p-0">
             <button type="button" onClick={() => setShowEquity((v) => !v)} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left" aria-expanded={showEquity}>
-              <span><span className="block text-[15px] font-semibold text-fg">Equity on the balance sheet</span><span className="text-sm text-fg-muted">{formatPrice(d.equity.total)} as of {formatBookDate(d.asOf)}</span></span>
+              <span><span className="block text-base font-semibold text-fg">Equity on the balance sheet</span><span className="text-sm text-fg-muted">{formatPrice(d.equity.total)} as of {formatBookDate(d.asOf)}</span></span>
               <ChevronDown className={cn("h-4 w-4 text-fg-muted transition-transform", showEquity && "rotate-180")} />
             </button>
             {showEquity && (
@@ -145,7 +145,7 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent"><Crown className="h-5 w-5" /></span>
             <div className="min-w-0">
-              <p className="text-[17px] font-semibold tracking-tight text-fg">{owner.name}</p>
+              <p className="text-lg font-semibold tracking-tight text-fg">{owner.name}</p>
               <p className="text-sm text-fg-muted">Owner since {formatBookDate(owner.joinedOn)}{owner.phone ? ` · ${owner.phone}` : ""}{owner.email ? ` · ${owner.email}` : ""}</p>
             </div>
           </div>
@@ -169,7 +169,7 @@ function OwnerSection({ owner, canAct, onEdit }: { owner: Partner; canAct: boole
         <div className="space-y-3 border-t border-line-subtle bg-surface-muted px-5 py-4 sm:px-6" data-testid="owner-payouts">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[15px] font-semibold text-fg">Payouts not yet marked as taken</p>
+              <p className="text-base font-semibold text-fg">Payouts not yet marked as taken</p>
               <p className="text-sm text-fg-muted">Steadfast and EPS money that went to {firstName(owner.name)}. Each becomes a withdrawal on the payout&apos;s date.</p>
             </div>
             {canAct && <Button size="sm" variant="outline" loading={take.isPending} onClick={() => take.mutate(open.map((p) => p.id))}>All taken by {firstName(owner.name)}</Button>}
@@ -199,8 +199,8 @@ function Figures({ children, cols = 3 }: { children: ReactNode; cols?: 2 | 3 }) 
 function Figure({ label, value, tone, strong, loading, hint }: { label: string; value: number | undefined; tone?: "in"; strong?: boolean; loading?: boolean; hint?: string }) {
   return (
     <div className={cn("flex min-w-0 items-center justify-between gap-3 px-4 py-3 sm:block sm:p-4", strong && "bg-surface-muted")}>
-      <dt className="text-sm font-medium text-fg-muted sm:text-[13px]">{label}</dt>
-      <dd className={cn("text-[17px] font-semibold tabular-nums tracking-tight sm:mt-1 sm:text-[22px]", tone === "in" ? "text-success-700" : "text-fg")}>
+      <dt className="text-sm font-medium text-fg-muted sm:text-sm">{label}</dt>
+      <dd className={cn("text-lg font-semibold tabular-nums tracking-tight sm:mt-1 sm:text-xl", tone === "in" ? "text-success-700" : "text-fg")}>
         {loading || value === undefined ? <Skeleton className="h-6 w-24 sm:h-7 sm:w-28" /> : `${value < 0 ? "−" : ""}${formatPrice(Math.abs(value))}`}
       </dd>
       {hint && <dd className="mt-0.5 hidden text-xs text-fg-subtle sm:block">{hint}</dd>}
@@ -232,12 +232,12 @@ function Timeline({ items, loading, empty, name }: { items: PartnerActivityItem[
   }, [items, all]);
   return (
     <div className="border-t border-line-subtle px-5 py-4 sm:px-6">
-      <p className="mb-2 text-[15px] font-semibold text-fg">History</p>
+      <p className="mb-2 text-base font-semibold text-fg">History</p>
       {loading ? <Skeleton className="h-24 w-full" /> : items.length === 0 ? <p className="text-sm text-fg-muted">{empty}</p> : (
         <div className="space-y-4">
           {groups.map(([ym, rows]) => (
             <div key={ym}>
-              <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">{monthLabel(ym)}</p>
+              <p className="text-xs font-medium text-fg-subtle">{monthLabel(ym)}</p>
               <ul className="divide-y divide-line-subtle">
                 {rows.map((i) => {
                   const line = tidyLine(i.description, name);
@@ -283,7 +283,7 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-muted text-fg-muted"><Handshake className="h-5 w-5" /></span>
             <div className="min-w-0">
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-semibold tracking-tight text-fg">
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold tracking-tight text-fg">
                 {partner.name}
                 {partner.profitSharePct !== null && <Badge variant={partner.shareConfirmed ? "success" : "warning"}>{partner.profitSharePct}% of monthly profit</Badge>}
                 {s?.status === "LEFT" && <Badge variant="neutral">Left {partner.leftOn ? formatBookDate(partner.leftOn) : ""}</Badge>}
@@ -335,7 +335,7 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
       {/* Capital is not profit: what the partner put in and took back, on their capital account — its own figures. */}
       {b && (isInvestorRole(partner.role) || b.capital.contributed !== 0 || b.capital.returned !== 0) && (
         <div className="space-y-3 border-t border-line-subtle px-5 py-4 sm:px-6" data-testid="partner-capital">
-          <p className="text-[15px] font-semibold text-fg">Capital</p>
+          <p className="text-base font-semibold text-fg">Capital</p>
           <Figures>
             <Figure label="Put in" value={b.capital.contributed} />
             <Figure label="Returned" value={b.capital.returned} />
@@ -351,7 +351,7 @@ function PartnerSection({ partner, shares, canAct, onEdit }: { partner: Partner;
       )}
       {s && s.shares.length > 0 && (
         <div className="border-t border-line-subtle px-5 py-4 sm:px-6">
-          <p className="mb-2 text-[15px] font-semibold text-fg">Month by month</p>
+          <p className="mb-2 text-base font-semibold text-fg">Month by month</p>
           <ul className="divide-y divide-line-subtle text-sm" data-testid="profit-share-months">
             {s.shares.map((m) => (
               <li key={m.id} className="flex items-start justify-between gap-3 py-2.5">

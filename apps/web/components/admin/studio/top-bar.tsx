@@ -242,7 +242,7 @@ function ChecksButton({ checks, sections, onSelectSection }: { checks: StudioChe
               const { icon: Icon, className, label } = LEVEL[level];
               return (
                 <section key={level} className="py-1">
-                  <p className="px-3 pb-1 pt-2 text-caption font-semibold uppercase text-fg-subtle">{label}</p>
+                  <p className="px-3 pb-1 pt-2 text-caption font-semibold text-fg-subtle">{label}</p>
                   <ul>
                     {items.map((check, i) => {
                       const section = sections.find((s) => s.id === check.sectionId);

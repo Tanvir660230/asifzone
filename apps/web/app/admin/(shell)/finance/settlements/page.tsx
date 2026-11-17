@@ -101,7 +101,7 @@ export default function SettlementsPage() {
 
       <Card className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">Waiting in clearing</h2>
+          <h2 className="text-xs font-semibold text-ink-500">Waiting in clearing</h2>
           <Select aria-label="Clearing account" value={positionOf} onChange={(e) => setPositionOf(e.target.value)} className="w-72">
             <option value="">Choose a clearing account…</option>
             {clearing.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}

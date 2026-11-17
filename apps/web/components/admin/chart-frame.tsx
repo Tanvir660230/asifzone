@@ -24,7 +24,7 @@ export function ChartFrame({ summary, table, children }: { summary: string; tabl
           type="button"
           aria-pressed={asTable}
           onClick={() => setAsTable((v) => !v)}
-          className="rounded-md px-1.5 py-1 text-[13px] font-medium text-accent transition-colors duration-fast hover:bg-accent/[0.06] hover:text-accent-hover"
+          className="rounded-md px-1.5 py-1 text-sm font-medium text-accent transition-colors duration-fast hover:bg-accent/[0.06] hover:text-accent-hover"
         >
           {asTable ? "View as chart" : "View as table"}
         </button>

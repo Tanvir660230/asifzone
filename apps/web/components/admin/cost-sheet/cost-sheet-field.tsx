@@ -125,7 +125,7 @@ export function CostSheetField({ productId }: { productId: string }) {
               return (
                 <li key={l.kind} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-2 border-b border-line-subtle px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto_6rem]" data-testid={`cost-line-${l.kind}`}>
                   <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-fg">
+                    <span className="flex flex-wrap items-center gap-2 text-base font-medium text-fg">
                       {l.label}
                       <Badge variant={l.from === "AUTO" ? (l.fixed === null ? "warning" : "success") : l.from === "VARIANT" || l.from === "PRODUCT" ? "info" : "neutral"}>{l.fixed === null && !l.pending ? "Unknown" : api.LEVEL_LABEL[o && o.mode !== "AUTO" ? (scope === "size" ? "VARIANT" : "PRODUCT") : l.from]}{l.estimate ? " · estimate" : ""}</Badge>
                     </span>
@@ -141,14 +141,14 @@ export function CostSheetField({ productId }: { productId: string }) {
                       {o && o.mode !== "AUTO" && <Input aria-label={`${l.label}: amount`} inputMode="decimal" className="w-24 tabular-nums" value={o.amount} onChange={(ev) => setLine(l.kind, { amount: ev.target.value })} />}
                     </span>
                   )}
-                  <span className={cn("col-start-2 row-start-1 text-right text-[15px] font-semibold tabular-nums sm:col-start-3", l.fixed === null ? "text-warning-700" : "text-fg")}>{l.fixed === null ? "—" : formatPrice(l.fixed + (l.percent / 100) * price)}</span>
+                  <span className={cn("col-start-2 row-start-1 text-right text-base font-semibold tabular-nums sm:col-start-3", l.fixed === null ? "text-warning-700" : "text-fg")}>{l.fixed === null ? "—" : formatPrice(l.fixed + (l.percent / 100) * price)}</span>
                 </li>
               );
             })}
           </ul>
           <div className="flex items-center justify-between border-t border-line bg-surface-muted px-4 py-3">
-            <span className="text-[15px] font-semibold text-fg">Cost per sale</span>
-            <span className="text-[17px] font-bold tabular-nums text-fg">{formatPrice(e.total)}{!e.complete && " +"}</span>
+            <span className="text-base font-semibold text-fg">Cost per sale</span>
+            <span className="text-lg font-bold tabular-nums text-fg">{formatPrice(e.total)}{!e.complete && " +"}</span>
           </div>
         </div>
 
@@ -168,7 +168,7 @@ export function CostSheetField({ productId }: { productId: string }) {
           </div>
 
           <div className="space-y-3 rounded-2xl border border-line-subtle p-4">
-            <p className="text-[15px] font-semibold text-fg">Assumptions</p>
+            <p className="text-base font-semibold text-fg">Assumptions</p>
             {ASSUMPTIONS.map((a) => {
               const inherited = sheet.assumptions[a.key];
               return (
@@ -221,7 +221,7 @@ function PlannedVsActual({ size, preview, price, days }: { size: api.ProductCost
   return (
     <div className="rounded-2xl border border-line-subtle" data-testid="planned-vs-actual">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pb-2 pt-4">
-        <p className="text-[15px] font-semibold text-fg">Planned vs actual</p>
+        <p className="text-base font-semibold text-fg">Planned vs actual</p>
         <p className="text-sm text-fg-muted">{a ? `${a.units.toLocaleString("en-US")} sold in the last ${days} days` : `Nothing of ${size.label} sold and booked in the last ${days} days`}</p>
       </div>
       {a && (

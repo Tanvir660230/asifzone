@@ -57,7 +57,7 @@ export function ApprovalSheet({ id, canDecide, onClose }: { id: string; canDecid
         <p className="text-sm text-fg-muted">This count has already been decided.</p>
       ) : (
         <div className="space-y-4" data-testid="approval-sheet">
-          <p className="text-[15px] font-semibold text-fg">{a.name}</p>
+          <p className="text-base font-semibold text-fg">{a.name}</p>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <dt className="text-fg-muted">Books said</dt><dd className="text-right tabular-nums text-fg">{num(a.expected)}</dd>
             <dt className="text-fg-muted">Counted</dt><dd className="text-right tabular-nums text-fg">{num(a.counted)}</dd>

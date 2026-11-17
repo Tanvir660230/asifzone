@@ -36,7 +36,7 @@ function HealthCardShell({ title, icon, href, linkLabel, children }: { title: st
 function MiniStat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">{label}</p>
+      <p className="text-xs font-semibold text-ink-400">{label}</p>
       <p className={cn("mt-1 truncate text-lg font-semibold tabular-nums tracking-tight", tone === "warning" ? "text-warning-600" : "text-ink-900")}>
         {value}
       </p>
@@ -110,7 +110,7 @@ export function PaymentsHealthCard({ data }: { data?: PaymentsOverview }) {
 
           {data.recentFailures.length > 0 && (
             <div className="border-t border-line-subtle pt-4">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Recent failures</p>
+              <p className="mb-2 text-xs font-semibold text-ink-400">Recent failures</p>
               <ul className="space-y-1.5">
                 {data.recentFailures.slice(0, 3).map((f, i) => (
                   <li key={`${f.orderNumber}-${f.failedAt}-${i}`} className="flex items-center gap-2 text-sm">

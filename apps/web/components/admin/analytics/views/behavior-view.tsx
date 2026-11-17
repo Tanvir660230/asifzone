@@ -130,7 +130,7 @@ export default function UserBehaviorPage() {
 
       {/* Feedback */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Contact-form feedback</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Contact-form feedback</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           {!feedback ? (
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)

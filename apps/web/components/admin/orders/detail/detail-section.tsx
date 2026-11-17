@@ -38,7 +38,7 @@ export function DetailSection({
 export function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">{label}</dt>
+      <dt className="text-xs font-semibold text-ink-400">{label}</dt>
       <dd className="mt-0.5 text-sm text-ink-800">{children}</dd>
     </div>
   );

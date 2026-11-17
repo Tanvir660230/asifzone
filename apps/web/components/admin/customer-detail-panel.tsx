@@ -230,7 +230,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
               { label: "Lifetime spend", value: formatPrice(customer.purchaseAnalytics.lifetimeSpend) },
             ].map((stat) => (
               <div key={stat.label}>
-                <p className="text-xs uppercase tracking-wide text-ink-400">{stat.label}</p>
+                <p className="text-xs text-ink-400">{stat.label}</p>
                 <p className="mt-0.5 font-sans text-lg font-semibold tabular-nums text-ink-900">{stat.value}</p>
               </div>
             ))}

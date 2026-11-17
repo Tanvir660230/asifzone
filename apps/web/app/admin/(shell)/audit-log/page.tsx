@@ -215,7 +215,7 @@ export default function AuditLogPage() {
             </dl>
             {changes.length > 0 && (
               <div>
-                <p className="mb-1.5 text-[13px] font-medium text-fg">What changed</p>
+                <p className="mb-1.5 text-sm font-medium text-fg">What changed</p>
                 <TableContainer>
                   <Table aria-label="What changed">
                     <TableHead>
@@ -240,7 +240,7 @@ export default function AuditLogPage() {
             )}
             {open.metadata && (
               <details open={changes.length === 0}>
-                <summary className="cursor-pointer text-[13px] font-medium text-fg">{changes.length > 0 ? "Technical details" : "Details"}</summary>
+                <summary className="cursor-pointer text-sm font-medium text-fg">{changes.length > 0 ? "Technical details" : "Details"}</summary>
                 <pre className="mt-1.5 max-h-80 overflow-auto rounded-lg bg-ink-900/[0.03] p-3 font-mono text-xs leading-relaxed text-fg">{JSON.stringify(open.metadata, null, 2)}</pre>
               </details>
             )}

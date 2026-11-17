@@ -51,7 +51,7 @@ export function KitPanel({ productId }: { productId: string }) {
           {size.components.map((c) => (
             <li key={c.variantId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 border-b border-line-subtle px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]" data-testid="kit-component">
               <span className="min-w-0">
-                <span className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-fg">
+                <span className="flex flex-wrap items-center gap-2 text-base font-medium text-fg">
                   {c.name}
                   <Badge variant="neutral">{SOURCE[c.source]}</Badge>
                   {c.low && <Badge variant="warning">Low</Badge>}

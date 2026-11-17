@@ -34,7 +34,7 @@ function firstName(fullName: string): string {
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
     <div className="mb-3 flex items-end justify-between gap-3">
-      <h2 className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
+      <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>
       {action}
     </div>
   );
@@ -42,7 +42,7 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 
 function SectionLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link href={href} className="flex shrink-0 items-center gap-0.5 text-[13px] font-medium text-accent hover:underline">
+    <Link href={href} className="flex shrink-0 items-center gap-0.5 text-sm font-medium text-accent hover:underline">
       {children} <ArrowUpRight size={13} aria-hidden />
     </Link>
   );
@@ -141,8 +141,8 @@ export default function DashboardPage() {
       {/* Greeting — a plain large title on the canvas, the page's one primary action beside it */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="text-[13px] font-medium text-fg-muted">{dateLabel || " "}</p>
-          <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-tight text-fg lg:text-[24px]">
+          <p className="text-sm font-medium text-fg-muted">{dateLabel || " "}</p>
+          <h1 className="mt-1 text-2xl font-semibold leading-tight tracking-tight text-fg lg:text-2xl">
             {greeting}
             {admin ? `, ${firstName(admin.name)}` : ""}
           </h1>
@@ -151,7 +151,7 @@ export default function DashboardPage() {
           {activeVisitors && (
             <Link
               href={canAnalytics ? "/admin/analytics/marketing?view=visitors" : "#"}
-              className="inline-flex h-9 items-center gap-2 rounded-full bg-surface px-3.5 text-[13px] font-medium text-fg-muted shadow ring-1 ring-line transition-colors hover:text-fg"
+              className="inline-flex h-9 items-center gap-2 rounded-full bg-surface px-3.5 text-sm font-medium text-fg-muted shadow ring-1 ring-line transition-colors hover:text-fg"
             >
               <span className="relative flex h-2 w-2 shrink-0">
                 {activeVisitors.count > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-500 opacity-60" />}
@@ -289,7 +289,7 @@ export default function DashboardPage() {
                   {lowStock.variants.length > LOW_STOCK_SHOWN && (
                     <Link
                       href={canInventory ? "/admin/inventory" : "/admin/analytics/products?view=inventory"}
-                      className="mt-3 flex items-center justify-center gap-1 rounded-lg py-2 text-[13px] font-medium text-accent hover:bg-accent/[0.06]"
+                      className="mt-3 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-medium text-accent hover:bg-accent/[0.06]"
                     >
                       Show {lowStock.variants.length - LOW_STOCK_SHOWN} more
                     </Link>

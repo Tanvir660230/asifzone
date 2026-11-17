@@ -51,7 +51,7 @@ import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 const PAGE_SIZE = 20;
 /** Segment tabs: plain text, the selected one on a soft grey capsule (same as the Orders status tabs). */
 const SEGMENT_BASE =
-  "flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+  "flex h-8 shrink-0 items-center rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 const SEGMENT_ON = "bg-ink-900/[0.08] text-fg";
 const SEGMENT_OFF = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
@@ -143,7 +143,7 @@ function SortableHeader({
       type="button"
       onClick={() => onSort(column)}
       className={cn(
-        "flex items-center gap-1 whitespace-nowrap font-medium uppercase tracking-wide transition-colors",
+        "flex items-center gap-1 whitespace-nowrap font-medium transition-colors",
         active ? "text-ink-900" : "text-ink-500 hover:text-ink-700",
       )}
     >
@@ -422,7 +422,7 @@ export default function CustomersPage() {
             <SlidersHorizontal size={14} /> <span className="sm:hidden">Filters</span>
             <span className="max-sm:hidden">More filters</span>
             {activeMoreFiltersCount > 0 && (
-              <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
+              <span className="rounded-full bg-accent px-1.5 text-xs font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
             )}
           </Button>
           {/* Phones keep the default page size; the row stays search + Filters. */}
@@ -468,7 +468,7 @@ export default function CustomersPage() {
 
         {/* Views: one-click slices of the list. */}
         <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5">
-          <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
+          <span className="mr-1 shrink-0 text-sm font-medium text-fg-muted">Views</span>
           {QUICK_FILTERS.map((f) => (
             <button
               key={f.id}
@@ -476,7 +476,7 @@ export default function CustomersPage() {
               aria-pressed={quickFilter === f.id}
               onClick={() => selectQuickFilter(f.id)}
               className={cn(
-                "flex h-8 shrink-0 items-center rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth",
+                "flex h-8 shrink-0 items-center rounded-full border px-3 text-sm font-medium transition-colors duration-fast ease-smooth",
                 quickFilter === f.id ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong",
               )}
             >

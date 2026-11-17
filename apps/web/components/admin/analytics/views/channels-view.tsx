@@ -15,9 +15,9 @@ const pct = (r: number | null, digits = 1) => (r === null ? "—" : `${(r * 100)
 function Summary({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <Card className="p-3.5 sm:p-4">
-      <p className="text-[13px] font-medium text-fg-muted">{label}</p>
-      <p className="pt-1 text-[22px] font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-[26px]">{value}</p>
-      {note && <p className="mt-1 text-[12.5px] leading-snug text-fg-muted">{note}</p>}
+      <p className="text-sm font-medium text-fg-muted">{label}</p>
+      <p className="pt-1 text-xl font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-2xl">{value}</p>
+      {note && <p className="mt-1 text-xs leading-snug text-fg-muted">{note}</p>}
     </Card>
   );
 }
@@ -28,16 +28,16 @@ function ChannelRow({ row, maxSales, best }: { row: ChannelPerformanceRow; maxSa
     <li className="py-3.5 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-[14px] font-medium text-fg">{row.label}</span>
+          <span className="text-sm font-medium text-fg">{row.label}</span>
           {row.paid && <Badge variant="info">Paid</Badge>}
           {best && <Badge variant="success">Best conversion</Badge>}
         </span>
-        <span className="shrink-0 text-[14px] font-semibold tabular-nums text-fg">{formatPrice(row.netSales)}</span>
+        <span className="shrink-0 text-sm font-semibold tabular-nums text-fg">{formatPrice(row.netSales)}</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-900/[0.06]">
         <div className={cn("h-full rounded-full", row.paid ? "bg-accent" : row.channel === null ? "bg-ink-400" : "bg-accent/60")} style={{ width: `${maxSales > 0 ? (row.netSales / maxSales) * 100 : 0}%` }} />
       </div>
-      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[12.5px] tabular-nums sm:grid-cols-4">
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs tabular-nums sm:grid-cols-4">
         <div className="flex justify-between gap-2 sm:block">
           <dt className="text-fg-muted">Visits</dt>
           <dd className="font-medium text-fg">{row.channel === null ? "—" : formatCount(row.sessions)}</dd>
@@ -117,12 +117,12 @@ export default function ChannelsView() {
             </ul>
           )}
           {visitOnly.length > 0 && (
-            <p className="mt-4 text-[12.5px] leading-relaxed text-fg-muted">
+            <p className="mt-4 text-xs leading-relaxed text-fg-muted">
               <span className="font-medium text-fg">Visits, no orders yet:</span>{" "}
               {visitOnly.map((c) => `${c.label} ${formatCount(c.sessions)}`).join(" · ")}
             </p>
           )}
-          <p className="mt-4 border-t border-line pt-3 text-[12px] leading-relaxed text-fg-muted">
+          <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-fg-muted">
             A visit counts for the channel it came from (Facebook&apos;s many links and app all count as Facebook; &quot;Paid&quot; means
             an ad click). An order counts for the last channel that brought the customer: someone who clicked an ad and came back
             &quot;direct&quot; within {data.lookbackDays} days to order is credited to the ad

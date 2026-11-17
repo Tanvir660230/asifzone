@@ -114,7 +114,7 @@ export function GuidedCount({ overview, due, showCost, onClose }: { overview: St
         {result ? (
           <div className="flex flex-col items-start gap-3" role="status" data-testid="guided-done">
             <CheckCircle2 className="h-8 w-8 text-success-600" aria-hidden="true" />
-            <p className="text-[15px] text-fg">{num(result.lines.length)} item{result.lines.length === 1 ? "" : "s"} counted{result.lines.every((l) => l.difference === 0) ? " — all match the books." : "."}</p>
+            <p className="text-base text-fg">{num(result.lines.length)} item{result.lines.length === 1 ? "" : "s"} counted{result.lines.every((l) => l.difference === 0) ? " — all match the books." : "."}</p>
             {waiting > 0 && <p className="text-sm text-warning-700" data-testid="guided-waiting">{num(waiting)} loss{waiting === 1 ? "" : "es"} over the limit {waiting === 1 ? "waits" : "wait"} for the owner&apos;s approval. The stock changes once approved.</p>}
           </div>
         ) : done ? (

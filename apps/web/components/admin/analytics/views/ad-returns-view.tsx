@@ -19,9 +19,9 @@ const roas = (v: number | null) => (v === null ? "—" : `${v.toFixed(1)}×`);
 function Tile({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "good" | "bad" }) {
   return (
     <Card className="p-3.5 sm:p-4">
-      <p className="text-[13px] font-medium text-fg-muted">{label}</p>
-      <p className={cn("pt-1 text-[22px] font-semibold leading-tight tracking-tight tabular-nums sm:text-[26px]", tone === "good" ? "text-success-700" : tone === "bad" ? "text-danger-600" : "text-fg")}>{value}</p>
-      {note && <p className="mt-1 text-[12.5px] leading-snug text-fg-muted">{note}</p>}
+      <p className="text-sm font-medium text-fg-muted">{label}</p>
+      <p className={cn("pt-1 text-xl font-semibold leading-tight tracking-tight tabular-nums sm:text-2xl", tone === "good" ? "text-success-700" : tone === "bad" ? "text-danger-600" : "text-fg")}>{value}</p>
+      {note && <p className="mt-1 text-xs leading-snug text-fg-muted">{note}</p>}
     </Card>
   );
 }
@@ -34,7 +34,7 @@ function CampaignRow({ c }: { c: AdReturnRow }) {
         <span className="block max-w-[18rem] truncate" title={c.name}>
           {c.name}
         </span>
-        {c.plannedShare !== null && c.plannedShare > 0.01 && <span className="block text-[12px] font-normal text-fg-muted">{Math.round(c.plannedShare * 100)}% of spend is the planned budget</span>}
+        {c.plannedShare !== null && c.plannedShare > 0.01 && <span className="block text-xs font-normal text-fg-muted">{Math.round(c.plannedShare * 100)}% of spend is the planned budget</span>}
       </TableCell>
       <TableCell align="right">{n(c.sessions)}</TableCell>
       <TableCell align="right">{n(c.orders)}</TableCell>
@@ -81,7 +81,7 @@ export default function AdReturnsView() {
   return (
     <div className="space-y-6">
       {!withSpend && (
-        <div className="flex items-start gap-3 rounded-xl border border-info-100 bg-info-50/60 p-3.5 text-[13px] text-info-700">
+        <div className="flex items-start gap-3 rounded-xl border border-info-100 bg-info-50/60 p-3.5 text-sm text-info-700">
           <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
           <p>
             No ad spend recorded for these campaigns yet, so this shows what each one brought but not whether it paid off. Add the campaigns (with their Meta campaign id) in{" "}
@@ -142,12 +142,12 @@ export default function AdReturnsView() {
             </TableContainer>
           )}
           {data.unmatchedSpend.length > 0 && (
-            <p className="mt-3 text-[12.5px] leading-relaxed text-warning-700">
+            <p className="mt-3 text-xs leading-relaxed text-warning-700">
               Spend with no visits carrying the campaign&apos;s id or name: {data.unmatchedSpend.map((u) => `${u.name} (${taka(u.spend)})`).join(", ")}. Check the
               campaign id in Finance › Ads matches the ad&apos;s utm_campaign.
             </p>
           )}
-          <p className="mt-3 text-[12px] leading-relaxed text-fg-muted">
+          <p className="mt-3 text-xs leading-relaxed text-fg-muted">
             An order belongs to the campaign its visit came from (the visit&apos;s utm_campaign). Net sales and margin count only delivered COD and
             paid online orders, less refunds — so refused parcels don&apos;t flatter an ad. Margin needs product costs; uncosted items are left out.
           </p>

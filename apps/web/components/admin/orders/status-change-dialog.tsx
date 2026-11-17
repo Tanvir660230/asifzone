@@ -149,14 +149,14 @@ export function StatusChangeDialog({
 
         {plan.moving.length > 0 && (
           <div className="rounded-xl border border-line-subtle bg-surface-muted p-3.5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">What happens</p>
+            <p className="mb-2 text-xs font-semibold text-ink-500">What happens</p>
             <ConsequenceList items={plan.consequences} />
           </div>
         )}
 
         {plan.refused.length > 0 && (
           <div>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-danger-600">Not allowed — skipped by the server</p>
+            <p className="mb-1.5 text-xs font-semibold text-danger-600">Not allowed — skipped by the server</p>
             <ul className="max-h-32 space-y-1 overflow-y-auto text-sm text-ink-600">
               {plan.refused.map((o) => (
                 <li key={o.id}>
@@ -195,7 +195,7 @@ export function StatusChangeDialog({
                         setNote(rest ? `${phrase}: ${rest}` : phrase);
                       }}
                       className={cn(
-                        "min-h-[32px] rounded-full border px-3 text-[13px] transition-colors",
+                        "min-h-[32px] rounded-full border px-3 text-sm transition-colors",
                         on ? "border-ink-900 bg-ink-900 text-white" : "border-line-strong bg-surface text-ink-700 hover:border-ink-400",
                       )}
                     >

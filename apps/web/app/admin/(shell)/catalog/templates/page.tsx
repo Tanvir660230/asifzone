@@ -197,11 +197,11 @@ export default function TemplatesPage() {
         {dim.enabled && (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <Label className="text-[11px]">Label shown to customers</Label>
+              <Label className="text-xs">Label shown to customers</Label>
               <Input value={dim.label} onChange={(e) => onChange({ ...dim, label: e.target.value })} aria-label={`${title} label`} />
             </div>
             <div className="sm:col-span-2">
-              <Label className="text-[11px]">Suggested values (comma-separated)</Label>
+              <Label className="text-xs">Suggested values (comma-separated)</Label>
               <Input value={dim.optionsText} onChange={(e) => onChange({ ...dim, optionsText: e.target.value })} placeholder="S, M, L, XL" aria-label={`${title} values`} />
             </div>
           </div>
@@ -399,7 +399,7 @@ export default function TemplatesPage() {
                     </div>
                     <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <Label className="text-[11px]">Shown on product page under</Label>
+                        <Label className="text-xs">Shown on product page under</Label>
                         <Select value={a.specGroupId} onChange={(e) => patchAttr(i, { specGroupId: e.target.value })} aria-label={`${def?.label} spec group`}>
                           <option value="">Specifications (default)</option>
                           {specGroups.map((g) => (
@@ -410,7 +410,7 @@ export default function TemplatesPage() {
                         </Select>
                       </div>
                       <div>
-                        <Label className="text-[11px]">Placeholder for this template</Label>
+                        <Label className="text-xs">Placeholder for this template</Label>
                         <Input value={a.placeholder} onChange={(e) => patchAttr(i, { placeholder: e.target.value })} aria-label={`${def?.label} placeholder`} />
                       </div>
                     </div>

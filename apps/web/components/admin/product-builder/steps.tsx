@@ -581,7 +581,7 @@ export function SeoStep({ state, actions }: StepProps & { actions: WizardActions
     <>
       <FormSection title="Search listing" description="Leave a field blank to use the automatic default shown in grey — nothing here is overwritten for you.">
         <div className="rounded-xl border border-line-subtle bg-surface p-4 shadow-sm" data-testid="serp-preview">
-          <p className="mb-3 flex items-center gap-1.5 text-caption font-semibold uppercase text-fg-subtle">
+          <p className="mb-3 flex items-center gap-1.5 text-caption font-semibold text-fg-subtle">
             <Search size={12} aria-hidden="true" /> Search result preview
           </p>
           <p className="truncate text-xs text-ink-600">
@@ -787,7 +787,7 @@ export function ReviewStep({ state, actions }: StepProps & { actions: WizardActi
               <p className="flex flex-wrap items-center gap-2 text-fg">
                 {c.label}
                 {c.status === "missing" && (
-                  <Badge variant={c.required ? "danger" : "warning"} className="px-2 py-0 text-[0.6875rem]">
+                  <Badge variant={c.required ? "danger" : "warning"} className="px-2 py-0 text-xs">
                     {c.required ? "Required" : "Suggested"}
                   </Badge>
                 )}

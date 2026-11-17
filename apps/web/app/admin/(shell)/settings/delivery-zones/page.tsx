@@ -121,15 +121,15 @@ function ZoneEditor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
       </Field>
 
       {d.isDefault ? (
-        <p className="rounded-lg bg-ink-900/[0.03] px-3 py-2.5 text-[13px] text-fg-muted">This is the default zone: it covers every address that no other zone covers, so it has no rules.</p>
+        <p className="rounded-lg bg-ink-900/[0.03] px-3 py-2.5 text-sm text-fg-muted">This is the default zone: it covers every address that no other zone covers, so it has no rules.</p>
       ) : (
         <fieldset className="space-y-3">
-          <legend className="text-[13px] font-medium text-fg">Covers</legend>
+          <legend className="text-sm font-medium text-fg">Covers</legend>
           <div>
-            <p className="mb-1.5 text-[13px] text-fg-muted">Districts</p>
+            <p className="mb-1.5 text-sm text-fg-muted">Districts</p>
             <div className="flex flex-wrap items-center gap-1.5">
               {d.districts.map((name) => (
-                <span key={name} className="flex items-center gap-1 rounded-full bg-ink-900/[0.06] py-1 pl-2.5 pr-1 text-[13px]">
+                <span key={name} className="flex items-center gap-1 rounded-full bg-ink-900/[0.06] py-1 pl-2.5 pr-1 text-sm">
                   {name}
                   <button type="button" onClick={() => set({ districts: d.districts.filter((x) => x !== name) })} aria-label={`Remove ${name}`} className="rounded-full p-0.5 text-fg-subtle hover:text-fg">
                     <X size={12} aria-hidden="true" />
@@ -150,7 +150,7 @@ function ZoneEditor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-[13px] text-fg-muted">Whole divisions</p>
+            <p className="mb-1.5 text-sm text-fg-muted">Whole divisions</p>
             <div className="flex flex-wrap gap-1.5">
               {BD_DIVISIONS.map((name) => {
                 const on = d.divisions.includes(name);
@@ -160,7 +160,7 @@ function ZoneEditor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
                     type="button"
                     aria-pressed={on}
                     onClick={() => set({ divisions: on ? d.divisions.filter((x) => x !== name) : [...d.divisions, name] })}
-                    className={cn("h-8 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast", on ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong")}
+                    className={cn("h-8 rounded-full border px-3 text-sm font-medium transition-colors duration-fast", on ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong")}
                   >
                     {name}
                   </button>
@@ -189,8 +189,8 @@ function ZoneEditor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             <Input id="zone-priority" type="number" min={0} max={1000} value={d.priority} onChange={(e) => set({ priority: e.target.value })} />
           </Field>
           <div>
-            <p className="mb-2 text-[13px] font-medium text-fg">Active</p>
-            <div className="flex items-center gap-2 text-[13px] text-fg-muted">
+            <p className="mb-2 text-sm font-medium text-fg">Active</p>
+            <div className="flex items-center gap-2 text-sm text-fg-muted">
               <Switch checked={d.isActive} onChange={(checked) => set({ isActive: checked })} aria-label="Zone active" />
               {d.isActive ? "Used at checkout" : "Off — not used"}
             </div>
@@ -254,16 +254,16 @@ export default function DeliveryZonesPage() {
             <li key={zone.id}>
               <button type="button" onClick={() => setEditing(draftOf(zone))} className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors duration-fast hover:bg-ink-900/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
                 <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 text-[15px] font-medium text-fg">
+                  <p className="flex items-center gap-2 text-base font-medium text-fg">
                     {zone.name}
                     {zone.isDefault && <Badge>Default</Badge>}
                     {!zone.isActive && <Badge variant="warning">Off</Badge>}
                   </p>
-                  <p className="mt-0.5 truncate text-[13px] text-fg-muted">{coverage(zone)}</p>
+                  <p className="mt-0.5 truncate text-sm text-fg-muted">{coverage(zone)}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-[15px] font-semibold tabular-nums text-fg">{formatPrice(zone.fee)}</p>
-                  <p className="text-[12px] text-fg-muted">{zone.freeOverAmount === null ? "No free delivery" : `Free over ${formatPrice(zone.freeOverAmount)}`}</p>
+                  <p className="text-base font-semibold tabular-nums text-fg">{formatPrice(zone.fee)}</p>
+                  <p className="text-xs text-fg-muted">{zone.freeOverAmount === null ? "No free delivery" : `Free over ${formatPrice(zone.freeOverAmount)}`}</p>
                 </div>
                 <ChevronRight size={16} className="shrink-0 text-fg-subtle" aria-hidden="true" />
               </button>
@@ -271,7 +271,7 @@ export default function DeliveryZonesPage() {
           ))}
         </ul>
       )}
-      <p className="mt-4 text-[13px] text-fg-muted">A coupon with free shipping, or a cart of only free-delivery products, still makes delivery free.</p>
+      <p className="mt-4 text-sm text-fg-muted">A coupon with free shipping, or a cart of only free-delivery products, still makes delivery free.</p>
 
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? editing.name || "Zone" : "New delivery zone"}>
         {editing && <ZoneEditor key={editing.id ?? "new"} draft={editing} onClose={() => setEditing(null)} />}

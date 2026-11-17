@@ -44,7 +44,7 @@ function TypeCodeRow({ type, canManage, onSaved }: { type: catalogApi.ManagedTyp
           placeholder={defaultTypeCode(type.name)}
           disabled={!canManage}
           maxLength={6}
-          className="h-8 w-28 font-mono text-xs uppercase"
+          className="h-8 w-28 font-mono text-xs"
           aria-label={`SKU code for ${type.name}`}
         />
       </TableCell>
@@ -96,7 +96,7 @@ export default function SkuSettingsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
             <div>
               <Label htmlFor="sku-prefix">Prefix</Label>
-              <Input id="sku-prefix" value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase())} disabled={!canManage} maxLength={8} className="font-mono uppercase" />
+              <Input id="sku-prefix" value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase())} disabled={!canManage} maxLength={8} className="font-mono" />
             </div>
             <div>
               <Label htmlFor="sku-pattern">Pattern</Label>

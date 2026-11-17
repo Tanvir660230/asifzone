@@ -68,7 +68,7 @@ export function RecentOrdersCard({ enabled = true }: { enabled?: boolean }) {
                     <span className="block truncate text-xs text-ink-500">
                       {first ? `${first.name}${more > 0 ? ` +${more} more` : ""}` : "—"} · {timeAgo(order.createdAt)}
                     </span>
-                    <span className="block truncate font-mono text-[11px] text-ink-400">#{order.orderNumber}</span>
+                    <span className="block truncate font-mono text-xs text-ink-400">#{order.orderNumber}</span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-1">
                     <span className="text-sm font-semibold tabular-nums text-ink-900">{formatPrice(order.total)}</span>

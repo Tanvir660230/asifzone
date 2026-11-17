@@ -69,7 +69,7 @@ export function OrderStatusBreakdown({ counts }: { counts: OrderStatusCount[] })
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-2xl font-semibold tabular-nums tracking-tight text-ink-900">{total}</span>
-          <span className="text-[10px] uppercase tracking-wide text-ink-400">orders</span>
+          <span className="text-xs text-ink-400">orders</span>
         </div>
       </div>
 

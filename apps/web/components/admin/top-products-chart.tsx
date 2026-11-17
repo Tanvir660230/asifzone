@@ -29,7 +29,7 @@ export function TopProductsChart({ products }: { products: TopProduct[] }) {
           <div className="group flex items-center gap-4 py-3.5 first:pt-0 last:pb-0">
             <span
               className={cn(
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
                 RANK_STYLE[i] ?? "bg-ink-100 text-ink-500",
               )}
             >

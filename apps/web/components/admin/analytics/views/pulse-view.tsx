@@ -49,11 +49,11 @@ function DeliveryRateTile({ pulse }: { pulse: OpsPulse }) {
   const diff = rate !== null && usual !== null ? Math.round((rate - usual) * 100) : null;
   return (
     <Card className="flex h-full flex-col gap-1.5 p-3.5 sm:p-4">
-      <p className="text-[13px] font-medium leading-snug text-fg-muted" title="Delivered in full ÷ parcels delivered, part delivered or refused that day">
+      <p className="text-sm font-medium leading-snug text-fg-muted" title="Delivered in full ÷ parcels delivered, part delivered or refused that day">
         Delivery success
       </p>
-      <p className="text-[24px] font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-[28px]">{pct(rate)}</p>
-      <p className="text-[12.5px] leading-snug">
+      <p className="text-2xl font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-2xl">{pct(rate)}</p>
+      <p className="text-xs leading-snug">
         {diff === null ? (
           <span className="text-fg-muted">{rate === null ? "no parcels finished" : "no usual to compare"}</span>
         ) : Math.abs(diff) < 3 ? (
@@ -103,7 +103,7 @@ function Comparisons({ date, yesterday, lastWeek, usual }: { date: string; yeste
     ["Usual", usual],
   ];
   return (
-    <dl className="mt-auto grid grid-cols-1 gap-0.5 border-t border-line pt-2 text-[12px] tabular-nums sm:grid-cols-3 sm:gap-1">
+    <dl className="mt-auto grid grid-cols-1 gap-0.5 border-t border-line pt-2 text-xs tabular-nums sm:grid-cols-3 sm:gap-1">
       {items.map(([label, value]) => (
         <div key={label} className="flex items-baseline justify-between gap-2 sm:block">
           <dt className="whitespace-nowrap text-fg-muted">{label}</dt>
@@ -120,16 +120,16 @@ function PulseTile({ pulse, tile }: { pulse: OpsPulse; tile: (typeof TILES)[numb
   const body = (
     <Card className={cn("flex h-full flex-col gap-1.5 p-3.5 sm:p-4", ordersHref && "transition-colors duration-fast hover:border-line-strong")}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[13px] font-medium leading-snug text-fg-muted" title={hint}>
+        <p className="text-sm font-medium leading-snug text-fg-muted" title={hint}>
           {label}
         </p>
         {ordersHref && <ArrowUpRight size={14} className="shrink-0 text-ink-400" aria-hidden />}
       </div>
-      <p className="text-[24px] font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-[28px]">{formatCount(value)}</p>
+      <p className="text-2xl font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-2xl">{formatCount(value)}</p>
       {key === "booked" && pulse.day.booked_cod_value > 0 && (
-        <p className="text-[12.5px] tabular-nums text-fg-muted">{formatPrice(pulse.day.booked_cod_value)} to collect</p>
+        <p className="text-xs tabular-nums text-fg-muted">{formatPrice(pulse.day.booked_cod_value)} to collect</p>
       )}
-      <p className="text-[12.5px] leading-snug">
+      <p className="text-xs leading-snug">
         <ChangeNote value={value} base={pulse.typical[key]} lowerIsBetter={lowerIsBetter} against={`a usual ${weekdayShort(pulse.date)}`} />
       </p>
       <Comparisons date={pulse.date} yesterday={formatCount(pulse.yesterday[key])} lastWeek={formatCount(pulse.lastWeek[key])} usual={fmtAvg(pulse.typical[key])} />
@@ -172,14 +172,14 @@ function HourlyChart({ pulse }: { pulse: OpsPulse }) {
           </div>
         ))}
       </div>
-      <div aria-hidden className="mt-1.5 flex justify-between text-[11px] tabular-nums text-fg-muted">
+      <div aria-hidden className="mt-1.5 flex justify-between text-xs tabular-nums text-fg-muted">
         <span>12am</span>
         <span>6am</span>
         <span>12pm</span>
         <span>6pm</span>
         <span>11pm</span>
       </div>
-      <p className="mt-2 flex items-center gap-4 text-[12px] text-fg-muted">
+      <p className="mt-2 flex items-center gap-4 text-xs text-fg-muted">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-accent/80" aria-hidden /> This day
         </span>
@@ -199,7 +199,7 @@ function ShareRows({ rows, total, emptyLabel }: { rows: Array<{ key: string; lab
       {rows.map((r) => {
         const pct = (r.value / total) * 100;
         const label = (
-          <span className="flex items-baseline justify-between gap-3 text-[13px]">
+          <span className="flex items-baseline justify-between gap-3 text-sm">
             <span className="text-fg">{r.label}</span>
             <span className="tabular-nums text-fg-muted">
               <span className="font-semibold text-fg">{formatCount(r.value)}</span> · {pct.toFixed(0)}%
@@ -247,12 +247,12 @@ function QueueList({ queues }: { queues: OpsPulse["queues"] }) {
     <ul className="divide-y divide-line">
       {rows.map((r) => (
         <li key={r.key}>
-          <Link href={r.href} className="flex items-center justify-between gap-3 py-2.5 text-[13.5px] transition-colors duration-fast hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+          <Link href={r.href} className="flex items-center justify-between gap-3 py-2.5 text-sm transition-colors duration-fast hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
             <span className="flex min-w-0 items-center gap-2">
               {r.urgent && r.value > 0 && <span className="h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden />}
               <span>
                 {r.label}
-                {r.note && <span className="block text-[12px] text-fg-muted">{r.note}</span>}
+                {r.note && <span className="block text-xs text-fg-muted">{r.note}</span>}
               </span>
             </span>
             <span className={cn("tabular-nums font-semibold", r.value === 0 ? "text-fg-muted" : "text-fg")}>{formatCount(r.value)}</span>
@@ -278,14 +278,14 @@ function StaffList({ pulse }: { pulse: OpsPulse }) {
         ].filter(Boolean);
         return (
           <li key={s.adminId}>
-            <div className="flex items-baseline justify-between gap-3 text-[13px]">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
               <span className="min-w-0 truncate font-medium text-fg">{s.name}</span>
               <span className="shrink-0 tabular-nums font-semibold text-fg">{formatCount(s.total)}</span>
             </div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-900/[0.06]">
               <div className="h-full rounded-full bg-ink-500" style={{ width: `${(s.total / top) * 100}%` }} />
             </div>
-            <p className="mt-1 text-[12px] text-fg-muted">{parts.join(" · ")}</p>
+            <p className="mt-1 text-xs text-fg-muted">{parts.join(" · ")}</p>
           </li>
         );
       })}
@@ -409,7 +409,7 @@ function DailyTable({ to }: { to: string }) {
             </Table>
           </TableContainer>
         )}
-        <p className="mt-3 text-[12px] leading-relaxed text-fg-muted">
+        <p className="mt-3 text-xs leading-relaxed text-fg-muted">
           Each order counts once per step, on the day it first got there. Net sales and cash in come from the sales figures (delivered COD
           and paid online orders, less refunds).
         </p>
@@ -490,7 +490,7 @@ export default function PulseView() {
             {isToday ? "Today" : formatBusinessDate(pulse.date, { weekday: "long" })}
             <span className="font-normal text-fg-muted"> · {formatBusinessDate(pulse.date, { weekday: isToday ? "long" : undefined, month: "long", day: "numeric", year: "numeric" })}</span>
           </h2>
-          <p className="mt-1 text-[13px] text-fg-muted">
+          <p className="mt-1 text-sm text-fg-muted">
             {pulse.partialDay && pulse.asOf
               ? `So far, as of ${formatStoreTime(pulse.asOf)}. Other days are counted up to the same time, so the comparison is fair.`
               : `Compared with the day before, last ${weekday(pulse.date)} and a usual ${weekday(pulse.date)} (average of the last 4).`}
@@ -503,7 +503,7 @@ export default function PulseView() {
           <Input
             type="date"
             aria-label="Pick a day"
-            className="h-8 w-[9.5rem] text-[13px]"
+            className="h-8 w-[9.5rem] text-sm"
             value={pulse.date}
             max={today ?? undefined}
             onChange={(e) => e.target.value && go(e.target.value)}

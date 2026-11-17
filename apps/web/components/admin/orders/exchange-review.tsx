@@ -69,7 +69,7 @@ export function ExchangeReview({
       {p.amountDue > 0 && <p className="text-xs text-ink-500">A replacement order is created for this difference (or send a payment link for it).</p>}
       {p.amountOwedBack > 0 && (
         <fieldset className="space-y-2">
-          <legend className="text-xs font-semibold uppercase tracking-wide text-ink-500">Give the difference back as</legend>
+          <legend className="text-xs font-semibold text-ink-500">Give the difference back as</legend>
           {(
             [
               { value: "STORE_CREDIT", label: "Store Balance", hint: "For the customer's future orders.", allowed: p.canCredit },

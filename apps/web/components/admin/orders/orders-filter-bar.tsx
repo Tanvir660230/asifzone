@@ -46,12 +46,12 @@ export function CountBadge({ value, inverted }: { value: number | undefined; inv
 
 /** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */
 // Focus uses the global :focus-visible outline (DESIGN_SYSTEM §5.4) — a 40% ring was too faint to see (2.6:1).
-export const tabBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+export const tabBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
 export const tabOn = "bg-ink-900/[0.08] text-fg";
 export const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
 /** Views (work queues): white capsules; a queue that needs a person and has work in it shows an amber dot. */
-const viewBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+const viewBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
 const viewOff = "border-line bg-surface text-fg hover:border-line-strong";
 const viewOn = "border-accent bg-accent text-accent-fg";
 
@@ -253,7 +253,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
             <HScrollShadow className="overflow-x-auto">
               <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 py-0.5">
-                <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted max-sm:hidden">Views</span>
+                <span className="mr-1 shrink-0 text-sm font-medium text-fg-muted max-sm:hidden">Views</span>
                 {/* Which queues have work is only known once the counts load — hold the row's place until then. */}
                 {!stats && <span className="ui-skeleton h-8 w-32 shrink-0 rounded-full" aria-hidden="true" />}
                 {shownQueues.map((id) => {

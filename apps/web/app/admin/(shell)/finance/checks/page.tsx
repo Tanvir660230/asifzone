@@ -89,7 +89,7 @@ export default function FinanceChecksPage() {
             { label: "Last run", value: lastRun ? formatStoreDateTime(lastRun) : "never", tone: "text-ink-900" },
           ].map((f) => (
             <Card key={f.label} className="p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">{f.label}</p>
+              <p className="text-xs font-semibold text-ink-500">{f.label}</p>
               <p className={`mt-1 text-lg font-semibold tabular-nums ${f.tone}`}>{f.value}</p>
             </Card>
           ))}

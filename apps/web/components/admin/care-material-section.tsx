@@ -107,7 +107,7 @@ export function CareMaterialSection({ control, register, watch, setValue, errors
           )}
 
           <div className="rounded-lg border border-ink-100 bg-white p-3" data-testid="care-preview">
-            <p className="mb-1 text-xs uppercase tracking-wide text-ink-400">What customers will see{effectiveSource ? ` — from ${effectiveSource}` : ""}</p>
+            <p className="mb-1 text-xs text-ink-400">What customers will see{effectiveSource ? ` — from ${effectiveSource}` : ""}</p>
             {effectiveSteps.length > 0 ? (
               <ol className="list-decimal space-y-0.5 pl-5 text-sm text-ink-700">
                 {effectiveSteps.map((s, i) => (

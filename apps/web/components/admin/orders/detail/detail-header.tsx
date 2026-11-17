@@ -80,7 +80,7 @@ export function DetailHeader({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
-            <Heading className="text-[26px] font-semibold tracking-tight text-fg">{order.orderNumber}</Heading>
+            <Heading className="text-2xl font-semibold tracking-tight text-fg">{order.orderNumber}</Heading>
             <OrderStatusBadge status={order.status} />
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-500">
@@ -102,7 +102,7 @@ export function DetailHeader({
           </div>
         </div>
         {variant === "drawer" && (
-          <span className="hidden items-center gap-1.5 text-[11px] text-ink-400 sm:flex" aria-hidden="true">
+          <span className="hidden items-center gap-1.5 text-xs text-ink-400 sm:flex" aria-hidden="true">
             <kbd className="rounded border border-line px-1 py-0.5 font-sans">↑</kbd>
             <kbd className="rounded border border-line px-1 py-0.5 font-sans">↓</kbd> next / previous ·
             <kbd className="rounded border border-line px-1 py-0.5 font-sans">Esc</kbd> close
@@ -130,7 +130,7 @@ export function DetailHeader({
               Change status <ChevronDown size={13} aria-hidden="true" />
             </Button>
             <Popover open={statusOpen} onClose={() => setStatusOpen(false)} anchorRef={statusRef} align="start" className="w-64 p-1.5">
-              <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+              <p className="px-2.5 pb-1.5 pt-1 text-xs font-semibold text-ink-400">
                 From {orderStatusLabel(order.status)} to
               </p>
               <div role="menu" aria-label={`Move ${order.orderNumber} to`}>
@@ -150,7 +150,7 @@ export function DetailHeader({
                   </button>
                 ))}
               </div>
-              <p className="border-t border-line-subtle px-2.5 pb-1 pt-2 text-[11px] text-ink-400">Only moves the order workflow allows are listed.</p>
+              <p className="border-t border-line-subtle px-2.5 pb-1 pt-2 text-xs text-ink-400">Only moves the order workflow allows are listed.</p>
             </Popover>
           </>
         )}

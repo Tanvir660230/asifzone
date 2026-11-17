@@ -57,11 +57,11 @@ function MetricCell({ label, help, row }: { label: string; help: string; row?: o
       </p>
       {row ? (
         <p className="mt-1 flex flex-col items-start gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-1.5">
-          <span className="text-[15px] font-semibold tabular-nums text-fg">{formatVital(row.metric, row.p75)}</span>
-          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", RATING[row.rating].className)}>{RATING[row.rating].label}</span>
+          <span className="text-base font-semibold tabular-nums text-fg">{formatVital(row.metric, row.p75)}</span>
+          <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", RATING[row.rating].className)}>{RATING[row.rating].label}</span>
         </p>
       ) : (
-        <p className="mt-1 text-[15px] text-fg-subtle">—</p>
+        <p className="mt-1 text-base text-fg-subtle">—</p>
       )}
     </div>
   );
@@ -83,7 +83,7 @@ export function SiteSpeedSection() {
           <h2 id="speed-heading" className="font-display text-lg tracking-tight text-fg">
             Site speed
           </h2>
-          <p className="text-[13px] text-fg-muted">
+          <p className="text-sm text-fg-muted">
             How fast the store is for real customers in the last {DAYS} days: how soon the main content shows, how quickly a tap gets a response, and
             how much the page jumps. Three in four visits were at least this fast.
           </p>
@@ -110,7 +110,7 @@ export function SiteSpeedSection() {
               return (
                 <li key={kind} data-testid="speed-row" className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,12rem)_1fr] sm:items-center sm:gap-6">
                   <div>
-                    <p className="text-[15px] font-medium text-fg">{PAGE_LABEL[kind]}</p>
+                    <p className="text-base font-medium text-fg">{PAGE_LABEL[kind]}</p>
                     <p className="text-xs text-fg-subtle">
                       {formatCount(visits)} visit{visits === 1 ? "" : "s"}
                       {visits < FEW_VISITS ? " · early numbers" : ""}

@@ -77,7 +77,7 @@ export default function FinanceAccountsPage() {
 
       {(pending.data?.movements.length ?? 0) > 0 && (
         <Card className="p-4" data-testid="pending-approvals">
-          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Waiting for approval</h2>
+          <h2 className="mb-3 text-xs font-semibold text-ink-500">Waiting for approval</h2>
           <ul className="divide-y divide-line-subtle text-sm">
             {pending.data!.movements.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-3 py-2">

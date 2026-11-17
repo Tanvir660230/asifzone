@@ -85,7 +85,7 @@ export function ActiveSessionsDialog({ open, onClose }: { open: boolean; onClose
                       {device.label}
                       {s.current && <Badge variant="success">This device</Badge>}
                     </p>
-                    <p className="text-[13px] text-fg-muted">Signed in {formatStoreDateTime(s.createdAt)}</p>
+                    <p className="text-sm text-fg-muted">Signed in {formatStoreDateTime(s.createdAt)}</p>
                   </div>
                   {!s.current && (
                     <Button variant="outline" size="sm" disabled={pending} onClick={() => revoke.mutate(s.id)} aria-label={`Sign out ${device.label}`}>

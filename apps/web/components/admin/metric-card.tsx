@@ -43,12 +43,12 @@ export function MetricCard({ label, value, detail, trendPct, trendLabel, sparkli
     >
       <div className="flex items-center gap-1.5">
         {tone === "attention" && <span className="h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden />}
-        <p className="truncate text-[13px] font-medium text-fg-muted">{label}</p>
+        <p className="truncate text-sm font-medium text-fg-muted">{label}</p>
         {interactive && <ChevronRight size={14} className="ml-auto shrink-0 text-ink-300 transition-colors group-hover:text-ink-500" aria-hidden />}
       </div>
-      <p className="mt-2 truncate text-[24px] font-semibold sm:text-[28px] leading-none tracking-tight tabular-nums text-fg">{value}</p>
+      <p className="mt-2 truncate text-2xl font-semibold sm:text-2xl leading-none tracking-tight tabular-nums text-fg">{value}</p>
       {(hasTrend || detail) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-fg-muted">
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
           {hasTrend && (
             <span className={cn("inline-flex items-center gap-0.5 font-semibold", up ? "text-success-700" : "text-danger-600")}>
               {up ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
@@ -99,8 +99,8 @@ export function MetricStrip({ items, className }: { items: { label: string; valu
       {items.map((item) => {
         const inner = (
           <>
-            <span className="text-[13px] text-fg-muted">{item.label}</span>
-            <span className="text-[15px] font-semibold tabular-nums text-fg">{item.value}</span>
+            <span className="text-sm text-fg-muted">{item.label}</span>
+            <span className="text-base font-semibold tabular-nums text-fg">{item.value}</span>
           </>
         );
         const cls = "flex items-center justify-between gap-3 px-5 py-3.5";

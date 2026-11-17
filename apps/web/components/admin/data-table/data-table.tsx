@@ -199,7 +199,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                 <Columns3 size={14} /> Columns
               </Button>
               <Popover open={pickerOpen} onClose={() => setPickerOpen(false)} anchorRef={pickerRef} align="end" sheetOnPhone className="w-56 p-2">
-                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Show columns</p>
+                <p className="px-2 pb-1 text-xs font-semibold text-ink-400">Show columns</p>
                 {columns.map((col, i) => (
                   <label key={col.id} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm", i === 0 || col.hideable === false ? "opacity-60" : "cursor-pointer hover:bg-ink-50")}>
                     <Checkbox checked={!hidden.has(col.id) || i === 0 || col.hideable === false} disabled={i === 0 || col.hideable === false} onChange={() => toggle(col.id)} />
@@ -244,7 +244,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                   return (
                     <TableHeaderCell key={col.id} align={col.align} className={col.className} aria-sort={col.sortable ? (sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none") : undefined}>
                       {col.sortable && onSortChange ? (
-                        <button type="button" onClick={() => cycleSort(col.id)} className={cn("inline-flex items-center gap-1 uppercase tracking-wide", sorted ? "text-ink-900" : "hover:text-ink-800")}>
+                        <button type="button" onClick={() => cycleSort(col.id)} className={cn("inline-flex items-center gap-1", sorted ? "text-ink-900" : "hover:text-ink-800")}>
                           {col.header}
                           <Icon size={12} aria-hidden />
                         </button>

@@ -80,7 +80,7 @@ export function StockSearchBox({ value, onChange, onOpen, onAction }: { value: s
             else if (e.key === "Enter" && open && items[active]) { e.preventDefault(); pick(items[active]!); }
             else if (e.key === "Escape") { if (open) setOpen(false); else onChange(""); }
           }}
-          className="ui-control !h-12 rounded-2xl pl-12 pr-24 text-[15px] shadow-float [&::-webkit-search-cancel-button]:hidden"
+          className="ui-control !h-12 rounded-2xl pl-12 pr-24 text-base shadow-float [&::-webkit-search-cancel-button]:hidden"
           data-testid="stock-search"
           data-page-search=""
         />
@@ -88,7 +88,7 @@ export function StockSearchBox({ value, onChange, onOpen, onAction }: { value: s
           {value ? (
             <button type="button" onClick={() => { onChange(""); inputRef.current?.focus(); }} aria-label="Clear search" className="text-fg-subtle transition-colors duration-fast hover:text-fg"><XCircle className="h-5 w-5" /></button>
           ) : (
-            <kbd className="hidden rounded-md border border-line px-1.5 py-0.5 text-[11px] font-medium text-fg-subtle sm:inline">/</kbd>
+            <kbd className="hidden rounded-md border border-line px-1.5 py-0.5 text-xs font-medium text-fg-subtle sm:inline">/</kbd>
           )}
         </span>
       </div>

@@ -163,8 +163,8 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                 aria-label="Search"
               >
                 <Search size={16} className="shrink-0" />
-                <span className="hidden truncate text-[13.5px] text-fg-subtle sm:inline">Search orders, products, customers…</span>
-                <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] font-medium leading-none text-fg-subtle sm:inline">
+                <span className="hidden truncate text-sm text-fg-subtle sm:inline">Search orders, products, customers…</span>
+                <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-xs font-medium leading-none text-fg-subtle sm:inline">
                   {modKey} K
                 </kbd>
               </button>

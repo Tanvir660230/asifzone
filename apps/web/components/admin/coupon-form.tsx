@@ -161,7 +161,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
       {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
       <form onSubmit={handleSubmit(submit)} className="space-y-6">
         <section className="space-y-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Basics</h3>
+          <h3 className="text-xs font-semibold text-ink-500">Basics</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="code">Code</Label>
@@ -200,7 +200,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
         </section>
 
         <section className="space-y-4 border-t border-ink-100 pt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Discount rules</h3>
+          <h3 className="text-xs font-semibold text-ink-500">Discount rules</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="minOrderAmount">Min order amount (optional)</Label>
@@ -226,7 +226,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
         </section>
 
         <section className="space-y-4 border-t border-ink-100 pt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Scheduling</h3>
+          <h3 className="text-xs font-semibold text-ink-500">Scheduling</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="startsAt">Starts (optional)</Label>
@@ -241,7 +241,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
         </section>
 
         <section className="space-y-4 border-t border-ink-100 pt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Applies to</h3>
+          <h3 className="text-xs font-semibold text-ink-500">Applies to</h3>
           <Select
             {...register("scope", {
               // Switching away from a scoped option must drop the now-hidden picker's selection —

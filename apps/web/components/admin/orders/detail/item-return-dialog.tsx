@@ -172,7 +172,7 @@ function ItemReturnBody({ order, onClose }: { order: Order; onClose: () => void 
 
         {p && (
           <fieldset className="space-y-2" data-testid="return-compensation">
-            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-500">What the customer gets back</legend>
+            <legend className="mb-1 text-xs font-semibold text-ink-500">What the customer gets back</legend>
             <p className="text-sm text-ink-600">
               Returned value <span className="font-semibold tabular-nums text-ink-900">{formatPrice(p.value)}</span>
               {p.returnsEverything && " · every item is back, so the order will be marked Returned"}

@@ -81,7 +81,7 @@ export default function SearchAnalyticsPage() {
 
       {/* Overview — reuses the existing getSearchAnalytics endpoint, not rebuilt here. */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Overview</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Overview</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
           {!overview ? (
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -176,7 +176,7 @@ export default function SearchAnalyticsPage() {
 
       {/* Search → outcome */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Where Searches Lead</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Where Searches Lead</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
           {!conversion ? (
             Array.from({ length: 2 }).map((_, i) => <StatTileSkeleton key={i} />)

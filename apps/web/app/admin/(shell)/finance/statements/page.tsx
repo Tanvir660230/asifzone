@@ -200,7 +200,7 @@ function StatementTable({ title, compareLabel, sections, prior, subtotals, lead,
 function SectionRows({ section, priorTotal, priorOf, subtotal }: { section: StatementSection; priorTotal?: number; priorOf?: (l: StatementSection["lines"][number]) => number; subtotal?: [string, number, number?] }) {
   return (
     <>
-      <TableRow><TableCell className="bg-surface-muted text-xs font-medium uppercase tracking-wide text-ink-600">{section.label}</TableCell><TableCell className="bg-surface-muted" />{priorOf && <TableCell className="bg-surface-muted" />}</TableRow>
+      <TableRow><TableCell className="bg-surface-muted text-xs font-medium text-ink-600">{section.label}</TableCell><TableCell className="bg-surface-muted" />{priorOf && <TableCell className="bg-surface-muted" />}</TableRow>
       {section.lines.length === 0 && <TableRow><TableCell className="text-sm text-ink-500">Nothing in this period</TableCell><TableCell align="right" className="tabular-nums text-ink-500">—</TableCell>{priorOf && <TableCell />}</TableRow>}
       {section.lines.map((l) => (
         <TableRow key={`${l.code}-${l.name}`} data-testid="statement-line">

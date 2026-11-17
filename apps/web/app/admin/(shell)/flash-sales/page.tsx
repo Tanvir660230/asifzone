@@ -259,7 +259,7 @@ function FlashSaleItemsManager({
       </div>
 
       <form onSubmit={handleSubmit(onAdd)} className="border-t border-ink-100 pt-4">
-        <p className="mb-2 text-xs uppercase tracking-wide text-ink-500">Add product</p>
+        <p className="mb-2 text-xs text-ink-500">Add product</p>
         {error && <p className="mb-2 text-xs text-danger-600">{error}</p>}
         <ProductPicker selected={selectedProduct ? [selectedProduct] : []} onChange={pickProduct} />
         {errors.productId && <p className="ui-field-error">Select a product</p>}

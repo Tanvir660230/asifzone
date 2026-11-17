@@ -467,7 +467,7 @@ export default function ProductIntelligencePage() {
             <ShoppingCart size={20} />
           </span>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Abandoned carts</p>
+            <p className="text-xs font-semibold text-ink-400">Abandoned carts</p>
             <p className="mt-0.5 text-xl font-semibold tabular-nums text-ink-900">
               {cartAbandonment ? `${cartAbandonment.cartCount} carts · ${formatPrice(cartAbandonment.potentialRevenue)} potential` : "—"}
             </p>

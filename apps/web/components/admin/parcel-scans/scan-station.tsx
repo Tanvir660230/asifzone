@@ -493,7 +493,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
                       {e.resolvedBy && e.result === "ACCEPTED" ? ` · ${SCAN_MATCH_LABELS[e.resolvedBy]}` : ""}
                     </span>
                   </span>
-                  {e.discrepancy && <span className="rounded-full bg-warning-100 px-2 py-0.5 text-[11px] font-medium text-warning-800">Check</span>}
+                  {e.discrepancy && <span className="rounded-full bg-warning-100 px-2 py-0.5 text-xs font-medium text-warning-800">Check</span>}
                   {e.result === "ACCEPTED" && batch?.status === "OPEN" && (
                     <button type="button" aria-label={`Remove ${e.orderNumber ?? e.code} from the batch`} className="flex h-8 w-8 items-center justify-center rounded-full text-fg-muted hover:bg-ink-900/[0.05]" onClick={() => void remove(e)}>
                       <X size={14} />

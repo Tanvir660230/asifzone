@@ -62,7 +62,7 @@ export function Stepper({ steps, onSelect }: StepperProps) {
               >
                 <span
                   className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-full text-[0.6875rem] tabular-nums ring-1 ring-inset transition-colors duration-base",
+                    "flex h-6 w-6 items-center justify-center rounded-full text-xs tabular-nums ring-1 ring-inset transition-colors duration-base",
                     isCurrent && "bg-accent-fg/15 text-accent-fg ring-accent-fg/25",
                     step.status === "complete" && "bg-success-50 text-success-700 ring-success-200",
                     step.status === "attention" && "bg-warning-50 text-warning-700 ring-warning-200",

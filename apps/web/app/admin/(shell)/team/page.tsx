@@ -432,7 +432,7 @@ export default function AdminTeamPage() {
 
       {(invitesLoading || (invitesData && invitesData.invites.length > 0)) && (
         <>
-          <h2 className="mb-3 mt-8 text-[17px] font-semibold tracking-tight text-fg">Pending invites</h2>
+          <h2 className="mb-3 mt-8 text-lg font-semibold tracking-tight text-fg">Pending invites</h2>
           <TableContainer>
             <Table className="min-w-[560px]">
               <TableHead>

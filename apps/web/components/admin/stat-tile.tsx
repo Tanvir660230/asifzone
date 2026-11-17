@@ -36,7 +36,7 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
       <div className="flex items-start gap-2">
         {/* A tile only ever gets tone="warning" when its underlying count is actually > 0 (callers gate it). */}
         {tone === "warning" && <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden />}
-        <p className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-fg-muted">{label}</p>
+        <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-fg-muted">{label}</p>
         {/* Phones drop the decorative icon so the label keeps one line and the tile stays short. */}
         <span className={cn("shrink-0 max-sm:hidden [&>svg]:h-4 [&>svg]:w-4", TONE_ICON[tone])} aria-hidden>
           {icon}
@@ -46,11 +46,11 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
           beside it the trend wraps instead of the number being cut. The value keeps `truncate` only as a floor for
           pathological widths (it has no spaces to wrap on); its full text is in the title. */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1 sm:pt-1.5">
-        <p title={value} className={cn("max-w-full truncate font-semibold leading-tight tracking-tight tabular-nums text-fg", String(value).length > 6 ? "text-[17px] sm:text-[18px]" : "text-[20px] sm:text-[22px]")}>
+        <p title={value} className={cn("max-w-full truncate font-semibold leading-tight tracking-tight tabular-nums text-fg", String(value).length > 6 ? "text-lg sm:text-lg" : "text-xl sm:text-xl")}>
           {value}
         </p>
         {hasTrend && (
-          <span className={cn("flex shrink-0 items-center gap-0.5 text-[12.5px] font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
+          <span className={cn("flex shrink-0 items-center gap-0.5 text-xs font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
             {isUp ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
             {Math.abs(trendPct!).toFixed(0)}%
           </span>

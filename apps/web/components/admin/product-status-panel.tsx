@@ -36,7 +36,7 @@ function CheckRow({ check, onFix }: { check: CompletenessCheck; onFix: (key: Com
         <span className={cn(check.status === "ok" ? "text-ink-600" : "text-fg")}>
           {check.label}
           {check.status === "missing" && check.required && (
-            <span className="ml-1.5 text-caption font-semibold uppercase text-danger-600">required</span>
+            <span className="ml-1.5 text-caption font-semibold text-danger-600">required</span>
           )}
         </span>
         {check.status === "missing" && (

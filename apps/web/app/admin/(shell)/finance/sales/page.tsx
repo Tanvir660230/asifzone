@@ -96,7 +96,7 @@ export default function SalesAccountingPage() {
             ["Waiting / failed", `${s.events.RECEIVED ?? 0} / ${s.events.FAILED ?? 0}`],
           ].map(([label, value]) => (
             <Card key={label} className="p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">{label}</p>
+              <p className="text-xs font-semibold text-ink-500">{label}</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-ink-900">{value}</p>
             </Card>
           ))}
@@ -118,7 +118,7 @@ export default function SalesAccountingPage() {
                 <TableRow key={`${e.type}-${e.status}`}>
                   <TableCell>
                     <span className="block text-ink-900">{EVENT_LABEL[e.type] ?? e.type}</span>
-                    <span className="block font-mono text-[11px] text-ink-500">{e.type}</span>
+                    <span className="block font-mono text-xs text-ink-500">{e.type}</span>
                   </TableCell>
                   <TableCell><Badge variant={statusOf(e.status).variant}>{statusOf(e.status).label}</Badge></TableCell>
                   <TableCell align="right" className="tabular-nums">{e.count}</TableCell>
@@ -131,7 +131,7 @@ export default function SalesAccountingPage() {
       </Card>
 
       <Card className="space-y-3 p-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">An order&apos;s accounting trail</h2>
+        <h2 className="text-xs font-semibold text-ink-500">An order&apos;s accounting trail</h2>
         <form
           className="flex gap-2"
           onSubmit={(e) => {
@@ -155,7 +155,7 @@ export default function SalesAccountingPage() {
                   <span className="w-24 whitespace-nowrap tabular-nums text-ink-600">{formatBookDate(e.financialDate)}</span>
                   <span className="order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
                     <span className="block text-ink-900">{EVENT_LABEL[e.eventType] ?? e.eventType}</span>
-                    <span className="block break-all font-mono text-[11px] text-ink-500">{e.eventKey}</span>
+                    <span className="block break-all font-mono text-xs text-ink-500">{e.eventKey}</span>
                   </span>
                   <Badge variant={statusOf(e.status).variant}>{statusOf(e.status).label}</Badge>
                   {e.journalEntry && (

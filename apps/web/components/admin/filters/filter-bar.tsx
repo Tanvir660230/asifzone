@@ -61,7 +61,7 @@ export function FilterBar({
             <Button ref={moreRef} variant="outline" size="sm" className="max-sm:order-first" onClick={() => setMoreOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={moreOpen}>
               <SlidersHorizontal size={14} /> <span className="sm:hidden">Filters</span>
               <span className="max-sm:hidden">More filters</span>
-              {moreCount > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{moreCount}</span>}
+              {moreCount > 0 && <span className="rounded-full bg-accent px-1.5 text-xs font-semibold leading-[18px] text-accent-fg">{moreCount}</span>}
             </Button>
             <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} sheetOnPhone aria-label="More filters" className="w-80 space-y-3 p-4">
               {more.map((def) => (
@@ -80,7 +80,7 @@ export function FilterBar({
             <div key={def.key} role="group" aria-label={def.label} className="flex items-center gap-1 sm:flex-wrap">
               {i > 0 && <span className="mr-2 h-4 w-px shrink-0 bg-ink-900/[0.1]" aria-hidden="true" />}
               {/* A visible name for the group, so "Draft · Ready" and "Running low" read as filters, not text. */}
-              <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-subtle" aria-hidden="true">
+              <span className="mr-1 shrink-0 text-sm font-medium text-fg-subtle" aria-hidden="true">
                 {def.label}
               </span>
               {filterOptions(def, values).map((option) => {
@@ -94,7 +94,7 @@ export function FilterBar({
                 aria-pressed={on}
                 onClick={() => onChange(setFilterPatch(defs, def.key, next))}
                 className={cn(
-                  "flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                  "flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
                   on ? "bg-ink-900/[0.08] text-fg" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
                 )}
               >

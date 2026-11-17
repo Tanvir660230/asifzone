@@ -246,7 +246,7 @@ export function ActivityTimeline({ order }: { order: Order }) {
                 icon={"status" in e.icon ? <OrderStatusIcon status={e.icon.status} size={13} /> : <e.icon size={13} />}
                 title={
                   <>
-                    {e.concept && <span className="mr-1.5 rounded-md border border-line px-1.5 py-px text-[11px] font-medium uppercase tracking-wide text-ink-500">{e.concept}</span>}
+                    {e.concept && <span className="mr-1.5 rounded-md border border-line px-1.5 py-px text-xs font-medium text-ink-500">{e.concept}</span>}
                     {e.title}
                   </>
                 }

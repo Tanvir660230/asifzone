@@ -19,9 +19,9 @@ const isHot = (r: CancelBreakdownRow, overall: number, min: number) => r.orders 
 function Tile({ label, value, note }: { label: string; value: string; note?: React.ReactNode }) {
   return (
     <Card className="p-3.5 sm:p-4">
-      <p className="text-[13px] font-medium text-fg-muted">{label}</p>
-      <p className="pt-1 text-[22px] font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-[26px]">{value}</p>
-      {note && <p className="mt-1 text-[12.5px] leading-snug text-fg-muted">{note}</p>}
+      <p className="text-sm font-medium text-fg-muted">{label}</p>
+      <p className="pt-1 text-xl font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-2xl">{value}</p>
+      {note && <p className="mt-1 text-xs leading-snug text-fg-muted">{note}</p>}
     </Card>
   );
 }
@@ -44,7 +44,7 @@ function Reasons({ data }: { data: Cancellations }) {
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="text-fg">{r.label}</span>
                   <span className="tabular-nums text-fg-muted">
-                    {formatCount(r.count)} <span className="text-[12px]">· {pct(r.share)}</span>
+                    {formatCount(r.count)} <span className="text-xs">· {pct(r.share)}</span>
                   </span>
                 </div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-ink-900/[0.05]" aria-hidden>
@@ -55,7 +55,7 @@ function Reasons({ data }: { data: Cancellations }) {
           </ul>
         )}
         {data.reasons.some((r) => r.reason === "unspecified") && (
-          <p className="mt-4 text-[12px] leading-relaxed text-fg-muted">
+          <p className="mt-4 text-xs leading-relaxed text-fg-muted">
             &ldquo;No reason written&rdquo; is a cancel with only &ldquo;Cancelled&rdquo; as its note. The cancel dialog now has one-tap reasons, so this
             shrinks from here on.
           </p>
@@ -98,7 +98,7 @@ function BreakdownTable({ title, rows, overall, min, nameHeader, note }: { title
                       <TableCell align="right">{formatCount(r.orders)}</TableCell>
                       <TableCell align="right" className={cn(hot && "font-semibold text-danger-600")}>
                         {hot && <span className="sr-only">High: </span>}
-                        {formatCount(r.cancelled)} <span className="text-[12px] font-normal text-fg-muted">· {pct(r.rate)}</span>
+                        {formatCount(r.cancelled)} <span className="text-xs font-normal text-fg-muted">· {pct(r.rate)}</span>
                       </TableCell>
                     </TableRow>
                   );
@@ -107,7 +107,7 @@ function BreakdownTable({ title, rows, overall, min, nameHeader, note }: { title
             </tbody>
           </Table>
         </TableContainer>
-        {note && <p className="mt-3 text-[12px] leading-relaxed text-fg-muted">{note}</p>}
+        {note && <p className="mt-3 text-xs leading-relaxed text-fg-muted">{note}</p>}
       </CardContent>
     </Card>
   );
