@@ -241,7 +241,7 @@ export function refreshCourierStatus(id: string) {
 }
 
 /** Link a parcel Steadfast already holds (its answer to our booking was lost, or it was made in the Steadfast panel). */
-export function linkCourier(id: string, body: { consignmentId: string; trackingCode: string }) {
+export function linkCourier(id: string, body: { consignmentId: string; trackingCode: string; trackingLink?: string }) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/link`, { method: "POST", body });
 }
 

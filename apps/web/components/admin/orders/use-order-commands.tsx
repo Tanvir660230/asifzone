@@ -202,8 +202,8 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     onError: (err) => toast.error(errorText(err, "Failed to unlink the courier booking")),
   });
   const linkMutation = useMutation({
-    mutationFn: ({ order, consignmentId, trackingCode }: { order: OrderRef; consignmentId: string; trackingCode: string }) =>
-      adminOrdersApi.linkCourier(order.id, { consignmentId, trackingCode }),
+    mutationFn: ({ order, consignmentId, trackingCode, trackingLink }: { order: OrderRef; consignmentId: string; trackingCode: string; trackingLink?: string }) =>
+      adminOrdersApi.linkCourier(order.id, { consignmentId, trackingCode, ...(trackingLink ? { trackingLink } : {}) }),
     onSuccess: (_, { order }) => {
       refresh(order.id);
       toast.success(`${order.orderNumber} linked to its ${COURIER_PROVIDER_LABEL} parcel`);
@@ -364,7 +364,8 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     syncCourier: (order: OrderRef) => syncMutation.mutate(order),
     bulkSync: (orders: OrderRef[]) => bulkSyncMutation.mutate(orders),
     unlinkCourier,
-    linkCourier: (order: OrderRef, consignmentId: string, trackingCode: string) => linkMutation.mutate({ order, consignmentId, trackingCode }),
+    linkCourier: (order: OrderRef, consignmentId: string, trackingCode: string, trackingLink?: string) =>
+      linkMutation.mutate({ order, consignmentId, trackingCode, trackingLink }),
     checkDeliveryScore: (orders: OrderRef[], quiet = false) => scoreMutation.mutate({ orders, quiet }),
     printLabels,
     openPickList,

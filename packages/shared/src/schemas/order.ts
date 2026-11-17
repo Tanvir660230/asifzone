@@ -222,6 +222,13 @@ export const bulkCourierBookSchema = bulkOrderIdsSchema;
 export const linkCourierConsignmentSchema = z.object({
   consignmentId: z.string().trim().regex(/^\d{4,20}$/, "Consignment ID is the number Steadfast shows, digits only"),
   trackingCode: z.string().trim().regex(/^[A-Za-z0-9]{6,40}$/, "Tracking code is letters and digits, e.g. SFR261111ST…BD"),
+  /** The public link the Steadfast panel's "Copy tracking link" gives (steadfast.com.bd/tl/…). It can't be built from the
+   * tracking code, so it is copied; it also vouches for a panel-made parcel when the store's API key can't confirm it. */
+  trackingLink: z
+    .string()
+    .trim()
+    .regex(/^https:\/\/steadfast\.com\.bd\/tl\/[A-Za-z0-9_-]{8,80}$/, "Paste the link from Steadfast's “Copy tracking link” (https://steadfast.com.bd/tl/…)")
+    .optional(),
 });
 export type LinkCourierConsignmentInput = z.infer<typeof linkCourierConsignmentSchema>;
 export const bulkDeliveryScoreCheckSchema = bulkOrderIdsSchema;
