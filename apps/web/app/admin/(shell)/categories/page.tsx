@@ -13,12 +13,13 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { CategoryForm } from "@/components/admin/category-form";
 import { CategoryTree } from "@/components/admin/category-tree";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import * as categoriesApi from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
 import { useCapability } from "@/hooks/use-capability";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/ui/tabs";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -219,33 +220,28 @@ export default function CategoriesPage() {
     ) : null;
 
   return (
-    <div>
-      <PageHeader
-        title="Categories"
-        action={
-          tab === "active" && (
-            <Button variant="brass" onClick={() => openNew(null)}>
-              <Plus size={16} /> Add category
-            </Button>
-          )
-        }
-      />
-
-      <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
-        {(["active", "trash"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
-              tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
-            )}
-          >
-            {t === "trash" ? "Trash" : "Active"}
-          </button>
-        ))}
-      </div>
-
+    <ListPage
+      title="Categories"
+      action={
+        tab === "active" && (
+          <Button variant="brass" onClick={() => openNew(null)}>
+            <Plus size={16} /> Add category
+          </Button>
+        )
+      }
+      tabs={false}
+      filters={
+        <SegmentedControl
+          aria-label="Categories or Trash"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "trash", label: "Trash" },
+          ]}
+        />
+      }
+    >
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -360,6 +356,6 @@ export default function CategoriesPage() {
         {!wide && form}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

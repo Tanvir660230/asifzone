@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
@@ -89,39 +89,37 @@ export default function InventoryPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Stock history & adjustments"
-        action={
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowReconciliation(true);
-                reconciliationQuery.refetch();
-              }}
-            >
-              <ShieldCheck size={16} /> Check integrity
-            </Button>
-            <Button variant="primary" onClick={() => openAdjust(null)}>
-              <Plus size={16} /> Adjust stock
-            </Button>
-          </div>
-        }
-      />
-
-      <SegmentedControl
-        aria-label="Inventory view"
-        size="md"
-        className="mb-5"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "levels", label: "Stock levels" },
-          { value: "movements", label: "Movements" },
-        ]}
-      />
-
+    <ListPage
+      title="Stock history & adjustments"
+      action={
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowReconciliation(true);
+              reconciliationQuery.refetch();
+            }}
+          >
+            <ShieldCheck size={16} /> Check integrity
+          </Button>
+          <Button variant="primary" onClick={() => openAdjust(null)}>
+            <Plus size={16} /> Adjust stock
+          </Button>
+        </div>
+      }
+      tabs={false}
+      filters={
+        <SegmentedControl
+          aria-label="Inventory view"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "levels", label: "Stock levels" },
+            { value: "movements", label: "Movements" },
+          ]}
+        />
+      }
+    >
       {tab === "levels" && <StockLevels onAdjust={(prefill) => openAdjust(prefill)} canAdjust={canAdjust} />}
 
       {tab === "movements" && (
@@ -327,6 +325,6 @@ export default function InventoryPage() {
           )
         )}
       </Modal>
-    </div>
+    </ListPage>
   );
 }

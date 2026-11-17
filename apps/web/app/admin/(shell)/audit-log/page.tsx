@@ -11,6 +11,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FilterBar, useFilterState } from "@/components/admin/filters";
@@ -124,9 +125,8 @@ export default function AuditLogPage() {
   const changes = auditChanges(open?.metadata ?? null);
 
   return (
-    <div>
-      <PageHeader title="Audit log" description="Every change made in the Store Console — who made it, what changed and when." />
-      <ModuleTabs />
+    <ListPage title="Audit log" description="Every change made in the Store Console — who made it, what changed and when."
+    >
       <div className="space-y-3">
         <FilterBar
           defs={filtersDef}
@@ -259,6 +259,6 @@ export default function AuditLogPage() {
           </div>
         )}
       </Drawer>
-    </div>
+    </ListPage>
   );
 }

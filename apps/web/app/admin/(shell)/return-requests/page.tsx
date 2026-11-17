@@ -16,8 +16,7 @@ import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableContainer, TableHead, TableHeaderCell, TableSkeleton } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
@@ -152,10 +151,8 @@ export default function AdminReturnRequestsPage() {
   );
 
   return (
-    <div>
-      <PageHeader title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
-      <ModuleTabs />
-
+    <ListPage title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order."
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl
           aria-label="Filter by review status"
@@ -311,6 +308,6 @@ export default function AdminReturnRequestsPage() {
           </div>
         )}
       </Modal>
-    </div>
+    </ListPage>
   );
 }
