@@ -38,7 +38,7 @@ export default function PageSectionsPage() {
 
   return (
     <div>
-      <PageHeader title="Page sections" description="Define what kinds of products the store sells, and what each kind collects and shows." />
+      <PageHeader title="Page sections" />
       <ModuleTabs />
 
       <p data-page-intro="" className="mb-4 max-w-3xl text-sm text-ink-500">

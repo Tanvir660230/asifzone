@@ -84,7 +84,6 @@ export default function CareGuidesPage() {
     <div>
       <PageHeader
         title="Care guides"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>

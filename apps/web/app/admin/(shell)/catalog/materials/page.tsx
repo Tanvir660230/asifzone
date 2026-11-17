@@ -14,11 +14,11 @@ import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
-import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface Draft {
   name: string;
@@ -30,7 +30,7 @@ export default function MaterialsPage() {
   const queryClient = useQueryClient();
   const canManage = useCanManageCatalog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  const { data, isLoading } = useQuery({ queryKey: ["catalog-materials"], queryFn: catalogApi.listMaterials });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["catalog-materials"], queryFn: catalogApi.listMaterials });
   const materials = data?.materials ?? [];
 
   const [editing, setEditing] = useState<catalogApi.MaterialRow | "new" | null>(null);
@@ -69,11 +69,29 @@ export default function MaterialsPage() {
     }
   }
 
+  const columns: DataTableColumn<catalogApi.MaterialRow>[] = [
+      {
+        id: "name",
+        header: "Material",
+        card: "title",
+        cell: (m) => (
+          <span className={cn("font-medium text-ink-900", m.isArchived && "text-ink-500")}>
+            {m.name} {m.isArchived && <Badge>Archived</Badge>}
+          </span>
+        ),
+      },
+      { id: "description", header: "Description", cell: (m) => <span className="text-ink-500">{m.description ?? "—"}</span> },
+      { id: "products", header: "Products", align: "right", className: "w-28", cell: (m) => <span className="tabular-nums text-ink-600">{m.productCount}</span> },
+    ];
+  const rowActions = (row: catalogApi.MaterialRow) => [
+    { label: "Edit", icon: Pencil, onSelect: () => openEditor(row) },
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => handleDelete(row) },
+  ];
+
   return (
     <div>
       <PageHeader
         title="Materials"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>
@@ -89,49 +107,19 @@ export default function MaterialsPage() {
         percentages — 80% Cotton, 20% Polyester — or type a one-off custom material.
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="ui-table">
-          <thead className="ui-table-head">
-            <tr>
-              <th className="px-4 py-3">Material</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Description</th>
-              <th className="px-4 py-3">Products</th>
-              {canManage && <th className="px-4 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={4} cols={canManage ? 4 : 3} />}
-            {!isLoading && materials.length === 0 && (
-              <tr>
-                <td colSpan={4}>
-                  <EmptyState icon={Layers3} title="No materials yet" description="Add the materials your products are made from." />
-                </td>
-              </tr>
-            )}
-            {materials.map((m) => (
-              <tr key={m.id} className={cn("border-t border-ink-100 hover:bg-ink-50/60", m.isArchived && "opacity-60")}>
-                <td className="px-4 py-3 font-medium text-ink-900">
-                  {m.name} {m.isArchived && <Badge>Archived</Badge>}
-                </td>
-                <td className="hidden px-4 py-3 text-ink-500 sm:table-cell">{m.description ?? "—"}</td>
-                <td className="px-4 py-3 text-ink-600">{m.productCount}</td>
-                {canManage && (
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => openEditor(m)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")} aria-label={`Edit ${m.name}`}>
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(m)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")} aria-label={`Delete ${m.name}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<catalogApi.MaterialRow>
+        caption="Materials"
+        columns={columns}
+        rows={isLoading ? undefined : materials}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={Layers3} title="No materials yet" description="Add the materials your products are made from." variant="bordered" />}
+        density="dense"
+        onRowOpen={canManage ? openEditor : undefined}
+        rowActions={canManage ? rowActions : undefined}
+      />
       {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add material" : `Edit ${editing ? editing.name : ""}`} widthClassName="max-w-md">

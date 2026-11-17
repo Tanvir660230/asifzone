@@ -128,7 +128,6 @@ export default function SizeGuidesPage() {
     <div>
       <PageHeader
         title="Size guides"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>

@@ -23,11 +23,11 @@ import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
-import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface Draft {
   key: string;
@@ -54,7 +54,7 @@ export default function AttributesCatalogPage() {
   const queryClient = useQueryClient();
   const canManage = useCanManageCatalog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  const { data, isLoading } = useQuery({ queryKey: ["catalog-attributes"], queryFn: catalogApi.listAttributeDefinitions });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["catalog-attributes"], queryFn: catalogApi.listAttributeDefinitions });
   const attributes = data?.attributes ?? [];
 
   const [editing, setEditing] = useState<catalogApi.AttributeDefinitionRow | "new" | null>(null);
@@ -122,11 +122,63 @@ export default function AttributesCatalogPage() {
 
   const isNew = editing === "new";
 
+  const columns: DataTableColumn<catalogApi.AttributeDefinitionRow>[] = [
+      {
+        id: "label",
+        header: "Field",
+        card: "title",
+        cell: (a) => (
+          <div className="min-w-0">
+            <div className={cn("font-medium text-ink-900", a.isArchived && "text-ink-500")}>
+              {a.label} {a.isArchived && <Badge>Archived</Badge>}
+            </div>
+            <div className="text-xs text-ink-400">{a.key}</div>
+          </div>
+        ),
+      },
+      {
+        id: "type",
+        header: "Type",
+        cell: (a) => (
+          <span className="text-ink-600">
+            {ATTRIBUTE_DATA_TYPE_LABELS[a.dataType]}
+            {a.unit && <span className="text-ink-400"> · {a.unit}</span>}
+          </span>
+        ),
+      },
+      {
+        id: "options",
+        header: "Options",
+        card: "hidden",
+        cell: (a) => (
+          <div className="flex flex-wrap gap-1">
+            {a.options.slice(0, 5).map((o) => (
+              <Badge key={o.id}>{o.value}</Badge>
+            ))}
+            {a.options.length > 5 && <span className="text-xs text-ink-400">+{a.options.length - 5}</span>}
+            {a.options.length === 0 && <span className="text-ink-300">—</span>}
+          </div>
+        ),
+      },
+      {
+        id: "used",
+        header: "Used",
+        cell: (a) => (
+          <span className="text-ink-500">
+            {a.templateCount} template{a.templateCount === 1 ? "" : "s"} · {a.valueCount} value{a.valueCount === 1 ? "" : "s"}
+          </span>
+        ),
+      },
+    ];
+  const rowActions = (row: catalogApi.AttributeDefinitionRow) => [
+    { label: "Edit", icon: Pencil, onSelect: () => openEditor(row) },
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => handleDelete(row) },
+  ];
+
   return (
     <div>
       <PageHeader
         title="Product fields"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>
@@ -142,67 +194,19 @@ export default function AttributesCatalogPage() {
         make them appear for a product type. (Color and size variant options are managed under Products → Variant options.)
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="ui-table">
-          <thead className="ui-table-head">
-            <tr>
-              <th className="px-4 py-3">Field</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="hidden px-4 py-3 md:table-cell">Options</th>
-              <th className="px-4 py-3">Used</th>
-              {canManage && <th className="px-4 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={5} cols={canManage ? 5 : 4} />}
-            {!isLoading && attributes.length === 0 && (
-              <tr>
-                <td colSpan={5}>
-                  <EmptyState icon={ListChecks} title="No product fields yet" description="Add fields like Material or Fit, then attach them to a template." />
-                </td>
-              </tr>
-            )}
-            {attributes.map((a) => (
-              <tr key={a.id} className={cn("border-t border-ink-100 hover:bg-ink-50/60", a.isArchived && "opacity-60")}>
-                <td className="px-4 py-3">
-                  <div className="font-medium text-ink-900">
-                    {a.label} {a.isArchived && <Badge>Archived</Badge>}
-                  </div>
-                  <div className="text-xs text-ink-400">{a.key}</div>
-                </td>
-                <td className="px-4 py-3 text-ink-600">
-                  {ATTRIBUTE_DATA_TYPE_LABELS[a.dataType]}
-                  {a.unit && <span className="text-ink-400"> · {a.unit}</span>}
-                </td>
-                <td className="hidden px-4 py-3 md:table-cell">
-                  <div className="flex flex-wrap gap-1">
-                    {a.options.slice(0, 5).map((o) => (
-                      <Badge key={o.id}>{o.value}</Badge>
-                    ))}
-                    {a.options.length > 5 && <span className="text-xs text-ink-400">+{a.options.length - 5}</span>}
-                    {a.options.length === 0 && <span className="text-ink-300">—</span>}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-xs text-ink-500">
-                  {a.templateCount} template{a.templateCount === 1 ? "" : "s"} · {a.valueCount} value{a.valueCount === 1 ? "" : "s"}
-                </td>
-                {canManage && (
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => openEditor(a)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")} aria-label={`Edit ${a.label}`}>
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(a)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")} aria-label={`Delete ${a.label}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<catalogApi.AttributeDefinitionRow>
+        caption="Product fields"
+        columns={columns}
+        rows={isLoading ? undefined : attributes}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={ListChecks} title="No product fields yet" description="Add fields like Material or Fit, then attach them to a template." variant="bordered" />}
+        density="dense"
+        onRowOpen={canManage ? openEditor : undefined}
+        rowActions={canManage ? rowActions : undefined}
+      />
       {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={isNew ? "Add field" : `Edit ${editing ? editing.label : ""}`} widthClassName="max-w-lg">

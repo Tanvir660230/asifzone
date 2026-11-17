@@ -19,7 +19,7 @@ import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
@@ -85,7 +85,7 @@ export default function TemplatesPage() {
   const queryClient = useQueryClient();
   const canManage = useCanManageCatalog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  const { data, isLoading } = useQuery({ queryKey: ["catalog-templates"], queryFn: catalogApi.listTemplates });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["catalog-templates"], queryFn: catalogApi.listTemplates });
   const { data: defsData } = useQuery({ queryKey: ["catalog-attributes"], queryFn: catalogApi.listAttributeDefinitions });
   const { data: groupsData } = useQuery({ queryKey: ["catalog-spec-groups"], queryFn: catalogApi.listSpecGroups });
   const { data: guidesData } = useQuery({ queryKey: ["catalog-size-guides"], queryFn: catalogApi.listSizeGuides });
@@ -211,11 +211,36 @@ export default function TemplatesPage() {
     );
   }
 
+  const columns: DataTableColumn<catalogApi.TemplateRow>[] = [
+      {
+        id: "name",
+        header: "Template",
+        card: "title",
+        cell: (t) => (
+          <div className="min-w-0">
+            <div className={cn("font-medium text-ink-900", t.isArchived && "text-ink-500")}>
+              {t.name} {t.isArchived && <Badge>Archived</Badge>}
+            </div>
+            <div className="text-xs text-ink-400">
+              {SIZE_GUIDE_MODE_LABELS[t.sizeGuideMode]}
+              {t.sizeGuidePreset ? ` · ${t.sizeGuidePreset.name}` : ""}
+            </div>
+          </div>
+        ),
+      },
+      { id: "variants", header: "Variants", cell: (t) => <span className="text-ink-600">{t.variantDimensions.map((d) => d.label).join(" × ") || "—"}</span> },
+      { id: "attributes", header: "Fields", align: "right", className: "w-24", cell: (t) => <span className="tabular-nums text-ink-600">{t.attributes.length}</span> },
+      { id: "types", header: "Types", align: "right", className: "w-24", cell: (t) => <span className="tabular-nums text-ink-600">{t.typeCount}</span> },
+    ];
+  const rowActions = (row: catalogApi.TemplateRow) => [
+    { label: "Edit", icon: Pencil, onSelect: () => openEditor(row) },
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => handleDelete(row) },
+  ];
+
   return (
     <div>
       <PageHeader
         title="Templates"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>
@@ -231,54 +256,19 @@ export default function TemplatesPage() {
         guide applies. Several product types can share one template.
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="ui-table">
-          <thead className="ui-table-head">
-            <tr>
-              <th className="px-4 py-3">Template</th>
-              <th className="hidden px-4 py-3 md:table-cell">Variants</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Attributes</th>
-              <th className="px-4 py-3">Types</th>
-              {canManage && <th className="px-4 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={4} cols={canManage ? 5 : 4} />}
-            {!isLoading && templates.length === 0 && (
-              <tr>
-                <td colSpan={5}>
-                  <EmptyState icon={LayoutTemplate} title="No templates yet" description="Create one, then point a product type at it." />
-                </td>
-              </tr>
-            )}
-            {templates.map((t) => (
-              <tr key={t.id} className={cn("border-t border-ink-100 hover:bg-ink-50/60", t.isArchived && "opacity-60")}>
-                <td className="px-4 py-3">
-                  <div className="font-medium text-ink-900">
-                    {t.name} {t.isArchived && <Badge>Archived</Badge>}
-                  </div>
-                  <div className="text-xs text-ink-400">{SIZE_GUIDE_MODE_LABELS[t.sizeGuideMode]}{t.sizeGuidePreset ? ` · ${t.sizeGuidePreset.name}` : ""}</div>
-                </td>
-                <td className="hidden px-4 py-3 text-ink-600 md:table-cell">{t.variantDimensions.map((d) => d.label).join(" × ") || "—"}</td>
-                <td className="hidden px-4 py-3 text-ink-600 sm:table-cell">{t.attributes.length}</td>
-                <td className="px-4 py-3 text-ink-600">{t.typeCount}</td>
-                {canManage && (
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => openEditor(t)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")} aria-label={`Edit ${t.name}`}>
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(t)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")} aria-label={`Delete ${t.name}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<catalogApi.TemplateRow>
+        caption="Templates"
+        columns={columns}
+        rows={isLoading ? undefined : templates}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={LayoutTemplate} title="No templates yet" description="Create one, then point a product type at it." variant="bordered" />}
+        density="dense"
+        onRowOpen={canManage ? openEditor : undefined}
+        rowActions={canManage ? rowActions : undefined}
+      />
       {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add template" : `Edit ${editing ? editing.name : ""}`} widthClassName="max-w-3xl">

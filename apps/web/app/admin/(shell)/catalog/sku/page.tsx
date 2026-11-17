@@ -80,7 +80,7 @@ export default function SkuSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="SKUs" description="Define what kinds of products the store sells, and what each kind collects and shows." />
+      <PageHeader title="SKUs" />
       <ModuleTabs />
 
       <p data-page-intro="" className="mb-4 text-sm text-ink-500">
