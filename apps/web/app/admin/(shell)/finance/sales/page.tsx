@@ -15,7 +15,8 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
-import { EVENT_LABEL, STATUS } from "@/components/admin/orders/detail/accounting-section";
+import { STATUS } from "@/components/admin/orders/detail/accounting-section";
+import { financeEventLabel } from "@/lib/admin/finance-event-label";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import { listOrders } from "@/lib/api/admin-orders";
@@ -117,7 +118,7 @@ export default function SalesAccountingPage() {
               {s?.eventsByType.map((e) => (
                 <TableRow key={`${e.type}-${e.status}`}>
                   <TableCell>
-                    <span className="block text-ink-900">{EVENT_LABEL[e.type] ?? e.type}</span>
+                    <span className="block text-ink-900">{financeEventLabel(e.type)}</span>
                     <span className="block font-mono text-xs text-ink-500">{e.type}</span>
                   </TableCell>
                   <TableCell><Badge variant={statusOf(e.status).variant}>{statusOf(e.status).label}</Badge></TableCell>
@@ -154,7 +155,7 @@ export default function SalesAccountingPage() {
                 <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
                   <span className="w-24 whitespace-nowrap tabular-nums text-ink-600">{formatBookDate(e.financialDate)}</span>
                   <span className="order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
-                    <span className="block text-ink-900">{EVENT_LABEL[e.eventType] ?? e.eventType}</span>
+                    <span className="block text-ink-900">{financeEventLabel(e.eventType)}</span>
                     <span className="block break-all font-mono text-xs text-ink-500">{e.eventKey}</span>
                   </span>
                   <Badge variant={statusOf(e.status).variant}>{statusOf(e.status).label}</Badge>
