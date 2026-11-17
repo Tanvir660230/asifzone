@@ -1,0 +1,540 @@
+{
+  "app/admin/(invoice)/finance/payroll/runs/[id]/payslips/page.tsx": {
+    "uppercase": 5
+  },
+  "app/admin/(shell)/analytics/layout.tsx": {
+    "fontSize": 1
+  },
+  "app/admin/(shell)/audit-log/page.tsx": {
+    "fontSize": 2
+  },
+  "app/admin/(shell)/catalog/sku/page.tsx": {
+    "uppercase": 2
+  },
+  "app/admin/(shell)/catalog/templates/page.tsx": {
+    "fontSize": 4
+  },
+  "app/admin/(shell)/categories/page.tsx": {
+    "fontSize": 3
+  },
+  "app/admin/(shell)/customers/page.tsx": {
+    "fontSize": 4,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/dashboard/page.tsx": {
+    "fontSize": 7
+  },
+  "app/admin/(shell)/feedback/page.tsx": {
+    "fontSize": 25
+  },
+  "app/admin/(shell)/finance/accounts/[id]/page.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/accounts/page.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/ads/page.tsx": {
+    "fontSize": 2
+  },
+  "app/admin/(shell)/finance/center/page.tsx": {
+    "fontSize": 2
+  },
+  "app/admin/(shell)/finance/checks/page.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/courier/page.tsx": {
+    "fontSize": 1
+  },
+  "app/admin/(shell)/finance/equity/page.tsx": {
+    "fontSize": 11,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/ledger/page.tsx": {
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/mappings/page.tsx": {
+    "fontSize": 1
+  },
+  "app/admin/(shell)/finance/my-cash/page.tsx": {
+    "fontSize": 2
+  },
+  "app/admin/(shell)/finance/opening/page.tsx": {
+    "fontSize": 3
+  },
+  "app/admin/(shell)/finance/packaging/page.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/page.tsx": {
+    "fontSize": 1
+  },
+  "app/admin/(shell)/finance/prepaid/page.tsx": {
+    "fontSize": 2
+  },
+  "app/admin/(shell)/finance/profit/page.tsx": {
+    "fontSize": 3
+  },
+  "app/admin/(shell)/finance/reconciliation/[id]/page.tsx": {
+    "fontSize": 3,
+    "uppercase": 3
+  },
+  "app/admin/(shell)/finance/reconciliation/page.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/sales/page.tsx": {
+    "fontSize": 4,
+    "uppercase": 2
+  },
+  "app/admin/(shell)/finance/settlements/page.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/statements/page.tsx": {
+    "uppercase": 1
+  },
+  "app/admin/(shell)/finance/stock-check/page.tsx": {
+    "fontSize": 6
+  },
+  "app/admin/(shell)/flash-sales/page.tsx": {
+    "uppercase": 1
+  },
+  "app/admin/(shell)/layout.tsx": {
+    "fontSize": 2
+  },
+  "app/admin/(shell)/manufacturing/home/page.tsx": {
+    "fontSize": 4
+  },
+  "app/admin/(shell)/orders/product-labels/page.tsx": {
+    "uppercase": 1
+  },
+  "app/admin/(shell)/orders/today/page.tsx": {
+    "uppercase": 1
+  },
+  "app/admin/(shell)/payments/attempts/page.tsx": {
+    "fontSize": 1
+  },
+  "app/admin/(shell)/payments/overview/page.tsx": {
+    "fontSize": 4,
+    "uppercase": 4
+  },
+  "app/admin/(shell)/products/import/page.tsx": {
+    "fontSize": 2,
+    "uppercase": 2
+  },
+  "app/admin/(shell)/products/page.tsx": {
+    "fontSize": 4
+  },
+  "app/admin/(shell)/return-requests/page.tsx": {
+    "uppercase": 1
+  },
+  "app/admin/(shell)/saved-answers/page.tsx": {
+    "fontSize": 20
+  },
+  "app/admin/(shell)/settings/delivery-zones/page.tsx": {
+    "fontSize": 13
+  },
+  "app/admin/(shell)/settings/page.tsx": {
+    "fontSize": 3
+  },
+  "app/admin/(shell)/system-health/page.tsx": {
+    "fontSize": 7
+  },
+  "app/admin/(shell)/team/page.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/account-menu.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/active-sessions-dialog.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/ai/assistant-chat.tsx": {
+    "fontSize": 18
+  },
+  "components/admin/analytics/metric-drill-down.tsx": {
+    "fontSize": 4
+  },
+  "components/admin/analytics/reports-sheet.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/analytics/views/actions-view.tsx": {
+    "fontSize": 6,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/ad-returns-view.tsx": {
+    "fontSize": 8
+  },
+  "components/admin/analytics/views/behavior-view.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/brief-card.tsx": {
+    "fontSize": 8,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/cancellations-view.tsx": {
+    "fontSize": 8
+  },
+  "components/admin/analytics/views/channels-view.tsx": {
+    "fontSize": 9
+  },
+  "components/admin/analytics/views/customers-view.tsx": {
+    "fontSize": 3,
+    "uppercase": 2
+  },
+  "components/admin/analytics/views/deliveries-view.tsx": {
+    "fontSize": 11
+  },
+  "components/admin/analytics/views/financial-view.tsx": {
+    "fontSize": 5,
+    "uppercase": 4
+  },
+  "components/admin/analytics/views/journey-view.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/lifetime-view.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/operations-view.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/overview-view.tsx": {
+    "fontSize": 3,
+    "uppercase": 3
+  },
+  "components/admin/analytics/views/products-view.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/analytics/views/pulse-view.tsx": {
+    "fontSize": 20
+  },
+  "components/admin/analytics/views/sales-view.tsx": {
+    "fontSize": 2,
+    "uppercase": 2
+  },
+  "components/admin/analytics/views/search-view.tsx": {
+    "fontSize": 2,
+    "uppercase": 2
+  },
+  "components/admin/analytics/views/visitors-view.tsx": {
+    "fontSize": 3,
+    "uppercase": 3
+  },
+  "components/admin/analytics/views/why-view.tsx": {
+    "fontSize": 11,
+    "uppercase": 2
+  },
+  "components/admin/breadcrumbs.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/care-material-section.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/chart-frame.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/command-palette.tsx": {
+    "fontSize": 4,
+    "uppercase": 1
+  },
+  "components/admin/conversion-metric-card.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/cost-sheet/cost-sheet-field.tsx": {
+    "fontSize": 6
+  },
+  "components/admin/coupon-form.tsx": {
+    "uppercase": 4
+  },
+  "components/admin/courier-costs/courier-cost-ui.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/courier-costs/shipment-cost-drawer.tsx": {
+    "fontSize": 9,
+    "uppercase": 1
+  },
+  "components/admin/customer-detail-panel.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/dashboard/abandoned-carts-drawer.tsx": {
+    "fontSize": 3,
+    "uppercase": 1
+  },
+  "components/admin/dashboard/health-cards.tsx": {
+    "fontSize": 2,
+    "uppercase": 2
+  },
+  "components/admin/dashboard/profit-glance.tsx": {
+    "fontSize": 4
+  },
+  "components/admin/dashboard/recent-orders-card.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/data-table/data-table.tsx": {
+    "fontSize": 1,
+    "uppercase": 2
+  },
+  "components/admin/date-range-picker.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/filters/filter-bar.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/filters/save-view-button.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/finance/glass.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/finance/match-dialog.tsx": {
+    "uppercase": 3
+  },
+  "components/admin/finance/owed-to-owner.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/finance/owner-home.tsx": {
+    "fontSize": 14
+  },
+  "components/admin/finance/partner-sharing.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/finance/profit-dashboard.tsx": {
+    "fontSize": 10
+  },
+  "components/admin/finance/quick-add.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/finance/setup-checklist.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/finance/statement-dialogs.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/hero-revenue-card.tsx": {
+    "fontSize": 4
+  },
+  "components/admin/image-uploader.tsx": {
+    "fontSize": 8
+  },
+  "components/admin/inbox/import-past-chats.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/inbox/template-picker.tsx": {
+    "fontSize": 7
+  },
+  "components/admin/integrations-pane.tsx": {
+    "fontSize": 4
+  },
+  "components/admin/inventory/stock-levels.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/journey-funnel.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/low-stock-table.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/manufacturing/production-overview.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/metric-card.tsx": {
+    "fontSize": 6
+  },
+  "components/admin/mobile-nav-bar.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/more-sheet.tsx": {
+    "fontSize": 6
+  },
+  "components/admin/notification-bell.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/order-status-breakdown.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/orders/bulk-result-dialog.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/orders/detail/activity-timeline.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/orders/detail/call-panel.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/orders/detail/courier-note-panel.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/orders/detail/delivery-section.tsx": {
+    "fontSize": 2,
+    "uppercase": 2
+  },
+  "components/admin/orders/detail/detail-header.tsx": {
+    "fontSize": 4,
+    "uppercase": 1
+  },
+  "components/admin/orders/detail/detail-section.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/orders/detail/item-return-dialog.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/orders/detail/order-progress.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/orders/detail/store-history.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/orders/exchange-review.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/orders/orders-filter-bar.tsx": {
+    "fontSize": 3
+  },
+  "components/admin/orders/orders-list.tsx": {
+    "fontSize": 5,
+    "uppercase": 1
+  },
+  "components/admin/orders/status-change-dialog.tsx": {
+    "fontSize": 1,
+    "uppercase": 2
+  },
+  "components/admin/parcel-scans/receive-station.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/parcel-scans/scan-station.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/product-builder/builder.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/product-builder/live-preview-frame.tsx": {
+    "fontSize": 2,
+    "uppercase": 2,
+    "rawColour": 4
+  },
+  "components/admin/product-builder/preview-pane.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/product-builder/stepper.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/product-builder/steps.tsx": {
+    "fontSize": 1,
+    "uppercase": 1,
+    "rawColour": 1
+  },
+  "components/admin/product-sales-heatmap.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/product-status-panel.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/revenue-chart-card.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/revenue-chart.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/role-summary.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/section-bar.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/section-settings-editor.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/shortcut-help.tsx": {
+    "fontSize": 4,
+    "uppercase": 2
+  },
+  "components/admin/sidebar.tsx": {
+    "fontSize": 18
+  },
+  "components/admin/sms-composer.tsx": {
+    "fontSize": 1,
+    "uppercase": 1
+  },
+  "components/admin/stat-tile.tsx": {
+    "fontSize": 6
+  },
+  "components/admin/stock/approval-sheet.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/bought-sheet.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/stock/counted-sheet.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/expected-orders.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/stock/filled-sheet.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/guided-count.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/item-panel.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/kit-panel.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/stock-list.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/stock/stock-search-box.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/stock/today-list.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/studio/add-section-gallery.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/studio/design-panels.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/studio/outline.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/studio/top-bar.tsx": {
+    "uppercase": 1
+  },
+  "components/admin/system-health/errors-section.tsx": {
+    "fontSize": 6
+  },
+  "components/admin/system-health/site-speed-section.tsx": {
+    "fontSize": 5
+  },
+  "components/admin/top-products-chart.tsx": {
+    "fontSize": 1
+  },
+  "components/admin/traffic-heatmap.tsx": {
+    "fontSize": 2
+  },
+  "components/admin/variant-editor.tsx": {
+    "fontSize": 4,
+    "uppercase": 1
+  },
+  "components/admin/variant-gallery-picker.tsx": {
+    "fontSize": 2,
+    "uppercase": 1
+  }
+}

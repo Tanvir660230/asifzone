@@ -192,6 +192,8 @@ saved views, date range right) → body (table, record or form). Lists full widt
 **Words.** Sentence case; verbs on buttons ("Receive return", not "Submit"); the owner's nouns (bottles, parcel, bill,
 production run), not system words (GRN, BOM, settlement); one name per thing across menu, title, button and toast.
 
+**Guard.** `tests/architecture/admin-style-drift.test.ts` is a ratchet over `app/admin` and `components/admin`: no file may gain a hand-picked font size (`text-[11px]`), `uppercase` or a raw colour (`bg-[#…]`) beyond its count in `admin-style-baseline.json`, and a file that improves lowers its count (`UPDATE_STYLE_BASELINE=1 pnpm --filter web test admin-style`). Never raise a count to get past it.
+
 **States.** Loading: a skeleton in the content's shape, previous data kept while refetching. Empty: why, and the one
 action that fills it; filtered-empty offers Clear filters. Error: a plain sentence, what to do, Retry, the server's reason
 — never a raw code. Success: a toast naming the result. Estimated or incomplete: a badge on the number and a line saying
