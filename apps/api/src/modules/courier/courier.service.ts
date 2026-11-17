@@ -207,7 +207,10 @@ export interface ExistingConsignment {
   consignmentId: string;
   trackingCode: string;
   trackingLink?: string | null;
-  courierStatus: string;
+  /** null: Steadfast couldn't be asked (the store's API key was refused) — the panel's tracking link vouched for it. */
+  courierStatus: string | null;
+  /** Why Steadfast couldn't confirm it, kept on the order so the key problem stays visible. */
+  syncError?: string | null;
 }
 
 /** Saves a consignment Steadfast already holds onto the order and moves the order on exactly as a booking does (SHIPPED,
@@ -231,9 +234,9 @@ async function attachExistingConsignment(
       courierTrackingLink: consignment.trackingLink ?? null,
       // when the booking was actually sent, if we still know it
       courierBookedAt: order.courierBookingStartedAt ?? now,
-      courierStatusSyncedAt: now,
+      courierStatusSyncedAt: consignment.courierStatus === null ? null : now,
       courierBookingStartedAt: null,
-      courierSyncError: null,
+      courierSyncError: consignment.syncError ?? null,
     },
   });
   if (saved.count !== 1) throw AppError.conflict("This order is already booked with a courier");
@@ -250,24 +253,53 @@ async function attachExistingConsignment(
 }
 
 /** Staff link a parcel that already exists on Steadfast (its answer to our booking was lost, or it was made in the
- * Steadfast panel). The consignment must be real — Steadfast's own status for it is read first. */
-export async function linkSteadfastConsignment(orderId: string, input: { consignmentId: string; trackingCode: string }) {
+ * Steadfast panel). The consignment must be real: Steadfast's own status for it is read first — or, when Steadfast can't be
+ * asked (a refused API key), the public tracking link copied from the panel vouches for it.
+ *
+ * Tahafi, 2026-11-18: staff book many parcels straight in the panel, so orders carry no link. Two more cases are covered:
+ * an order already linked to the same consignment gets its missing tracking link, and an order that is already closed
+ * (delivered, cancelled…) records the parcel it went out in — facts only, its status and stock untouched. */
+export async function linkSteadfastConsignment(orderId: string, input: { consignmentId: string; trackingCode: string; trackingLink?: string }) {
   const order = await getOrderById(orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before linking a courier parcel");
-  if (order.courierConsignmentId) throw AppError.conflict("This order is already booked with a courier");
-  if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
-    throw AppError.badRequest(`Cannot link a courier parcel to an order that is ${order.status.toLowerCase()}`);
-  }
   const consignmentId = input.consignmentId.trim();
   const trackingCode = input.trackingCode.trim().toUpperCase();
-  let courierStatus: string;
+  const trackingLink = input.trackingLink?.trim() || null;
+
+  if (order.courierConsignmentId) {
+    if (order.courierConsignmentId !== consignmentId || !trackingLink) throw AppError.conflict("This order is already booked with a courier");
+    await prisma.order.update({ where: { id: orderId }, data: { courierTrackingLink: trackingLink, trackingNumber: order.trackingNumber ?? trackingCode } });
+    return getOrderById(orderId);
+  }
+
+  let courierStatus: string | null = null;
+  let syncError: string | null = null;
   try {
     courierStatus = await getProviders().courier.statusByConsignment(consignmentId);
   } catch (err) {
-    throw AppError.badRequest(`Steadfast couldn't confirm consignment ${consignmentId} — check the number (${err instanceof Error ? err.message : String(err)})`);
+    syncError = `Steadfast couldn't confirm consignment ${consignmentId} (${err instanceof Error ? err.message : String(err)})`;
+    if (!trackingLink) throw AppError.badRequest(`${syncError} — check the number, or paste the parcel's tracking link from the Steadfast panel`);
   }
+
+  if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
+    if (!trackingLink) throw AppError.badRequest(`This order is ${order.status.toLowerCase()} — paste the parcel's tracking link from the Steadfast panel to record it`);
+    const taken = await prisma.order.findFirst({ where: { courierConsignmentId: consignmentId }, select: { id: true, orderNumber: true } });
+    if (taken && taken.id !== orderId) throw AppError.conflict(`Consignment ${consignmentId} is already on order ${taken.orderNumber}`);
+    const saved = await prisma.order.updateMany({
+      where: { id: orderId, courierConsignmentId: null },
+      data: { carrier: "Steadfast", trackingNumber: trackingCode, courierConsignmentId: consignmentId, courierTrackingLink: trackingLink, courierStatus, courierBookedAt: order.createdAt },
+    });
+    if (saved.count !== 1) throw AppError.conflict("This order is already booked with a courier");
+    await prisma.orderStatusHistory.create({ data: { orderId, status: order.status, note: `Steadfast parcel ${consignmentId} (${trackingCode}) recorded from the panel` } });
+    return getOrderById(orderId);
+  }
+
   const row = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { courierBookingStartedAt: true } });
-  await attachExistingConsignment({ id: order.id, orderNumber: order.orderNumber, status: order.status, courierBookingStartedAt: row.courierBookingStartedAt }, { consignmentId, trackingCode, courierStatus }, "staff");
+  await attachExistingConsignment(
+    { id: order.id, orderNumber: order.orderNumber, status: order.status, courierBookingStartedAt: row.courierBookingStartedAt },
+    { consignmentId, trackingCode, trackingLink, courierStatus, syncError },
+    "staff",
+  );
   return getOrderById(orderId);
 }
 
