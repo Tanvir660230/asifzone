@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Zap } from "lucide-react";
+import { Pencil, Plus, Power, Trash2, Zap } from "lucide-react";
 import { addFlashSaleItemSchema, flashSalePhase, type AddFlashSaleItemInput, type CreateFlashSaleInput, type FlashSale } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,24 +17,23 @@ import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import { ProductPicker } from "@/components/admin/product-picker";
 import * as flashSalesApi from "@/lib/api/admin-flash-sales";
-import { formatPrice, storeCurrencySymbol } from "@/lib/format";
+import { formatPrice, formatStoreDateTime, storeCurrencySymbol } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 /** Same rule the server prices with (packages/shared flashSalePhase): live = switched on and inside the window. */
-function statusOf(fs: FlashSale): { label: string; className: string } {
+function statusOf(fs: FlashSale): { label: string; variant: "neutral" | "success" | "info" | "warning" | "danger" | "accent" } {
   switch (flashSalePhase(fs)) {
     case "LIVE":
-      return { label: "Live", className: "bg-success-100 text-success-700" };
+      return { label: "Live", variant: "success" };
     case "SCHEDULED":
-      return { label: "Scheduled", className: "bg-info-100 text-info-700" };
+      return { label: "Scheduled", variant: "info" };
     case "DISABLED":
-      return { label: "Off", className: "bg-warning-100 text-warning-700" };
+      return { label: "Off", variant: "warning" };
     default:
-      return { label: "Ended", className: "bg-ink-200 text-ink-700" };
+      return { label: "Ended", variant: "neutral" };
   }
 }
 
@@ -47,7 +46,7 @@ function toLocalInputValue(iso?: string) {
 
 export default function FlashSalesPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["flash-sales"], queryFn: flashSalesApi.listFlashSales });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["flash-sales"], queryFn: flashSalesApi.listFlashSales });
 
   const [showCreate, setShowCreate] = useState(false);
   const [managingId, setManagingId] = useState<string | null>(null);
@@ -99,6 +98,28 @@ export default function FlashSalesPage() {
 
   const managing = data?.flashSales.find((fs) => fs.id === managingId) ?? null;
 
+  const columns: DataTableColumn<FlashSale>[] = [
+    { id: "name", header: "Name", card: "title", cell: (fs) => <span className="font-medium text-ink-900">{fs.name}</span> },
+    {
+      id: "status",
+      header: "Status",
+      cell: (fs) => {
+        const status = statusOf(fs);
+        return <Badge variant={status.variant}>{status.label}</Badge>;
+      },
+    },
+    { id: "starts", header: "Starts", cell: (fs) => <span className="text-ink-500">{formatStoreDateTime(fs.startsAt)}</span> },
+    { id: "ends", header: "Ends", cell: (fs) => <span className="text-ink-500">{formatStoreDateTime(fs.endsAt)}</span> },
+    { id: "products", header: "Products", align: "right", className: "w-24", cell: (fs) => <span className="tabular-nums">{fs.items.length}</span> },
+  ];
+  const rowActions = (fs: FlashSale): DataTableRowAction<FlashSale>[] => [
+    { label: "Manage products", icon: Pencil, onSelect: () => setManagingId(fs.id) },
+    ...(new Date(fs.endsAt).getTime() >= Date.now()
+      ? [{ label: fs.enabled ? "Switch off" : "Switch on", icon: Power, disabled: toggleMutation.isPending, onSelect: () => toggleMutation.mutate({ id: fs.id, enabled: !fs.enabled }) }]
+      : []),
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => void handleDelete(fs) },
+  ];
+
   return (
     <div>
       <PageHeader
@@ -112,70 +133,25 @@ export default function FlashSalesPage() {
 
       <ModuleTabs />
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-        <table className="ui-table">
-          <thead className="ui-table-head">
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Starts</th>
-              <th className="px-4 py-3">Ends</th>
-              <th className="px-4 py-3">Products</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={4} cols={6} />}
-            {!isLoading && data?.flashSales.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-0">
-                  <EmptyState
-                    icon={Zap}
-                    title="No flash sales yet"
-                    description="A flash sale lowers chosen products' prices for a set time, with a countdown on the storefront."
-                    action={<Button size="sm" onClick={() => setShowCreate(true)}><Plus size={16} /> New flash sale</Button>}
-                  />
-                </td>
-              </tr>
-            )}
-            {data?.flashSales.map((fs) => {
-              const status = statusOf(fs);
-              return (
-                <tr key={fs.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3">{fs.name}</td>
-                  <td className="px-4 py-3">
-                    <Badge className={status.className}>{status.label}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-ink-500">{new Date(fs.startsAt).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-ink-500">{new Date(fs.endsAt).toLocaleString()}</td>
-                  <td className="px-4 py-3">{fs.items.length}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      {new Date(fs.endsAt).getTime() >= Date.now() && (
-                        <button
-                          onClick={() => toggleMutation.mutate({ id: fs.id, enabled: !fs.enabled })}
-                          disabled={toggleMutation.isPending}
-                          className="text-ink-600 hover:underline disabled:opacity-50"
-                        >
-                          {fs.enabled ? "Switch off" : "Switch on"}
-                        </button>
-                      )}
-                      <button onClick={() => setManagingId(fs.id)} className="text-brass-600 hover:underline">
-                        Manage
-                      </button>
-                      <button onClick={() => handleDelete(fs)} className="text-ink-400 hover:text-danger-600">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </HScrollShadow>
-      </div>
+      <DataTable<FlashSale>
+        caption="Flash sales"
+        columns={columns}
+        rows={isLoading ? undefined : data?.flashSales}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState
+            icon={Zap}
+            title="No flash sales yet"
+            description="A flash sale lowers chosen products' prices for a set time, with a countdown on the storefront."
+            action={<Button size="sm" onClick={() => setShowCreate(true)}><Plus size={16} /> New flash sale</Button>}
+            variant="bordered"
+          />}
+        density="dense"
+        onRowOpen={(fs) => setManagingId(fs.id)}
+        rowActions={rowActions}
+      />
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New flash sale">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}

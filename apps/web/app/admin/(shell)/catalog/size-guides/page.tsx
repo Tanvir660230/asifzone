@@ -35,7 +35,7 @@ function ChartTable({ columns, rows }: { columns: string[]; rows: string[][] }) 
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm">
         <thead>
-          <tr className="text-xs uppercase tracking-wide text-ink-400">
+          <tr className="text-xs font-medium text-ink-500">
             {columns.map((c, i) => (
               <th key={i} className="border-b border-ink-100 px-2 pb-2 first:pl-0">
                 {c}
