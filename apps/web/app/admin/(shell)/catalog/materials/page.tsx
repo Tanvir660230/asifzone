@@ -11,9 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
@@ -89,24 +88,23 @@ export default function MaterialsPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Materials"
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add material
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
-
-      <p className="mb-4 text-sm text-ink-500">
-        Materials products can be made of (&ldquo;Premium Cotton&rdquo;, &ldquo;Genuine Leather&rdquo;). On a product you combine them with
-        percentages — 80% Cotton, 20% Polyester — or type a one-off custom material.
-      </p>
-
+    <ListPage
+      title="Materials"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add material
+          </Button>
+        )
+      }
+      intro={
+        <>
+          Materials products can be made of (&ldquo;Premium Cotton&rdquo;, &ldquo;Genuine Leather&rdquo;). On a product you combine them with
+          percentages — 80% Cotton, 20% Polyester — or type a one-off custom material.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change catalog setup."}
+    >
       <DataTable<catalogApi.MaterialRow>
         caption="Materials"
         columns={columns}
@@ -120,7 +118,6 @@ export default function MaterialsPage() {
         onRowOpen={canManage ? openEditor : undefined}
         rowActions={canManage ? rowActions : undefined}
       />
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add material" : `Edit ${editing ? editing.name : ""}`} widthClassName="max-w-md">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -157,6 +154,6 @@ export default function MaterialsPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

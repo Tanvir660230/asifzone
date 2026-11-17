@@ -13,9 +13,8 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
@@ -135,24 +134,23 @@ export default function ProductTypesPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Product types"
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")} disabled={templates.length === 0}>
-              <Plus size={16} /> Add product type
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
-
-      <p className="mb-4 text-sm text-ink-500">
-        A product type (Panjabi, Watch, Cap…) points at a <strong>template</strong> that decides its fields, size guide and
-        variant options. New types appear in the product editor immediately — no developer needed.
-      </p>
-
+    <ListPage
+      title="Product types"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")} disabled={templates.length === 0}>
+            <Plus size={16} /> Add product type
+          </Button>
+        )
+      }
+      intro={
+        <>
+          A product type (Panjabi, Watch, Cap…) points at a <strong>template</strong> that decides its fields, size guide and
+          variant options. New types appear in the product editor immediately — no developer needed.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change catalog setup."}
+    >
       <DataTable<catalogApi.ManagedType>
         caption="Product types"
         columns={columns}
@@ -166,7 +164,6 @@ export default function ProductTypesPage() {
         onRowOpen={canManage ? openEditor : undefined}
         rowActions={canManage ? rowActions : undefined}
       />
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add product type" : `Edit ${editing ? editing.name : ""}`} widthClassName="max-w-lg">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -229,6 +226,6 @@ export default function ProductTypesPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

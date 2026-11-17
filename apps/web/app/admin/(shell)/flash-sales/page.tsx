@@ -14,8 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { EmptyState } from "@/components/admin/empty-state";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import { ProductPicker } from "@/components/admin/product-picker";
@@ -121,18 +120,14 @@ export default function FlashSalesPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Flash sales"
-        action={
-          <Button variant="brass" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> New flash sale
-          </Button>
-        }
-      />
-
-      <ModuleTabs />
-
+    <ListPage
+      title="Flash sales"
+      action={
+        <Button variant="brass" onClick={() => setShowCreate(true)}>
+          <Plus size={16} /> New flash sale
+        </Button>
+      }
+    >
       <DataTable<FlashSale>
         caption="Flash sales"
         columns={columns}
@@ -190,7 +185,7 @@ export default function FlashSalesPage() {
         )}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }
 

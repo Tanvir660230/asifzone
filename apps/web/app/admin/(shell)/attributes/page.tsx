@@ -10,8 +10,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { AttributeForm } from "@/components/admin/attribute-form";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import * as attributesApi from "@/lib/api/attributes";
@@ -89,24 +88,21 @@ export default function AttributesPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Variant options"
-        action={
-          <Button variant="brass" onClick={() => setEditing("new")}>
-            <Plus size={16} /> Add option type
-          </Button>
-        }
-      />
-
-      <ModuleTabs />
-
-      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
-        Define reusable option types (Color, Size, Fabric, Pattern…) and their values — used to build variant
-        combinations on the product form. (Product fields like &ldquo;Material&rdquo; or &ldquo;Movement&rdquo; are
-        managed under Catalog setup → Attributes.)
-      </p>
-
+    <ListPage
+      title="Variant options"
+      action={
+        <Button variant="brass" onClick={() => setEditing("new")}>
+          <Plus size={16} /> Add option type
+        </Button>
+      }
+      intro={
+        <>
+          Define reusable option types (Color, Size, Fabric, Pattern…) and their values — used to build variant
+          combinations on the product form. (Product fields like &ldquo;Material&rdquo; or &ldquo;Movement&rdquo; are
+          managed under Catalog setup → Attributes.)
+        </>
+      }
+    >
       <DataTable<Attribute>
         caption="Variant options"
         columns={columns}
@@ -136,6 +132,6 @@ export default function AttributesPage() {
         )}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

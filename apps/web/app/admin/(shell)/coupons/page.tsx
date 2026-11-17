@@ -10,8 +10,7 @@ import { SegmentedControl } from "@/components/ui/tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import { CouponForm } from "@/components/admin/coupon-form";
 import * as couponsApi from "@/lib/api/admin-coupons";
@@ -200,21 +199,16 @@ export default function CouponsPage() {
         ];
 
   return (
-    <div>
-      <PageHeader
-        title="Coupons"
-        action={
-          tab === "active" && (
-            <Button variant="brass" onClick={openCreate}>
-              <Plus size={16} /> Add coupon
-            </Button>
-          )
-        }
-      />
-
-      <ModuleTabs />
-
-      <div className="mb-4">
+    <ListPage
+      title="Coupons"
+      action={
+        tab === "active" && (
+          <Button variant="brass" onClick={openCreate}>
+            <Plus size={16} /> Add coupon
+          </Button>
+        )
+      }
+      filters={
         <SegmentedControl
           aria-label="Coupons or Trash"
           value={tab}
@@ -224,8 +218,8 @@ export default function CouponsPage() {
             { value: "trash", label: "Trash" },
           ]}
         />
-      </div>
-
+      }
+    >
       <DataTable<Coupon>
         caption="Coupons"
         columns={columns}
@@ -253,6 +247,6 @@ export default function CouponsPage() {
         onSubmit={handleFormSubmit}
       />
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

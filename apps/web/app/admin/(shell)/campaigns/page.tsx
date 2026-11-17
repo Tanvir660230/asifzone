@@ -17,8 +17,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
 import { formatStoreDateTime } from "@/lib/format";
@@ -163,19 +162,15 @@ export default function CampaignsPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Campaigns"
-        description="Compose and schedule email/SMS/push sends to a saved customer audience."
-        action={
-          <Button variant="brass" onClick={openCreate}>
-            <Plus size={16} /> New campaign
-          </Button>
-        }
-      />
-
-      <ModuleTabs />
-
+    <ListPage
+      title="Campaigns"
+      description="Compose and schedule email/SMS/push sends to a saved customer audience."
+      action={
+        <Button variant="brass" onClick={openCreate}>
+          <Plus size={16} /> New campaign
+        </Button>
+      }
+    >
       <DataTable<Campaign>
         caption="Campaigns"
         columns={columns}
@@ -265,6 +260,6 @@ export default function CampaignsPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

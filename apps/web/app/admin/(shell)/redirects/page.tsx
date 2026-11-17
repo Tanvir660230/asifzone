@@ -16,8 +16,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import * as redirectsApi from "@/lib/api/admin-redirects";
 import { ApiError } from "@/lib/api-client";
@@ -133,20 +132,19 @@ export default function AdminRedirectsPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Redirects"
-        action={
-          <Button variant="brass" onClick={() => setEditing("new")}>
-            <Plus size={16} /> Add redirect
-          </Button>
-        }
-      />
-      <ModuleTabs />
-      <p data-page-intro="" className="mb-4 -mt-2 text-sm text-ink-500">
-        Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
-      </p>
-
+    <ListPage
+      title="Redirects"
+      action={
+        <Button variant="brass" onClick={() => setEditing("new")}>
+          <Plus size={16} /> Add redirect
+        </Button>
+      }
+      intro={
+        <>
+          Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
+        </>
+      }
+    >
       <DataTable<Redirect>
         caption="Redirects"
         columns={columns}
@@ -168,6 +166,6 @@ export default function AdminRedirectsPage() {
         )}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

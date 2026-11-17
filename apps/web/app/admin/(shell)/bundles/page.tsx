@@ -11,8 +11,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { BundleForm } from "@/components/admin/bundle-form";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import * as bundlesApi from "@/lib/api/admin-bundles";
 import * as categoriesApi from "@/lib/api/categories";
@@ -82,25 +81,20 @@ export default function BundlesPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Bundles"
-        action={
-          <Button variant="brass" onClick={() => setEditing("new")}>
-            <Plus size={16} /> Add bundle
-          </Button>
-        }
-      />
-
-      <ModuleTabs />
-
-      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
-        Cross-sell rules — buying from an anchor category (e.g. Panjabi) suggests products from the categories
-        below it and unlocks a discount once enough of them are in the cart.
-      </p>
-
-      {/* sm and up: the table below. Below sm: a card list (below that) — same split as the other
-          admin list pages. */}
+    <ListPage
+      title="Bundles"
+      action={
+        <Button variant="brass" onClick={() => setEditing("new")}>
+          <Plus size={16} /> Add bundle
+        </Button>
+      }
+      intro={
+        <>
+          Cross-sell rules — buying from an anchor category (e.g. Panjabi) suggests products from the categories
+          below it and unlocks a discount once enough of them are in the cart.
+        </>
+      }
+    >
       <DataTable<Bundle>
         caption="Bundles"
         columns={columns}
@@ -131,6 +125,6 @@ export default function BundlesPage() {
         )}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

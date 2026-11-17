@@ -6,16 +6,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, MessageSquareText, Trash2, X } from "lucide-react";
 import type { ProductReview, ReviewStatus } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { StarRating } from "@/components/storefront/star-rating";
 import { ReviewPhotoStrip } from "@/components/storefront/review-photos";
-import { cn } from "@/lib/utils";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import { ApiError } from "@/lib/api-client";
 import { formatStoreDate, approvalStatusBadgeVariant } from "@/lib/format";
@@ -121,29 +120,21 @@ export default function AdminReviewsPage() {
   ];
 
   return (
-    <div>
-      <PageHeader title="Reviews" description="Moderate customer product reviews before they go live." />
-
-      <ModuleTabs />
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-ink-100">
-        <div className="flex gap-1">
-          {TABS.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => {
-                setTab(t.value);
-                setPage(1);
-              }}
-              className={cn(
-                "border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-                tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+    <ListPage
+      title="Reviews"
+      description="Moderate customer product reviews before they go live."
+      filters={
+        <SegmentedControl
+          aria-label="Which reviews"
+          value={tab}
+          onChange={(value) => {
+            setTab(value);
+            setPage(1);
+          }}
+          options={TABS.map((t) => ({ value: t.value, label: t.label }))}
+        />
+      }
+      filtersEnd={
         <PageSizeSelect
           value={pageSize}
           onChange={(size) => {
@@ -151,8 +142,8 @@ export default function AdminReviewsPage() {
             setPage(1);
           }}
         />
-      </div>
-
+      }
+    >
       <DataTable<Review>
         caption="Reviews"
         columns={columns}
@@ -169,6 +160,6 @@ export default function AdminReviewsPage() {
         rowActions={rowActions}
       />
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

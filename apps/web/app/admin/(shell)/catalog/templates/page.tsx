@@ -15,10 +15,9 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { FormSection } from "@/components/admin/form-section";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
@@ -238,24 +237,23 @@ export default function TemplatesPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Templates"
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add template
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
-
-      <p className="mb-4 text-sm text-ink-500">
-        A template bundles what a product type collects: which attributes, whether variants have a size and/or colour, and which size
-        guide applies. Several product types can share one template.
-      </p>
-
+    <ListPage
+      title="Templates"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add template
+          </Button>
+        )
+      }
+      intro={
+        <>
+          A template bundles what a product type collects: which attributes, whether variants have a size and/or colour, and which size
+          guide applies. Several product types can share one template.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change catalog setup."}
+    >
       <DataTable<catalogApi.TemplateRow>
         caption="Templates"
         columns={columns}
@@ -269,7 +267,6 @@ export default function TemplatesPage() {
         onRowOpen={canManage ? openEditor : undefined}
         rowActions={canManage ? rowActions : undefined}
       />
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add template" : `Edit ${editing ? editing.name : ""}`} widthClassName="max-w-3xl">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -472,6 +469,6 @@ export default function TemplatesPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

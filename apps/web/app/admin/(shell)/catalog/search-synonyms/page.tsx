@@ -14,9 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { TagInput } from "@/components/admin/tag-input";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
@@ -115,25 +114,24 @@ export default function SearchSynonymsPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Search synonyms"
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add synonym group
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
-
-      <p className="mb-4 text-sm text-ink-500">
-        Words customers type that should find the same products. Put every spelling in one group — e.g. <em>ator, attar, আতর, perfume</em> —
-        and searching any of them finds products that use any other, across the whole store. For a word that only fits one product, use
-        that product&rsquo;s <strong>search tags</strong> instead.
-      </p>
-
+    <ListPage
+      title="Search synonyms"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add synonym group
+          </Button>
+        )
+      }
+      intro={
+        <>
+          Words customers type that should find the same products. Put every spelling in one group — e.g. <em>ator, attar, আতর, perfume</em> —
+          and searching any of them finds products that use any other, across the whole store. For a word that only fits one product, use
+          that product&rsquo;s <strong>search tags</strong> instead.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change search synonyms."}
+    >
       {/* Test a search */}
       <div className="mb-6 rounded-lg border border-ink-100 bg-cream-50 p-4">
         <Label htmlFor="syn-test">Test a search</Label>
@@ -148,11 +146,11 @@ export default function SearchSynonymsPage() {
         {debouncedQuery && preview.data && (
           <div className="mt-3 space-y-3 text-sm">
             <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-ink-400">Searches for</p>
+              <p className="mb-1.5 text-xs font-medium text-fg-muted">Searches for</p>
               <TermChips terms={preview.data.terms} />
             </div>
             <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-ink-400">
+              <p className="mb-1.5 text-xs font-medium text-fg-muted">
                 {preview.data.total === 0 ? "No products found" : `${preview.data.total} product${preview.data.total === 1 ? "" : "s"} found`}
               </p>
               {preview.data.total === 0 ? (
@@ -198,7 +196,6 @@ export default function SearchSynonymsPage() {
         onRowOpen={canManage ? openEditor : undefined}
         rowActions={canManage ? rowActions : undefined}
       />
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change search synonyms.</p>}
 
       {data && data.builtIn.length > 0 && (
         <details className="mt-6 rounded-lg border border-ink-100 bg-cream-50 p-4">
@@ -248,6 +245,6 @@ export default function SearchSynonymsPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }
