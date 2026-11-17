@@ -138,7 +138,7 @@ function Hero({ totals, prior, compareWith, label }: { totals: ProfitTotals; pri
   return (
     <div className="liquid-pass p-5 sm:p-7" data-testid="profit-hero">
       <p className="text-sm text-fg-muted">{label}</p>
-      <p className={cn("mt-1 text-[2rem] font-semibold leading-tight tracking-tight tabular-nums sm:text-[2.75rem]", loss ? "text-danger-600" : "text-fg")}>
+      <p className={cn("mt-1 text-figure-md font-semibold leading-tight tracking-tight tabular-nums sm:text-figure-lg", loss ? "text-danger-600" : "text-fg")}>
         {loss ? `${money(-totals.profit)} loss` : `${money(totals.profit)} profit`}
       </p>
       <p className="mt-1 text-base text-fg-muted">

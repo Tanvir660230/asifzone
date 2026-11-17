@@ -69,7 +69,7 @@ export function MobileNavBar({ scrollRoot, onSearch, actions }: { scrollRoot: HT
         <Link
           href={back.href}
           aria-label={`Back to ${back.label}`}
-          className="-ml-0.5 flex h-11 min-w-0 max-w-[32vw] shrink-0 items-center rounded-full pr-1 text-[17px] tracking-[-0.02em] text-accent active:opacity-50"
+          className="-ml-0.5 flex h-11 min-w-0 max-w-[32vw] shrink-0 items-center rounded-full pr-1 text-ios-body text-accent active:opacity-50"
         >
           <ChevronLeft size={28} strokeWidth={2.2} className="-mr-0.5 shrink-0" aria-hidden />
           <span className="truncate">{back.label}</span>
@@ -81,7 +81,7 @@ export function MobileNavBar({ scrollRoot, onSearch, actions }: { scrollRoot: HT
       <p
         aria-hidden={largeTitleVisible}
         className={cn(
-          "pointer-events-none min-w-0 flex-1 truncate px-1.5 text-[17px] font-semibold tracking-[-0.02em] text-fg transition-[opacity,transform] duration-base ease-smooth",
+          "pointer-events-none min-w-0 flex-1 truncate px-1.5 text-ios-body font-semibold text-fg transition-[opacity,transform] duration-base ease-smooth",
           back ? "text-center" : "text-left",
           largeTitleVisible ? "translate-y-1 opacity-0" : "translate-y-0 opacity-100",
         )}

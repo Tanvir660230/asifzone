@@ -85,7 +85,7 @@ export function NotificationBell() {
         {unreadCount > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-semibold text-white ring-2 ring-surface"
+            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-2xs font-semibold text-white ring-2 ring-surface"
           >
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
@@ -164,7 +164,7 @@ export function NotificationBell() {
                     {/* Important items (the brief, parcels needing a look) are read here, so they get their lines; the
                         routine stream stays one line each. */}
                     {n.body && <p className={cn("mt-0.5 text-xs text-ink-500", view === "important" ? "line-clamp-4 whitespace-pre-line" : "truncate")}>{n.body}</p>}
-                    <p className="mt-0.5 text-[11px] text-ink-400">{timeAgo(n.createdAt)}</p>
+                    <p className="mt-0.5 text-xs text-ink-400">{timeAgo(n.createdAt)}</p>
                   </div>
                   {!n.readAt && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brass-400" />}
                 </div>
@@ -202,7 +202,7 @@ function TabLabel({ text, count }: { text: string; count: number }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       {text}
-      {count > 0 && <span className="text-[11px] font-semibold tabular-nums text-ink-500">{count > 99 ? "99+" : count}</span>}
+      {count > 0 && <span className="text-xs font-semibold tabular-nums text-ink-500">{count > 99 ? "99+" : count}</span>}
     </span>
   );
 }

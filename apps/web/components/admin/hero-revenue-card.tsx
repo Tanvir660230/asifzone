@@ -45,7 +45,7 @@ export function HeroRevenueCard({
       </div>
 
       <div className="mt-3 space-y-1">
-        <p className="text-[40px] font-semibold tabular-nums leading-tight tracking-tight text-fg">{value}</p>
+        <p className="text-figure-lg font-semibold tabular-nums leading-tight tracking-tight text-fg">{value}</p>
         <p className="flex items-center gap-1.5 text-sm text-fg-muted">
           <ShoppingBag size={14} aria-hidden /> {todayOrders} order{todayOrders === 1 ? "" : "s"} {ordersSuffix}
         </p>

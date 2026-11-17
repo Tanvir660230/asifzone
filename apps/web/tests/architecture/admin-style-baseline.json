@@ -5,34 +5,6 @@
   "app/admin/(shell)/orders/product-labels/page.tsx": {
     "uppercase": 1
   },
-  "components/admin/account-menu.tsx": {
-    "fontSize": 1
-  },
-  "components/admin/command-palette.tsx": {
-    "fontSize": 4,
-    "uppercase": 1
-  },
-  "components/admin/finance/glass.tsx": {
-    "fontSize": 1
-  },
-  "components/admin/finance/owner-home.tsx": {
-    "fontSize": 2
-  },
-  "components/admin/finance/profit-dashboard.tsx": {
-    "fontSize": 2
-  },
-  "components/admin/hero-revenue-card.tsx": {
-    "fontSize": 1
-  },
-  "components/admin/mobile-nav-bar.tsx": {
-    "fontSize": 2
-  },
-  "components/admin/more-sheet.tsx": {
-    "fontSize": 6
-  },
-  "components/admin/notification-bell.tsx": {
-    "fontSize": 3
-  },
   "components/admin/product-builder/live-preview-frame.tsx": {
     "fontSize": 2,
     "uppercase": 2,
@@ -44,12 +16,6 @@
   },
   "components/admin/product-builder/steps.tsx": {
     "rawColour": 1
-  },
-  "components/admin/section-bar.tsx": {
-    "fontSize": 2
-  },
-  "components/admin/sidebar.tsx": {
-    "fontSize": 18
   },
   "components/admin/studio/add-section-gallery.tsx": {
     "fontSize": 1

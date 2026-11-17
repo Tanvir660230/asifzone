@@ -131,6 +131,13 @@ const fontSize = {
   "display-lg": ["2.25rem", { lineHeight: "2.5rem", letterSpacing: "-0.02em" }],
   "display-xl": ["3rem", { lineHeight: "1.1", letterSpacing: "-0.025em" }],
   caption: ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.04em" }],
+  // Admin chrome sizes, fixed in px on purpose: the console's root size changes with the screen, these must not.
+  "2xs": ["10px", { lineHeight: "12px" }], // count badges, the phone tab bar's labels
+  "ios-body": ["17px", { lineHeight: "22px", letterSpacing: "-0.02em" }], // phone navigation bar and More sheet rows (iOS body)
+  "ios-footnote": ["13px", { lineHeight: "18px" }], // phone sheet group headings (iOS footnote)
+  // The admin's big money figures (a month's profit, revenue on a hero card): two steps, so every headline number matches.
+  "figure-md": ["2.25rem", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
+  "figure-lg": ["2.75rem", { lineHeight: "1.05", letterSpacing: "-0.025em" }],
 };
 
 /* ───────────────────────────── shape & depth ───────────────────────────── */

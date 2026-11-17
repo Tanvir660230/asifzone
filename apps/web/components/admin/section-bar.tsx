@@ -58,7 +58,7 @@ export function SectionBar({ bar, mode }: { bar: SectionBarModel | null; mode: "
                 aria-current={active ? "page" : undefined}
                 onKeyDown={onKeyDown}
                 className={cn(
-                  "group relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-[13.5px] outline-none transition-colors duration-fast ease-smooth",
+                  "group relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-sm outline-none transition-colors duration-fast ease-smooth",
                   active ? "font-semibold text-fg" : "font-medium text-fg-muted hover:text-fg",
                 )}
               >
@@ -66,7 +66,7 @@ export function SectionBar({ bar, mode }: { bar: SectionBarModel | null; mode: "
                 <span className="pointer-events-none absolute inset-x-0 inset-y-2 rounded-lg transition-colors duration-fast ease-smooth group-hover:bg-ink-900/[0.045] group-focus-visible:ring-2 group-focus-visible:ring-accent/60" aria-hidden />
                 <span className="relative">{node.label}</span>
                 {badge > 0 && (
-                  <span className="relative rounded-full bg-ink-900/[0.07] px-1.5 text-[11px] font-semibold leading-[18px] tabular-nums text-ink-600" aria-label={`${badge} waiting`}>
+                  <span className="relative rounded-full bg-ink-900/[0.07] px-1.5 text-xs font-semibold leading-[18px] tabular-nums text-ink-600" aria-label={`${badge} waiting`}>
                     {badge > 99 ? "99+" : badge}
                   </span>
                 )}

@@ -135,7 +135,7 @@ function MonthCard({ month, last, current, stockGain }: { month: OwnerMonth; las
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-end">
         <div>
           <p className="text-base font-medium text-fg-muted">{label}</p>
-          <p className={cn("mt-1 text-[2.25rem] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[2.75rem]", loss ? "text-danger-600" : "text-fg")}>
+          <p className={cn("mt-1 text-figure-md font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-figure-lg", loss ? "text-danger-600" : "text-fg")}>
             {loss ? `−${formatPrice(-month.profit)}` : formatPrice(month.profit)}
           </p>
           <p className="mt-2 text-base text-fg-muted">
