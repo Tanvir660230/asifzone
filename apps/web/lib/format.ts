@@ -113,6 +113,11 @@ export function formatBusinessDate(date: string, options: Intl.DateTimeFormatOpt
 
 /** A books date ("2026-10-01" — a financial / business date, or an ISO instant's date part) as "1 Oct 2026", the same
  * day-month-year style as formatStoreDateTime. Never shifted through a timezone. */
+/** "partly received" → "Partly received": a lower-case label (written to sit inside sentences) shown on its own, as in a Badge. */
+export function upperFirst(text: string): string {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
 export function formatBookDate(date: string): string {
   const [y, m, d] = date.slice(0, 10).split("-").map(Number);
   if (!y || !m) return date;
