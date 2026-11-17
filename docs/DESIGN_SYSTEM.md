@@ -180,9 +180,9 @@ saved views, date range right) → body (table, record or form). Lists full widt
 
 | Pattern | Rules | Built from |
 |---|---|---|
-| List | First column identity, then status, then 3–5 decision columns; money right-aligned; row opens the record; bulk bar on selection; cards below the breakpoint | `DataTable` |
-| Record page | Status and primary next action in the header; side column for links, totals, timeline | `PageHeader`, `Card` |
-| Form | Titled sections, required first, inline validation, sticky save bar, discard guard | `Field`, form sections |
+| List | First column identity, then status, then 3–5 decision columns; money right-aligned; row opens the record; bulk bar on selection; cards below the breakpoint; buttons live in the row menu, never in a cell (a phone card is itself a button) | `ListPage` + `DataTable` (`components/admin/patterns/list-page.tsx`) |
+| Record page | Back link; title with its status; a line of facts; the legal next actions on the right of the same row; titled sections; side column for links, totals, timeline | `RecordPage`, `RecordSection` (`components/admin/patterns/record-page.tsx`) |
+| Form | Titled sections in one column of at most 720 px (`max-w-form`), required first, inline validation, a save bar pinned to the bottom that says "Unsaved changes", leaving with changes asks first | `FormPage` (`components/admin/patterns/form-page.tsx`), `FormSection`, `Field` |
 | Quick sheet (Received goods, Fill, Count) | Drawer on desktop, full screen on phone; one task; preview before Save | `Drawer` |
 | Confirm dialog | Title = action + object; body lists the consequences the server will apply; destructive button right | `Modal` / confirm |
 | Status change | Only legal next states; reason inline when required; toast with Undo when reversible | shared state machine |

@@ -228,6 +228,7 @@ const density = {
   "drawer-sm": "400px",
   "drawer-md": "560px",
   "drawer-lg": "720px",
+  form: "720px", // a settings / form page's column (DESIGN_SYSTEM §6: forms at most 720 px) — `max-w-form`
 };
 const densitySpacing = {};
 for (const [name, value] of Object.entries(density)) {

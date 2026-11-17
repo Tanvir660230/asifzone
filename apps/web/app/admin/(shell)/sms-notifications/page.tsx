@@ -10,12 +10,12 @@ import {
   type UpdateSmsSettingsInput,
   type CustomerSmsTouchpoint,
 } from "@clothing-brand/shared";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/admin/form-section";
+import { FormPage } from "@/components/admin/patterns/form-page";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { toast } from "@/components/ui/toast";
@@ -74,7 +74,7 @@ export default function SmsNotificationsPage() {
     reset,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<UpdateSmsSettingsInput>({ resolver: zodResolver(updateSmsSettingsSchema) });
 
   useEffect(() => {
@@ -125,125 +125,117 @@ export default function SmsNotificationsPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="SMS notifications"
-        description="Text messages sent automatically over the order lifecycle, via BulkSMSBD."
-      />
-      <ModuleTabs />
-
-      <form onSubmit={handleSubmit((values) => updateMutation.mutate(values))} className="space-y-6">
-        <FormSection
-          title="Admin alerts"
-          description="Texts to your own phone: each new order as it comes in, and a short summary of yesterday every morning."
-        >
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm text-ink-700">
-              <Checkbox {...register("adminOrderAlertEnabled")} />
-              Text me when a new order comes in
-            </label>
-            <label className="flex items-start gap-2 text-sm text-ink-700">
-              <Checkbox className="mt-0.5" {...register("adminDailyBriefEnabled")} />
-              <span>
-                Text me yesterday&rsquo;s summary every morning
-                <span className="block text-xs text-ink-400">
-                  Around 9 am: orders, sales, deliveries and what&rsquo;s waiting to be confirmed or sent. One SMS per phone a day.
-                </span>
+    <FormPage
+      title="SMS notifications"
+      description="Text messages sent automatically over the order lifecycle, via BulkSMSBD."
+      onSubmit={handleSubmit((values) => updateMutation.mutate(values))}
+      dirty={isDirty}
+      saving={isSubmitting || updateMutation.isPending}
+      saveLabel="Save settings"
+    >
+      <FormSection
+        title="Admin alerts"
+        description="Texts to your own phone: each new order as it comes in, and a short summary of yesterday every morning."
+      >
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm text-ink-700">
+            <Checkbox {...register("adminOrderAlertEnabled")} />
+            Text me when a new order comes in
+          </label>
+          <label className="flex items-start gap-2 text-sm text-ink-700">
+            <Checkbox className="mt-0.5" {...register("adminDailyBriefEnabled")} />
+            <span>
+              Text me yesterday&rsquo;s summary every morning
+              <span className="block text-xs text-ink-400">
+                Around 9 am: orders, sales, deliveries and what&rsquo;s waiting to be confirmed or sent. One SMS per phone a day.
               </span>
-            </label>
-            <div>
-              <Label htmlFor="adminAlertPhones">Alert phone number(s)</Label>
-              <Input
-                id="adminAlertPhones"
-                placeholder="01712345678, 01898765432"
-                disabled={!adminOrderAlertEnabled && !adminDailyBriefEnabled}
-                {...register("adminAlertPhones")}
-              />
-              <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive these texts.</p>
-              {errors.adminAlertPhones && <p className="ui-field-error">{errors.adminAlertPhones.message}</p>}
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection
-          title="Customer notifications"
-          description="Each message can be switched off, and its wording edited, independently. Placeholders {customerName}, {orderNumber}, {total} and {storeName} are filled in automatically when the SMS is sent. {confirmLink} places the confirm link (order placed only)."
-        >
-          <div className="space-y-5">
-            {CUSTOMER_TOUCHPOINTS.map((t) => (
-              <div key={t.enabledField} className="rounded-lg border border-ink-100 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <label className="flex items-center gap-2 text-sm font-medium text-ink-900">
-                    <Checkbox {...register(t.enabledField)} />
-                    {t.label}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setValue(t.templateField, DEFAULT_CUSTOMER_SMS_TEMPLATES[t.touchpoint], {
-                        shouldDirty: true,
-                      })
-                    }
-                    className="text-xs text-ink-400 underline hover:text-ink-700"
-                  >
-                    Reset to default
-                  </button>
-                </div>
-                <p className="mt-0.5 text-xs text-ink-400">{t.helpText}</p>
-                <Textarea
-                  className="mt-2"
-                  rows={4}
-                  maxLength={320}
-                  placeholder={DEFAULT_CUSTOMER_SMS_TEMPLATES[t.touchpoint]}
-                  {...register(t.templateField)}
-                />
-                {errors[t.templateField] && (
-                  <p className="ui-field-error">{errors[t.templateField]?.message}</p>
-                )}
-                {t.touchpoint === "PLACED" && (
-                  <label className="mt-3 flex items-start gap-2 border-t border-ink-100 pt-3 text-sm text-ink-900" data-testid="self-confirm-toggle">
-                    <Checkbox className="mt-0.5" {...register("customerSelfConfirmEnabled")} />
-                    <span>
-                      <span className="font-medium">Let customers confirm by SMS link</span>
-                      <span className="mt-0.5 block text-xs text-ink-400">
-                        Cash-on-delivery orders get a link in this SMS. The order then waits 2 hours in Call later: customers who confirm (or
-                        cancel) there never need a call; the rest come up in Call now. With the default wording the message becomes a
-                        short &ldquo;confirm here&rdquo; text.
-                      </span>
-                    </span>
-                  </label>
-                )}
-              </div>
-            ))}
-          </div>
-        </FormSection>
-        <FormSection
-          title="Review requests"
-          description="Two days after an order is delivered, one SMS asks the customer to rate what they bought. The link opens their order's products with stars — no account needed. Reviews wait for your approval in Reviews before they show."
-        >
-          <label className="flex items-center gap-2 text-sm font-medium text-ink-900" data-testid="review-request-toggle">
-            <Checkbox {...register("customerReviewRequestEnabled")} />
-            Ask for a review two days after delivery
+            </span>
           </label>
-        </FormSection>
-
-
-        <FormSection
-          title="Payment confirmation email"
-          description="A receipt emailed to the customer when an online payment (EPS or SSLCommerz) settles. Sent alongside the 'Order confirmed' SMS above, only when the order has an email on file."
-        >
-          <label className="flex items-center gap-2 text-sm font-medium text-ink-900">
-            <Checkbox {...register("customerPaymentConfirmedEmailEnabled")} />
-            Email a receipt when payment is confirmed
-          </label>
-        </FormSection>
-
-        <div className="flex justify-end">
-          <Button type="submit" variant="brass" disabled={isSubmitting || updateMutation.isPending}>
-            {updateMutation.isPending ? "Saving…" : "Save settings"}
-          </Button>
+          <div>
+            <Label htmlFor="adminAlertPhones">Alert phone number(s)</Label>
+            <Input
+              id="adminAlertPhones"
+              placeholder="01712345678, 01898765432"
+              disabled={!adminOrderAlertEnabled && !adminDailyBriefEnabled}
+              {...register("adminAlertPhones")}
+            />
+            <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive these texts.</p>
+            {errors.adminAlertPhones && <p className="ui-field-error">{errors.adminAlertPhones.message}</p>}
+          </div>
         </div>
-      </form>
-    </div>
+      </FormSection>
+
+      <FormSection
+        title="Customer notifications"
+        description="Each message can be switched off, and its wording edited, independently. Placeholders {customerName}, {orderNumber}, {total} and {storeName} are filled in automatically when the SMS is sent. {confirmLink} places the confirm link (order placed only)."
+      >
+        <div className="space-y-5">
+          {CUSTOMER_TOUCHPOINTS.map((t) => (
+            <div key={t.enabledField} className="rounded-lg border border-ink-100 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-ink-900">
+                  <Checkbox {...register(t.enabledField)} />
+                  {t.label}
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setValue(t.templateField, DEFAULT_CUSTOMER_SMS_TEMPLATES[t.touchpoint], {
+                      shouldDirty: true,
+                    })
+                  }
+                  className="text-xs text-ink-400 underline hover:text-ink-700"
+                >
+                  Reset to default
+                </button>
+              </div>
+              <p className="mt-0.5 text-xs text-ink-400">{t.helpText}</p>
+              <Textarea
+                className="mt-2"
+                rows={4}
+                maxLength={320}
+                placeholder={DEFAULT_CUSTOMER_SMS_TEMPLATES[t.touchpoint]}
+                {...register(t.templateField)}
+              />
+              {errors[t.templateField] && (
+                <p className="ui-field-error">{errors[t.templateField]?.message}</p>
+              )}
+              {t.touchpoint === "PLACED" && (
+                <label className="mt-3 flex items-start gap-2 border-t border-ink-100 pt-3 text-sm text-ink-900" data-testid="self-confirm-toggle">
+                  <Checkbox className="mt-0.5" {...register("customerSelfConfirmEnabled")} />
+                  <span>
+                    <span className="font-medium">Let customers confirm by SMS link</span>
+                    <span className="mt-0.5 block text-xs text-ink-400">
+                      Cash-on-delivery orders get a link in this SMS. The order then waits 2 hours in Call later: customers who confirm (or
+                      cancel) there never need a call; the rest come up in Call now. With the default wording the message becomes a
+                      short &ldquo;confirm here&rdquo; text.
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+          ))}
+        </div>
+      </FormSection>
+      <FormSection
+        title="Review requests"
+        description="Two days after an order is delivered, one SMS asks the customer to rate what they bought. The link opens their order's products with stars — no account needed. Reviews wait for your approval in Reviews before they show."
+      >
+        <label className="flex items-center gap-2 text-sm font-medium text-ink-900" data-testid="review-request-toggle">
+          <Checkbox {...register("customerReviewRequestEnabled")} />
+          Ask for a review two days after delivery
+        </label>
+      </FormSection>
+
+      <FormSection
+        title="Payment confirmation email"
+        description="A receipt emailed to the customer when an online payment (EPS or SSLCommerz) settles. Sent alongside the 'Order confirmed' SMS above, only when the order has an email on file."
+      >
+        <label className="flex items-center gap-2 text-sm font-medium text-ink-900">
+          <Checkbox {...register("customerPaymentConfirmedEmailEnabled")} />
+          Email a receipt when payment is confirmed
+        </label>
+      </FormSection>
+    </FormPage>
   );
 }
