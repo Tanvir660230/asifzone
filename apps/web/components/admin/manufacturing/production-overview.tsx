@@ -16,7 +16,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
 import type { ProductionOrderStatus } from "@/lib/api/manufacturing";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, upperFirst } from "@/lib/format";
 
 const pct = (v: number | null) => (v === null ? "—" : `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`);
 const STATUS_ORDER: ProductionOrderStatus[] = ["DRAFT", "APPROVED", "IN_PRODUCTION", "PARTIALLY_RECEIVED", "RECEIVED", "CLOSED"];
@@ -51,7 +51,7 @@ export function ProductionOverview() {
 
           <div className="flex flex-wrap gap-2" aria-label="Orders by status">
             {STATUS_ORDER.filter((s) => d.byStatus[s]).map((s) => (
-              <Badge key={s} variant={MO_STATUS_BADGE[s]}>{MO_STATUS_LABEL[s]} · {d.byStatus[s]}</Badge>
+              <Badge key={s} variant={MO_STATUS_BADGE[s]}>{upperFirst(MO_STATUS_LABEL[s])} · {d.byStatus[s]}</Badge>
             ))}
           </div>
 
@@ -79,7 +79,7 @@ export function ProductionOverview() {
                           <TableCell align="right" className="whitespace-nowrap tabular-nums">{o.accepted.toLocaleString()} / {o.planned.toLocaleString()}</TableCell>
                           <TableCell className={o.overdue ? "whitespace-nowrap tabular-nums text-danger-700" : "whitespace-nowrap tabular-nums"}>{o.expectedDate ?? "—"}{o.overdue ? " · late" : ""}</TableCell>
                           {d.canSeeCost && <TableCell align="right" className="tabular-nums">{o.wip === null ? "—" : formatPrice(o.wip)}</TableCell>}
-                          <TableCell className="whitespace-nowrap"><Badge variant={MO_STATUS_BADGE[o.status]}>{MO_STATUS_LABEL[o.status]}</Badge>{o.readyToClose && <span className="ml-2 text-xs text-success-700">ready to close</span>}</TableCell>
+                          <TableCell className="whitespace-nowrap"><Badge variant={MO_STATUS_BADGE[o.status]}>{upperFirst(MO_STATUS_LABEL[o.status])}</Badge>{o.readyToClose && <span className="ml-2 text-xs text-success-700">ready to close</span>}</TableCell>
                         </TableRow>
                       ))}
                     </tbody>

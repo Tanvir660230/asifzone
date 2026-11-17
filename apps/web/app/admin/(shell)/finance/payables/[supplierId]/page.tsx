@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Wallet } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
-import { BackLink } from "@/components/ui/back-link";
+import { RecordPage, RecordSection } from "@/components/admin/patterns/record-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
@@ -23,7 +23,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { SupplierAccount } from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { listFinancialAccounts } from "@/lib/api/finance";
 import { PermissionState } from "@/components/admin/permission-state";
 
@@ -62,15 +62,16 @@ export default function SupplierAccountPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <BackLink href="/admin/finance/payables" label="Payables" />
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl text-ink-900">{a.supplier.displayName}</h1>
-          <p className="text-sm text-ink-600">{a.supplier.code} · pays in {a.supplier.paymentTermsDays} days · as of {a.asOf}</p>
-        </div>
-        {can("ap.manage") && <Button size="sm" onClick={() => setPaying(true)} data-testid="pay-supplier">Pay supplier</Button>}
-      </div>
+    <RecordPage
+      back={{ href: "/admin/finance/payables", label: "Payables" }}
+      title={a.supplier.displayName}
+      subtitle={<>{a.supplier.code} · pays in {a.supplier.paymentTermsDays} days · as of {formatBookDate(a.asOf)}</>}
+      actions={
+        <>
+          {can("ap.manage") && <Button size="sm" onClick={() => setPaying(true)} data-testid="pay-supplier">Pay supplier</Button>}
+        </>
+      }
+    >
 
       <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label={a.balance < 0 ? "The supplier owes you" : "You owe"} value={formatPrice(Math.abs(a.balance))} />
@@ -79,8 +80,7 @@ export default function SupplierAccountPage() {
         <Stat label="Advances and credits" value={formatPrice(sources.reduce((s, x) => s + x.left, 0))} />
       </dl>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold text-ink-900">Open bills</h2>
+      <RecordSection title="Open bills">
         {a.openBills.length || openingDue ? (
           <Card className="divide-y divide-line p-0 text-sm" data-testid="open-bills">
             {openingDue && (
@@ -101,11 +101,10 @@ export default function SupplierAccountPage() {
         ) : (
           <p className="text-sm text-ink-600">Nothing owed on bills.</p>
         )}
-      </section>
+      </RecordSection>
 
       {sources.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-ink-900">Advances and credits not yet set against a bill</h2>
+        <RecordSection title="Advances and credits not yet set against a bill">
           <Card className="divide-y divide-line p-0 text-sm">
             {sources.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
@@ -114,12 +113,11 @@ export default function SupplierAccountPage() {
               </div>
             ))}
           </Card>
-        </section>
+        </RecordSection>
       )}
 
       {a.allocations.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-ink-900">Set against bills</h2>
+        <RecordSection title="Set against bills">
           <p className="text-sm text-ink-600">Which payments and credit notes settle which bill. Releasing one reopens the bill by its amount and frees the payment or credit to set against another bill — no money moves.</p>
           <Card className="divide-y divide-line p-0 text-sm" data-testid="allocations">
             {a.allocations.map((x) => (
@@ -129,11 +127,10 @@ export default function SupplierAccountPage() {
               </div>
             ))}
           </Card>
-        </section>
+        </RecordSection>
       )}
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold text-ink-900">Statement</h2>
+      <RecordSection title="Statement">
         {a.statement.length ? (
           <Card className="overflow-hidden p-0">
             <HScrollShadow>
@@ -164,13 +161,13 @@ export default function SupplierAccountPage() {
         ) : (
           <EmptyState icon={Wallet} title="No activity yet" description="Bills, credit notes and payments for this supplier show here." />
         )}
-      </section>
+      </RecordSection>
 
       {paying && <SupplierPaymentModal account={a} onClose={() => setPaying(false)} onDone={() => { setPaying(false); refresh(); }} />}
       {releasing && <ReasonModal title={`Release ${formatPrice(releasing.amount)} from ${releasing.bill.number}`} hint={`${releasing.bill.number} owes this amount again; ${releasing.source === "PAYMENT" ? "the payment" : "the credit note"} can be set against another bill.`} loading={release.isPending} onClose={() => setReleasing(null)} onConfirm={(reason) => release.mutate(reason)} />}
       {refunding && <RefundModal supplierId={a.supplier.id} source={refunding} onClose={() => setRefunding(null)} onDone={() => { setRefunding(null); refresh(); }} />}
       {allocating && <AllocateModal account={a} source={allocating} onClose={() => setAllocating(null)} onDone={() => { setAllocating(null); refresh(); }} />}
-    </div>
+    </RecordPage>
   );
 }
 

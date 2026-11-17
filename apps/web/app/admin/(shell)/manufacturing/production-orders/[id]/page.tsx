@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Factory } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
-import { BackLink } from "@/components/ui/back-link";
+import { RecordPage, RecordSection } from "@/components/admin/patterns/record-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,7 +27,7 @@ import { COST_GROUP_LABEL, MO_STATUS_BADGE, MO_STATUS_LABEL } from "@/components
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, upperFirst } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 /** One production order (docs/MANUFACTURING.md §5): the plan by size and colour, the materials it needs against what is in
@@ -67,26 +67,24 @@ export default function ProductionOrderPage() {
   const issuedAny = o.materials.some((m) => m.issuedQty > 0);
 
   return (
-    <div className="space-y-6">
-      <BackLink href="/admin/manufacturing/production-orders" label="Production orders" />
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="font-display text-display-sm text-fg">{o.number}</h1>
-          <p className="text-sm text-fg-muted">{o.product.name} · {o.inHouse ? "made in-house" : `by ${o.producer?.displayName}`} · ordered {o.orderDate}{o.expectedDate ? ` · expected ${o.expectedDate}` : ""}</p>
-        </div>
-        <Badge variant={MO_STATUS_BADGE[o.status]} data-testid="mo-status">{MO_STATUS_LABEL[o.status]}</Badge>
-      </div>
+    <RecordPage
+      back={{ href: "/admin/manufacturing/production-orders", label: "Production orders" }}
+      title={o.number}
+      subtitle={<>{o.product.name} · {o.inHouse ? "made in-house" : `by ${o.producer?.displayName}`} · ordered {formatBookDate(o.orderDate)}{o.expectedDate ? ` · expected ${formatBookDate(o.expectedDate)}` : ""}</>}
+      status={<Badge variant={MO_STATUS_BADGE[o.status]} data-testid="mo-status">{upperFirst(MO_STATUS_LABEL[o.status])}</Badge>}
+      actions={
+        <>
+          {can("manufacturing.approve") && o.status === "DRAFT" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "approve" })} data-testid="mo-approve">Approve plan</Button>}
+          {can("manufacturing.approve") && o.status === "APPROVED" && <Button size="sm" variant="outline" onClick={() => act.mutate({ action: "reopen" })}>Back to draft</Button>}
+          {can("manufacturing.manage") && (o.status === "DRAFT" || o.status === "APPROVED") && <Button size="sm" variant="outline" onClick={() => setCancelling(true)}>Cancel order</Button>}
+          {can("manufacturing.move_stock") && open && o.materials.some((m) => m.suppliedBy === "BUSINESS") && <Button size="sm" onClick={() => setCustody("issue")} data-testid="mo-issue">Issue materials</Button>}
+          {can("manufacturing.move_stock") && open && o.materials.some((m) => m.atProducer > 0) && <Button size="sm" variant="outline" onClick={() => setCustody("return")} data-testid="mo-return">Return unused</Button>}
+          {can("manufacturing.manage") && inProduction && issuedAny && <Button size="sm" variant="outline" onClick={() => setCustody("usage")} data-testid="mo-usage">Record usage</Button>}
+          {can("manufacturing.manage") && o.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>Delete draft</Button>}
+        </>
+      }
+    >
       <ProductionStepper status={o.status} />
-
-      <div className="flex flex-wrap gap-2">
-        {can("manufacturing.approve") && o.status === "DRAFT" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "approve" })} data-testid="mo-approve">Approve plan</Button>}
-        {can("manufacturing.approve") && o.status === "APPROVED" && <Button size="sm" variant="outline" onClick={() => act.mutate({ action: "reopen" })}>Back to draft</Button>}
-        {can("manufacturing.manage") && (o.status === "DRAFT" || o.status === "APPROVED") && <Button size="sm" variant="outline" onClick={() => setCancelling(true)}>Cancel order</Button>}
-        {can("manufacturing.move_stock") && open && o.materials.some((m) => m.suppliedBy === "BUSINESS") && <Button size="sm" onClick={() => setCustody("issue")} data-testid="mo-issue">Issue materials</Button>}
-        {can("manufacturing.move_stock") && open && o.materials.some((m) => m.atProducer > 0) && <Button size="sm" variant="outline" onClick={() => setCustody("return")} data-testid="mo-return">Return unused</Button>}
-        {can("manufacturing.manage") && inProduction && issuedAny && <Button size="sm" variant="outline" onClick={() => setCustody("usage")} data-testid="mo-usage">Record usage</Button>}
-        {can("manufacturing.manage") && o.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>Delete draft</Button>}
-      </div>
       {o.cancelledReason && <p className="text-sm text-ink-600">Cancelled: {o.cancelledReason}</p>}
 
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -99,13 +97,11 @@ export default function ProductionOrderPage() {
       </dl>
       {o.terms && <Card className="p-4 text-sm"><p className="text-ink-600">Agreed rate & terms</p><p className="whitespace-pre-line text-ink-900">{o.terms}</p></Card>}
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold text-ink-900">Sizes and colours</h2>
+      <RecordSection title="Sizes and colours">
         <SizeColorGrid product={product} quantities={quantities} readOnly />
-      </section>
+      </RecordSection>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold text-ink-900">Materials</h2>
+      <RecordSection title="Materials">
         {shortfalls.length > 0 && o.status !== "CANCELLED" && (
           <Alert variant="warning" title={shortfalls.length === 1 ? "Short of 1 material" : `Short of ${shortfalls.length} materials`}>
             {/* stock UI redesign: name each one and how much, with the way to buy it */}
@@ -157,14 +153,13 @@ export default function ProductionOrderPage() {
         ) : (
           <p className="text-sm text-ink-600">No materials planned — choose a bill of materials or add materials by hand.</p>
         )}
-      </section>
+      </RecordSection>
 
       {can("finance.view") && o.status !== "CANCELLED" && <ProductPackaging productId={o.product.id} />}
 
       {/* Once approved, the plan appears in Production costs' planned-vs-actual table. */}
       {o.planned && o.status === "DRAFT" && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-ink-900">Planned costs</h2>
+        <RecordSection title="Planned costs">
           <Card className="divide-y divide-line p-0 text-sm">
             <div className="flex justify-between gap-3 px-4 py-2.5"><span>Materials (from stock, at average cost)</span><span className="tabular-nums">{plannedValue(o.planned.materialCost, o.planned.materialsWithoutCost)}</span></div>
             {o.plannedCosts.map((c) => (
@@ -175,7 +170,7 @@ export default function ProductionOrderPage() {
             ))}
             <div className="flex justify-between gap-3 px-4 py-2.5 font-semibold"><span>Total</span><span className="tabular-nums">{plannedValue(o.planned.totalCost, o.planned.materialsWithoutCost)}</span></div>
           </Card>
-        </section>
+        </RecordSection>
       )}
 
       {o.status !== "DRAFT" && o.status !== "CANCELLED" && <ProductionDeliveries order={o} can={(c) => can(c)} onChanged={refresh} />}
@@ -185,8 +180,7 @@ export default function ProductionOrderPage() {
       <ProductionClose order={o} canClose={can("manufacturing.approve")} onChanged={refresh} />
 
       {moves.data && moves.data.moves.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-ink-900">Material movements</h2>
+        <RecordSection title="Material movements">
           <Card className="divide-y divide-line p-0 text-sm" data-testid="mo-moves">
             {moves.data.moves.map((mv) => (
               <div key={mv.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
@@ -195,14 +189,14 @@ export default function ProductionOrderPage() {
               </div>
             ))}
           </Card>
-        </section>
+        </RecordSection>
       )}
 
       {custody === "issue" && <IssueModal order={o} canApprove={can("manufacturing.approve")} onClose={() => setCustody(null)} onDone={() => { refresh(); setCustody(null); }} />}
       {custody === "return" && <ReturnModal order={o} onClose={() => setCustody(null)} onDone={() => { refresh(); setCustody(null); }} />}
       {custody === "usage" && <UsageModal order={o} onClose={() => setCustody(null)} onDone={() => { refresh(); setCustody(null); }} />}
       {cancelling && <ReasonModal title={`Cancel ${o.number}`} hint="Nothing was issued, so the order can be cancelled." loading={act.isPending} onClose={() => setCancelling(false)} onConfirm={(reason) => act.mutate({ action: "cancel", reason })} />}
-    </div>
+    </RecordPage>
   );
 }
 

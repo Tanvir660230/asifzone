@@ -27,7 +27,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { GoodsReceipt, PurchasableVariant } from "@/lib/api/purchasing";
-import { formatBookDate, formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, upperFirst } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 /** Goods receipts (docs/FINANCE_PHASE_4D.md): what actually arrived. Posting one brings the stock and its cost in together;
@@ -132,7 +132,7 @@ export default function GoodsReceiptsPage() {
                     {r.purchaseOrder ? <Link href={`/admin/finance/purchase-orders/${r.purchaseOrder.id}`} className="underline-offset-4 hover:underline">{r.purchaseOrder.number}</Link> : <span className="text-fg-muted">no order</span>}
                   </TableCell>
                   <TableCell data-label="Value" align="right" className="whitespace-nowrap font-medium">{formatPrice(r.total)}</TableCell>
-                  <TableCell data-cell="badge"><Badge variant={GRN_STATUS_BADGE[r.status]} className="capitalize">{GRN_STATUS_LABEL[r.status]}</Badge></TableCell>
+                  <TableCell data-cell="badge"><Badge variant={GRN_STATUS_BADGE[r.status]} className="capitalize">{upperFirst(GRN_STATUS_LABEL[r.status])}</Badge></TableCell>
                   <TableCell data-cell="action" align="right">
                     <div className="flex justify-end gap-2">
                       {r.status === "DRAFT" && can("purchasing.receive") && costingActive && <Button size="sm" loading={post.isPending} onClick={() => post.mutate(r.id)}>Post</Button>}
