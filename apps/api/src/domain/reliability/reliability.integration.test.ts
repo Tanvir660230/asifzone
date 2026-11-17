@@ -53,7 +53,7 @@ async function deliveredOrder(customerPhone?: string) {
 /** Consignment ids unique across the whole file (and runs) — the webhook finds its order by consignment id. */
 let consignmentSeq = Math.floor(Date.now() / 1000) * 1000;
 
-function stubSteadfast(behaviour: "success" | "timeout" | "reject" = "success", delayMs = 30, opts: { knownInvoices?: string[] } = {}) {
+function stubSteadfast(behaviour: "success" | "timeout" | "reject" = "success", delayMs = 30, opts: { knownInvoices?: string[]; keyRefused?: boolean } = {}) {
   const calls: string[] = [];
   globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
     const url = String(input);
@@ -66,6 +66,8 @@ function stubSteadfast(behaviour: "success" | "timeout" | "reject" = "success", 
         : new Response("Unauthorized Access", { status: 401 });
     }
     const cid = url.match(/\/status_by_cid\/(\d+)$/)?.[1];
+    // keyRefused: the store's API key is wrong — Steadfast answers every status check with 401 (Tahafi, 2026-11-18).
+    if (cid && opts.keyRefused) return new Response("Unauthorized Access", { status: 401 });
     if (cid) return new Response(JSON.stringify({ status: 200, delivery_status: "in_review" }), { status: 200 });
     calls.push(url);
     await new Promise((r) => setTimeout(r, delayMs));
@@ -297,6 +299,70 @@ describe("courier booking (D-4)", () => {
       expect(again.status).toBe(409); // one consignment, one order
       const bad = await owner.post(`/api/orders/${other.id}/courier/link`, { consignmentId: "12ab", trackingCode: "x" });
       expect(bad.status).toBe(400);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  const panelLink = (seed: string) => `https://steadfast.com.bd/tl/${seed.padEnd(32, "x").slice(0, 32)}`;
+
+  it("a parcel made in the Steadfast panel links with its tracking link even when Steadfast refuses the store's API key", async () => {
+    try {
+      const order = await bookable();
+      stubSteadfast("success", 5, { keyRefused: true });
+      const owner = await asOwner();
+      const cid = String(++consignmentSeq);
+      // without the panel's tracking link there is nothing to prove the parcel exists: refused as before
+      const unproven = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD` });
+      expect(unproven.status).toBe(400);
+      const link = panelLink(`a${cid}`);
+      const linked = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD`, trackingLink: link });
+      expect(linked.status).toBe(200);
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, courierTrackingLink: link, carrier: "Steadfast", status: "SHIPPED", courierStatus: null });
+      expect(row.courierSyncError).toMatch(/Steadfast/); // the key problem stays visible on the order
+
+      const notSteadfast = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD`, trackingLink: "https://evil.invalid/tl/abc" });
+      expect(notSteadfast.status).toBe(400);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("an order already linked to the consignment gets the panel's tracking link added; a different consignment is still refused", async () => {
+    try {
+      const order = await bookable();
+      stubSteadfast("success", 5);
+      const owner = await asOwner();
+      const cid = String(++consignmentSeq);
+      expect((await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD` })).status).toBe(200);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).courierTrackingLink).toBeNull();
+      const link = panelLink(`b${cid}`);
+      const added = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD`, trackingLink: link });
+      expect(added.status).toBe(200);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).courierTrackingLink).toBe(link);
+      const other = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: String(++consignmentSeq), trackingCode: "SFR99999BD", trackingLink: link });
+      expect(other.status).toBe(409);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("a delivered order records the parcel it went out in, without moving the order or touching its stock", async () => {
+    try {
+      const { order, variants } = await deliveredOrder();
+      const stockBefore = await stockOf(variants[0]!.id);
+      stubSteadfast("success", 5, { keyRefused: true });
+      const owner = await asOwner();
+      const cid = String(++consignmentSeq);
+      const link = panelLink(`c${cid}`);
+      // a closed order only records the parcel when the panel's link is given
+      expect((await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD` })).status).toBe(400);
+      const res = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD`, trackingLink: link });
+      expect(res.status).toBe(200);
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row).toMatchObject({ status: "DELIVERED", courierConsignmentId: cid, courierTrackingLink: link, trackingNumber: `SFR${cid}BD` });
+      expect(await stockOf(variants[0]!.id)).toEqual(stockBefore);
     } finally {
       globalThis.fetch = realFetch;
     }

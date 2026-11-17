@@ -212,14 +212,61 @@ function ParcelComingBack({ order, detail, canManage }: { order: Order; detail: 
 /** A booking was sent but the courier's answer was lost (its server failed or timed out). The courier usually made the
  * parcel anyway (2026-11-11: 16 of 16), so this asks for its consignment ID and tracking code instead of offering Book.
  * Booking again stays possible from the list — the server checks the courier for the invoice first. */
-function LostBookingPanel({ order, commands, canLink }: { order: Order; commands: OrderCommands; canLink: boolean }) {
-  const [consignmentId, setConsignmentId] = useState("");
-  const [trackingCode, setTrackingCode] = useState("");
+const TRACKING_LINK_PATTERN = /^https:\/\/steadfast\.com\.bd\/tl\/[A-Za-z0-9_-]{8,80}$/;
+
+/** Links a parcel that exists on Steadfast to this order: its consignment ID, tracking code and — from the panel's
+ * "Copy tracking link" — the public tracking link (it can't be built from the code). `linkOnly`: the order already holds
+ * the consignment and only its link is missing. `requireLink`: the link is the only proof (a closed order). */
+function LinkParcelForm({ order, commands, linkOnly = false, requireLink = false }: { order: Order; commands: OrderCommands; linkOnly?: boolean; requireLink?: boolean }) {
+  const [consignmentId, setConsignmentId] = useState(order.courierConsignmentId ?? "");
+  const [trackingCode, setTrackingCode] = useState(order.trackingNumber ?? "");
+  const [trackingLink, setTrackingLink] = useState("");
   useEffect(() => {
-    setConsignmentId("");
-    setTrackingCode("");
-  }, [order.id]);
-  const ready = /^\d{4,20}$/.test(consignmentId.trim()) && /^[A-Za-z0-9]{6,40}$/.test(trackingCode.trim());
+    setConsignmentId(order.courierConsignmentId ?? "");
+    setTrackingCode(order.trackingNumber ?? "");
+    setTrackingLink("");
+  }, [order.id, order.courierConsignmentId, order.trackingNumber]);
+  const link = trackingLink.trim();
+  const linkValid = TRACKING_LINK_PATTERN.test(link);
+  const ready =
+    /^\d{4,20}$/.test(consignmentId.trim()) && /^[A-Za-z0-9]{6,40}$/.test(trackingCode.trim()) && (link === "" ? !(linkOnly || requireLink) : linkValid);
+  const id = `${order.id}-${linkOnly ? "link" : "parcel"}`;
+
+  return (
+    <form
+      className={cn("grid grid-cols-1 gap-3 sm:items-end", linkOnly ? "sm:grid-cols-[1fr_auto]" : "sm:grid-cols-2")}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (ready) commands.linkCourier(order, consignmentId.trim(), trackingCode.trim(), link || undefined);
+      }}
+    >
+      {!linkOnly && (
+        <>
+          <Field htmlFor={`${id}-consignment`} label="Consignment ID">
+            <Input id={`${id}-consignment`} inputMode="numeric" autoComplete="off" placeholder="e.g. 319011389" value={consignmentId} onChange={(e) => setConsignmentId(e.target.value)} />
+          </Field>
+          <Field htmlFor={`${id}-tracking`} label="Tracking code">
+            <Input id={`${id}-tracking`} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="SFR…BD" value={trackingCode} onChange={(e) => setTrackingCode(e.target.value)} />
+          </Field>
+        </>
+      )}
+      <div className={cn(!linkOnly && "sm:col-span-2")}>
+        <Field
+          htmlFor={`${id}-link`}
+          label={linkOnly || requireLink ? "Tracking link" : "Tracking link (optional)"}
+          error={link !== "" && !linkValid ? "Paste the link from “Copy tracking link” — https://steadfast.com.bd/tl/…" : undefined}
+        >
+          <Input id={`${id}-link`} type="url" inputMode="url" autoComplete="off" spellCheck={false} placeholder="https://steadfast.com.bd/tl/…" value={trackingLink} onChange={(e) => setTrackingLink(e.target.value)} />
+        </Field>
+      </div>
+      <Button type="submit" size="sm" disabled={!ready} loading={commands.pending.link} className={cn(!linkOnly && "sm:col-span-2 sm:justify-self-start")}>
+        {linkOnly ? "Save link" : "Link parcel"}
+      </Button>
+    </form>
+  );
+}
+
+function LostBookingPanel({ order, commands, canLink }: { order: Order; commands: OrderCommands; canLink: boolean }) {
 
   return (
     <div className="space-y-3 rounded-xl border border-warning-200 bg-warning-50/50 p-3.5" data-testid="courier-lost-booking">
@@ -234,25 +281,7 @@ function LostBookingPanel({ order, commands, canLink }: { order: Order; commands
           </p>
         </div>
       </div>
-      {canLink && (
-        <form
-          className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (ready) commands.linkCourier(order, consignmentId.trim(), trackingCode.trim());
-          }}
-        >
-          <Field htmlFor="link-consignment" label="Consignment ID">
-            <Input id="link-consignment" inputMode="numeric" autoComplete="off" placeholder="e.g. 319011389" value={consignmentId} onChange={(e) => setConsignmentId(e.target.value)} />
-          </Field>
-          <Field htmlFor="link-tracking" label="Tracking code">
-            <Input id="link-tracking" autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="SFR…BD" value={trackingCode} onChange={(e) => setTrackingCode(e.target.value)} />
-          </Field>
-          <Button type="submit" size="sm" disabled={!ready} loading={commands.pending.link}>
-            Link parcel
-          </Button>
-        </form>
-      )}
+      {canLink && <LinkParcelForm order={order} commands={commands} />}
     </div>
   );
 }
@@ -370,6 +399,14 @@ export function DeliverySection({
                 </Fact>
               )}
             </dl>
+            {perms.courier && !deleted && !order.courierTrackingLink && (
+              <div className="space-y-2 border-t border-line-subtle pt-3" data-testid="courier-add-link">
+                <p className="text-xs text-ink-500">
+                  No tracking link yet. In the {COURIER_PROVIDER_LABEL} panel, open parcel {order.courierConsignmentId}, press “Copy tracking link” and paste it here.
+                </p>
+                <LinkParcelForm order={order} commands={commands} linkOnly />
+              </div>
+            )}
           </div>
         ) : lostBooking ? (
           <LostBookingPanel order={order} commands={commands} canLink={perms.courier && !deleted} />
@@ -392,6 +429,19 @@ export function DeliverySection({
               </BlockedHint>
             )}
           </div>
+        )}
+
+        {!booked && !lostBooking && perms.courier && !deleted && (
+          <details className="rounded-xl border border-line-subtle p-3.5" data-testid="courier-link-panel-parcel">
+            <summary className="cursor-pointer text-sm font-medium text-ink-700">Booked in the {COURIER_PROVIDER_LABEL} panel? Link its parcel</summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-ink-500">
+                Open the parcel in the {COURIER_PROVIDER_LABEL} panel and copy its ID, tracking code and “Copy tracking link”.{" "}
+                {open ? "The order then moves to Shipped and its status follows the courier." : "The order's status and stock stay as they are; only the parcel is recorded."}
+              </p>
+              <LinkParcelForm order={order} commands={commands} requireLink={!open} />
+            </div>
+          </details>
         )}
 
         {(booked || open) && <CourierNotePanel order={order} detail={detail} canEdit={perms.manage && !deleted} />}
