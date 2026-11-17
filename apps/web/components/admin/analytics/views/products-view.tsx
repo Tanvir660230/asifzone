@@ -245,7 +245,7 @@ export default function ProductIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Return rate</th>
                     <th className="pb-2 pr-4">Refund rate (order-level)</th>
@@ -317,7 +317,7 @@ export default function ProductIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">SKU</th>
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Size / Color</th>

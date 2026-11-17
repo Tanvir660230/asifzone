@@ -562,6 +562,11 @@
   .ui-table-row {
     @apply border-t border-line-subtle transition-colors duration-fast ease-smooth;
   }
+  /* The header row of a small table that sits inside a card (analytics, forecasts): no frame of its own, a hairline
+     under the column titles, sentence case. */
+  .ui-card-table-head {
+    @apply border-b border-line-subtle text-left text-xs font-medium text-fg-muted;
+  }
   .ui-table-row-interactive {
     @apply cursor-pointer hover:bg-ink-50/70;
   }

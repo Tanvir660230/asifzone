@@ -1,5 +1,6 @@
 "use client";
 
+import { Table, TableContainer, TableHead, TableHeaderCell } from "@/components/ui/table";
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,7 +33,6 @@ import { Drawer } from "@/components/ui/drawer";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
@@ -577,50 +577,49 @@ export default function CustomersPage() {
           already-scrolling page made the mouse wheel scroll this small box first before the page
           would move, which read as broken/janky (see the same fix on the Orders page).
           sm and up: the table below. Below sm: a card list (below that). */}
-      <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+      <TableContainer className="mt-4 hidden sm:block">
+        <Table>
+            <TableHead>
               <tr>
-                <th className="w-10 px-4 py-3">
+                <TableHeaderCell className="w-10">
                   <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
-                </th>
+                </TableHeaderCell>
                 {/* z-[1], matching the frozen column's <td> below and the identical pattern on the
                     Products page — not z-20: that tied with the sticky filter bar above (z-10) and
                     the app shell header (z-20) in the same stacking context, so as this non-sticky
                     header row scrolled past them, it painted in FRONT of both instead of being
                     covered by them, showing up as a floating box overlapping the tabs/header. */}
-                <th aria-sort={ariaSortFor("name")} className="sticky left-0 z-[1] bg-surface px-4 py-3">
+                <TableHeaderCell aria-sort={ariaSortFor("name")} className="sticky left-0 z-[1] bg-surface">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>
-                </th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="hidden px-4 py-3 2xl:table-cell">Email</th>
-                <th aria-sort={ariaSortFor("totalOrders")} className="px-4 py-3">
+                </TableHeaderCell>
+                <TableHeaderCell>Phone</TableHeaderCell>
+                <TableHeaderCell className="hidden 2xl:table-cell">Email</TableHeaderCell>
+                <TableHeaderCell aria-sort={ariaSortFor("totalOrders")}>
                   <div className="flex justify-end">
                     <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Orders
                     </SortableHeader>
                   </div>
-                </th>
-                <th aria-sort={ariaSortFor("totalSpent")} className="px-4 py-3">
+                </TableHeaderCell>
+                <TableHeaderCell aria-sort={ariaSortFor("totalSpent")}>
                   <div className="flex justify-end">
                     <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Delivered
                     </SortableHeader>
                   </div>
-                </th>
-                <th aria-sort={ariaSortFor("lastOrderAt")} className="px-4 py-3">
+                </TableHeaderCell>
+                <TableHeaderCell aria-sort={ariaSortFor("lastOrderAt")}>
                   <SortableHeader column="lastOrderAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Last Order
                   </SortableHeader>
-                </th>
-                <th className="px-4 py-3">Status</th>
-                <th className="hidden whitespace-nowrap px-4 py-3 2xl:table-cell">Last SMS</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                </TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell className="hidden whitespace-nowrap 2xl:table-cell">Last SMS</TableHeaderCell>
+                <TableHeaderCell align="right">Actions</TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {isLoading && <TableSkeleton rows={6} cols={10} />}
               {!isLoading && items.length === 0 && (
@@ -687,9 +686,8 @@ export default function CustomersPage() {
                 );
               })}
             </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+        </Table>
+      </TableContainer>
 
       {/* Below sm: one continuous bordered list instead of the table above — same card-list pattern
           (and same reasoning: the sticky filter zone scrolls over it, so no floating-card shadow

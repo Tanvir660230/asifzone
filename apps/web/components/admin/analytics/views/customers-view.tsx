@@ -125,7 +125,7 @@ export default function CustomerIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Customer</th>
                     <th className="pb-2 pr-4">Recency</th>
                     <th className="pb-2 pr-4">Frequency</th>

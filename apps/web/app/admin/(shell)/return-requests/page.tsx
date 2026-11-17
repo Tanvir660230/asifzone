@@ -14,8 +14,7 @@ import { Modal } from "@/components/ui/modal";
 import { Pagination } from "@/components/ui/pagination";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { TableSkeleton } from "@/components/ui/table";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { Table, TableContainer, TableHead, TableHeaderCell, TableSkeleton } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
@@ -170,22 +169,21 @@ export default function AdminReturnRequestsPage() {
         {data && <span className="text-xs tabular-nums text-ink-400">{data.total} {data.total === 1 ? "request" : "requests"}</span>}
       </div>
 
-      <div className="hidden overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-sm md:block">
-        <HScrollShadow className="overflow-x-auto" edgeFrom="from-surface">
-          <table className="ui-table">
-            <thead className="ui-table-head">
+      <TableContainer className="hidden md:block">
+        <Table>
+            <TableHead>
               <tr>
-                <th scope="col" className="px-4 py-3">Order</th>
-                <th scope="col" className="px-4 py-3">Customer</th>
-                <th scope="col" className="px-4 py-3">Type</th>
-                <th scope="col" className="px-4 py-3">Reason</th>
-                <th scope="col" className="px-4 py-3">Requested</th>
-                <th scope="col" className="px-4 py-3">Status</th>
-                <th scope="col" className="px-4 py-3 text-right">
+                <TableHeaderCell>Order</TableHeaderCell>
+                <TableHeaderCell>Customer</TableHeaderCell>
+                <TableHeaderCell>Type</TableHeaderCell>
+                <TableHeaderCell>Reason</TableHeaderCell>
+                <TableHeaderCell>Requested</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell align="right">
                   <span className="sr-only">Actions</span>
-                </th>
+                </TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {isLoading && <TableSkeleton rows={5} cols={7} />}
               {!isLoading && items.length === 0 && (
@@ -223,9 +221,8 @@ export default function AdminReturnRequestsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+        </Table>
+      </TableContainer>
 
       <div className="space-y-3 md:hidden">
         {isLoading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-36 rounded-xl ui-skeleton" aria-hidden="true" />)}

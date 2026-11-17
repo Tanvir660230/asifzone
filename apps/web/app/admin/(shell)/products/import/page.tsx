@@ -214,7 +214,7 @@ export default function ProductImportPage() {
               </h3>
               <div className="overflow-x-auto rounded-lg border border-danger-200">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-danger-50 text-xs uppercase tracking-wide text-ink-500">
+                  <thead className="bg-danger-50 text-xs font-medium text-ink-500">
                     <tr>
                       <th className="px-3 py-2">Line</th>
                       <th className="px-3 py-2">Column</th>

@@ -8,7 +8,7 @@ export function DemandForecastTable({ variants }: { variants: DemandForecastVari
 
   return (
     <table className="ui-table">
-      <thead className="text-left text-xs uppercase tracking-wide text-ink-500">
+      <thead className="ui-card-table-head">
         <tr>
           <th className="pb-2">Product</th>
           <th className="pb-2 text-right">Stock</th>

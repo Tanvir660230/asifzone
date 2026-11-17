@@ -107,7 +107,7 @@ export default function UserBehaviorPage() {
             ) : (
               <table className="w-full min-w-[320px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Status</th>
                     <th className="pb-2 pr-4">Count</th>
                     <th className="pb-2">Verified purchase</th>

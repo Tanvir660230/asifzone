@@ -124,7 +124,7 @@ export default function FinancialAnalyticsPage() {
             ) : (
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Date</th>
                     <th className="pb-2 pr-4">Net merchandise</th>
                     <th className="pb-2 pr-4">COGS</th>
