@@ -6,6 +6,7 @@ export type LabelTemplateId =
   | "a4-8up"
   | "sticker-100x150"
   | "sticker-75x100"
+  | "sticker-100x75"
   | "sticker-76x76"
   | "sticker-51x76"
   | "sticker-80x50"
@@ -106,6 +107,18 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     kind: "sticker",
     pageWmm: 75,
     pageHmm: 100,
+    columns: 1,
+    rows: 1,
+    defaultMarginMm: 2,
+    orientationSwappable: false,
+  },
+  {
+    // The same sticker fed the wide way: 100mm across, 75mm down the feed (owner, 2026-11-19).
+    id: "sticker-100x75",
+    name: "Sticker — 100 × 75mm (wide)",
+    kind: "sticker",
+    pageWmm: 100,
+    pageHmm: 75,
     columns: 1,
     rows: 1,
     defaultMarginMm: 2,
