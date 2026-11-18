@@ -32,13 +32,13 @@
     font-size: 18px;
   }
 }
-/* The Store Console is read at a desk all day, row after row: it takes no showroom zoom. One step under the browser's
-   16px from laptop width up, so every rem-based size in the console (type, padding, control heights) tightens together
-   and a list shows more than twice the rows (owner, 2026-11-12: "size efficiency"). The storefront is untouched: the
-   rule only matches a document that holds the admin surface. */
+/* The Store Console is read at a desk all day, row after row: it takes no showroom zoom, so from laptop width up it
+   stays at the browser's own 16px instead of the storefront's 17–18px (owner, 2026-11-12: "size efficiency"). It went
+   to 15px for a day; the owner found that too small to read (2026-11-19), so 16px is the floor. The storefront is
+   untouched: the rule only matches a document that holds the admin surface. */
 @media (min-width: 1024px) {
   html:has([data-surface="admin"]) {
-    font-size: 15px;
+    font-size: 16px;
   }
 }
 
@@ -1171,15 +1171,5 @@
   font-size: 0.9375rem;
   line-height: 1.375rem;
 }
-/* From laptop width the console's root is 15px (top of this file), so the same two steps land on 12px captions and
-   13.5px body: the working sizes of a desktop app. Phones and tablets keep the larger reading sizes above. */
-@media (min-width: 1024px) {
-  [data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
-    font-size: 0.8rem;
-    line-height: 1.1rem;
-  }
-  [data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
-    font-size: 0.9rem;
-    line-height: 1.3rem;
-  }
-}
+/* The same 13px captions and 15px body at every width (owner, 2026-11-19: the 12 / 13.5px desktop steps were too
+   small to read). */
