@@ -149,7 +149,9 @@ const OWNER_ONLY_ROUTES = [
   // Phase 12 D-4: provider status (settings.manage, OWNER-only).
   "GET /api/v1/ops/providers",
   // Monthly targets: setting them is the owner's (settings.manage); reading progress is analytics.read.
-  "PUT /api/targets/:month",  // Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §7): every finance.* permission is OWNER-only until a finance role is decided.
+  "PUT /api/targets/:month",
+  // Team activity is who-did-what (audit.read, OWNER-only).
+  "GET /api/analytics/team",  // Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §7): every finance.* permission is OWNER-only until a finance role is decided.
   "GET /api/v1/finance/business",
   "PATCH /api/v1/finance/business",
   "GET /api/v1/finance/accounts",
@@ -575,7 +577,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: cancellations before sending — reasons, channel, landing page, product (order-outcomes programme PR 2)
     // +1: link a parcel Steadfast already holds to its order (a booking whose answer was lost, 2026-11-11)
     // +3: monthly targets — read with progress, set by the owner, and the month's scorecard (docs/superpowers/plans/2026-11-18-business-reports.md)
-    expect(routes).toHaveLength(819);
+    // +1: team activity — who moved which orders (audit.read, owner only)
+    expect(routes).toHaveLength(820);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

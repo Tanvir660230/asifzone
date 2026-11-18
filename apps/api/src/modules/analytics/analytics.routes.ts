@@ -159,6 +159,7 @@ analyticsRouter.get("/product-actions", requirePermission("analytics.read"), ana
 analyticsRouter.get("/why-changed", requirePermission("analytics.read"), analyticsController.whyChanged);
 // What each ad campaign really returned (§4.12).
 analyticsRouter.get("/ad-returns", requirePermission("analytics.read"), analyticsController.adReturns);
+analyticsRouter.get("/team", requirePermission("audit.read"), analyticsController.teamActivity);
 analyticsRouter.get("/fulfillment-time", requirePermission("analytics.read"), analyticsController.fulfillmentTime);
 analyticsRouter.get("/admin-activity", requirePermission("analytics.read"), analyticsController.adminActivitySummary);
 
