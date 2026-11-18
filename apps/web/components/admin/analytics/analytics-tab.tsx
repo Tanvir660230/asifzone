@@ -41,7 +41,9 @@ function AnalyticsTabInner({ title, description, views, lead }: AnalyticsTabProp
       <PageHeader title={title} description={description} className="mb-0" />
       {lead}
       {views.length > 1 && (
-        <SegmentedControl aria-label={`${title} views`} size="md" value={current.value} onChange={setView} options={views.map((v) => ({ value: v.value, label: v.label }))} />
+        <div className="print:hidden">
+          <SegmentedControl aria-label={`${title} views`} size="md" value={current.value} onChange={setView} options={views.map((v) => ({ value: v.value, label: v.label }))} />
+        </div>
       )}
       {/* React.lazy, not next/dynamic: next/dynamic adds a <link rel=preload> without the CSP nonce, which the strict
           policy blocks (a console error, and no preload); lazy chunks load through webpack's runtime under 'strict-dynamic'. */}

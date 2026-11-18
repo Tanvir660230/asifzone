@@ -49,3 +49,31 @@ export function setMonthTargets(month: string, input: MonthTargetsInput) {
 export function monthOf(date: Date = new Date()): string {
   return date.toLocaleDateString("en-CA").slice(0, 7);
 }
+
+export type ScorecardStatus = "good" | "watch" | "bad" | "neutral";
+
+export interface ScorecardFigure {
+  key: string;
+  label: string;
+  unit: "money" | "count" | "ratio" | "times";
+  value: number | null;
+  previous: number | null;
+  target: number | null;
+  status: ScorecardStatus;
+  rule: string;
+}
+
+export interface Scorecard {
+  month: string;
+  currency: string;
+  range: { from: string; to: string };
+  previousRange: { from: string; to: string };
+  figures: ScorecardFigure[];
+  money: { cash: number; owedToYou: number; youOwe: number; stock: number } | null;
+}
+
+export const scorecardKey = (month: string) => ["targets", month, "scorecard"] as const;
+
+export function getScorecard(month: string) {
+  return apiFetch<Scorecard>(`/api/targets/${month}/scorecard`);
+}

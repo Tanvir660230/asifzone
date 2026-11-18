@@ -4,6 +4,7 @@ import { lazy } from "react";
 import { AnalyticsTab } from "@/components/admin/analytics/analytics-tab";
 import { MonthTargets } from "@/components/admin/targets/month-targets";
 
+const ScorecardView = lazy(() => import("@/components/admin/analytics/views/scorecard-view"));
 const OverviewView = lazy(() => import("@/components/admin/analytics/views/overview-view"));
 const AiInsightsView = lazy(() => import("@/components/admin/analytics/views/ai-insights-view"));
 const LifetimeView = lazy(() => import("@/components/admin/analytics/views/lifetime-view"));
@@ -15,6 +16,7 @@ export default function AnalyticsOverviewPage() {
       description="The business at a glance for the report period."
       lead={<MonthTargets />}
       views={[
+        { value: "scorecard", label: "Scorecard", Component: ScorecardView },
         { value: "overview", label: "Overview", Component: OverviewView },
         { value: "insights", label: "AI insights", Component: AiInsightsView },
         { value: "lifetime", label: "Lifetime", Component: LifetimeView },

@@ -73,7 +73,7 @@ export function MonthTargets({ className }: { className?: string }) {
           </p>
         </div>
         {canSet && (
-          <Button size="sm" variant={anyTarget ? "outline" : "primary"} onClick={() => setEditing(true)}>
+          <Button size="sm" variant={anyTarget ? "outline" : "primary"} onClick={() => setEditing(true)} className="print:hidden">
             <Target size={14} aria-hidden /> {anyTarget ? "Edit targets" : "Set targets"}
           </Button>
         )}
