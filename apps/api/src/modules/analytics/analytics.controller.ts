@@ -20,6 +20,7 @@ import { getOrderRisk } from "./order-risk.service";
 import { getAnomalies, getDailyBrief } from "./anomalies.service";
 import { getProductActions } from "./product-actions.service";
 import { getWhyChanged } from "./why-changed.service";
+import { getTeamActivity } from "./team-activity.service";
 import { getAdReturns } from "./ad-returns.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
@@ -536,4 +537,10 @@ export const whyChanged = asyncHandler(async (req: Request, res: Response) => {
 export const adReturns = asyncHandler(async (req: Request, res: Response) => {
   const { days, dateFrom, dateTo } = query(req);
   res.json(await getAdReturns(days, dateFrom, dateTo));
+});
+
+/** Team activity: who moved which orders in the period (owner only — audit.read). */
+export const teamActivity = asyncHandler(async (req: Request, res: Response) => {
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await getTeamActivity(days, dateFrom, dateTo));
 });

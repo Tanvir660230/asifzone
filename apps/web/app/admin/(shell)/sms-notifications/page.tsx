@@ -84,6 +84,8 @@ export default function SmsNotificationsPage() {
       adminAlertPhones: s.adminAlertPhones,
       adminOrderAlertEnabled: s.adminOrderAlertEnabled,
       adminDailyBriefEnabled: s.adminDailyBriefEnabled,
+      adminWeeklyReportEnabled: s.adminWeeklyReportEnabled,
+      adminMonthlyReportEnabled: s.adminMonthlyReportEnabled,
       customerReviewRequestEnabled: s.customerReviewRequestEnabled,
       customerSelfConfirmEnabled: s.customerSelfConfirmEnabled,
       customerOrderPlacedEnabled: s.customerOrderPlacedEnabled,
@@ -111,6 +113,8 @@ export default function SmsNotificationsPage() {
 
   const adminOrderAlertEnabled = watch("adminOrderAlertEnabled");
   const adminDailyBriefEnabled = watch("adminDailyBriefEnabled");
+  const adminWeeklyReportEnabled = watch("adminWeeklyReportEnabled");
+  const adminMonthlyReportEnabled = watch("adminMonthlyReportEnabled");
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
@@ -151,12 +155,28 @@ export default function SmsNotificationsPage() {
               </span>
             </span>
           </label>
+          <label className="flex items-start gap-2 text-sm text-ink-700">
+            <Checkbox className="mt-0.5" {...register("adminWeeklyReportEnabled")} data-testid="weekly-report-toggle" />
+            <span>
+              Text me a weekly report every Saturday
+              <span className="block text-xs text-ink-400">
+                This month so far against its targets: sales, orders, delivered, returns, profit and ads. One SMS per phone a week.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-ink-700">
+            <Checkbox className="mt-0.5" {...register("adminMonthlyReportEnabled")} data-testid="monthly-report-toggle" />
+            <span>
+              Text me a monthly report on the 1st
+              <span className="block text-xs text-ink-400">The month that just ended, the same figures as Reports › Scorecard.</span>
+            </span>
+          </label>
           <div>
             <Label htmlFor="adminAlertPhones">Alert phone number(s)</Label>
             <Input
               id="adminAlertPhones"
               placeholder="01712345678, 01898765432"
-              disabled={!adminOrderAlertEnabled && !adminDailyBriefEnabled}
+              disabled={!adminOrderAlertEnabled && !adminDailyBriefEnabled && !adminWeeklyReportEnabled && !adminMonthlyReportEnabled}
               {...register("adminAlertPhones")}
             />
             <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive these texts.</p>

@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
+import { TeamActivityCard } from "@/components/admin/analytics/team-activity-card";
+import { useCapability } from "@/hooks/use-capability";
 import { cn } from "@/lib/utils";
 import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
@@ -27,6 +29,7 @@ function formatHours(h: number | null): string {
 export default function OperationalAnalyticsPage() {
   const [range, setRange] = useState<RangeOption>(30);
   const apiDays = range === "all" ? undefined : range;
+  const canSeeTeam = useCapability("audit.view");
 
   const { data: fulfillment } = useQuery({ queryKey: ["bi-ops-fulfillment", apiDays], queryFn: () => analyticsApi.getFulfillmentTime(apiDays) });
   const { data: activity } = useQuery({ queryKey: ["bi-ops-activity", apiDays], queryFn: () => analyticsApi.getAdminActivitySummary(apiDays, 10) });
@@ -70,6 +73,8 @@ export default function OperationalAnalyticsPage() {
           )}
         </div>
       </section>
+
+      {canSeeTeam && <TeamActivityCard days={apiDays} />}
 
       {/* Admin activity */}
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">

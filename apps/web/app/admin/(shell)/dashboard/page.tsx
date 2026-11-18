@@ -10,6 +10,7 @@ import { PermissionGate } from "@/components/admin/permission-gate";
 import { MetricCard, MetricCardSkeleton, MetricStrip } from "@/components/admin/metric-card";
 import { RevenueChartCard, type RevenueRangeDays } from "@/components/admin/revenue-chart-card";
 import { ProfitGlance } from "@/components/admin/dashboard/profit-glance";
+import { MonthTargets } from "@/components/admin/targets/month-targets";
 import { LowStockTable } from "@/components/admin/low-stock-table";
 import { DemandForecastTable } from "@/components/admin/demand-forecast-table";
 import { ActionCenter } from "@/components/admin/dashboard/action-center";
@@ -245,6 +246,13 @@ export default function DashboardPage() {
           ]}
         />
       </section>
+
+      {canAnalytics && (
+        <section aria-label="This month's targets">
+          <SectionHeader title="This month" action={<SectionLink href="/admin/analytics/overview">Reports</SectionLink>} />
+          <MonthTargets />
+        </section>
+      )}
 
       {can("finance.view") && (
         <section aria-label="Profit">
