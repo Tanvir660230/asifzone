@@ -141,15 +141,15 @@ export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileO
               aria-keyshortcuts={"Control+\\ Meta+\\"}
               title={collapse ? "Expand sidebar (Ctrl/⌘ \\)" : "Collapse sidebar (Ctrl/⌘ \\)"}
               className={cn(
-                "group/toggle flex items-center gap-2.5 text-sm text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg",
+                "group/toggle flex items-center gap-2.5 whitespace-nowrap text-sm text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg",
                 collapse ? "mx-auto h-9 w-full justify-center rounded-xl px-0" : "h-8 w-full rounded-lg px-2.5",
               )}
             >
               {collapse ? <PanelLeftOpen size={18} className="shrink-0" /> : <PanelLeftClose size={16} className="shrink-0" />}
               {!collapse && (
                 <>
-                  Collapse sidebar
-                  <kbd className="ml-auto font-sans text-xs text-fg-subtle opacity-0 transition-opacity duration-fast group-hover/toggle:opacity-100">Ctrl \</kbd>
+                  <span className="min-w-0 truncate">Collapse sidebar</span>
+                  <kbd className="ml-auto hidden shrink-0 font-sans text-xs text-fg-subtle group-hover/toggle:inline">Ctrl \</kbd>
                 </>
               )}
             </button>
