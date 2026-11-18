@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -83,21 +83,20 @@ export default function SettlementsPage() {
     );
   }
   return (
-    <div className="space-y-6">
+    <ListPage
+      title="Courier & gateway payouts"
+      description="Cash on delivery and online payments sit in clearing until the courier or gateway pays out. A settlement moves them to the bank, with the fees the statement shows."
+      action={
+        can("finance.transact") && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setMode("csv")}><Upload className="h-4 w-4" /> Import statement</Button>
+            <Button size="sm" onClick={() => setMode("manual")} data-testid="new-settlement"><Plus className="h-4 w-4" /> New settlement</Button>
+          </div>
+        )
+      }
+      className="space-y-6"
+    >
       {dialog}
-      <ModuleTabs />
-      <PageHeader
-        title="Courier & gateway payouts"
-        description="Cash on delivery and online payments sit in clearing until the courier or gateway pays out. A settlement moves them to the bank, with the fees the statement shows."
-        action={
-          can("finance.transact") && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setMode("csv")}><Upload className="h-4 w-4" /> Import statement</Button>
-              <Button size="sm" onClick={() => setMode("manual")} data-testid="new-settlement"><Plus className="h-4 w-4" /> New settlement</Button>
-            </div>
-          )
-        }
-      />
 
       <Card className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -212,7 +211,7 @@ export default function SettlementsPage() {
           </Field>
         </Modal>
       )}
-    </div>
+    </ListPage>
   );
 }
 

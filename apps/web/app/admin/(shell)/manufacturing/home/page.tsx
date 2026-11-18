@@ -10,7 +10,7 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import { getProductionHome, stockKeys } from "@/lib/api/stock";
@@ -52,22 +52,21 @@ export default function ProductionHomePage() {
   ] : [];
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
+    <ListPage
+      title="Production"
+      description="What needs filling or making today, and what the materials in stock can still make."
+      action={
+        <div className="flex flex-wrap gap-2">
+          {actions.map((a) => (
+            <Link key={a.label} href={a.href} title={a.detail} className={buttonVariants({ variant: "outline", size: "sm" })} data-testid={`production-action-${a.label.toLowerCase().replace(/\W+/g, "-")}`}>
+              <a.icon className="h-4 w-4" aria-hidden="true" /> {a.label}
+            </Link>
+          ))}
+        </div>
+      }
+      className="space-y-6"
+    >
       {/* stock UI redesign: the section's pages are in its menu, so the shortcuts are one quiet row of buttons, not cards */}
-      <PageHeader
-        title="Production"
-        description="What needs filling or making today, and what the materials in stock can still make."
-        action={
-          <div className="flex flex-wrap gap-2">
-            {actions.map((a) => (
-              <Link key={a.label} href={a.href} title={a.detail} className={buttonVariants({ variant: "outline", size: "sm" })} data-testid={`production-action-${a.label.toLowerCase().replace(/\W+/g, "-")}`}>
-                <a.icon className="h-4 w-4" aria-hidden="true" /> {a.label}
-              </Link>
-            ))}
-          </div>
-        }
-      />
 
       {q.isLoading && <Skeleton className="h-64 w-full" />}
       {q.isError && <Alert variant="danger" title="Production couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}
@@ -146,6 +145,6 @@ export default function ProductionHomePage() {
       )}
       {/* Blueprint P1.8: the former Overview (runs in progress, producers, planned vs final) lives here now. */}
       <ProductionOverview />
-    </div>
+    </ListPage>
   );
 }
