@@ -574,8 +574,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: receive many returned parcels at once (preview + confirm)
     // +1: cancellations before sending — reasons, channel, landing page, product (order-outcomes programme PR 2)
     // +1: link a parcel Steadfast already holds to its order (a booking whose answer was lost, 2026-11-11)
-    // +2: monthly targets — read with progress, set by the owner (docs/superpowers/plans/2026-11-18-business-reports.md)
-    expect(routes).toHaveLength(818);
+    // +3: monthly targets — read with progress, set by the owner, and the month's scorecard (docs/superpowers/plans/2026-11-18-business-reports.md)
+    expect(routes).toHaveLength(819);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
