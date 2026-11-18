@@ -82,7 +82,7 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
     await page.getByLabel("Name", { exact: true }).fill(TYPE_NAME);
     await page.getByLabel("Template").selectOption({ label: TEMPLATE_NAME });
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(TYPE_NAME).first()).toBeVisible();
+    await expect(page.getByText(TYPE_NAME).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("2. the 'new' wizard never shows Care & Material or Size Guide (or anything past Pricing) before the product exists", async ({ page }) => {

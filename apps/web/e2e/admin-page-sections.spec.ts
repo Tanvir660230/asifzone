@@ -112,7 +112,7 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
     await page.getByLabel("Name", { exact: true }).fill(TYPE);
     await page.getByLabel("Template").selectOption({ label: TEMPLATE });
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(TYPE).first()).toBeVisible();
+    await expect(page.getByText(TYPE).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("4. an ordinary Clothing product is created and published", async ({ page }) => {

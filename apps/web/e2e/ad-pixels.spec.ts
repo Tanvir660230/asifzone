@@ -151,7 +151,7 @@ test("full funnel: each event exactly once, with real data, shared event ids, no
   await chooseVariant(page, product, variant);
   expect(count(beacons, "AddToCart")).toBe(0);
   await page.getByRole("button", { name: "Add to Cart" }).first().click();
-  await expect(page.getByText(/added to (cart|bag)/i).first()).toBeVisible();
+  await expect(page.getByText(/added to (cart|bag)/i).filter({ visible: true }).first()).toBeVisible();
   await expectExactlyOnce(page, beacons, "AddToCart");
   const addToCart = beacons.find((b) => b.event === "AddToCart")!;
   expect(addToCart.properties).toMatchObject({ content_type: "product", currency: "BDT" });
@@ -181,7 +181,7 @@ test("full funnel: each event exactly once, with real data, shared event ids, no
   // Test 6 — Purchase once, from the verified order.
   await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
   const orderNumber = decodeURIComponent(new URL(page.url()).pathname.split("/").pop()!);
-  await expect(page.getByText(product.name).first()).toBeVisible();
+  await expect(page.getByText(product.name).filter({ visible: true }).first()).toBeVisible();
   await expectExactlyOnce(page, beacons, "AddPaymentInfo");
   const addPaymentInfo = beacons.find((b) => b.event === "AddPaymentInfo")!;
   expect(JSON.stringify(addPaymentInfo.properties)).not.toMatch(/COD|card|cvv|otp|password|phone|0171/i);
@@ -198,12 +198,12 @@ test("full funnel: each event exactly once, with real data, shared event ids, no
 
   // Test 7 — refresh and revisit of the success page: still exactly one Purchase.
   await page.reload();
-  await expect(page.getByText(product.name).first()).toBeVisible();
+  await expect(page.getByText(product.name).filter({ visible: true }).first()).toBeVisible();
   await settle(page);
   await page.goto("/");
   await page.goBack();
   await expect(page).toHaveURL(/\/order-confirmation\//);
-  await expect(page.getByText(orderNumber).first()).toBeVisible();
+  await expect(page.getByText(orderNumber).filter({ visible: true }).first()).toBeVisible();
   await settle(page);
   expect(count(beacons, "Purchase")).toBe(1);
 
@@ -277,7 +277,7 @@ test("Test 10 — TikTok and Meta blocked (ad blocker): the storefront and add-t
   await expect(page.getByRole("heading", { level: 1, name: product.name })).toBeVisible();
   await chooseVariant(page, product, variant);
   await page.getByRole("button", { name: "Add to Cart" }).first().click();
-  await expect(page.getByText(/added to (cart|bag)/i).first()).toBeVisible();
+  await expect(page.getByText(/added to (cart|bag)/i).filter({ visible: true }).first()).toBeVisible();
   await page.goto("/checkout");
   await expect(page.getByLabel("Full name")).toBeVisible();
   expect(errors).toEqual([]);
