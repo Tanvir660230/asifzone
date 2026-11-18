@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -55,13 +55,12 @@ export default function RatesPage() {
   const cards = rates.data?.courierCards ?? [];
   const fees = rates.data?.gatewayRates ?? [];
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Courier & gateway rates"
-        description="What Steadfast charges by area and what EPS keeps. Each order's delivery cost shows the day it's delivered; the payout then replaces it with the exact charge."
-        action={can("finance.reconcile") && cards.length > 0 && <Button size="sm" variant="outline" loading={recalc.isPending} onClick={() => recalc.mutate()} data-testid="recalc-orders"><RefreshCw className="h-4 w-4" /> Re-check all orders</Button>}
-      />
+    <ListPage
+      title="Courier & gateway rates"
+      description="What Steadfast charges by area and what EPS keeps. Each order's delivery cost shows the day it's delivered; the payout then replaces it with the exact charge."
+      action={can("finance.reconcile") && cards.length > 0 && <Button size="sm" variant="outline" loading={recalc.isPending} onClick={() => recalc.mutate()} data-testid="recalc-orders"><RefreshCw className="h-4 w-4" /> Re-check all orders</Button>}
+      className="space-y-6"
+    >
       {rates.isLoading && <Skeleton className="h-40 w-full" />}
       {rates.isError && <Alert variant="danger" title="Rates couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => rates.refetch()}>Retry</Button>}>{getErrorMessage(rates.error, "")}</Alert>}
 
@@ -138,7 +137,7 @@ export default function RatesPage() {
       {editing && <RateCardModal card={editing === "new" ? null : editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} />}
       {newFee && <FeeModal onClose={() => setNewFee(false)} onDone={() => { setNewFee(false); refresh(); }} />}
       {dialog}
-    </div>
+    </ListPage>
   );
 }
 

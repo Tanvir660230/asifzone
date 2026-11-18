@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { Amount, FinancialStatusBadge, legTitle } from "@/components/admin/courier-costs/courier-cost-ui";
 import { ShipmentCostDrawer } from "@/components/admin/courier-costs/shipment-cost-drawer";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -92,18 +92,16 @@ export default function CourierCostsPage() {
   const openLeg = orderLegs.data?.shipments.find((s) => s.id === open?.shipmentId) ?? null;
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Courier costs"
-        description="What every parcel really cost, what customers paid the rider on refusals, returns and exchanges, and what the shop is left to bear."
-        action={canRecord ? (
-          <Button variant="outline" size="sm" loading={sync.isPending} onClick={() => sync.mutate()}>
-            <RefreshCw size={13} aria-hidden="true" /> Check Steadfast payouts
-          </Button>
-        ) : undefined}
-      />
-
+    <ListPage
+      title="Courier costs"
+      description="What every parcel really cost, what customers paid the rider on refusals, returns and exchanges, and what the shop is left to bear."
+      action={canRecord ? (
+        <Button variant="outline" size="sm" loading={sync.isPending} onClick={() => sync.mutate()}>
+          <RefreshCw size={13} aria-hidden="true" /> Check Steadfast payouts
+        </Button>
+      ) : undefined}
+      className="space-y-6"
+    >
       <Card className="p-3 sm:p-4">
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8" role="group" aria-label="Filters">
           <Input type="date" aria-label="From" value={filters.from ?? ""} onChange={(e) => set({ from: e.target.value || undefined })} />
@@ -261,6 +259,6 @@ export default function CourierCostsPage() {
           onChanged={() => void queryClient.invalidateQueries({ queryKey: api.courierCostKeys.all })}
         />
       )}
-    </div>
+    </ListPage>
   );
 }

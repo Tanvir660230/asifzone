@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
 import { ProductPicker } from "@/components/admin/product-picker";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -55,18 +55,17 @@ export default function PackagingPage() {
   const d = data.data;
   const stockOf = new Map((d?.materials ?? []).map((m) => [m.id, m]));
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Packaging"
-        description="Poly bags, boxes and stickers are bought like stock. Each parcel takes what its rule says when it leaves — at its real cost — so every order's profit carries its packaging."
-        action={(
-          <div className="flex flex-wrap gap-2" data-phone-row>
-            {can("finance.reconcile") && <Button size="sm" variant="outline" loading={run.isPending} onClick={() => run.mutate()}><RefreshCw className="h-4 w-4" /> Run now</Button>}
-            {can("finance.configure") && Boolean(d?.materials.length) && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-packing-rule"><Plus className="h-4 w-4" /> Rule</Button>}
-          </div>
-        )}
-      />
+    <ListPage
+      title="Packaging"
+      description="Poly bags, boxes and stickers are bought like stock. Each parcel takes what its rule says when it leaves — at its real cost — so every order's profit carries its packaging."
+      action={(
+        <div className="flex flex-wrap gap-2" data-phone-row>
+          {can("finance.reconcile") && <Button size="sm" variant="outline" loading={run.isPending} onClick={() => run.mutate()}><RefreshCw className="h-4 w-4" /> Run now</Button>}
+          {can("finance.configure") && Boolean(d?.materials.length) && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-packing-rule"><Plus className="h-4 w-4" /> Rule</Button>}
+        </div>
+      )}
+      className="space-y-6"
+    >
       {data.isLoading && <Skeleton className="h-40 w-full" />}
       {data.isError && <Alert variant="danger" title="Packaging couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => data.refetch()}>Retry</Button>}>{getErrorMessage(data.error, "")}</Alert>}
       {d && (
@@ -155,7 +154,7 @@ export default function PackagingPage() {
         </>
       )}
       {adding && d && <RuleModal materials={d.materials} onClose={() => setAdding(false)} onDone={() => { setAdding(false); refresh(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

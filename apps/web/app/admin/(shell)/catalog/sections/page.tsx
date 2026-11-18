@@ -5,8 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SectionOverrideInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { SectionSettingsEditor } from "@/components/admin/section-settings-editor";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
@@ -37,10 +36,7 @@ export default function PageSectionsPage() {
   });
 
   return (
-    <div>
-      <PageHeader title="Page sections" />
-      <ModuleTabs />
-
+    <ListPage title="Page sections">
       <p data-page-intro="" className="mb-4 max-w-3xl text-sm text-ink-500">
         These are the store-wide defaults for every product page: which sections show, in what order, under what title, and the wording of the
         shared ones (Shipping &amp; returns, Warranty). A template can override them for a whole kind of product, and a single product can override
@@ -75,6 +71,6 @@ export default function PageSectionsPage() {
           {dirty && <span className="text-xs text-ink-400">Unsaved changes</span>}
         </div>
       </div>
-    </div>
+    </ListPage>
   );
 }

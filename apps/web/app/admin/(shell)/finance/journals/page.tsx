@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useCreateParam } from "@/hooks/use-create-param";
@@ -67,13 +67,12 @@ export default function JournalsPage() {
   }
   const filtered = Boolean(status || kind || from || to);
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Journals"
-        description="Every entry in the books. Automatic entries come from sales, purchases, production and money movements; enter anything else here."
-        action={can("finance.transact") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-journal"><Plus className="h-4 w-4" /> Manual journal</Button>}
-      />
+    <ListPage
+      title="Journals"
+      description="Every entry in the books. Automatic entries come from sales, purchases, production and money movements; enter anything else here."
+      action={can("finance.transact") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-journal"><Plus className="h-4 w-4" /> Manual journal</Button>}
+      className="space-y-6"
+    >
       <div className="flex flex-wrap items-end gap-3">
         <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-[calc(50%-6px)] sm:w-36">
           <option value="">Posted and drafts</option>
@@ -131,7 +130,7 @@ export default function JournalsPage() {
       {creating && <JournalModal accounts={chart.data?.accounts ?? []} canPost={can("finance.post")} onClose={() => setCreating(false)} onDone={() => { setCreating(false); refresh(); }} />}
       {correcting && <JournalModal accounts={chart.data?.accounts ?? []} canPost correcting={correcting} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); refresh(); }} />}
       {reversing && <ReasonModal title={`Reverse journal #${reversing.number}`} hint="A mirror entry is posted; the original stays in the books." loading={reverse.isPending} onClose={() => setReversing(null)} onConfirm={(reason) => reverse.mutate({ id: reversing.id, reason })} />}
-    </div>
+    </ListPage>
   );
 }
 

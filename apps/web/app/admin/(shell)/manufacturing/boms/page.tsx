@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { VariantPicker } from "@/components/admin/purchasing/variant-picker";
 import { ProductPicker } from "@/components/admin/manufacturing/product-picker";
 import { BOM_STATUS_BADGE, BOM_STATUS_LABEL } from "@/components/admin/manufacturing/status";
@@ -59,13 +59,12 @@ export default function BomsPage() {
   const byProduct = new Map<string, Bom[]>();
   for (const b of list.data?.boms ?? []) byProduct.set(b.product.id, [...(byProduct.get(b.product.id) ?? []), b]);
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Recipes"
-        description="What one finished unit takes — oil, bottle, box, sticker, fabric — with expected wastage. An approved version is what filling and production use; approving a new one retires the old."
-        action={can("manufacturing.manage") && <Button size="sm" onClick={() => setEditing("new")} data-testid="new-bom"><Plus className="h-4 w-4" /> New recipe</Button>}
-      />
+    <ListPage
+      title="Recipes"
+      description="What one finished unit takes — oil, bottle, box, sticker, fabric — with expected wastage. An approved version is what filling and production use; approving a new one retires the old."
+      action={can("manufacturing.manage") && <Button size="sm" onClick={() => setEditing("new")} data-testid="new-bom"><Plus className="h-4 w-4" /> New recipe</Button>}
+      className="space-y-6"
+    >
       {list.isLoading && <Skeleton className="h-40 w-full" />}
       {list.isError && <Alert variant="danger" title="Recipes couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {list.data?.boms.length === 0 && <EmptyState icon={ListTree} title="No recipes yet" description="Describe what a product is made of so it can be filled or produced." />}
@@ -101,7 +100,7 @@ export default function BomsPage() {
         ))}
       </div>
       {editing && <BomModal bom={editing === "new" ? null : editing} onClose={() => setEditing(null)} onDone={() => { refresh(); setEditing(null); }} />}
-    </div>
+    </ListPage>
   );
 }
 

@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
@@ -58,13 +58,12 @@ export default function SuppliersPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Suppliers"
-        description="The businesses you buy stock and services from. A supplier's code is permanent and a supplier is never deleted — put it on hold or make it inactive instead."
-        action={can("suppliers.manage") && <Button size="sm" onClick={() => setEditing("new")} data-testid="new-supplier"><Plus className="h-4 w-4" /> New supplier</Button>}
-      />
+    <ListPage
+      title="Suppliers"
+      description="The businesses you buy stock and services from. A supplier's code is permanent and a supplier is never deleted — put it on hold or make it inactive instead."
+      action={can("suppliers.manage") && <Button size="sm" onClick={() => setEditing("new")} data-testid="new-supplier"><Plus className="h-4 w-4" /> New supplier</Button>}
+      className="space-y-6"
+    >
       <div className="flex flex-wrap gap-3">
         <Input aria-label="Search suppliers" placeholder="Search name, code or phone" value={q} onChange={(e) => setQ(e.target.value)} className="w-72" />
         <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-44">
@@ -148,7 +147,7 @@ export default function SuppliersPage() {
           )}
         </Modal>
       )}
-    </div>
+    </ListPage>
   );
 }
 

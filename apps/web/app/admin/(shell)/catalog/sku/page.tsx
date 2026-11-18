@@ -10,9 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
@@ -82,10 +81,7 @@ export default function SkuSettingsPage() {
   });
 
   return (
-    <div>
-      <PageHeader title="SKUs" />
-      <ModuleTabs />
-
+    <ListPage title="SKUs">
       <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         SKUs are generated from a pattern when you click <strong>Generate</strong> next to a variant&rsquo;s SKU. Numbers are counted per product type and never
         reused, so two products can&rsquo;t end up with the same SKU. Existing SKUs are never changed.
@@ -172,6 +168,6 @@ export default function SkuSettingsPage() {
           </TableContainer>
         </FormSection>
       </div>
-    </div>
+    </ListPage>
   );
 }

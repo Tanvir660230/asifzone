@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { StatTile } from "@/components/admin/stat-tile";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -106,13 +106,12 @@ export default function StockCheckPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Stock check"
-        description="Where every piece went, from the shop's own orders and stock. Nothing here changes stock or the books — counts sit beside the site's numbers, and differences stay visible."
-        action={d && <Button size="sm" variant="outline" onClick={exportCsv} data-testid="stock-check-csv"><Download className="h-4 w-4" /> CSV</Button>}
-      />
+    <ListPage
+      title="Stock check"
+      description="Where every piece went, from the shop's own orders and stock. Nothing here changes stock or the books — counts sit beside the site's numbers, and differences stay visible."
+      action={d && <Button size="sm" variant="outline" onClick={exportCsv} data-testid="stock-check-csv"><Download className="h-4 w-4" /> CSV</Button>}
+      className="space-y-6"
+    >
       {report.isLoading && <div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-64 w-full" /></div>}
       {report.isError && <Alert variant="danger" title="The stock check couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => report.refetch()}>Retry</Button>}>{getErrorMessage(report.error, "")}</Alert>}
       {d && (
@@ -279,7 +278,7 @@ export default function StockCheckPage() {
         </>
       )}
       {counting && <CountModal target={counting} onClose={() => setCounting(null)} onDone={() => { setCounting(null); refresh(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

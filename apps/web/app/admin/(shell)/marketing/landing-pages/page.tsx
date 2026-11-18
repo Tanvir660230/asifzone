@@ -14,7 +14,7 @@ import { DataTable } from "@/components/admin/data-table";
 import type { DataTableColumn } from "@/components/admin/data-table/types";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PermissionState } from "@/components/admin/permission-state";
 import { NewLandingPageDialog } from "@/components/admin/landing/new-landing-page-dialog";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -54,17 +54,16 @@ export default function LandingPagesPage() {
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Megaphone} page="Landing pages" /></div>;
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Landing pages"
-        description="One-page order forms to send ad traffic to. Campaign pages are yours to design; every published product also has its own."
-        action={
-          <Button onClick={() => setCreating(true)} data-testid="lp-new">
-            <Plus className="h-4 w-4" aria-hidden /> New page
-          </Button>
-        }
-      />
+    <ListPage
+      title="Landing pages"
+      description="One-page order forms to send ad traffic to. Campaign pages are yours to design; every published product also has its own."
+      action={
+        <Button onClick={() => setCreating(true)} data-testid="lp-new">
+          <Plus className="h-4 w-4" aria-hidden /> New page
+        </Button>
+      }
+      className="space-y-6"
+    >
       <SegmentedControl
         aria-label="Which landing pages"
         value={tab}
@@ -76,7 +75,7 @@ export default function LandingPagesPage() {
       />
       {tab === "campaign" ? <CampaignPages byPath={byPath} onNew={() => setCreating(true)} /> : <ProductPages byPath={byPath} />}
       {creating && <NewLandingPageDialog open onClose={() => setCreating(false)} />}
-    </div>
+    </ListPage>
   );
 }
 

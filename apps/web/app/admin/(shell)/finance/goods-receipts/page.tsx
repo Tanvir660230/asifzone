@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { GRN_STATUS_BADGE, GRN_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { VariantPicker } from "@/components/admin/purchasing/variant-picker";
@@ -72,13 +72,12 @@ export default function GoodsReceiptsPage() {
   }
   const costingActive = Boolean(overview.data?.costingActive);
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Goods receipts"
-        description="Deliveries from suppliers. Posting a receipt adds the accepted units to stock at their cost and records what you owe until the invoice arrives."
-        action={can("purchasing.receive") && can("purchasing.approve") && <Button size="sm" variant="outline" onClick={() => setDirect(true)} data-testid="new-direct-receipt"><Plus className="h-4 w-4" /> Receipt without an order</Button>}
-      />
+    <ListPage
+      title="Goods receipts"
+      description="Deliveries from suppliers. Posting a receipt adds the accepted units to stock at their cost and records what you owe until the invoice arrives."
+      action={can("purchasing.receive") && can("purchasing.approve") && <Button size="sm" variant="outline" onClick={() => setDirect(true)} data-testid="new-direct-receipt"><Plus className="h-4 w-4" /> Receipt without an order</Button>}
+      className="space-y-6"
+    >
       {overview.data && !costingActive && <Alert variant="info" title="Receipts post after the valuation cutover">Drafts can be prepared; posting waits until inventory costing is switched on (Finance → Setup & checks → Opening stock value).</Alert>}
       <div className="flex flex-wrap items-center gap-3">
         <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:w-44">
@@ -148,7 +147,7 @@ export default function GoodsReceiptsPage() {
       )}
       {direct && <DirectReceiptModal costingActive={costingActive} onClose={() => setDirect(false)} onDone={() => { refresh(); setDirect(false); }} />}
       {reversing && <ReasonModal title={`Reverse ${reversing.number}`} hint="The accepted units leave stock again at this receipt's cost and its journal is reversed. Units already sold can't be reversed — return them to the supplier instead." loading={reverse.isPending} onClose={() => setReversing(null)} onConfirm={(reason) => reverse.mutate({ id: reversing.id, reason })} />}
-    </div>
+    </ListPage>
   );
 }
 

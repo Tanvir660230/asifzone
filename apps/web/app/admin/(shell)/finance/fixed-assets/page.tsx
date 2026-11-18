@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -63,13 +63,12 @@ export default function FixedAssetsPage() {
   const d = q.data;
   const latest = d?.runs.find((r) => r.status === "POSTED");
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Fixed assets"
-        description="Equipment, computers, furniture and vehicles — what they cost, how they depreciate and what they are worth in the books."
-        action={can("finance.transact") && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-asset"><Plus className="h-4 w-4" /> Register asset</Button>}
-      />
+    <ListPage
+      title="Fixed assets"
+      description="Equipment, computers, furniture and vehicles — what they cost, how they depreciate and what they are worth in the books."
+      action={can("finance.transact") && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-asset"><Plus className="h-4 w-4" /> Register asset</Button>}
+      className="space-y-6"
+    >
       {q.isLoading && <Skeleton className="h-48 w-full" />}
       {q.isError && <Alert variant="danger" title="The register couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}
       {d && (
@@ -148,7 +147,7 @@ export default function FixedAssetsPage() {
       {adding && <AssetModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); refresh(); }} />}
       {disposing && <DisposeModal asset={disposing} onClose={() => setDisposing(null)} onDone={() => { setDisposing(null); refresh(); }} />}
       {reversing && latest && <ReasonModal title={`Reverse depreciation for ${latest.periodKey}`} hint="Its journal is reversed; the month can then be run again." loading={reverse.isPending} onClose={() => setReversing(false)} onConfirm={(reason) => reverse.mutate(reason)} />}
-    </div>
+    </ListPage>
   );
 }
 

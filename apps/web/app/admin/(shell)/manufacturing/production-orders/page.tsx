@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ProductPicker } from "@/components/admin/manufacturing/product-picker";
 import { SizeColorGrid } from "@/components/admin/manufacturing/size-color-grid";
 import { MO_STATUS_BADGE, MO_STATUS_LABEL } from "@/components/admin/manufacturing/status";
@@ -55,13 +55,12 @@ export default function ProductionOrdersPage() {
   }
   const showCost = can("costing.view");
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Production runs"
-        description="Products you commission from a factory or make in-house — planned by size and colour, with the materials and costs they need."
-        action={can("manufacturing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-mo"><Plus className="h-4 w-4" /> New production run</Button>}
-      />
+    <ListPage
+      title="Production runs"
+      description="Products you commission from a factory or make in-house — planned by size and colour, with the materials and costs they need."
+      action={can("manufacturing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-mo"><Plus className="h-4 w-4" /> New production run</Button>}
+      className="space-y-6"
+    >
       {setup.data && !setup.data.readiness.ready && <SetupNotice canSetUp={can("finance.configure")} />}
       <div className="flex flex-wrap gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search number, product or producer" wrapperClassName="w-full sm:w-72" />
@@ -104,7 +103,7 @@ export default function ProductionOrdersPage() {
         {list.data?.productionOrders.length === 0 && <EmptyState icon={Factory} title="No production runs" description={status || q ? "Nothing matches these filters." : "Plan your first production run."} />}
       </Card>
       {creating && <ProductionOrderModal onClose={() => setCreating(false)} />}
-    </div>
+    </ListPage>
   );
 }
 

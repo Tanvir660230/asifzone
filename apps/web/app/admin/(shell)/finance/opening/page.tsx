@@ -16,7 +16,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { OpeningStockEditor, itemValue } from "@/components/admin/finance/opening-stock-editor";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -77,12 +77,11 @@ export default function StartTheBooksPage() {
   const error = business.error ?? opening.error;
   const posted = opening.data?.batch?.status === "POSTED";
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Start the books"
-        description="Pick the day your books begin and write down what the business had and owed on that day. Everything after it is recorded automatically."
-      />
+    <ListPage
+      title="Start the books"
+      description="Pick the day your books begin and write down what the business had and owed on that day. Everything after it is recorded automatically."
+      className="space-y-6"
+    >
       {loading ? (
         <Skeleton className="h-96 w-full" />
       ) : error || !business.data || !opening.data ? (
@@ -101,7 +100,7 @@ export default function StartTheBooksPage() {
           )}
         </>
       )}
-    </div>
+    </ListPage>
   );
 }
 

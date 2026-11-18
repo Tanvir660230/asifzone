@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { VariantPicker } from "@/components/admin/purchasing/variant-picker";
 import { PO_STATUS_BADGE, PO_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -55,13 +55,12 @@ export default function PurchaseOrdersPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Purchase orders"
-        description="Orders to suppliers: what, how many and at what price. Goods arrive against an order on a goods receipt, which brings the stock and its cost in."
-        action={can("purchasing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-po"><Plus className="h-4 w-4" /> New order</Button>}
-      />
+    <ListPage
+      title="Purchase orders"
+      description="Orders to suppliers: what, how many and at what price. Goods arrive against an order on a goods receipt, which brings the stock and its cost in."
+      action={can("purchasing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-po"><Plus className="h-4 w-4" /> New order</Button>}
+      className="space-y-6"
+    >
       <div className="flex flex-wrap gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search number, supplier or SKU" wrapperClassName="w-full sm:w-72" />
         <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:w-52">
@@ -108,7 +107,7 @@ export default function PurchaseOrdersPage() {
         {list.data?.purchaseOrders.length === 0 && <EmptyState icon={ClipboardList} title="No purchase orders" description={status || q ? "Nothing matches these filters." : "Create an order when you buy stock from a supplier."} />}
       </Card>
       {creating && <PurchaseOrderModal onClose={() => setCreating(false)} />}
-    </div>
+    </ListPage>
   );
 }
 

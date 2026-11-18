@@ -18,7 +18,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -44,12 +44,10 @@ export default function BudgetsPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Budgets & cash forecast" description="The cash coming and going over the next weeks, how long it lasts, and the year against plan." />
+    <ListPage title="Budgets & cash forecast" description="The cash coming and going over the next weeks, how long it lasts, and the year against plan." className="space-y-6">
       <SegmentedControl aria-label="View" options={[{ value: "forecast" as const, label: "Cash forecast" }, { value: "budget" as const, label: "Budget vs actual" }]} value={view} onChange={setView} />
       {view === "forecast" ? <Forecast /> : <Budgets canEdit={can("finance.transact")} />}
-    </div>
+    </ListPage>
   );
 }
 

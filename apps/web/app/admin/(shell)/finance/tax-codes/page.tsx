@@ -15,7 +15,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
@@ -62,13 +62,12 @@ export default function TaxCodesPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Purchase tax codes"
-        description="Rates used on purchases. The recoverable share goes to input VAT; the rest becomes part of the cost. A rate never changes — add a new code and deactivate the old one."
-        action={can("finance.configure") && <Button size="sm" onClick={() => { setF({ code: "", name: "", rate: "", recoverablePct: "100", description: "" }); setCreating(true); }} data-testid="new-tax-code"><Plus className="h-4 w-4" /> New tax code</Button>}
-      />
+    <ListPage
+      title="Purchase tax codes"
+      description="Rates used on purchases. The recoverable share goes to input VAT; the rest becomes part of the cost. A rate never changes — add a new code and deactivate the old one."
+      action={can("finance.configure") && <Button size="sm" onClick={() => { setF({ code: "", name: "", rate: "", recoverablePct: "100", description: "" }); setCreating(true); }} data-testid="new-tax-code"><Plus className="h-4 w-4" /> New tax code</Button>}
+      className="space-y-6"
+    >
       {status.data && !status.data.readiness.ready && (
         <Alert variant="warning" title="Purchasing accounts not set up">
           Missing: {status.data.readiness.missing.join(", ")}.{" "}
@@ -139,6 +138,6 @@ export default function TaxCodesPage() {
           </Field>
         </Modal>
       )}
-    </div>
+    </ListPage>
   );
 }

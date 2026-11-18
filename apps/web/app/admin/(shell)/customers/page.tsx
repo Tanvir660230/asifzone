@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Drawer } from "@/components/ui/drawer";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
@@ -352,17 +352,16 @@ export default function CustomersPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Customers"
-        description="Accounts registered on the storefront, with orders, spend, and marketing tools."
-        action={
-          <Button size="sm" onClick={() => setAddCustomerOpen(true)}>
-            <UserPlus size={14} /> Add customer
-          </Button>
-        }
-      />
-
+    <ListPage
+      title="Customers"
+      description="Accounts registered on the storefront, with orders, spend, and marketing tools."
+      action={
+        <Button size="sm" onClick={() => setAddCustomerOpen(true)}>
+          <UserPlus size={14} /> Add customer
+        </Button>
+      }
+      tabs={false}
+    >
       <SummaryStrip
         loading={!stats}
         figures={[
@@ -824,6 +823,6 @@ export default function CustomersPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </ListPage>
   );
 }

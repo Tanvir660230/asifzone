@@ -16,7 +16,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableCell, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as api from "@/lib/api/cost-sheets";
@@ -42,12 +42,13 @@ export default function ProductCostsPage() {
   const below = rows.filter((r) => r.s.belowTarget).length;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Product costs"
-        description="What one sale of each size costs — making, packing, delivery, fees, returns, ads — and the profit left. A plan to price by; the books keep what things really cost."
-        action={can("costing.adjust") && <Button size="sm" variant="outline" onClick={() => setDefaultsOpen(true)} data-testid="cost-defaults-open">Shop & category defaults</Button>}
-      />
+    <ListPage
+      title="Product costs"
+      description="What one sale of each size costs — making, packing, delivery, fees, returns, ads — and the profit left. A plan to price by; the books keep what things really cost."
+      action={can("costing.adjust") && <Button size="sm" variant="outline" onClick={() => setDefaultsOpen(true)} data-testid="cost-defaults-open">Shop & category defaults</Button>}
+      className="space-y-6"
+      tabs={false}
+    >
       {q.data && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Card className="p-4"><p className="text-sm text-fg-muted">Sizes with every cost known</p><p className="text-2xl font-semibold tabular-nums text-fg">{rows.length - unknown} of {rows.length}</p></Card>
@@ -96,7 +97,7 @@ export default function ProductCostsPage() {
         </HScrollShadow>
       </Card>
       {defaultsOpen && <DefaultsModal onClose={() => setDefaultsOpen(false)} />}
-    </div>
+    </ListPage>
   );
 }
 

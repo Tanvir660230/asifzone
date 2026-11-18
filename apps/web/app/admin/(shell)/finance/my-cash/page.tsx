@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as booksApi from "@/lib/api/finance-books";
@@ -48,20 +48,18 @@ export default function MyCashPage() {
   const d = me.data;
   const hasCash = Boolean(d?.accounts.length);
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="My cash"
-        description="The cash you hold. Hand it over, confirm what reached you, count it at the end of the day, and pay small costs from it."
-        action={hasCash && (
-          <div className="flex flex-wrap gap-2" data-phone-row>
-            <Button size="sm" onClick={() => setDialog("handover")} data-testid="cash-handover"><ArrowRightLeft className="h-4 w-4" /> Hand over</Button>
-            <Button size="sm" variant="outline" onClick={() => setDialog("count")} data-testid="cash-count"><Calculator className="h-4 w-4" /> Count cash</Button>
-            <Button size="sm" variant="outline" onClick={() => setDialog("expense")} data-testid="cash-expense"><Receipt className="h-4 w-4" /> Pay a cost</Button>
-          </div>
-        )}
-      />
-
+    <ListPage
+      title="My cash"
+      description="The cash you hold. Hand it over, confirm what reached you, count it at the end of the day, and pay small costs from it."
+      action={hasCash && (
+        <div className="flex flex-wrap gap-2" data-phone-row>
+          <Button size="sm" onClick={() => setDialog("handover")} data-testid="cash-handover"><ArrowRightLeft className="h-4 w-4" /> Hand over</Button>
+          <Button size="sm" variant="outline" onClick={() => setDialog("count")} data-testid="cash-count"><Calculator className="h-4 w-4" /> Count cash</Button>
+          <Button size="sm" variant="outline" onClick={() => setDialog("expense")} data-testid="cash-expense"><Receipt className="h-4 w-4" /> Pay a cost</Button>
+        </div>
+      )}
+      className="space-y-6"
+    >
       {me.isLoading && <Skeleton className="h-40 w-full" />}
       {me.isError && <Alert variant="danger" title="Your cash couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => me.refetch()}>Retry</Button>}>{getErrorMessage(me.error, "")}</Alert>}
 
@@ -142,7 +140,7 @@ export default function MyCashPage() {
       {d && dialog === "handover" && <HandoverModal me={d} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
       {d && dialog === "count" && <CountModal me={d} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
       {d && dialog === "expense" && <ExpenseModal me={d} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

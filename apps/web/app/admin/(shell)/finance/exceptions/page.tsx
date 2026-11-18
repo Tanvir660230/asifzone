@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -99,9 +99,7 @@ export default function FinanceExceptionsPage() {
   // a person may approve an estimate under either estimate policy (an automatic one only fills the ones it can)
   const estimates = current !== "KNOWN_ONLY";
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Missing costs & exceptions" description="Accounting problems the books won't guess about — each names its source record. Missing costs are never invented." />
+    <ListPage title="Missing costs & exceptions" description="Accounting problems the books won't guess about — each names its source record. Missing costs are never invented." className="space-y-6">
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="min-w-0 text-sm text-ink-700">
           <p>Cost policy: <span className="font-semibold">{POLICY[current].label}</span></p>
@@ -213,6 +211,6 @@ export default function FinanceExceptionsPage() {
           </div>
         </Modal>
       )}
-    </div>
+    </ListPage>
   );
 }

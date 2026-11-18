@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -44,13 +44,12 @@ export default function PrepaidPage() {
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={CalendarClock} page="Prepaid costs" /></div>;
   const d = list.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Prepaid costs"
-        description="A year of hosting, a domain, rent in advance: paid once, then used up month by month — so each month's profit carries its share."
-        action={can("finance.transact") && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-prepaid"><Plus className="h-4 w-4" /> Prepaid cost</Button>}
-      />
+    <ListPage
+      title="Prepaid costs"
+      description="A year of hosting, a domain, rent in advance: paid once, then used up month by month — so each month's profit carries its share."
+      action={can("finance.transact") && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-prepaid"><Plus className="h-4 w-4" /> Prepaid cost</Button>}
+      className="space-y-6"
+    >
       {list.isLoading && <Skeleton className="h-40 w-full" />}
       {list.isError && <Alert variant="danger" title="Prepaid costs couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {d && (d.prepaid.length === 0 ? (
@@ -99,7 +98,7 @@ export default function PrepaidPage() {
       ))}
       {adding && <PrepaidModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); refresh(); }} />}
       {ending && <EndModal prepaid={ending} onClose={() => setEnding(null)} onDone={() => { setEnding(null); refresh(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

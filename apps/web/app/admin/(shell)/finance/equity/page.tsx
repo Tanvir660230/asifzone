@@ -17,7 +17,7 @@ import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { Corrections, MonthlySharing, StatementModal } from "@/components/admin/finance/partner-sharing";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -69,13 +69,12 @@ export default function EquityPage() {
   const shareOf = (id: string) => shares.data?.partners.find((s) => s.partnerId === id) ?? null;
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Owner & partners"
-        description="What the owner has put in and taken out, and each partner's share of the profit — earned, paid and still owed."
-        action={can("finance.configure") && d && <Button size="sm" variant="outline" onClick={() => setEditing("new")} data-testid="new-partner"><Plus className="h-4 w-4" /> Add partner</Button>}
-      />
+    <ListPage
+      title="Owner & partners"
+      description="What the owner has put in and taken out, and each partner's share of the profit — earned, paid and still owed."
+      action={can("finance.configure") && d && <Button size="sm" variant="outline" onClick={() => setEditing("new")} data-testid="new-partner"><Plus className="h-4 w-4" /> Add partner</Button>}
+      className="space-y-6"
+    >
       {(overview.isLoading || shares.isLoading) && <div className="space-y-3"><Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></div>}
       {overview.isError && <Alert variant="danger" title="Couldn't load the owner and partners" action={<Button size="sm" variant="outline" onClick={() => overview.refetch()}>Retry</Button>}>{getErrorMessage(overview.error, "")}</Alert>}
       {shares.isError && <Alert variant="danger" title="Couldn't load what each partner is owed" action={<Button size="sm" variant="outline" onClick={() => shares.refetch()}>Retry</Button>}>{getErrorMessage(shares.error, "")}</Alert>}
@@ -121,7 +120,7 @@ export default function EquityPage() {
         </>
       )}
       {editing && <PartnerModal partner={editing === "new" || editing === "owner" ? null : editing} asOwner={editing === "owner"} onClose={() => setEditing(null)} />}
-    </div>
+    </ListPage>
   );
 }
 

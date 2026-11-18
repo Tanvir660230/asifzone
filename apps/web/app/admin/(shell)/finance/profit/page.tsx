@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ProfitDashboard, type ProfitPeriod } from "@/components/admin/finance/profit-dashboard";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useUrlState } from "@/hooks/use-url-state";
@@ -57,9 +57,7 @@ export default function ProfitPage() {
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={TrendingUp} page="Profit" /></div>;
   const r = report.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Profit" description="What the business kept — today, this week, this month or any days you pick — and the sales, ads and costs behind it." />
+    <ListPage title="Profit" description="What the business kept — today, this week, this month or any days you pick — and the sales, ads and costs behind it." className="space-y-6">
       {ready && <ProfitDashboard period={period} onChange={onPeriod} />}
       {r?.ladder && <ProfitLadder report={r} />}
       <h2 className="pt-4 text-xl font-semibold tracking-tight text-fg">By product and order</h2>
@@ -134,7 +132,7 @@ export default function ProfitPage() {
           )}
         </Card>
       )}
-    </div>
+    </ListPage>
   );
 }
 

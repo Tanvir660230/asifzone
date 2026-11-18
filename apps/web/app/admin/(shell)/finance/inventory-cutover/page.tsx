@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -88,20 +88,18 @@ export default function InventoryCutoverPage() {
   const totalPages = lines.data ? Math.max(1, Math.ceil(lines.data.total / PAGE_SIZE)) : 1;
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Opening stock value"
-        description="Give every stock-tracked product a starting unit cost. Posting values the stock on hand at that moment, trues the inventory account up in one journal and switches inventory costing on. It happens once and can't be undone."
-        action={
-          canAdjust && batch?.status !== "POSTED" && !pre?.costingActive ? (
-            <Button size="sm" variant={batch ? "outline" : "primary"} loading={draft.isPending} disabled={batch?.status === "APPROVED"} onClick={() => draft.mutate()} data-testid="cutover-draft">
-              {batch ? "Refresh from stock" : "Prepare cutover"}
-            </Button>
-          ) : undefined
-        }
-      />
-
+    <ListPage
+      title="Opening stock value"
+      description="Give every stock-tracked product a starting unit cost. Posting values the stock on hand at that moment, trues the inventory account up in one journal and switches inventory costing on. It happens once and can't be undone."
+      action={
+        canAdjust && batch?.status !== "POSTED" && !pre?.costingActive ? (
+          <Button size="sm" variant={batch ? "outline" : "primary"} loading={draft.isPending} disabled={batch?.status === "APPROVED"} onClick={() => draft.mutate()} data-testid="cutover-draft">
+            {batch ? "Refresh from stock" : "Prepare cutover"}
+          </Button>
+        ) : undefined
+      }
+      className="space-y-6"
+    >
       {overview.isLoading && <Skeleton className="h-40 w-full" />}
       {overview.isError && <Alert variant="danger" title="The cutover couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => overview.refetch()}>Retry</Button>}>{getErrorMessage(overview.error, "")}</Alert>}
 
@@ -226,7 +224,7 @@ export default function InventoryCutoverPage() {
       {dialog === "reopen" && <ReopenModal onClose={() => setDialog(null)} onDone={() => { refresh(); setDialog(null); }} />}
       {dialog === "opening" && batch && <OpeningErrorModal amount={batch.openingErrorAmount} reason={batch.openingErrorReason} onClose={() => setDialog(null)} onDone={() => { refresh(); setDialog(null); }} />}
       {dialog === "post" && <PostModal adjustment={data?.preview?.adjustment ?? 0} onClose={() => setDialog(null)} onDone={() => { refresh(); setDialog(null); }} />}
-    </div>
+    </ListPage>
   );
 }
 

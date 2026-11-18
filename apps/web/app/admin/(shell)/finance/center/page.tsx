@@ -20,7 +20,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { StatTile } from "@/components/admin/stat-tile";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -56,9 +56,7 @@ export default function FinanceCenterPage() {
   const [view, setView] = useState<View>(initial);
   if (ready && !can("finance.view")) return <div><ModuleTabs /><PermissionState icon={Scale} page="the owner's summary" /></div>;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Owner's summary" description="What you have put into the business, which figures are still estimates, costs waiting to be split, renewals and the SMS balance." />
+    <ListPage title="Owner's summary" description="What you have put into the business, which figures are still estimates, costs waiting to be split, renewals and the SMS balance." className="space-y-6">
       <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         <SegmentedControl aria-label="View" options={VIEWS} value={view} onChange={setView} />
       </div>
@@ -73,7 +71,7 @@ export default function FinanceCenterPage() {
           <Settings canEdit={can("finance.configure")} />
         </div>
       )}
-    </div>
+    </ListPage>
   );
 }
 
