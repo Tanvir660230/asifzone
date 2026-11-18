@@ -20,6 +20,10 @@ export const DAILY_SCHEDULES = {
   courierAutomation: { pattern: "23 8 * * *", tz: "store" },
   /** 09:07 store time — yesterday's brief in the bell. */
   dailyBrief: { pattern: "7 9 * * *", tz: "store" },
+  /** Saturday 09:13 store time — the weekly report: this month so far against its targets (modules/targets/period-report). */
+  weeklyReport: { pattern: "13 9 * * 6", tz: "store" },
+  /** The 1st at 09:19 store time — the monthly report: the month that just ended. */
+  monthlyReport: { pattern: "19 9 1 * *", tz: "store" },
   /** Review-request SMS for orders delivered two days ago — late morning, when people read texts. */
   reviewRequests: { pattern: "17 11 * * *", tz: "store" },
   /** 03:41 store time — processed outbox rows and expired customer sessions (was 03:00 UTC = 09:00 Dhaka). */

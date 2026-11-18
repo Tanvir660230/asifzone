@@ -27,6 +27,8 @@ export const updateSmsSettingsSchema = z.object({
   adminAlertPhones: adminAlertPhonesField,
   adminOrderAlertEnabled: z.boolean().optional(),
   adminDailyBriefEnabled: z.boolean().optional(),
+  adminWeeklyReportEnabled: z.boolean().optional(),
+  adminMonthlyReportEnabled: z.boolean().optional(),
   customerReviewRequestEnabled: z.boolean().optional(),
   customerSelfConfirmEnabled: z.boolean().optional(),
   customerOrderPlacedEnabled: z.boolean().optional(),

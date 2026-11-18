@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, type ComponentType } from "react";
+import { Suspense, type ComponentType, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/admin/page-header";
 import { SegmentedControl } from "@/components/ui/tabs";
@@ -16,9 +16,11 @@ interface AnalyticsTabProps {
   title: string;
   description: string;
   views: readonly AnalyticsView[];
+  /** Shown under the title for every view (Overview: this month against its targets). */
+  lead?: ReactNode;
 }
 
-function AnalyticsTabInner({ title, description, views }: AnalyticsTabProps) {
+function AnalyticsTabInner({ title, description, views, lead }: AnalyticsTabProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -37,8 +39,11 @@ function AnalyticsTabInner({ title, description, views }: AnalyticsTabProps) {
   return (
     <div className="space-y-6">
       <PageHeader title={title} description={description} className="mb-0" />
+      {lead}
       {views.length > 1 && (
-        <SegmentedControl aria-label={`${title} views`} size="md" value={current.value} onChange={setView} options={views.map((v) => ({ value: v.value, label: v.label }))} />
+        <div className="print:hidden">
+          <SegmentedControl aria-label={`${title} views`} size="md" value={current.value} onChange={setView} options={views.map((v) => ({ value: v.value, label: v.label }))} />
+        </div>
       )}
       {/* React.lazy, not next/dynamic: next/dynamic adds a <link rel=preload> without the CSP nonce, which the strict
           policy blocks (a console error, and no preload); lazy chunks load through webpack's runtime under 'strict-dynamic'. */}

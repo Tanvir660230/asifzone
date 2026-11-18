@@ -352,6 +352,7 @@ model AdminUser {
   conversationReplies    ConversationMessage[]
   assignedConversations  Conversation[]             @relation("ConversationAssignee")
   custodyAccounts        FinancialAccount[]         @relation("FinancialAccountCustodian")
+  monthlyTargetsUpdated  MonthlyTarget[]            @relation("MonthlyTargetUpdatedBy")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -1393,13 +1394,13 @@ model Order {
   deletedByAdminId String?
   deletedByAdmin   AdminUser? @relation("OrderDeletedBy", fields: [deletedByAdminId], references: [id], onDelete: SetNull)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   /// When the order last moved to a new status (placed, confirmed, booked → Packed, shipped, …). Set by the database
   /// trigger "Order_status_changed_at" on every status change, whatever code path made it — never written by the app.
   /// The Orders list's default order, so an order confirmed or booked today comes back to the top even if it was
   /// placed days ago. A courier poll or an edit that doesn't move the status leaves it alone (unlike updatedAt).
-  statusChangedAt DateTime @default(now())
+  statusChangedAt   DateTime  @default(now())
   /// When the review-request SMS went out (modules/reviews/review-request.ts) — claimed before sending, so never twice.
   reviewRequestedAt DateTime?
 
@@ -2859,6 +2860,10 @@ model SmsNotificationSetting {
   /// The morning brief (analytics/anomalies.service.ts sendMorningBrief) as one short SMS to adminAlertPhones. Opt-in:
   /// each text costs the store money.
   adminDailyBriefEnabled               Boolean  @default(false)
+  /// Saturday morning: this month so far against its targets, as one SMS to adminAlertPhones (modules/targets/period-report). Opt-in.
+  adminWeeklyReportEnabled             Boolean  @default(false)
+  /// The 1st of the month: the month just ended, as one SMS to adminAlertPhones. Opt-in.
+  adminMonthlyReportEnabled            Boolean  @default(false)
   /// The order-placed SMS of a pending cash-on-delivery order carries a signed link (/c/<code>) where the customer confirms
   /// or cancels it themselves (modules/orders/self-confirm.ts). Off by default.
   customerSelfConfirmEnabled           Boolean  @default(false)
@@ -7016,4 +7021,17 @@ model PrintRunItem {
   @@index([orderId, kind])
   @@index([variantId, kind])
   @@index([printRunId])
+}
+
+/// The owner's target for one store-local month ("2026-11"): net sales (realised, as the metrics registry defines it),
+/// orders placed and book profit. Any of the three may be left empty. Reports and the Dashboard show the month's
+/// progress against it (docs/superpowers/plans/2026-11-18-business-reports.md, Part 1).
+model MonthlyTarget {
+  month            String     @id
+  netSales         Decimal?   @db.Decimal(14, 2)
+  orders           Int?
+  profit           Decimal?   @db.Decimal(14, 2)
+  updatedAt        DateTime   @updatedAt
+  updatedByAdminId String?
+  updatedByAdmin   AdminUser? @relation("MonthlyTargetUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
 }

@@ -11,7 +11,7 @@ import { BiDateRangeProvider, useBiDateRange } from "@/components/admin/bi-date-
 function ReportPeriodBar() {
   const { range, setRange } = useBiDateRange();
   return (
-    <div className="sticky top-chrome z-raised -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-canvas px-4 py-2 sm:py-2.5 sm:-mx-page sm:-mt-8 sm:px-page">
+    <div className="sticky top-chrome z-raised -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-canvas px-4 py-2 sm:py-2.5 sm:-mx-page sm:-mt-8 sm:px-page print:hidden">
       <p className="text-[13px] text-fg-muted max-sm:hidden">
         <span className="font-medium text-fg">Report period</span> · applies to every Analytics tab
       </p>
@@ -29,7 +29,9 @@ export default function AnalyticsLayout({ children }: { children: ReactNode }) {
     <BiDateRangeProvider>
       <div className="space-y-6">
         <ReportPeriodBar />
-        <ModuleTabs className="" aria-label="Analytics tabs" />
+        <div className="print:hidden">
+          <ModuleTabs className="" aria-label="Analytics tabs" />
+        </div>
         {children}
       </div>
     </BiDateRangeProvider>
