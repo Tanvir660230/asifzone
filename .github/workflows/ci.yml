@@ -119,8 +119,10 @@ jobs:
       - name: Run web unit tests
         run: pnpm --filter web test
 
+      # next/font fetches Google Fonts at build time; a failed fetch ("An error occurred in `next/font`") is a network
+      # blip, not a code error, so the build gets one more try.
       - name: Build web
-        run: pnpm --filter web build
+        run: pnpm --filter web build || (sleep 15 && pnpm --filter web build)
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4000
           NEXT_PUBLIC_SITE_URL: http://localhost:3000
