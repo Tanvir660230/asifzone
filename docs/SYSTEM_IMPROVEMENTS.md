@@ -26,7 +26,7 @@ Add to this list whenever a task needs a workaround. Business rules, live prices
 | 2026-11-07 | Two copies of one Steadfast webhook arriving together were both processed; the second failed to log | 51 unique-constraint errors on `CourierWebhookEvent` | The log row is written first and claims the Idempotency-Key; the second copy is a duplicate |
 | 2026-11-07 | A Steadfast outage logged one error per parcel per sweep | 4,896 "HTTP 502" + 279 timeouts on 11-02..11-06 | Three failed checks in a row end the run; the rest stay due |
 | 2026-11-07 | An EPS outage logged one error per stuck session every 5 minutes | 39 "Could not start the payment session" in reconciliation | The sweep stops at the first "EPS not answering" and tries again next run |
-| 2026-11-18 | A Google Fonts fetch blip during `next build` failed the CI image build, so deploys fell back to building on the VPS (which once ran out of memory) | `An error occurred in ` on two runs the same day (44154230021, 44271165678) | The web build tries once more after 15 s, in CI and in the Dockerfile |
+| 2026-11-18 | A Google Fonts fetch blip during `next build` failed the CI image build, so deploys fell back to building on the VPS (which once ran out of memory) | "An error occurred in next/font" on two runs the same day (44154230021, 44271165678) | The web build tries once more after 15 s, in CI and in the Dockerfile |
 
 ## Next
 
