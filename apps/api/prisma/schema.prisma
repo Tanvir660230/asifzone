@@ -2860,6 +2860,10 @@ model SmsNotificationSetting {
   /// The morning brief (analytics/anomalies.service.ts sendMorningBrief) as one short SMS to adminAlertPhones. Opt-in:
   /// each text costs the store money.
   adminDailyBriefEnabled               Boolean  @default(false)
+  /// Saturday morning: this month so far against its targets, as one SMS to adminAlertPhones (modules/targets/period-report). Opt-in.
+  adminWeeklyReportEnabled             Boolean  @default(false)
+  /// The 1st of the month: the month just ended, as one SMS to adminAlertPhones. Opt-in.
+  adminMonthlyReportEnabled            Boolean  @default(false)
   /// The order-placed SMS of a pending cash-on-delivery order carries a signed link (/c/<code>) where the customer confirms
   /// or cancels it themselves (modules/orders/self-confirm.ts). Off by default.
   customerSelfConfirmEnabled           Boolean  @default(false)
