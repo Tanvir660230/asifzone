@@ -10,7 +10,7 @@ import { DataTable } from "@/components/admin/data-table";
 import type { DataTableColumn } from "@/components/admin/data-table/types";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PermissionState } from "@/components/admin/permission-state";
 import { useCapabilities } from "@/hooks/use-capability";
 import { thumbnailUrl } from "@/lib/image-url";
@@ -71,13 +71,12 @@ export default function ProductFamiliesPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Product families"
-        description="Link matching products so each one's page shows the others as photos. Every product stays separate — its own stock, price and orders."
-        action={newButton}
-      />
+    <ListPage
+      title="Product families"
+      description="Link matching products so each one's page shows the others as photos. Every product stays separate — its own stock, price and orders."
+      action={newButton}
+      className="space-y-6"
+    >
       <DataTable
         caption="Product families"
         columns={columns}
@@ -96,6 +95,6 @@ export default function ProductFamiliesPage() {
           />
         }
       />
-    </div>
+    </ListPage>
   );
 }

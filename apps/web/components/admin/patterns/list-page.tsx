@@ -7,6 +7,12 @@ interface ListPageProps {
   /** One line under the title. Hidden on phones unless `descriptionOnPhone` (PageHeader). */
   description?: ReactNode;
   descriptionOnPhone?: boolean;
+  /** A small line above the title (PageHeader `eyebrow`). */
+  eyebrow?: string;
+  /** PageHeader `size`: "md" for pages inside a group frame (Money, Stock). */
+  size?: "lg" | "md";
+  /** Extra classes on the header row (PageHeader `className`). */
+  headerClassName?: string;
   /** The page's one primary action, top right ("Add coupon"). */
   action?: ReactNode;
   /** A short explanation of what the list is for, under the tabs. Hidden on phones (globals.css `[data-page-intro]`). */
@@ -30,10 +36,10 @@ interface ListPageProps {
  * group's tabs → intro line → filter row → the list → footnote. Pages fill the slots and never re-space them, so every
  * list has its title, action, filters and table in the same place.
  */
-export function ListPage({ title, description, descriptionOnPhone, action, intro, filters, filtersEnd, tabs = true, children, footnote, className }: ListPageProps) {
+export function ListPage({ title, description, descriptionOnPhone, eyebrow, size, headerClassName, action, intro, filters, filtersEnd, tabs = true, children, footnote, className }: ListPageProps) {
   return (
     <div data-pattern="list-page" className={className}>
-      <PageHeader title={title} description={description} descriptionOnPhone={descriptionOnPhone} action={action} />
+      <PageHeader title={title} description={description} descriptionOnPhone={descriptionOnPhone} eyebrow={eyebrow} size={size} className={headerClassName} action={action} />
       {tabs && <ModuleTabs />}
       {intro && (
         <p data-page-intro="" className="mb-4 max-w-3xl text-sm text-fg-muted">

@@ -13,8 +13,7 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ALL_BD_DISTRICTS } from "@/components/admin/orders/order-filters";
 import { describeApiError } from "@/lib/api-client";
 import * as settingsApi from "@/lib/api/settings";
@@ -234,17 +233,15 @@ export default function DeliveryZonesPage() {
   const zones = data?.items ?? [];
 
   return (
-    <div>
-      <PageHeader
-        title="Delivery zones"
-        description="What checkout charges for delivery. An address uses the matching zone with the highest priority; everything else uses the default zone."
-        action={
-          <Button onClick={() => setEditing(draftOf(null))}>
-            <Plus size={16} aria-hidden="true" /> Add zone
-          </Button>
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Delivery zones"
+      description="What checkout charges for delivery. An address uses the matching zone with the highest priority; everything else uses the default zone."
+      action={
+        <Button onClick={() => setEditing(draftOf(null))}>
+          <Plus size={16} aria-hidden="true" /> Add zone
+        </Button>
+      }
+    >
       {isError && !data && <ErrorState onRetry={() => refetch()} />}
       {isLoading && !data && <div className="h-64 animate-pulse rounded-2xl bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading" />}
       {data && zones.length === 0 && <EmptyState icon={MapPin} title="No delivery zones" />}
@@ -276,6 +273,6 @@ export default function DeliveryZonesPage() {
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? editing.name || "Zone" : "New delivery zone"}>
         {editing && <ZoneEditor key={editing.id ?? "new"} draft={editing} onClose={() => setEditing(null)} />}
       </Drawer>
-    </div>
+    </ListPage>
   );
 }

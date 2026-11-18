@@ -14,7 +14,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { STATUS } from "@/components/admin/orders/detail/accounting-section";
 import { financeEventLabel } from "@/lib/admin/finance-event-label";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -68,20 +68,19 @@ export default function SalesAccountingPage() {
   }
   const s = status.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Sales accounting"
-        description="Sales, payments, refunds, returns and store credit reach the books as accounting events, with the dashboard's own revenue and cost figures. Commerce is only read, never changed."
-        action={
-          can("finance.reconcile") && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" loading={sync.isPending && sync.variables === true} onClick={() => sync.mutate(true)}>Re-check everything</Button>
-              <Button size="sm" loading={sync.isPending && sync.variables === false} onClick={() => sync.mutate(false)} data-testid="sync-now">Sync now</Button>
-            </div>
-          )
-        }
-      />
+    <ListPage
+      title="Sales accounting"
+      description="Sales, payments, refunds, returns and store credit reach the books as accounting events, with the dashboard's own revenue and cost figures. Commerce is only read, never changed."
+      action={
+        can("finance.reconcile") && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" loading={sync.isPending && sync.variables === true} onClick={() => sync.mutate(true)}>Re-check everything</Button>
+            <Button size="sm" loading={sync.isPending && sync.variables === false} onClick={() => sync.mutate(false)} data-testid="sync-now">Sync now</Button>
+          </div>
+        )
+      }
+      className="space-y-6"
+    >
       {s && !s.readiness.ready && (
         <Alert variant="warning" title="Accounts not mapped">
           Commerce can&apos;t post until these are mapped: {s.readiness.missing.join(", ")}.
@@ -172,6 +171,6 @@ export default function SalesAccountingPage() {
           </div>
         )}
       </Card>
-    </div>
+    </ListPage>
   );
 }

@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { RETURN_STATUS_BADGE, RETURN_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -56,13 +56,12 @@ export default function SupplierReturnsPage() {
   }
   const costingActive = Boolean(overview.data?.costingActive);
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Supplier returns"
-        description="Goods sent back to a supplier. Shipping a return takes the units out of stock at their average cost; what the supplier owes you back is settled on the invoice side."
-        action={can("purchasing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-return"><Plus className="h-4 w-4" /> New return</Button>}
-      />
+    <ListPage
+      title="Supplier returns"
+      description="Goods sent back to a supplier. Shipping a return takes the units out of stock at their average cost; what the supplier owes you back is settled on the invoice side."
+      action={can("purchasing.manage") && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-return"><Plus className="h-4 w-4" /> New return</Button>}
+      className="space-y-6"
+    >
       <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:w-44">
         <option value="">Every status</option>
         {(Object.keys(RETURN_STATUS_LABEL) as Array<keyof typeof RETURN_STATUS_LABEL>).map((s) => <option key={s} value={s}>{RETURN_STATUS_LABEL[s]}</option>)}
@@ -122,7 +121,7 @@ export default function SupplierReturnsPage() {
       )}
       {creating && <ReturnModal onClose={() => setCreating(false)} onDone={() => { refresh(); setCreating(false); }} />}
       {cancelling && <ReasonModal title={`Cancel ${cancelling.number}`} loading={act.isPending} onClose={() => setCancelling(null)} onConfirm={(reason) => act.mutate({ id: cancelling.id, action: "cancel", reason })} />}
-    </div>
+    </ListPage>
   );
 }
 

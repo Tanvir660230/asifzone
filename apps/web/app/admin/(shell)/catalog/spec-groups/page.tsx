@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
@@ -64,10 +63,7 @@ export default function SpecGroupsPage() {
   }
 
   return (
-    <div>
-      <PageHeader title="Spec groups" />
-      <ModuleTabs />
-
+    <ListPage title="Spec groups">
       <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         A spec group is a titled block on the product page (&ldquo;Watch Details&rdquo;, &ldquo;Warranty &amp; Support&rdquo;). In a template you
         choose which attributes appear in which group.
@@ -134,6 +130,6 @@ export default function SpecGroupsPage() {
       </div>
       {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

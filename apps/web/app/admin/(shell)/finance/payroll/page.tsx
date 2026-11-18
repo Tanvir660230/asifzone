@@ -22,7 +22,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useCreateParam } from "@/hooks/use-create-param";
@@ -60,14 +60,12 @@ export default function PayrollPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Payroll" description="Pay runs for each month, the people paid and the pay components you define." />
+    <ListPage title="Payroll" description="Pay runs for each month, the people paid and the pay components you define." className="space-y-6">
       <SegmentedControl aria-label="View" options={[{ value: "runs" as const, label: "Pay runs" }, { value: "employees" as const, label: "Employees" }, { value: "components" as const, label: "Pay components" }]} value={view} onChange={setView} />
       {view === "runs" && <Runs initialRun={params.get("run")} onSetup={setView} />}
       {view === "employees" && <Employees />}
       {view === "components" && <Components />}
-    </div>
+    </ListPage>
   );
 }
 

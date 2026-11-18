@@ -14,7 +14,7 @@ import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -66,9 +66,7 @@ export default function StatementsPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Financial statements" description="Profit, financial position and cash — straight from the posted books." />
+    <ListPage title="Financial statements" description="Profit, financial position and cash — straight from the posted books." className="space-y-6">
       <div className="flex flex-wrap items-end gap-3">
         <SegmentedControl aria-label="Statement" options={VIEWS} value={view} onChange={setView} className="w-full overflow-x-auto sm:w-auto" />
         {view !== "balance" && <Field htmlFor="st-from" label="From" className="w-[calc(50%-6px)] sm:w-40"><Input id="st-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>}
@@ -141,7 +139,7 @@ export default function StatementsPage() {
           <Button size="sm" variant="outline" onClick={() => downloadCsv(`trial-balance-${from || "start"}-${to}.csv`, toCsv([{ key: "code", label: "Code" }, { key: "name", label: "Account" }, { key: "opening", label: "Opening" }, { key: "periodDebit", label: "Debits" }, { key: "periodCredit", label: "Credits" }, { key: "closingDebit", label: "Closing debit" }, { key: "closingCredit", label: "Closing credit" }], trial.data!.rows))}><Download className="h-4 w-4" /> CSV</Button>
         </>
       )}
-    </div>
+    </ListPage>
   );
 }
 

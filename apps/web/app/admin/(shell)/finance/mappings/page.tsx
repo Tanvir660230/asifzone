@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -57,12 +57,11 @@ export default function AccountMappingPage() {
   const all = mappings.data?.mappings ?? [];
   const unmapped = all.filter((m) => !m.account).length;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Account mapping"
-        description="Which account in the books each automatic entry uses — sales, cost of goods, courier fees, supplier bills. The defaults work for most shops; change one only if your accountant asks."
-      />
+    <ListPage
+      title="Account mapping"
+      description="Which account in the books each automatic entry uses — sales, cost of goods, courier fees, supplier bills. The defaults work for most shops; change one only if your accountant asks."
+      className="space-y-6"
+    >
       {mappings.isLoading || chart.isLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : mappings.isError || chart.isError ? (
@@ -86,7 +85,7 @@ export default function AccountMappingPage() {
           })}
         </>
       )}
-    </div>
+    </ListPage>
   );
 }
 

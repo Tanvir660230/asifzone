@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
@@ -86,13 +86,12 @@ export default function MaterialsPage() {
   }
   const materials = (list.data?.materials ?? []).filter((m) => !type || m.materialType === type);
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Materials"
-        description="What you make products from — oil, bottles, boxes, stickers, fabric, trims, packaging. Bought on Received goods and used by recipes; never sold in the shop."
-        action={canManage && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-material"><Plus className="h-4 w-4" /> New material</Button>}
-      />
+    <ListPage
+      title="Materials"
+      description="What you make products from — oil, bottles, boxes, stickers, fabric, trims, packaging. Bought on Received goods and used by recipes; never sold in the shop."
+      action={canManage && <Button size="sm" onClick={() => setCreating(true)} data-testid="new-material"><Plus className="h-4 w-4" /> New material</Button>}
+      className="space-y-6"
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <SearchInput value={q} onChange={setQ} placeholder="Search name or SKU" wrapperClassName="w-full sm:w-72" />
@@ -164,7 +163,7 @@ export default function MaterialsPage() {
       </Card>
       {creating && <MaterialModal onClose={() => setCreating(false)} />}
       {editing && <EditMaterialModal material={editing} showCost={showCost} onClose={() => setEditing(null)} />}
-    </div>
+    </ListPage>
   );
 }
 

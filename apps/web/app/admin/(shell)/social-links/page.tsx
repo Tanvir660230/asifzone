@@ -12,8 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
@@ -97,16 +96,14 @@ export default function SocialLinksPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Social links"
-        action={
-          <Button variant="brass" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Add link
-          </Button>
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Social links"
+      action={
+        <Button variant="brass" onClick={() => setShowCreate(true)}>
+          <Plus size={16} /> Add link
+        </Button>
+      }
+    >
       <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         Shown as icons in the storefront footer, in the order below. Only active links appear on the site.
       </p>
@@ -210,6 +207,6 @@ export default function SocialLinksPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
@@ -42,9 +42,7 @@ export default function PayablesPage() {
   }
   const d = q.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Supplier dues" description="What you owe each supplier, by how far past due — open bills, less credits and advances. Open a supplier to pay." action={<Link href="/admin/finance/supplier-invoices"><Button size="sm" variant="outline">Supplier bills</Button></Link>} />
+    <ListPage title="Supplier dues" description="What you owe each supplier, by how far past due — open bills, less credits and advances. Open a supplier to pay." action={<Link href="/admin/finance/supplier-invoices"><Button size="sm" variant="outline">Supplier bills</Button></Link>} className="space-y-6">
       {q.isLoading && <Skeleton className="h-48 w-full" />}
       {q.isError && <Alert variant="danger" title="Payables couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}
       {d && (
@@ -95,7 +93,7 @@ export default function PayablesPage() {
           <p className="text-xs text-ink-500">As of {d.asOf}. Days past due count from each bill&apos;s due date.</p>
         </>
       )}
-    </div>
+    </ListPage>
   );
 }
 

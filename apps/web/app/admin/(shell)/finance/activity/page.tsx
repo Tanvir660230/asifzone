@@ -16,7 +16,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -56,12 +56,10 @@ export default function FinanceActivityPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Activity log" description="Every change made in Finance — who did it, when and why — and the accounting events orders send to the books." />
+    <ListPage title="Activity log" description="Every change made in Finance — who did it, when and why — and the accounting events orders send to the books." className="space-y-6">
       <SegmentedControl aria-label="Show" options={[{ value: "changes" as const, label: "Changes" }, { value: "events" as const, label: "Accounting events" }]} value={view} onChange={setView} />
       {view === "changes" ? <Changes /> : <Events />}
-    </div>
+    </ListPage>
   );
 }
 

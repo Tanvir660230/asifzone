@@ -26,8 +26,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { Pagination } from "@/components/ui/pagination";
 import * as inboxApi from "@/lib/api/inbox";
 import { useCapability } from "@/hooks/use-capability";
@@ -443,9 +442,7 @@ export default function InboxPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
-    <div>
-      <PageHeader title="Inbox" description="WhatsApp, Messenger, Instagram, post comments and the website form in one place. Every reply shows whether it arrived." />
-      <ModuleTabs />
+    <ListPage title="Inbox" description="WhatsApp, Messenger, Instagram, post comments and the website form in one place. Every reply shows whether it arrived.">
       <div className="grid overflow-hidden rounded-2xl border border-line bg-surface shadow-xs lg:h-[calc(100dvh-15rem)] lg:min-h-[520px] lg:grid-cols-[380px_1fr]">
         <section aria-label="Conversations" className={cn("flex min-h-0 flex-col border-line-subtle lg:border-r", openId && "hidden lg:flex")}>
           <div className="space-y-2 border-b border-line-subtle p-3">
@@ -561,6 +558,6 @@ export default function InboxPage() {
           )}
         </section>
       </div>
-    </div>
+    </ListPage>
   );
 }

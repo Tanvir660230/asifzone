@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -72,13 +72,12 @@ export default function FinanceChecksPage() {
   const failed = checks.error ?? runs.error;
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Books health check"
-        description="Revenue and cost of goods are proved against the dashboard's own figures, and the ledger against itself. A difference lists the orders or records behind it."
-        action={can("finance.reconcile") && <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-checks">Run all checks</Button>}
-      />
+    <ListPage
+      title="Books health check"
+      description="Revenue and cost of goods are proved against the dashboard's own figures, and the ledger against itself. A difference lists the orders or records behind it."
+      action={can("finance.reconcile") && <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-checks">Run all checks</Button>}
+      className="space-y-6"
+    >
       {failed && <Alert variant="danger" title="The checks couldn't load">{getErrorMessage(failed)}</Alert>}
       {all.length > 0 && !runs.isLoading && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="check-summary">
@@ -146,6 +145,6 @@ export default function FinanceChecksPage() {
           );
         })}
       </div>
-    </div>
+    </ListPage>
   );
 }

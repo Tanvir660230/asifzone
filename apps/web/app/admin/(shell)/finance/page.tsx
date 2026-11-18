@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { BellRing, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { OwnerHome } from "@/components/admin/finance/owner-home";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useNavAccess } from "@/hooks/use-nav-access";
@@ -38,8 +38,7 @@ export default function FinanceOverviewPage() {
   const books = can("finance.view");
 
   return (
-    <div className="space-y-8">
-      <PageHeader title="Money" description="How the month is going, where your money is and who is owed what." />
+    <ListPage title="Money" description="How the month is going, where your money is and who is owed what." className="space-y-8" tabs={false}>
       {ready && books && <OwnerHome />}
       {ready && !books && (
         <Alert variant="info" title="You see the payments side of Money">
@@ -57,7 +56,7 @@ export default function FinanceOverviewPage() {
       ) : (
         <FinanceMap />
       )}
-    </div>
+    </ListPage>
   );
 }
 

@@ -18,8 +18,7 @@ import { Card } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { orderKeys } from "@/components/admin/orders/order-domain";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { getErrorMessage } from "@/lib/api-client";
@@ -78,23 +77,21 @@ export default function TodayOperationsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Today"
-        description={board.data ? `Your order work, in order. Updated ${formatStoreTime(board.data.generatedAt)}.` : "Your order work, in order."}
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/orders/dispatch" className={buttonVariants({ variant: "outline", size: "sm" })}>
-              <ScanLine size={14} /> Dispatch scan
-            </Link>
-            <Link href="/admin/orders/product-labels" className={buttonVariants({ variant: "outline", size: "sm" })}>
-              <Tag size={14} /> Labels
-            </Link>
-          </div>
-        }
-      />
-      <ModuleTabs />
-
+    <ListPage
+      title="Today"
+      description={board.data ? `Your order work, in order. Updated ${formatStoreTime(board.data.generatedAt)}.` : "Your order work, in order."}
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/orders/dispatch" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <ScanLine size={14} /> Dispatch scan
+          </Link>
+          <Link href="/admin/orders/product-labels" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Tag size={14} /> Labels
+          </Link>
+        </div>
+      }
+      className="space-y-6"
+    >
       {failed ? (
         <ErrorState
           description="Today's counts didn't load. The orders list still works."
@@ -194,7 +191,7 @@ export default function TodayOperationsPage() {
           </p>
         </>
       )}
-    </div>
+    </ListPage>
   );
 }
 

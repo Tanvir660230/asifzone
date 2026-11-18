@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -41,13 +41,12 @@ export default function LandedCostsPage() {
 
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Truck} page="Landed costs" /></div>;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Landed costs"
-        description="The van, the porter or customs that brought a delivery in — added to those goods, so 500 caps cost what they really cost."
-        action={can("finance.transact") && costing && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-landed-cost"><Plus className="h-4 w-4" /> Landed cost</Button>}
-      />
+    <ListPage
+      title="Landed costs"
+      description="The van, the porter or customs that brought a delivery in — added to those goods, so 500 caps cost what they really cost."
+      action={can("finance.transact") && costing && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-landed-cost"><Plus className="h-4 w-4" /> Landed cost</Button>}
+      className="space-y-6"
+    >
       {list.isLoading && <Skeleton className="h-32 w-full" />}
       {list.isError && <Alert variant="danger" title="Landed costs couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {list.data && business.data && list.data.landedCosts.length === 0 && (
@@ -90,7 +89,7 @@ export default function LandedCostsPage() {
       )}
       {cancelling && <CancelModal landed={cancelling} onClose={() => setCancelling(null)} onDone={() => { setCancelling(null); void queryClient.invalidateQueries({ queryKey: ["finance"] }); }} />}
       {adding && <LandedModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); void queryClient.invalidateQueries({ queryKey: ["finance"] }); }} />}
-    </div>
+    </ListPage>
   );
 }
 

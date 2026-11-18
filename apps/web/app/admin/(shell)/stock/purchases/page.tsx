@@ -12,7 +12,7 @@ import { DataTable } from "@/components/admin/data-table";
 import type { DataTableColumn } from "@/components/admin/data-table/types";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PermissionState } from "@/components/admin/permission-state";
 import { useCapabilities } from "@/hooks/use-capability";
 import * as purchasingApi from "@/lib/api/purchasing";
@@ -111,17 +111,16 @@ export default function StockPurchasesPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Purchases"
-        description="Everything bought — on the way and received. Stock goes up only when goods are received."
-        action={can("purchasing.receive") && (
-          <Link href="/admin/stock/purchases/new" className={cn(buttonVariants({ size: "sm" }))} data-testid="purchases-new">
-            <Plus className="h-4 w-4" aria-hidden /> New purchase
-          </Link>
-        )}
-      />
+    <ListPage
+      title="Purchases"
+      description="Everything bought — on the way and received. Stock goes up only when goods are received."
+      action={can("purchasing.receive") && (
+        <Link href="/admin/stock/purchases/new" className={cn(buttonVariants({ size: "sm" }))} data-testid="purchases-new">
+          <Plus className="h-4 w-4" aria-hidden /> New purchase
+        </Link>
+      )}
+      className="space-y-6"
+    >
       {/* stock UI redesign: orders still to arrive head the list, received with Receive in place */}
       {can("purchasing.view") && <ExpectedOrders canReceive={can("purchasing.receive")} canPay={can("finance.transact")} />}
       <h2 className="text-base font-semibold text-fg">Received</h2>
@@ -156,6 +155,6 @@ export default function StockPurchasesPage() {
           <DataTable caption="Purchases recorded before stock costing started" columns={simpleColumns} rows={simpleRows} getRowId={(p) => p.id} cardBelow="md" />
         </section>
       )}
-    </div>
+    </ListPage>
   );
 }

@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
@@ -65,21 +65,19 @@ export default function ExpensesPage() {
   }
   const s = summary.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Expenses"
-        description="Operating costs paid from cash, a bank or a wallet, and what you owe every month. Costs bought on credit are supplier bills."
-        action={can("finance.transact") && (
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setImporting(true)} data-testid="import-expenses">From a file</Button>
-            {can("finance.configure") && <Button size="sm" variant="outline" onClick={() => setNewCategory(true)} data-testid="new-category">New category</Button>}
-            <Button size="sm" variant="outline" onClick={() => setNewCommitment(true)} data-testid="new-commitment">Recurring cost</Button>
-            <Button size="sm" className="order-first sm:order-last" onClick={() => setRecording({})} data-testid="record-expense"><Plus className="h-4 w-4" /> Record expense</Button>
-          </div>
-        )}
-      />
-
+    <ListPage
+      title="Expenses"
+      description="Operating costs paid from cash, a bank or a wallet, and what you owe every month. Costs bought on credit are supplier bills."
+      action={can("finance.transact") && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImporting(true)} data-testid="import-expenses">From a file</Button>
+          {can("finance.configure") && <Button size="sm" variant="outline" onClick={() => setNewCategory(true)} data-testid="new-category">New category</Button>}
+          <Button size="sm" variant="outline" onClick={() => setNewCommitment(true)} data-testid="new-commitment">Recurring cost</Button>
+          <Button size="sm" className="order-first sm:order-last" onClick={() => setRecording({})} data-testid="record-expense"><Plus className="h-4 w-4" /> Record expense</Button>
+        </div>
+      )}
+      className="space-y-6"
+    >
       <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Spent this period" value={s ? formatPrice(s.totals.total) : "…"} hint={s ? `${formatPrice(s.totals.fixed)} fixed · ${formatPrice(s.totals.variable)} variable` : undefined} />
         <Stat label="Fixed costs a month" value={s ? formatPrice(s.fixedMonthlyCommitments) : "…"} hint="From recurring costs" />
@@ -155,7 +153,7 @@ export default function ExpensesPage() {
       {importing && <ExpenseImportModal onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />}
       {newCategory && <NewCategoryModal onClose={() => setNewCategory(false)} onDone={() => setNewCategory(false)} />}
       {newCommitment && <CommitmentModal onClose={() => setNewCommitment(false)} onDone={() => { setNewCommitment(false); refresh(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

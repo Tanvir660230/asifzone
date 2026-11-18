@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as booksApi from "@/lib/api/finance-books";
@@ -37,8 +37,7 @@ export default function MonthlyProfitPage() {
   const total = months.reduce((s, m) => ({ sales: s.sales + m.sales, profit: s.profit + m.profit }), { sales: 0, profit: 0 });
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Month by month" description={`Every month since the books started${q.data?.booksStartedOn ? ` (${q.data.booksStartedOn})` : ""}: what it sold, what it cost and what was left — and what is still to settle before the month can be closed.`} />
+    <ListPage title="Month by month" description={`Every month since the books started${q.data?.booksStartedOn ? ` (${q.data.booksStartedOn})` : ""}: what it sold, what it cost and what was left — and what is still to settle before the month can be closed.`} className="space-y-6" tabs={false}>
       {q.data && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Card className="p-4"><p className="text-sm text-fg-muted">Sales since the start</p><p className="text-2xl font-semibold tabular-nums text-fg">{formatPrice(total.sales)}</p></Card>
@@ -92,7 +91,7 @@ export default function MonthlyProfitPage() {
         </HScrollShadow>
       </Card>
       <p className="text-xs text-fg-muted">Stock fixes are count differences and cost corrections — stock put right, not goods sold. The months add up to the income statement. Goods marked as estimated get their real cost once purchase bills are in; a month is closed from <Link href="/admin/finance/month-end" className="font-medium text-accent hover:underline">Month-end</Link>.</p>
-    </div>
+    </ListPage>
   );
 }
 

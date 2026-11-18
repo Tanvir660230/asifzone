@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { StatTile } from "@/components/admin/stat-tile";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -95,9 +95,7 @@ export default function CourierCheckPage() {
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Truck} page="This page" /></div>;
   const d = rec.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Steadfast check" description="What Steadfast should hold for you, next to what it says it holds — and every parcel that needs a look." />
+    <ListPage title="Steadfast check" description="What Steadfast should hold for you, next to what it says it holds — and every parcel that needs a look." className="space-y-6">
       {can("finance.configure") && <UnpaidReminder />}
       {rec.isLoading && <Skeleton className="h-40 w-full" />}
       {rec.isError && <Alert variant="danger" title="The courier check couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => rec.refetch()}>Retry</Button>}>{getErrorMessage(rec.error, "")}</Alert>}
@@ -186,7 +184,7 @@ export default function CourierCheckPage() {
       )}
       {claimFor && <ClaimModal order={claimFor} onClose={() => setClaimFor(null)} onDone={() => { setClaimFor(null); refreshClaims(); }} />}
       {settling && <SettleModal claim={settling} accounts={payInto} onClose={() => setSettling(null)} onDone={() => { setSettling(null); refreshClaims(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

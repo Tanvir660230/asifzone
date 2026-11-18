@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -56,9 +56,7 @@ export default function LedgerPage() {
     );
   }
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Ledger" description="Every account and its balance from posted journals. Open an account to see each posting." />
+    <ListPage title="Ledger" description="Every account and its balance from posted journals. Open an account to see each posting." className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search code or name" wrapperClassName="w-full sm:w-72" />
         <label className="flex items-center gap-2 text-sm text-ink-700">
@@ -101,7 +99,7 @@ export default function LedgerPage() {
         </div>
       )}
       {shown && <AccountLedgerDrawer account={shown} onClose={() => { setOpen(null); setLinkDismissed(true); }} />}
-    </div>
+    </ListPage>
   );
 }
 

@@ -16,7 +16,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -53,10 +53,7 @@ export default function ReconciliationPage() {
   const valid = form.financialAccountId && form.periodStart && form.periodEnd && form.openingStatementBalance !== "" && form.closingStatementBalance !== "";
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Bank reconciliation" description="Compare a statement period with the books. Differences are matched, left outstanding with a reason, or resolved by an explicit adjustment — the books are never overwritten." />
-
+    <ListPage title="Bank reconciliation" description="Compare a statement period with the books. Differences are matched, left outstanding with a reason, or resolved by an explicit adjustment — the books are never overwritten." className="space-y-6">
       {can("finance.reconcile") && (
         <Card className="p-4">
           <h2 className="mb-3 text-xs font-semibold text-ink-500">Start a reconciliation</h2>
@@ -121,6 +118,6 @@ export default function ReconciliationPage() {
         </HScrollShadow>
         {runs.data?.reconciliations.length === 0 && <EmptyState icon={Scale} title="No reconciliations yet" description="Import a statement for an account, then start its first reconciliation." />}
       </Card>
-    </div>
+    </ListPage>
   );
 }

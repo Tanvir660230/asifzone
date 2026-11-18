@@ -8,8 +8,7 @@ import { PRODUCT_IMPORT_LIMITS, type ProductImportReport, type ProductImportResu
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { FormSection } from "@/components/admin/form-section";
 import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
@@ -101,10 +100,7 @@ export default function ProductImportPage() {
   const canImport = mayImport && report !== null && willWrite > 0 && (!hasErrors || (skipInvalid && !fileLevel)) && !result && busy === null;
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Import & export products" />
-      <ModuleTabs />
-
+    <ListPage title="Import & export products" className="space-y-6">
       <FormSection title="Get a file" description="One row per variant. Export what you have to edit it in a spreadsheet, or start from an empty template for one product type.">
         <div className="flex flex-wrap items-end gap-3">
           <a href={productsApi.exportFullCsvUrl()}>
@@ -325,6 +321,6 @@ export default function ProductImportPage() {
         </div>
       )}
       <p className="text-xs text-ink-400">{fileName && `File: ${fileName}`}</p>
-    </div>
+    </ListPage>
   );
 }

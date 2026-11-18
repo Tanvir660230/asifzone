@@ -13,7 +13,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { AccountDialog } from "@/components/admin/finance/account-dialog";
 import { MoneyMovementDialog, type MovementDialogKind } from "@/components/admin/finance/money-movement-dialog";
@@ -60,21 +60,19 @@ export default function FinanceAccountsPage() {
   const total = list.filter((a) => a.isActive).reduce((s, a) => s + a.currentBalance, 0);
 
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Money accounts"
-        description="Cash, banks, wallets and gateways. Every balance is read from the books; money only moves by a recorded movement."
-        action={
-          <div className="flex flex-wrap gap-2">
-            {can("finance.configure") && (
-              <Button variant="outline" size="sm" onClick={() => setDialog("ACCOUNT")}>New account</Button>
-            )}
-            {can("finance.transact") && <RecordMovementMenu onPick={setDialog} />}
-          </div>
-        }
-      />
-
+    <ListPage
+      title="Money accounts"
+      description="Cash, banks, wallets and gateways. Every balance is read from the books; money only moves by a recorded movement."
+      action={
+        <div className="flex flex-wrap gap-2">
+          {can("finance.configure") && (
+            <Button variant="outline" size="sm" onClick={() => setDialog("ACCOUNT")}>New account</Button>
+          )}
+          {can("finance.transact") && <RecordMovementMenu onPick={setDialog} />}
+        </div>
+      }
+      className="space-y-6"
+    >
       {(pending.data?.movements.length ?? 0) > 0 && (
         <Card className="p-4" data-testid="pending-approvals">
           <h2 className="mb-3 text-xs font-semibold text-ink-500">Waiting for approval</h2>
@@ -153,7 +151,7 @@ export default function FinanceAccountsPage() {
 
       {dialog === "ACCOUNT" && <AccountDialog onClose={() => setDialog(null)} />}
       {dialog && dialog !== "ACCOUNT" && <MoneyMovementDialog kind={dialog} accounts={list} onClose={() => setDialog(null)} />}
-    </div>
+    </ListPage>
   );
 }
 

@@ -19,8 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Checkbox } from "@/components/ui/checkbox";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { BannerForm } from "@/components/admin/banner-form";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -105,17 +104,14 @@ export default function BannersPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Banners"
-        action={
-          <Button variant="brass" onClick={openCreate}>
-            <Plus size={16} /> Add banner
-          </Button>
-        }
-      />
-
-      <ModuleTabs />
+    <ListPage
+      title="Banners"
+      action={
+        <Button variant="brass" onClick={openCreate}>
+          <Plus size={16} /> Add banner
+        </Button>
+      }
+    >
 
       {isLoading && <p className="text-ink-400">Loading…</p>}
       {!isLoading && banners.length === 0 && (
@@ -148,7 +144,7 @@ export default function BannersPage() {
         />
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }
 

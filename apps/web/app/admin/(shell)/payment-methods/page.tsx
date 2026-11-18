@@ -11,8 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toast } from "@/components/ui/toast";
@@ -119,16 +118,14 @@ export default function PaymentMethodsPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Payment methods"
-        action={
-          <Button variant="brass" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Add method
-          </Button>
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Payment methods"
+      action={
+        <Button variant="brass" onClick={() => setShowCreate(true)}>
+          <Plus size={16} /> Add method
+        </Button>
+      }
+    >
       <p data-page-intro="" className="mb-6 text-sm text-ink-500">
         Show payment logos two ways: upload one combined image with everything already laid out, or add each logo
         separately below for individual control (reordering, toggling one on/off).
@@ -252,6 +249,6 @@ export default function PaymentMethodsPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

@@ -19,7 +19,7 @@ import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/compon
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { SummaryStrip } from "@/components/admin/summary-strip";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -135,20 +135,18 @@ export default function AdSpendPage() {
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Megaphone} page="Ad spend" /></div>;
   const d = list.data;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Ad spend"
-        description="Each campaign's daily spend comes out of its ad account — Meta's real figure when connected, otherwise the budget until you enter what was spent."
-        action={can("finance.transact") && (
-          <div className="flex flex-wrap gap-2" data-phone-row>
-            {d?.meta.connected && <Button size="sm" variant="outline" loading={meta.isPending} onClick={() => meta.mutate()} data-testid="import-meta"><Download className="h-4 w-4" /> Bring in Meta spend</Button>}
-            <Button size="sm" variant="outline" onClick={() => setImporting(true)} disabled={!adAccounts.length} data-testid="import-ad-csv"><FileUp className="h-4 w-4" /> Import CSV</Button>
-            <Button size="sm" onClick={() => setEditing("new")} disabled={!adAccounts.length} data-testid="new-campaign"><Plus className="h-4 w-4" /> Campaign</Button>
-          </div>
-        )}
-      />
-
+    <ListPage
+      title="Ad spend"
+      description="Each campaign's daily spend comes out of its ad account — Meta's real figure when connected, otherwise the budget until you enter what was spent."
+      action={can("finance.transact") && (
+        <div className="flex flex-wrap gap-2" data-phone-row>
+          {d?.meta.connected && <Button size="sm" variant="outline" loading={meta.isPending} onClick={() => meta.mutate()} data-testid="import-meta"><Download className="h-4 w-4" /> Bring in Meta spend</Button>}
+          <Button size="sm" variant="outline" onClick={() => setImporting(true)} disabled={!adAccounts.length} data-testid="import-ad-csv"><FileUp className="h-4 w-4" /> Import CSV</Button>
+          <Button size="sm" onClick={() => setEditing("new")} disabled={!adAccounts.length} data-testid="new-campaign"><Plus className="h-4 w-4" /> Campaign</Button>
+        </div>
+      )}
+      className="space-y-6"
+    >
       {accounts.data && adAccounts.length === 0 && (
         <Alert variant="info" title="Add your ad account first">
           Create a money account of type <strong>Ad account</strong> in <Link href="/admin/finance/accounts?new=account" className="text-accent hover:underline">Money accounts</Link> (for Meta, its reference is the ad account id, act_…). Top it up with a transfer from bKash or the bank; spend is taken out of it day by day.
@@ -237,7 +235,7 @@ export default function AdSpendPage() {
       {spendFor && <SpendModal campaign={spendFor} defaultRate={settings.data?.defaultUsdRate ?? null} onClose={() => setSpendFor(null)} onDone={() => { setSpendFor(null); refresh(); }} />}
       {zeroFor && <ConfirmZeroModal gap={zeroFor} onClose={() => setZeroFor(null)} onDone={() => { setZeroFor(null); refresh(); }} />}
       {importing && <CsvModal adAccounts={adAccounts} defaultRate={settings.data?.defaultUsdRate ?? null} onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />}
-    </div>
+    </ListPage>
   );
 }
 

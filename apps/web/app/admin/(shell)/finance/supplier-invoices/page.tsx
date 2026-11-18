@@ -14,7 +14,7 @@ import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow 
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { INVOICE_LINE_LABEL, INVOICE_STATUS_BADGE, INVOICE_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { SupplierInvoiceModal } from "@/components/admin/payables/invoice-modal";
@@ -74,18 +74,17 @@ export default function SupplierInvoicesPage() {
   }
   const filtered = Boolean(status || kind || q.trim());
   return (
-    <div className="space-y-4">
-      <ModuleTabs />
-      <PageHeader
-        title="Supplier bills"
-        description="Bills and credit notes from suppliers, matched to what you received, returned or ordered."
-        action={can("ap.manage") && (
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setCreating("CREDIT_NOTE")} data-testid="new-credit-note">Credit note</Button>
-            <Button size="sm" onClick={() => setCreating("INVOICE")} data-testid="new-bill"><Plus className="h-4 w-4" /> New bill</Button>
-          </div>
-        )}
-      />
+    <ListPage
+      title="Supplier bills"
+      description="Bills and credit notes from suppliers, matched to what you received, returned or ordered."
+      action={can("ap.manage") && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setCreating("CREDIT_NOTE")} data-testid="new-credit-note">Credit note</Button>
+          <Button size="sm" onClick={() => setCreating("INVOICE")} data-testid="new-bill"><Plus className="h-4 w-4" /> New bill</Button>
+        </div>
+      )}
+      className="space-y-4"
+    >
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search number, reference or supplier" wrapperClassName="w-full sm:w-72" />
         <Select aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value)} className="w-full sm:w-40">
@@ -176,6 +175,6 @@ export default function SupplierInvoicesPage() {
       )}
       {voiding && <ReasonModal title={`Void ${voiding.number}`} hint="Its journal is reversed; a price difference it put on the goods comes off again. The goods or costs it billed can then be billed again." loading={voidIt.isPending} onClose={() => setVoiding(null)} onConfirm={(reason) => voidIt.mutate({ id: voiding.id, reason })} />}
       {variance && <ReasonModal title={`Approve the price on ${variance.invoice.number}`} hint={variance.message} loading={post.isPending} onClose={() => setVariance(null)} onConfirm={(reason) => post.mutate({ invoice: variance.invoice, reason })} />}
-    </div>
+    </ListPage>
   );
 }

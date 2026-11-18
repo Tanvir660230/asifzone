@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, PackageX, Sparkles } from "lucide-react";
 import { formatVariantLabel, guessPartialReturn, type Order } from "@clothing-brand/shared";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { toast } from "@/components/ui/toast";
@@ -42,12 +42,13 @@ export default function SettlePartialsPage() {
 
   const remaining = queue.length;
   return (
-    <div className="mx-auto max-w-2xl">
-      <PageHeader
-        eyebrow="Orders"
-        title="Settle part deliveries"
-        description="The courier delivered part of these parcels. Say what came back for each — stock and the books follow. Units go back on the shelf when you receive the parcel."
-      />
+    <ListPage
+      eyebrow="Orders"
+      title="Settle part deliveries"
+      description="The courier delivered part of these parcels. Say what came back for each — stock and the books follow. Units go back on the shelf when you receive the parcel."
+      className="mx-auto max-w-2xl"
+      tabs={false}
+    >
       {list.isError ? (
         <ErrorState description="The part deliveries didn't load." onRetry={() => void list.refetch()} />
       ) : list.isLoading ? (
@@ -77,7 +78,7 @@ export default function SettlePartialsPage() {
           )}
         </>
       )}
-    </div>
+    </ListPage>
   );
 }
 

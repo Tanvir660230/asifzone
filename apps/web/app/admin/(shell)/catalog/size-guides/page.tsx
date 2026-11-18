@@ -11,9 +11,8 @@ import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
@@ -125,18 +124,16 @@ export default function SizeGuidesPage() {
     setDraft((d) => ({ ...d, rows: d.rows.map((row, ri) => (ri === r ? row.map((cell, ci) => (ci === c ? value : cell)) : row)) }));
 
   return (
-    <div>
-      <PageHeader
-        title="Size guides"
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add size guide
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Size guides"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add size guide
+          </Button>
+        )
+      }
+    >
 
       <p className="mb-4 text-sm text-ink-500">
         Reusable size charts — a cap chart, a shoe chart, an apparel chart. Each can have its own columns. Attach one to a template so
@@ -290,6 +287,6 @@ export default function SizeGuidesPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

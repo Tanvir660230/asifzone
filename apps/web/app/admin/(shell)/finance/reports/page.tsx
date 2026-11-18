@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import type { Capability } from "@/lib/admin/capabilities";
@@ -125,9 +125,7 @@ export default function FinanceReportsPage() {
   }
   const shaped = q.data && def ? def.shape(q.data) : null;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader title="Purchasing reports" description="Purchasing, payables and inventory — every total agrees with the books." />
+    <ListPage title="Purchasing reports" description="Purchasing, payables and inventory — every total agrees with the books." className="space-y-6">
       <div className="flex flex-wrap items-end gap-3">
         <Field htmlFor="report" label="Report" className="w-full sm:w-64">
           <Select id="report" value={id ?? ""} onChange={(e) => setChosen(e.target.value as ReportId)} data-testid="report-select">
@@ -183,6 +181,6 @@ export default function FinanceReportsPage() {
           )}
         </>
       )}
-    </div>
+    </ListPage>
   );
 }

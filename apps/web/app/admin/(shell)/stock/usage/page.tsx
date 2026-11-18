@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableCell, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PermissionState } from "@/components/admin/permission-state";
 import { useCapabilities } from "@/hooks/use-capability";
 import * as stockApi from "@/lib/api/stock";
@@ -43,17 +43,16 @@ export default function MaterialUsagePage() {
   const flagged = rows.filter((r) => r.flags.length).length;
   const cols = 10;
   return (
-    <div className="space-y-6">
-      <ModuleTabs />
-      <PageHeader
-        title="Material usage"
-        description="Where each material went this month — bought, used in fills, packed, wasted, counted — and what to look into."
-        action={
-          <Field htmlFor="usage-month" label={<span className="sr-only">Month</span>}>
-            <Input id="usage-month" type="month" value={month} max={thisMonth()} onChange={(e) => setMonth(e.target.value)} className="w-44" data-testid="usage-month" />
-          </Field>
-        }
-      />
+    <ListPage
+      title="Material usage"
+      description="Where each material went this month — bought, used in fills, packed, wasted, counted — and what to look into."
+      action={
+        <Field htmlFor="usage-month" label={<span className="sr-only">Month</span>}>
+          <Input id="usage-month" type="month" value={month} max={thisMonth()} onChange={(e) => setMonth(e.target.value)} className="w-44" data-testid="usage-month" />
+        </Field>
+      }
+      className="space-y-6"
+    >
       {q.isSuccess && rows.length > 0 && (
         <p className="text-sm text-fg-muted" data-testid="usage-summary">{flagged ? `${flagged} of ${rows.length} materials to look into.` : `All ${rows.length} materials add up with nothing to look into.`}</p>
       )}
@@ -102,6 +101,6 @@ export default function MaterialUsagePage() {
         {q.isSuccess && rows.length === 0 && <EmptyState icon={Gauge} title="No materials yet" description="Add materials under Production › Materials; their use shows here month by month." />}
       </Card>
       <p className="text-xs text-fg-muted">Opening + bought − sent back − used − packed − wasted ± counts (and returns from orders) = closing. &ldquo;Recipes say&rdquo; is what the month&apos;s fills planned from their recipes.</p>
-    </div>
+    </ListPage>
   );
 }
