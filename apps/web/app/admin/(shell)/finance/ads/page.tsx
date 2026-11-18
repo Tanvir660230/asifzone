@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Download, FileUp, Megaphone, Pencil, Plus, ShoppingBag, TrendingUp } from "lucide-react";
+import { Archive, ArchiveRestore, Download, FileUp, Megaphone, Pencil, Plus } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
-import { StatTile } from "@/components/admin/stat-tile";
+import { SummaryStrip } from "@/components/admin/summary-strip";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -169,11 +169,14 @@ export default function AdSpendPage() {
       {list.isError && <Alert variant="danger" title="Campaigns couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {d && (
         <>
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Totals">
-            <StatTile label="Spent in the period" value={formatPriceWhole(Math.round(d.totals.spend))} icon={<Megaphone />} tone="accent" />
-            <StatTile label="Orders from the ads" value={String(d.totals.orders)} icon={<ShoppingBag />} />
-            <StatTile label="Sales from the ads" value={formatPriceWhole(Math.round(d.totals.revenue))} icon={<TrendingUp />} />
-          </section>
+          <SummaryStrip
+            className="mb-0"
+            figures={[
+              { label: "Spent in the period", value: formatPriceWhole(Math.round(d.totals.spend)), tone: "accent" },
+              { label: "Orders from the ads", value: String(d.totals.orders) },
+              { label: "Sales from the ads", value: formatPriceWhole(Math.round(d.totals.revenue)) },
+            ]}
+          />
           {(d.unlinkedTags?.length ?? 0) > 0 && d.campaigns.length > 0 && (
             <UnlinkedTags tags={d.unlinkedTags!} campaigns={d.campaigns} canLink={can("finance.transact")} onLinked={refresh} />
           )}

@@ -74,7 +74,7 @@ function ProductPageMode({ product, policy }: { product: Product; policy: StoreP
 function ListingMode({ product }: { product: Product }) {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <p className="mb-4 text-xs uppercase tracking-wide text-ink-400">{product.category.name} · category page</p>
+      <p className="mb-4 text-xs text-ink-400">{product.category.name} · category page</p>
       <ProductGrid products={[product]} />
     </div>
   );
@@ -112,7 +112,7 @@ function SocialMode({ product }: { product: Product }) {
           {image && <img src={image} alt="" className="h-full w-full object-cover" />}
         </div>
         <div className="space-y-0.5 bg-ink-50/60 px-3 py-2.5">
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">{parseUrl(seo.canonical)?.host ?? seo.canonical}</p>
+          <p className="text-xs text-ink-400">{parseUrl(seo.canonical)?.host ?? seo.canonical}</p>
           <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-ink-900">{seo.og.title}</p>
           {seo.og.description && <p className="line-clamp-1 text-sm text-ink-500">{seo.og.description}</p>}
         </div>

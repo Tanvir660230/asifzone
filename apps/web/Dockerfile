@@ -17,7 +17,9 @@ RUN pnpm --filter @clothing-brand/shared build
 # Phase 1A: no build arguments — the image carries no installation configuration. Site URL, API URL, media base, pixel
 # ids, Google client id and the VAPID public key are read at runtime (apps/web/lib/runtime-config.ts), so one image is
 # deployed unchanged to every installation.
-RUN pnpm --filter web build
+# next/font fetches Google Fonts here; a failed fetch is a network blip (it broke two CI image builds on 2026-11-18),
+# so the build gets one more try.
+RUN pnpm --filter web build || (sleep 15 && pnpm --filter web build)
 
 FROM base AS runner
 ENV NODE_ENV=production

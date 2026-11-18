@@ -10,8 +10,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrdersFilterBar } from "@/components/admin/orders/orders-filter-bar";
 import { OrdersList } from "@/components/admin/orders/orders-list";
@@ -179,41 +178,38 @@ export default function OrdersPage() {
     );
 
   return (
-    <div>
-      <PageHeader
-        title="Orders"
-        descriptionOnPhone
-        description={
-          stats
-            ? `${formatCount(stats.pending)} pending or confirmed · ${formatCount(stats.needsAttention)} need attention · ${formatCount(stats.todayOrders)} placed today`
-            : statsError
-              ? "Summary unavailable right now — it retries every minute."
-              : "Loading today's summary…"
-        }
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            {perms.exportCsv && (
-              <Button
-                variant="outline"
-                loading={exporting}
-                onClick={exportCsv}
-                title="Export the current filtered list as CSV"
-                aria-label="Export CSV"
-                className="max-sm:w-10 max-sm:px-0"
-              >
-                {!exporting && <Download size={16} />} <span className="max-sm:hidden">Export CSV</span>
-              </Button>
-            )}
-            {perms.manage && (
-              <Link href="/admin/orders/new" className={buttonVariants({ variant: "primary" })}>
-                <Plus size={16} /> Create order
-              </Link>
-            )}
-          </div>
-        }
-      />
-
-      <ModuleTabs />
+    <ListPage
+      title="Orders"
+      descriptionOnPhone
+      description={
+        stats
+          ? `${formatCount(stats.pending)} pending or confirmed · ${formatCount(stats.needsAttention)} need attention · ${formatCount(stats.todayOrders)} placed today`
+          : statsError
+            ? "Summary unavailable right now — it retries every minute."
+            : "Loading today's summary…"
+      }
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          {perms.exportCsv && (
+            <Button
+              variant="outline"
+              loading={exporting}
+              onClick={exportCsv}
+              title="Export the current filtered list as CSV"
+              aria-label="Export CSV"
+              className="max-sm:w-10 max-sm:px-0"
+            >
+              {!exporting && <Download size={16} />} <span className="max-sm:hidden">Export CSV</span>
+            </Button>
+          )}
+          {perms.manage && (
+            <Link href="/admin/orders/new" className={buttonVariants({ variant: "primary" })}>
+              <Plus size={16} /> Create order
+            </Link>
+          )}
+        </div>
+      }
+    >
 
       <OrdersFilterBar ref={searchRef} state={state} stats={stats} canSeeTrash={perms.trash} />
 
@@ -302,6 +298,6 @@ export default function OrdersPage() {
       </Drawer>
 
       {commands.dialogs}
-    </div>
+    </ListPage>
   );
 }

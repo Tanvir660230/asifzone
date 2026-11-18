@@ -18,8 +18,7 @@ import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { FilterBar, useFilterState } from "@/components/admin/filters";
 import { ProductStatusBadge, PRODUCT_STATUS_LABELS } from "@/components/admin/product-status-badge";
 import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
@@ -323,28 +322,26 @@ export default function ProductsPage() {
   );
 
   return (
-    <div>
-      <PageHeader
-        title="Products"
-        descriptionOnPhone
-        description={data ? `${formatCount(data.total)} ${trash ? "in Trash" : `product${data.total === 1 ? "" : "s"}`}` : undefined}
-        action={
-          <div className="flex items-center gap-2">
-            {/* Phones reach Import / export from the section bar above; the header keeps the one primary action. */}
-            <Link href="/admin/products/import" className="max-sm:hidden">
-              <Button variant="outline">
-                <FileSpreadsheet size={16} /> Import / export
-              </Button>
-            </Link>
-            <Link href={PRODUCT_NEW_HREF}>
-              <Button>
-                <Plus size={16} /> Add product
-              </Button>
-            </Link>
-          </div>
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Products"
+      descriptionOnPhone
+      description={data ? `${formatCount(data.total)} ${trash ? "in Trash" : `product${data.total === 1 ? "" : "s"}`}` : undefined}
+      action={
+        <div className="flex items-center gap-2">
+          {/* Phones reach Import / export from the section bar above; the header keeps the one primary action. */}
+          <Link href="/admin/products/import" className="max-sm:hidden">
+            <Button variant="outline">
+              <FileSpreadsheet size={16} /> Import / export
+            </Button>
+          </Link>
+          <Link href={PRODUCT_NEW_HREF}>
+            <Button>
+              <Plus size={16} /> Add product
+            </Button>
+          </Link>
+        </div>
+      }
+    >
       <DuplicateProductDialog product={duplicating} onClose={() => setDuplicating(null)} />
 
       <div className="space-y-3">
@@ -554,6 +551,6 @@ export default function ProductsPage() {
         </button>
       </BulkActionBar>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

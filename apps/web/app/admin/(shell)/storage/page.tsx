@@ -3,10 +3,10 @@
 import { Table, TableContainer, TableHead, TableHeaderCell } from "@/components/ui/table";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HardDrive, ImageOff, RotateCcw, Trash2 } from "lucide-react";
+import { ImageOff, RotateCcw, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
-import { StatTile } from "@/components/admin/stat-tile";
+import { SummaryStrip } from "@/components/admin/summary-strip";
 import { EmptyState } from "@/components/admin/empty-state";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { Button } from "@/components/ui/button";
@@ -126,20 +126,15 @@ export default function StoragePage() {
         data, including past orders and email campaigns. Uploads from the last {report?.graceDays ?? 7} days are never listed.
       </p>
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatTile label="Uploaded files" value={report ? `${report.totalFiles} · ${formatBytes(report.totalBytes)}` : "—"} icon={<HardDrive size={18} />} />
-        <StatTile
-          label="Unused"
-          value={report ? `${report.unused.length} · ${formatBytes(report.unusedBytes)}` : "—"}
-          icon={<ImageOff size={18} />}
-          tone={report && report.unused.length > 0 ? "warning" : "default"}
-        />
-        <StatTile
-          label="In trash"
-          value={trashQuery.data ? `${trashQuery.data.reduce((n, b) => n + b.files.length, 0)} files` : "—"}
-          icon={<Trash2 size={18} />}
-        />
-      </div>
+      <SummaryStrip
+        className="mb-6"
+        loading={!report}
+        figures={[
+          { label: "Uploaded files", value: report ? `${report.totalFiles} · ${formatBytes(report.totalBytes)}` : "—" },
+          { label: "Unused", value: report ? `${report.unused.length} · ${formatBytes(report.unusedBytes)}` : "—", tone: report && report.unused.length > 0 ? "warning" : "default" },
+          { label: "In trash", value: trashQuery.data ? `${trashQuery.data.reduce((n, b) => n + b.files.length, 0)} files` : "—" },
+        ]}
+      />
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-800">Unused files</h2>

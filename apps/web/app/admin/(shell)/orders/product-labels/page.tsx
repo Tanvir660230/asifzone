@@ -227,7 +227,7 @@ export default function ProductLabelsPage() {
             )}
             {rows[0] && (
               <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-fg-subtle">Preview</p>
+                <p className="mb-2 text-xs text-fg-subtle">Preview</p>
                 <div className="inline-block rounded-md border border-line bg-white shadow-sm">
                   <ProductLabel v={rows[0].variant} w={dims.w} h={dims.h} showPrice={showPrice} />
                 </div>

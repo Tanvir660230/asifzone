@@ -2,12 +2,8 @@
   "app/admin/(invoice)/finance/payroll/runs/[id]/payslips/page.tsx": {
     "uppercase": 5
   },
-  "app/admin/(shell)/orders/product-labels/page.tsx": {
-    "uppercase": 1
-  },
   "components/admin/product-builder/live-preview-frame.tsx": {
-    "fontSize": 2,
-    "uppercase": 2,
+    "fontSize": 1,
     "rawColour": 4
   },
   "components/admin/product-builder/preview-pane.tsx": {
