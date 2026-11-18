@@ -75,7 +75,7 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
     await page.getByLabel("Material visibility").selectOption("false");
     await page.getByLabel("Care instructions visibility").selectOption("false");
     await page.getByRole("button", { name: "Save template" }).click();
-    await expect(page.getByText(TEMPLATE_NAME).first()).toBeVisible();
+    await expect(page.getByText(TEMPLATE_NAME).filter({ visible: true }).first()).toBeVisible();
 
     await page.goto("/admin/catalog/types");
     await page.getByRole("button", { name: /add product type/i }).click();

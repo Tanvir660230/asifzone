@@ -141,10 +141,10 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.getByLabel("Field type").selectOption("SELECT");
     await page.getByLabel(/Options \(one per line\)/).fill("Hand embroidery\nMachine embroidery\nNone");
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(EMBROIDERY).first()).toBeVisible();
+    await expect(page.getByText(EMBROIDERY).filter({ visible: true }).first()).toBeVisible();
 
     await page.goto("/admin/catalog/templates");
-    await page.getByRole("button", { name: "Edit Panjabi template", exact: true }).click();
+    await page.getByText("Panjabi template", { exact: true }).filter({ visible: true }).first().click();
     await page.getByLabel("Field to add").selectOption({ label: `${EMBROIDERY} (Select (one option))` });
     await page.getByRole("button", { name: /^Add$/ }).click();
     await page.getByRole("button", { name: "Save template" }).click();
@@ -194,7 +194,7 @@ test.describe("product management system — the brief's acceptance tests", () =
 
     // Assign to the Cap type: the Cap template now uses this guide.
     await page.goto("/admin/catalog/templates");
-    await page.getByRole("button", { name: "Edit Cap template", exact: true }).click();
+    await page.getByText("Cap template", { exact: true }).filter({ visible: true }).first().click();
     await page.getByLabel("Size guide", { exact: true }).selectOption({ label: GUIDE });
     await page.getByRole("button", { name: "Save template" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);

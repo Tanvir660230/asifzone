@@ -96,10 +96,11 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
     await page.getByLabel("Shipping & returns title").fill(TEMPLATE_SHIPPING_TITLE);
     await page.getByLabel("Highlights visibility").selectOption("true");
     await page.getByRole("button", { name: "Save template" }).click();
-    await expect(page.getByText(TEMPLATE).first()).toBeVisible();
+    await expect(page.getByText(TEMPLATE).filter({ visible: true }).first()).toBeVisible();
 
     // Persisted: reopening shows the same choices.
-    await page.getByRole("button", { name: `Edit ${TEMPLATE}` }).click();
+    // the row opens its editor (the DataTable row on desktop, the card on phones)
+    await page.getByText(TEMPLATE, { exact: true }).filter({ visible: true }).first().click();
     await expect(page.getByLabel("Shipping & returns title")).toHaveValue(TEMPLATE_SHIPPING_TITLE);
     await expect(page.getByLabel("Highlights visibility")).toHaveValue("true");
   });
