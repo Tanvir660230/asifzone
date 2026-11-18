@@ -1186,3 +1186,25 @@ export interface Cancellations {
 export function getCancellations(dateFrom: Date, dateTo: Date) {
   return apiFetch<Cancellations>(`/api/analytics/cancellations${windowParams({ dateFrom, dateTo })}`);
 }
+
+/** Team activity (owner only): who moved which orders in the period, and how fast each admin confirms. */
+export interface TeamMember {
+  adminId: string;
+  name: string;
+  confirmed: number;
+  cancelled: number;
+  packed: number;
+  shipped: number;
+  delivered: number;
+  returned: number;
+  total: number;
+  medianMinutesToConfirm: number | null;
+}
+export interface TeamActivity {
+  range: { from: string; to: string };
+  people: TeamMember[];
+  automatic: Omit<TeamMember, "adminId" | "name" | "medianMinutesToConfirm">;
+}
+export function getTeamActivity(days?: number) {
+  return apiFetch<TeamActivity>(`/api/analytics/team${windowParams({ days })}`);
+}

@@ -41,7 +41,7 @@ const FIELD: Record<Counted, keyof Omit<TeamMember, "adminId" | "name" | "total"
 const empty = () => ({ confirmed: 0, cancelled: 0, packed: 0, shipped: 0, delivered: 0, returned: 0, total: 0 });
 
 export async function getTeamActivity(days?: number, dateFrom?: Date, dateTo?: Date): Promise<TeamActivity> {
-  const range = await resolveLegacyWindow(days ?? 30, dateFrom, dateTo);
+  const range = await resolveLegacyWindow(days, dateFrom, dateTo);
   const [counts, confirmTimes] = await Promise.all([
     prisma.$queryRaw<Array<{ adminId: string | null; name: string | null; status: Counted; n: bigint }>>`
       SELECT h."changedByAdminId" AS "adminId", a.name, h.status::text AS status, COUNT(*)::bigint AS n
