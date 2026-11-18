@@ -131,14 +131,14 @@ function MonthCard({ month, last, current, stockGain }: { month: OwnerMonth; las
   const label = current ? `${monthName(month.month)} so far` : monthName(month.month, { month: "long", year: "numeric" });
 
   return (
-    <section className="liquid-pass p-6 sm:p-8" aria-label={`${label}: ${loss ? "loss" : "profit"}`} data-testid="owner-month">
+    <section className="liquid-pass p-5 sm:p-6" aria-label={`${label}: ${loss ? "loss" : "profit"}`} data-testid="owner-month">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-end">
         <div>
-          <p className="text-[15px] font-medium text-fg-muted">{label}</p>
-          <p className={cn("mt-1 text-[2.5rem] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[3.5rem]", loss ? "text-danger-600" : "text-fg")}>
+          <p className="text-base font-medium text-fg-muted">{label}</p>
+          <p className={cn("mt-1 text-figure-md font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-figure-lg", loss ? "text-danger-600" : "text-fg")}>
             {loss ? `−${formatPrice(-month.profit)}` : formatPrice(month.profit)}
           </p>
-          <p className="mt-2 text-[15px] text-fg-muted">
+          <p className="mt-2 text-base text-fg-muted">
             {loss ? "loss" : "profit"} from <span className="font-medium text-fg tabular-nums">{formatPrice(month.sales)}</span> in sales
           </p>
           {last.sales > 0 && (
@@ -206,7 +206,7 @@ function ActionKeys({ hasPartners, onAdd }: { hasPartners: boolean; onAdd: (a: A
           const inner = (
             <>
               <span className="liquid-key"><k.icon className="h-[22px] w-[22px]" strokeWidth={1.75} aria-hidden="true" /></span>
-              <span className="mt-2 block w-[5.5rem] text-center text-[13px] leading-tight text-fg">{k.label}</span>
+              <span className="mt-2 block w-[5.5rem] text-center text-sm leading-tight text-fg">{k.label}</span>
             </>
           );
           return (
@@ -235,15 +235,15 @@ function Wallet({ money }: { money: Home["money"] }) {
   return (
     <section aria-labelledby="wallet-title">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 id="wallet-title" className="text-[17px] font-semibold tracking-tight text-fg">Money you hold</h2>
-        <p className="text-[17px] font-semibold tabular-nums text-fg">{formatPrice(money.withUs.total)}</p>
+        <h2 id="wallet-title" className="text-lg font-semibold tracking-tight text-fg">Money you hold</h2>
+        <p className="text-lg font-semibold tabular-nums text-fg">{formatPrice(money.withUs.total)}</p>
       </div>
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {cards.map((c) => (
           <li key={c.label}>
             <Link href="/admin/finance/accounts" className="liquid flex min-h-[104px] flex-col justify-between p-4" style={{ background: c.fill }}>
               <span className="flex items-center gap-2.5 text-sm text-fg-muted"><span className="grid h-7 w-7 place-items-center rounded-full text-white" style={{ background: c.mark }} aria-hidden="true"><c.icon className="h-3.5 w-3.5" /></span>{c.label}</span>
-              <span className="text-[22px] font-semibold tracking-tight tabular-nums text-fg">{signed(c.value)}</span>
+              <span className="text-xl font-semibold tracking-tight tabular-nums text-fg">{signed(c.value)}</span>
             </Link>
           </li>
         ))}
@@ -277,7 +277,7 @@ function Todo({ items: all, critical, onPay }: { items: Home["todo"]; critical: 
   }
   return (
     <section aria-labelledby="todo-title" data-testid="owner-todo">
-      <h2 id="todo-title" className="mb-3 text-[17px] font-semibold tracking-tight text-fg">Needs you</h2>
+      <h2 id="todo-title" className="mb-3 text-lg font-semibold tracking-tight text-fg">Needs you</h2>
       <ul className="liquid divide-y divide-line-subtle overflow-hidden">
         {critical.map((a) => (
           <li key={a.key}>
@@ -329,8 +329,8 @@ function Money({ money }: { money: Home["money"] }) {
   return (
     <section aria-labelledby="money-title" data-testid="owner-money">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 id="money-title" className="text-[17px] font-semibold tracking-tight text-fg">Where your money is</h2>
-        <p className="text-[17px] font-semibold tabular-nums text-fg">{formatPrice(total)}</p>
+        <h2 id="money-title" className="text-lg font-semibold tracking-tight text-fg">Where your money is</h2>
+        <p className="text-lg font-semibold tabular-nums text-fg">{formatPrice(total)}</p>
       </div>
       <ul className="liquid divide-y divide-line-subtle overflow-hidden">
         {rows.map((r) => (
@@ -354,11 +354,11 @@ function People({ people, onAdd }: { people: NonNullable<Home["people"]>; onAdd:
   const o = people.owner;
   return (
     <section aria-labelledby="people-title" data-testid="owner-people">
-      <h2 id="people-title" className="mb-3 text-[17px] font-semibold tracking-tight text-fg">Owner &amp; partners</h2>
+      <h2 id="people-title" className="mb-3 text-lg font-semibold tracking-tight text-fg">Owner &amp; partners</h2>
       <div className="liquid overflow-hidden">
         {o && (
           <Link href="/admin/finance/equity" className="block px-5 py-4 hover:bg-white/60">
-            <p className="text-[15px] font-medium text-fg">{o.name}</p>
+            <p className="text-base font-medium text-fg">{o.name}</p>
             <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
               <div><dt className="text-xs text-fg-muted">Net capital</dt><dd className="font-medium tabular-nums text-fg">{signed(o.netCapital)}</dd></div>
               <div><dt className="text-xs text-fg-muted">Drawings</dt><dd className="font-medium tabular-nums text-fg">{signed(o.drawings)}</dd></div>
@@ -369,7 +369,7 @@ function People({ people, onAdd }: { people: NonNullable<Home["people"]>; onAdd:
           {people.partners.map((p) => (
             <li key={p.id} className="flex items-center gap-3 px-5 py-4">
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-medium text-fg">
+                <p className="text-base font-medium text-fg">
                   {p.name}{" "}
                   <span className="text-sm font-normal text-fg-muted">{p.status === "LEFT" ? "left" : p.sharePct !== null ? `${p.sharePct}% of profit` : "no profit share now"}</span>
                 </p>

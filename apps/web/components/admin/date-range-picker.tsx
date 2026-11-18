@@ -101,7 +101,7 @@ function MonthCalendar({
       <p className="mb-2 text-center text-xs font-semibold text-ink-700">
         {new Date(year, month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
       </p>
-      <div className="grid grid-cols-7 text-center text-[11px] text-ink-400">
+      <div className="grid grid-cols-7 text-center text-xs text-ink-400">
         {WEEKDAY_LABELS.map((label, i) => (
           <div key={i}>{label}</div>
         ))}

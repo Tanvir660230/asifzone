@@ -40,9 +40,9 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await page.getByLabel("Field type").selectOption("SELECT");
     await page.getByLabel(/Options \(one per line\)/).fill("Hand Embroidery\nMachine Embroidery\nNone");
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(ATTR_LABEL, { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(ATTR_LABEL, { exact: false }).filter({ visible: true }).first()).toBeVisible();
     // The options column is hidden below the md breakpoint by design.
-    if (!isMobile) await expect(page.getByText("Hand Embroidery").first()).toBeVisible();
+    if (!isMobile) await expect(page.getByText("Hand Embroidery").filter({ visible: true }).first()).toBeVisible();
   });
 
   test("2. create a cap size guide with its own columns", async ({ page }) => {
@@ -75,7 +75,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await page.getByRole("button", { name: /^Add$/ }).click();
     await page.getByLabel("Required", { exact: true }).check();
     await page.getByRole("button", { name: "Save template" }).click();
-    await expect(page.getByText(TEMPLATE_NAME).first()).toBeVisible();
+    await expect(page.getByText(TEMPLATE_NAME).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("4. create the product type", async ({ page }) => {
@@ -85,7 +85,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await page.getByLabel("Name", { exact: true }).fill(TYPE_NAME);
     await page.getByLabel("Template").selectOption({ label: TEMPLATE_NAME });
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(TYPE_NAME).first()).toBeVisible();
+    await expect(page.getByText(TYPE_NAME).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("5. the product editor offers the new type, with its own fields, and enforces them", async ({ page }) => {
@@ -105,7 +105,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
 
     await continueTo(page, "variants");
     // The variant form speaks the template's language: "Cap size", and no colour input at all.
-    await expect(page.getByText("Cap size").first()).toBeVisible();
+    await expect(page.getByText("Cap size").filter({ visible: true }).first()).toBeVisible();
     await page.getByPlaceholder("SKU-001").first().fill(`E2E-CAP-${RUN}-M`);
     await page.getByPlaceholder(/e\.g\. S, M, L/).first().fill("M");
     await page.locator('input[name="variants.0.stock"]').fill("7");
@@ -113,7 +113,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
     // Required attribute left empty -> creating is blocked, and the builder goes to the field with a clear message.
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await expect(stepChip(page, "basics")).toHaveAttribute("aria-current", "step");
-    await expect(page.getByText(`${ATTR_LABEL} is required`).first()).toBeVisible();
+    await expect(page.getByText(`${ATTR_LABEL} is required`).filter({ visible: true }).first()).toBeVisible();
 
     await page.getByLabel(ATTR_LABEL).selectOption("Hand Embroidery");
     await createDraft(page);
@@ -159,10 +159,10 @@ test.describe("admin creates a brand-new product type with no code change", () =
     // Specs section built from the template's attribute.
     await page.getByRole("button", { name: /^specifications$/i }).click();
     await expect(page.getByText(`${ATTR_LABEL}:`)).toBeVisible();
-    await expect(page.getByText("Hand Embroidery").first()).toBeVisible();
+    await expect(page.getByText("Hand Embroidery").filter({ visible: true }).first()).toBeVisible();
 
     // Variant picker uses the template's label.
-    await expect(page.getByText("Cap size", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("Cap size", { exact: false }).filter({ visible: true }).first()).toBeVisible();
 
     // The cap's own size-guide columns, not the apparel chart's.
     await page.getByRole("button", { name: /size guide/i }).click();

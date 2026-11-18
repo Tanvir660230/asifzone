@@ -2,17 +2,16 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, RotateCcw, ArchiveX, Pencil, Copy, CopyPlus } from "lucide-react";
+import { Plus, Trash2, RotateCcw, ArchiveX, Pencil, Copy, CopyPlus, TicketPercent } from "lucide-react";
 import type { Coupon, CreateCouponInput } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ListPage } from "@/components/admin/patterns/list-page";
+import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import { CouponForm } from "@/components/admin/coupon-form";
 import * as couponsApi from "@/lib/api/admin-coupons";
 import { formatPrice, formatStoreDate } from "@/lib/format";
@@ -21,13 +20,13 @@ import { adminCan } from "@/lib/auth";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { cn } from "@/lib/utils";
 
-function statusOf(c: Coupon): { label: string; className: string } {
-  if (!c.isActive) return { label: "Inactive", className: "bg-ink-200 text-ink-700" };
+function statusOf(c: Coupon): { label: string; variant: "neutral" | "success" | "info" | "warning" | "danger" | "accent" } {
+  if (!c.isActive) return { label: "Inactive", variant: "neutral" };
   const now = Date.now();
-  if (c.startsAt && new Date(c.startsAt).getTime() > now) return { label: "Scheduled", className: "bg-info-100 text-info-700" };
-  if (c.expiresAt && new Date(c.expiresAt).getTime() < now) return { label: "Expired", className: "bg-ink-200 text-ink-700" };
-  if (c.usageLimit !== null && c.usedCount >= c.usageLimit) return { label: "Exhausted", className: "bg-danger-100 text-danger-700" };
-  return { label: "Active", className: "bg-success-100 text-success-700" };
+  if (c.startsAt && new Date(c.startsAt).getTime() > now) return { label: "Scheduled", variant: "info" };
+  if (c.expiresAt && new Date(c.expiresAt).getTime() < now) return { label: "Expired", variant: "neutral" };
+  if (c.usageLimit !== null && c.usedCount >= c.usageLimit) return { label: "Exhausted", variant: "danger" };
+  return { label: "Active", variant: "success" };
 }
 
 function discountLabel(c: Coupon): string {
@@ -65,7 +64,7 @@ export default function CouponsPage() {
   const { data: currentAdmin } = useCurrentAdmin();
   const canPurge = adminCan(currentAdmin?.admin, "promotions.purge"); // PD-10.1: permanent delete is OWNER-only
   const [tab, setTab] = useState<"active" | "trash">("active");
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error: loadError, refetch } = useQuery({
     queryKey: ["admin-coupons", tab],
     queryFn: () => couponsApi.listCoupons({ trashed: tab === "trash" }),
   });
@@ -165,22 +164,51 @@ export default function CouponsPage() {
     }
   }
 
+  const columns: DataTableColumn<Coupon>[] = [
+    {
+      id: "code",
+      header: "Code",
+      card: "title",
+      // plain text: on a phone the whole card is a button, so the copy action lives in the row menu
+      cell: (c) => <span className="font-medium text-ink-900">{c.code}</span>,
+    },
+    { id: "discount", header: "Discount", cell: (c) => discountLabel(c) },
+    { id: "target", header: "Applies to", cell: (c) => <span className="text-ink-500">{targetLabel(c)}</span> },
+    { id: "usage", header: "Usage", cell: (c) => <UsageCell used={c.usedCount} limit={c.usageLimit} /> },
+    { id: "expires", header: "Expires", cell: (c) => <span className="text-ink-500">{c.expiresAt ? formatStoreDate(c.expiresAt) : "—"}</span> },
+    {
+      id: "status",
+      header: "Status",
+      cell: (c) => {
+        const status = statusOf(c);
+        return <Badge variant={status.variant}>{status.label}</Badge>;
+      },
+    },
+  ];
+  const rowActions = (c: Coupon): DataTableRowAction<Coupon>[] =>
+    tab === "trash"
+      ? [
+          { label: "Restore", icon: RotateCcw, onSelect: () => restoreMutation.mutate(c.id) },
+          ...(canPurge ? [{ label: "Delete permanently", icon: Trash2, destructive: true, onSelect: () => void handlePermanentDelete(c) }] : []),
+        ]
+      : [
+          { label: "Copy code", icon: Copy, onSelect: () => void handleCopyCode(c.code) },
+          { label: "Edit", icon: Pencil, onSelect: () => openEdit(c) },
+          { label: "Duplicate", icon: CopyPlus, onSelect: () => openDuplicate(c) },
+          { label: "Move to trash", icon: Trash2, destructive: true, onSelect: () => void handleDelete(c) },
+        ];
+
   return (
-    <div>
-      <PageHeader
-        title="Coupons"
-        action={
-          tab === "active" && (
-            <Button variant="brass" onClick={openCreate}>
-              <Plus size={16} /> Add coupon
-            </Button>
-          )
-        }
-      />
-
-      <ModuleTabs />
-
-      <div className="mb-4">
+    <ListPage
+      title="Coupons"
+      action={
+        tab === "active" && (
+          <Button variant="brass" onClick={openCreate}>
+            <Plus size={16} /> Add coupon
+          </Button>
+        )
+      }
+      filters={
         <SegmentedControl
           aria-label="Coupons or Trash"
           value={tab}
@@ -190,116 +218,25 @@ export default function CouponsPage() {
             { value: "trash", label: "Trash" },
           ]}
         />
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="ui-table-head">
-              <tr>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Discount</th>
-                <th className="px-4 py-3">Applies to</th>
-                <th className="px-4 py-3">Usage</th>
-                <th className="px-4 py-3">Expires</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && <TableSkeleton rows={5} cols={7} />}
-              {!isLoading && data?.items.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
-                    {tab === "trash" ? (
-                      <span className="flex flex-col items-center gap-2">
-                        <ArchiveX size={24} className="text-ink-300" />
-                        Trash is empty.
-                      </span>
-                    ) : (
-                      "No coupons yet."
-                    )}
-                  </td>
-                </tr>
-              )}
-              {data?.items.map((c) => {
-                const status = statusOf(c);
-                return (
-                  <tr key={c.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                    <td className="px-4 py-3 font-medium">
-                      <button
-                        onClick={() => handleCopyCode(c.code)}
-                        className="inline-flex items-center gap-1.5 hover:text-brass-600"
-                        title="Copy code"
-                      >
-                        {c.code}
-                        <Copy size={12} className="text-ink-300" />
-                      </button>
-                    </td>
-                    <td className="px-4 py-3">{discountLabel(c)}</td>
-                    <td className="px-4 py-3 text-ink-500">{targetLabel(c)}</td>
-                    <td className="px-4 py-3">
-                      <UsageCell used={c.usedCount} limit={c.usageLimit} />
-                    </td>
-                    <td className="px-4 py-3 text-ink-500">{c.expiresAt ? formatStoreDate(c.expiresAt) : "—"}</td>
-                    <td className="px-4 py-3">
-                      <Badge className={status.className}>{status.label}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-3">
-                        {tab === "trash" ? (
-                          <>
-                            <button
-                              onClick={() => restoreMutation.mutate(c.id)}
-                              className="text-ink-500 hover:text-ink-900"
-                              aria-label="Restore"
-                              title="Restore"
-                            >
-                              <RotateCcw size={16} />
-                            </button>
-                            {canPurge && (
-                              <button
-                                onClick={() => handlePermanentDelete(c)}
-                                className="text-ink-500 hover:text-danger-600"
-                                aria-label="Delete permanently"
-                                title="Delete permanently"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={() => openEdit(c)} className="text-ink-400 hover:text-ink-900" aria-label="Edit" title="Edit">
-                              <Pencil size={16} />
-                            </button>
-                            <button
-                              onClick={() => openDuplicate(c)}
-                              className="text-ink-400 hover:text-ink-900"
-                              aria-label="Duplicate"
-                              title="Duplicate"
-                            >
-                              <CopyPlus size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(c)}
-                              className="text-ink-400 hover:text-danger-600"
-                              aria-label="Move to trash"
-                              title="Move to trash"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+      }
+    >
+      <DataTable<Coupon>
+        caption="Coupons"
+        columns={columns}
+        rows={isLoading ? undefined : data?.items}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={tab === "trash" ? (
+            <EmptyState icon={ArchiveX} title="Trash is empty" variant="bordered" />
+          ) : (
+            <EmptyState icon={TicketPercent} title="No coupons yet" description="A coupon gives a discount or free delivery when a customer types its code." variant="bordered" />
+          )}
+        density="dense"
+        onRowOpen={tab === "trash" ? undefined : openEdit}
+        rowActions={rowActions}
+      />
 
       <CouponForm
         open={formOpen}
@@ -310,6 +247,6 @@ export default function CouponsPage() {
         onSubmit={handleFormSubmit}
       />
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

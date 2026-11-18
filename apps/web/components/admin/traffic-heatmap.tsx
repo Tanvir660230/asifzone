@@ -45,7 +45,7 @@ export function TrafficHeatmap({ cells }: { cells: HeatmapCell[] }) {
           <div className="mb-1 grid grid-cols-[32px_repeat(24,1fr)] gap-[2px]">
             <div />
             {Array.from({ length: 24 }, (_, hour) => (
-              <div key={hour} className="text-center text-[10px] text-ink-400">
+              <div key={hour} className="text-center text-xs text-ink-400">
                 {hour % HOUR_LABEL_STEP === 0 ? formatHour(hour) : ""}
               </div>
             ))}
@@ -70,7 +70,7 @@ export function TrafficHeatmap({ cells }: { cells: HeatmapCell[] }) {
           ))}
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-end gap-2 text-[10px] text-ink-400">
+      <div className="mt-3 flex items-center justify-end gap-2 text-xs text-ink-400">
         <span>Less</span>
         {[0.05, 0.2, 0.4, 0.6, 0.9].map((alpha) => (
           <span key={alpha} className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: `rgb(var(--color-ink-900) / ${alpha})` }} />

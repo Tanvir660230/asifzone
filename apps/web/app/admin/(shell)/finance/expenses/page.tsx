@@ -22,7 +22,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour } from "@/lib/api/finance";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { ExpenseImportModal, NewCategoryModal } from "@/components/admin/finance/expense-import";
 import { PermissionState } from "@/components/admin/permission-state";
 import { todayLocal } from "@/lib/datetime-local";
@@ -137,7 +137,7 @@ export default function ExpensesPage() {
               <div key={e.id} className="flex items-start justify-between gap-3 px-4 py-3" data-testid="expense-row">
                 <span className="min-w-0 flex-1">
                   <span className="text-ink-900">{e.description}</span>
-                  <span className="block text-xs text-ink-500">{e.number} · {e.expenseDate} · {e.expenseAccount.code} {e.expenseAccount.name}{e.paidFrom ? ` · from ${e.paidFrom.name}` : ""}{e.payee ? ` · ${e.payee}` : ""}</span>
+                  <span className="block text-xs text-ink-500">{e.number} · {formatBookDate(e.expenseDate)} · {e.expenseAccount.code} {e.expenseAccount.name}{e.paidFrom ? ` · from ${e.paidFrom.name}` : ""}{e.payee ? ` · ${e.payee}` : ""}</span>
                 </span>
                 <span className="shrink-0 text-right">
                   <span className={e.status === "POSTED" ? "font-medium tabular-nums text-ink-900" : "tabular-nums text-ink-500 line-through"}>{formatPrice(e.amount)}</span>

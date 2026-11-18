@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { InnerNav } from "@/components/admin/inner-nav";
+import { SectionFrame } from "@/components/admin/section-frame";
 import { navNode, resolveNavNode } from "@/lib/admin/navigation";
 import { isStockSectionPath, StockFrame } from "@/components/admin/stock/stock-side-nav";
 
@@ -23,9 +23,8 @@ export function FinanceGroupFrame({ children }: { children: ReactNode }) {
   if (isStockSectionPath(pathname)) return <div data-area="finance"><StockFrame>{children}</StockFrame></div>;
   if (!node || node.kind === "detail" || !group?.innerList) return <div data-area="finance">{children}</div>;
   return (
-    <div data-area="finance" className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-8">
-      <InnerNav title={group.label} />
-      <div className="min-w-0">{children}</div>
+    <div data-area="finance">
+      <SectionFrame>{children}</SectionFrame>
     </div>
   );
 }

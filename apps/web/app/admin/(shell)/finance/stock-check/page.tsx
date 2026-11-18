@@ -127,7 +127,7 @@ export default function StockCheckPage() {
           {categories.length > 0 && (
             <Card className="space-y-3 p-5 sm:p-6" data-testid="stock-by-category">
               <div>
-                <h2 className="text-[17px] font-semibold tracking-tight text-fg">By category</h2>
+                <h2 className="text-lg font-semibold tracking-tight text-fg">By category</h2>
                 <p className="text-sm text-fg-muted">Pieces that came through the site, all colours and sizes together. Add pieces sent outside the site (straight through the courier) to get what was bought.</p>
               </div>
               <ul className="divide-y divide-line-subtle text-sm">
@@ -135,7 +135,7 @@ export default function StockCheckPage() {
                   <li key={c.name} className="flex items-start justify-between gap-4 py-2.5">
                     <span className="min-w-0 font-medium text-fg">{c.name}<span className="block text-xs font-normal text-fg-muted">{num(c.delivered)} delivered · {num(c.moving)} on the way, waiting or returned · {num(c.stock)} in stock</span></span>
                     <span className="shrink-0 text-right tabular-nums">
-                      <span className="block text-[17px] font-semibold text-fg">{num(c.throughSite)}</span>
+                      <span className="block text-lg font-semibold text-fg">{num(c.throughSite)}</span>
                       {c.countedVariants > 0 && <span className={cn("block text-xs", c.counted === c.stock ? "text-success-700" : "text-warning-700")}>{c.countedVariants === c.variants ? `counted ${num(c.counted)}` : `${c.countedVariants} of ${c.variants} counted`}</span>}
                     </span>
                   </li>
@@ -147,7 +147,7 @@ export default function StockCheckPage() {
           <Card className="overflow-hidden p-0">
             <div className="flex flex-wrap items-end justify-between gap-2 px-4 pt-4 sm:px-5">
               <div>
-                <h2 className="text-[17px] font-semibold tracking-tight text-fg">Products</h2>
+                <h2 className="text-lg font-semibold tracking-tight text-fg">Products</h2>
                 <p className="text-sm text-fg-muted">Through the site = still out on orders + in stock. Cancelled pieces put back are not counted twice.</p>
               </div>
             </div>
@@ -220,7 +220,7 @@ export default function StockCheckPage() {
 
           <Card className="overflow-hidden p-0">
             <div className="px-4 pt-4 sm:px-5">
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">Materials</h2>
+              <h2 className="text-lg font-semibold tracking-tight text-fg">Materials</h2>
               <p className="text-sm text-fg-muted">
                 Used = each product&apos;s approved recipe × its pieces through the site. Bought at least = used + what is left (your count, else the site stock) — before wastage and samples.
                 {d.checks.recipes === 0 && <> No recipe is approved yet — add one in <Link href="/admin/manufacturing/boms" className="text-accent hover:underline">Recipes</Link>.</>}
@@ -258,7 +258,7 @@ export default function StockCheckPage() {
 
           <Card className="space-y-3 p-5 sm:p-6">
             <div>
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">Parcels sent straight through Steadfast</h2>
+              <h2 className="text-lg font-semibold tracking-tight text-fg">Parcels sent straight through Steadfast</h2>
               <p className="text-sm text-fg-muted">In Steadfast&apos;s payouts but never an order on the site. Their contents aren&apos;t known — a parcel isn&apos;t a sale until you count it as one on its payout.</p>
             </div>
             {d.directShipments.length === 0 ? <p className="text-sm text-fg-muted">None — every paid parcel matched an order.</p> : (
@@ -332,7 +332,7 @@ function RollsCard({ rolls, average, loading, materials, canRecord, onDone }: { 
     <Card className="space-y-3 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-[17px] font-semibold tracking-tight text-fg">Rolls</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Rolls</h2>
           <p className="text-sm text-fg-muted">Bubble poly and anything else used up over many parcels. A roll&apos;s parcels are the courier bookings between opening and finishing it — the cost per parcel appears once a roll is finished.{average !== null && <> Average so far: <span className="font-medium tabular-nums text-fg">{formatPrice(average)}</span> a parcel.</>}</p>
         </div>
         {canRecord && <Button size="sm" variant="outline" onClick={() => setOpening(true)} disabled={materials.length === 0} data-testid="open-roll">Roll opened</Button>}

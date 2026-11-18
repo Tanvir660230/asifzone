@@ -550,7 +550,7 @@ export function BoughtSheet({ overview, purchases, canOwnerMoney, canEditCatalog
       <div className="space-y-5" data-testid="purchase-page">
         <div className="max-w-4xl">
           <div>
-            <h1 className="text-[22px] font-semibold tracking-tight text-fg">{title}</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-fg">{title}</h1>
             <p className="mt-1 text-sm text-fg-muted">{description}</p>
           </div>
           {draftNote && <p className="mt-1 text-xs text-fg-subtle" data-testid="purchase-draft-note">{draftNote}</p>}
@@ -626,7 +626,7 @@ function BoughtLine({ line, qty, good, minor, extrasShare, lastEach, ordering, e
   return (
     <div className="rounded-xl border border-line-subtle p-3 sm:p-4" data-testid="bought-line">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-[15px] font-medium text-fg">{choice.label}{!choice.grid && variantWords(v0) !== v0.sku && !choice.label.toLowerCase().includes(variantWords(v0).toLowerCase()) && <span className="font-normal text-fg-muted"> · {variantWords(v0)}</span>}</p>
+        <p className="min-w-0 text-base font-medium text-fg">{choice.label}{!choice.grid && variantWords(v0) !== v0.sku && !choice.label.toLowerCase().includes(variantWords(v0).toLowerCase()) && <span className="font-normal text-fg-muted"> · {variantWords(v0)}</span>}</p>
         <IconButton aria-label={`Remove ${choice.label}`} size="sm" className="-mr-1 -mt-1" onClick={onRemove}><X size={16} /></IconButton>
       </div>
       {choice.grid && <QtyGrid line={line} onChange={onChange} />}

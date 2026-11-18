@@ -62,7 +62,7 @@ export default function ProfitPage() {
       <PageHeader title="Profit" description="What the business kept — today, this week, this month or any days you pick — and the sales, ads and costs behind it." />
       {ready && <ProfitDashboard period={period} onChange={onPeriod} />}
       {r?.ladder && <ProfitLadder report={r} />}
-      <h2 className="pt-4 text-[20px] font-semibold tracking-tight text-fg">By product and order</h2>
+      <h2 className="pt-4 text-xl font-semibold tracking-tight text-fg">By product and order</h2>
       {report.isLoading && <Skeleton className="h-48 w-full" />}
       {report.isError && <Alert variant="danger" title="Profit couldn't be worked out" action={<Button size="sm" variant="outline" onClick={() => report.refetch()}>Retry</Button>}>{getErrorMessage(report.error, "")}</Alert>}
       {r && (
@@ -117,7 +117,7 @@ export default function ProfitPage() {
       {opening && launch.data?.period && (
         <Card className="space-y-3 p-5 sm:p-6" data-testid="launch-report">
           <div>
-            <h2 className="text-[17px] font-semibold tracking-tight text-fg">Before the books started</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-fg">Before the books started</h2>
             <p className="text-sm text-fg-muted">{formatBookDate(launch.data.period.from)} – {formatBookDate(launch.data.period.to)} · an estimate from the orders, today’s cost prices, the courier rate card and recorded ad spend. Not in the books.</p>
           </div>
           <dl className="divide-y divide-line-subtle text-sm">
@@ -148,7 +148,7 @@ function ProfitLadder({ report }: { report: booksApi.ProfitReport }) {
     <Card className="space-y-3 p-5 sm:p-6" data-testid="profit-ladder">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[17px] font-semibold tracking-tight text-fg">Books profit</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Books profit</h2>
           <p className="text-sm text-fg-muted">{formatBookDate(report.period.from)} – {formatBookDate(report.period.to)} · from the books, ending at the income statement&rsquo;s net profit.</p>
         </div>
         {c && (

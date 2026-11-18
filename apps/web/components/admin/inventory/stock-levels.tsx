@@ -37,7 +37,7 @@ const STATE_BADGE: Record<State, { label: string; variant: "danger" | "warning" 
   UNLIMITED: { label: "Not tracked", variant: "neutral" },
 };
 
-const TAB_BASE = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+const TAB_BASE = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
 
 /**
  * Inventory › Stock levels (Blueprint V2 §O): one row per variant with what can still be sold (Available), what unshipped
@@ -108,7 +108,7 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
         {showCost && (
           <Link
             href="/admin/finance/reports?report=inventory-valuation"
-            className="ml-auto flex items-baseline gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[13px] text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg"
+            className="ml-auto flex items-baseline gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-sm text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg"
             title="Inventory valuation report"
           >
             Stock value

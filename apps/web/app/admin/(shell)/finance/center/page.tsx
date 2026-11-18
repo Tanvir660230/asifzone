@@ -100,7 +100,7 @@ function Summary({ onView }: { onView: (v: View) => void }) {
       </section>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <Card className="p-5" data-testid="put-in-breakdown">
-          <h2 className="text-[15px] font-semibold tracking-tight text-fg">How “put in” adds up</h2>
+          <h2 className="text-base font-semibold tracking-tight text-fg">How “put in” adds up</h2>
           <p className="text-xs text-fg-muted">From the ledger as of {formatBookDate(d.asOf)}.</p>
           <dl className="mt-3 divide-y divide-line-subtle text-sm">
             <SumLine label="Owner capital" value={d.owner.capital} />
@@ -111,7 +111,7 @@ function Summary({ onView }: { onView: (v: View) => void }) {
           </dl>
         </Card>
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-line-subtle px-5 py-4"><h2 className="text-[15px] font-semibold tracking-tight text-fg">Missing or unsure</h2><p className="text-xs text-fg-muted">The books never guess these — each one says what is needed.</p></div>
+          <div className="border-b border-line-subtle px-5 py-4"><h2 className="text-base font-semibold tracking-tight text-fg">Missing or unsure</h2><p className="text-xs text-fg-muted">The books never guess these — each one says what is needed.</p></div>
           {d.missing.length === 0 ? (
             <div className="flex items-center gap-2 px-5 py-6 text-sm text-fg-muted"><CircleCheck className="h-4 w-4 text-success-600" aria-hidden /> Nothing missing — every figure is confirmed.</div>
           ) : (

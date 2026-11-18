@@ -1,17 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { isNodeAllowed, matchesRoute, resolveNavNode } from "@/lib/admin/navigation";
-import { useNavAccess } from "@/hooks/use-nav-access";
-import { cn } from "@/lib/utils";
+import { matchesRoute } from "@/lib/admin/navigation";
+import { SectionFrame } from "@/components/admin/section-frame";
 
 /**
- * The Stock section's menu on wide screens (stock UI redesign, docs/superpowers/plans/2026-11-03-stock-ui-redesign.md):
- * every inventory, purchasing, production, packaging and report page in five groups, so nothing hides behind "More" or a
- * second row of tabs. Each link shows only when the navigation manifest lets this admin open that page; on phones the
- * shell's section bar stays (this menu is lg+ only).
+ * The pages that make up the Stock section (inventory, purchasing, production, packaging, reports), wherever their
+ * routes live. `isStockSectionPath` tells the frames and tab rows that a page belongs to it.
  */
 const GROUPS: Array<{ label: string; items: Array<{ label: string; href: string; also?: string[] }> }> = [
   {
@@ -54,54 +49,8 @@ export function isStockSectionPath(pathname: string): boolean {
   return GROUPS.some((g) => g.items.some((i) => [i.href, ...(i.also ?? [])].some((r) => matchesRoute(r, pathname)) || pathname.startsWith(`${i.href}/`)));
 }
 
-export function StockSideNav() {
-  const pathname = usePathname();
-  const access = useNavAccess();
-  const groups = GROUPS.map((g) => ({
-    ...g,
-    items: g.items.filter((i) => {
-      const node = resolveNavNode(i.href);
-      return !node || isNodeAllowed(node, access);
-    }),
-  })).filter((g) => g.items.length > 0);
-  // the longest matching link wins (Purchases, not Overview, on /admin/stock/purchases)
-  const active = groups
-    .flatMap((g) => g.items)
-    .filter((i) => [i.href, ...(i.also ?? [])].some((r) => matchesRoute(r, pathname) || pathname.startsWith(`${i.href}/`)))
-    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
-  return (
-    <nav aria-label="Stock" className="sticky top-chrome hidden self-start lg:block" data-testid="stock-side-nav">
-      {groups.map((g) => (
-        <div key={g.label} className="mb-4">
-          <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">{g.label}</p>
-          <ul className="space-y-0.5">
-            {g.items.map((i) => (
-              <li key={i.href}>
-                <Link
-                  href={i.href}
-                  aria-current={i.href === active ? "page" : undefined}
-                  className={cn(
-                    "block rounded-lg px-3 py-1.5 text-[13px] transition-colors duration-fast ease-smooth",
-                    i.href === active ? "bg-ink-900/[0.07] font-medium text-fg" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
-                  )}
-                >
-                  {i.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </nav>
-  );
-}
-
-/** The Stock section's frame: the menu beside the page on wide screens, the page alone on phones. */
+/** The Stock section's frame: the group's tabs above the page (components/admin/section-frame.tsx). The grouped menu
+ * above is no longer drawn beside the page: the section bar and those tabs reach every page it listed. */
 export function StockFrame({ children }: { children: ReactNode }) {
-  return (
-    <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-8">
-      <StockSideNav />
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
+  return <SectionFrame>{children}</SectionFrame>;
 }

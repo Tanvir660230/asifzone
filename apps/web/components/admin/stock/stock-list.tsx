@@ -137,7 +137,7 @@ export function StockList({ hasFillToOrder, q, selectedId, onOpen }: { hasFillTo
                 >
                   <ItemThumb imageUrl={i.imageUrl} name={i.productName} unit={i.unit} attar={i.group === "FILL_TO_ORDER"} />
                   <span className="min-w-0">
-                    <span className="line-clamp-2 text-[15px] leading-snug text-fg"><Highlight text={i.productName} query={q} /></span>
+                    <span className="line-clamp-2 text-base leading-snug text-fg"><Highlight text={i.productName} query={q} /></span>
                     <span className="block truncate text-xs text-fg-muted"><Highlight text={metaOf(i)} query={q} /><span className="md:hidden"> · {figureOf(i, true)}</span></span>
                   </span>
                   <span className="hidden whitespace-nowrap text-right text-sm tabular-nums text-fg md:block">{figureOf(i)}</span>

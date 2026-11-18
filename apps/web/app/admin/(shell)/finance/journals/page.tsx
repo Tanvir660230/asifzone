@@ -23,7 +23,7 @@ import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { ChartAccount, JournalEntry } from "@/lib/api/finance";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 import { todayLocal } from "@/lib/datetime-local";
 
@@ -90,20 +90,20 @@ export default function JournalsPage() {
       {list.isLoading && <Skeleton className="h-48 w-full" />}
       {list.isError && <Alert variant="danger" title="Journals couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
       {list.data?.journals.length === 0 && <EmptyState icon={FileStack} title={filtered ? "Nothing matches" : "No journals yet"} description={filtered ? "Try other filters." : "Entries appear as the business trades."} />}
-      <div className="space-y-2">
+      <Card className="divide-y divide-line-subtle overflow-hidden p-0" hidden={!list.data || list.data.journals.length === 0}>
         {list.data?.journals.map((j) => {
           const expanded = openId === j.id;
           return (
-            <Card key={j.id} className="p-0" data-testid="journal-card">
-              <button type="button" onClick={() => setOpenId(expanded ? null : j.id)} className="flex w-full flex-wrap items-start justify-between gap-3 px-4 py-3 text-left" aria-expanded={expanded}>
+            <div key={j.id} data-testid="journal-card">
+              <button type="button" onClick={() => setOpenId(expanded ? null : j.id)} className="flex w-full flex-wrap items-start justify-between gap-3 px-4 py-2 text-left hover:bg-ink-900/[0.025]" aria-expanded={expanded}>
                 <span className="min-w-0">
                   <span className="text-sm text-ink-900">{j.number ? `#${j.number} ` : ""}{j.description}</span>
-                  <span className="block text-xs text-ink-500">{j.entryDate} · {KIND_LABEL[j.kind] ?? j.kind}{j.reference ? ` · ${j.reference}` : ""}</span>
+                  <span className="block text-xs text-ink-500">{formatBookDate(j.entryDate)} · {KIND_LABEL[j.kind] ?? j.kind}{j.reference ? ` · ${j.reference}` : ""}</span>
                 </span>
-                <span className="flex items-center gap-2"><span className="text-sm tabular-nums text-ink-900">{formatPrice(j.totalDebit)}</span><Badge variant={j.status === "POSTED" ? "success" : "neutral"}>{j.status === "POSTED" ? "posted" : "draft"}</Badge></span>
+                <span className="flex items-center gap-2"><span className="text-sm tabular-nums text-ink-900">{formatPrice(j.totalDebit)}</span><Badge variant={j.status === "POSTED" ? "success" : "neutral"} className="capitalize">{j.status === "POSTED" ? "posted" : "draft"}</Badge></span>
               </button>
               {expanded && (
-                <div className="space-y-3 border-t border-line px-4 py-3">
+                <div className="space-y-3 border-t border-line-subtle bg-ink-900/[0.015] px-4 py-3">
                   <ul className="space-y-1 text-sm">
                     {j.lines.map((l) => {
                       const a = accountById.get(l.accountId);
@@ -124,10 +124,10 @@ export default function JournalsPage() {
                   </div>
                 </div>
               )}
-            </Card>
+            </div>
           );
         })}
-      </div>
+      </Card>
       {creating && <JournalModal accounts={chart.data?.accounts ?? []} canPost={can("finance.post")} onClose={() => setCreating(false)} onDone={() => { setCreating(false); refresh(); }} />}
       {correcting && <JournalModal accounts={chart.data?.accounts ?? []} canPost correcting={correcting} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); refresh(); }} />}
       {reversing && <ReasonModal title={`Reverse journal #${reversing.number}`} hint="A mirror entry is posted; the original stays in the books." loading={reverse.isPending} onClose={() => setReversing(null)} onConfirm={(reason) => reverse.mutate({ id: reversing.id, reason })} />}

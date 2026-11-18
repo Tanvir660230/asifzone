@@ -73,7 +73,7 @@ export default function SalesIntelligencePage() {
 
       {/* Discounts */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Discount usage</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Discount usage</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!discounts ? (
             Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -100,7 +100,7 @@ export default function SalesIntelligencePage() {
             ) : (
               <table className="w-full min-w-[380px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Type</th>
                     <th className="pb-2 pr-4">Status</th>
                     <th className="pb-2">Count</th>
@@ -156,7 +156,7 @@ export default function SalesIntelligencePage() {
                 <Truck size={18} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Total loss</p>
+                <p className="text-xs font-semibold text-ink-400">Total loss</p>
                 <p className="text-xl font-semibold tabular-nums text-ink-900">{courier ? formatPrice(courier.totalLoss) : "—"}</p>
               </div>
             </div>

@@ -56,7 +56,7 @@ export function ExpectedOrders({ canReceive, canPay }: { canReceive: boolean; ca
           return (
             <li key={o.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4" data-testid="expected-order">
               <div className="min-w-0 space-y-1">
-                <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-fg">
+                <p className="flex flex-wrap items-center gap-2 text-base font-medium text-fg">
                   {o.supplier.name}
                   <span className="text-sm font-normal text-fg-muted tabular-nums">{o.number}</span>
                   {o.status === "SUBMITTED" ? <Badge variant="warning">Waiting for approval</Badge> : o.status === "PARTIALLY_RECEIVED" ? <Badge variant="info">Part arrived</Badge> : <Badge variant="neutral">On the way</Badge>}
@@ -158,7 +158,7 @@ function DeliverySheet({ order, canPay, onClose }: { order: ExpectedOrder; canPa
           <h3 id="delivery-items" className="text-sm font-medium text-fg">What arrived</h3>
           {rows.map((r) => (
             <div key={r.l.variantId} className="rounded-xl border border-line-subtle p-3" data-testid="delivery-line">
-              <p className="text-[15px] font-medium text-fg">{r.l.name}</p>
+              <p className="text-base font-medium text-fg">{r.l.name}</p>
               <p className="text-xs text-fg-muted tabular-nums">{num(r.l.remaining)} {r.l.unit}{inBought(r.l, r.l.remaining)} still to come</p>
               <div className="mt-2 grid grid-cols-2 gap-3 sm:max-w-sm">
                 <Field htmlFor={`dl-g-${r.l.variantId}`} label={`Good (${r.l.unit})`}>

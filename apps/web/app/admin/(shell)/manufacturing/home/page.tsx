@@ -75,7 +75,7 @@ export default function ProductionHomePage() {
       {d && (
         <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
           <Card className="overflow-hidden p-0" data-testid="production-needs">
-            <h2 className="px-4 pb-2 pt-4 text-[17px] font-semibold text-fg">Needs you</h2>
+            <h2 className="px-4 pb-2 pt-4 text-lg font-semibold text-fg">Needs you</h2>
             {needs.length === 0 ? (
               <p className="border-t border-line-subtle px-4 py-6 text-sm text-fg-muted">Nothing waiting — no bottles owed, every filled-to-order product has a recipe and no material is low.</p>
             ) : (
@@ -84,7 +84,7 @@ export default function ProductionHomePage() {
                   <li key={n.key} className="flex items-center gap-3 border-t border-line-subtle px-4 py-3">
                     <span className={cn("h-2 w-2 shrink-0 rounded-full", n.tone === "danger" ? "bg-danger-500" : "bg-warning-500")} aria-hidden="true" />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[15px] font-medium text-fg">{n.title}</span>
+                      <span className="block text-base font-medium text-fg">{n.title}</span>
                       <span className="block text-sm text-fg-muted">{n.detail}</span>
                     </span>
                     <Link href={n.href} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "shrink-0")}>{n.action}</Link>
@@ -96,7 +96,7 @@ export default function ProductionHomePage() {
 
           <Card className="overflow-hidden p-0" data-testid="production-can-make">
             <div className="px-4 pb-2 pt-4">
-              <h2 className="text-[17px] font-semibold text-fg">Can still make</h2>
+              <h2 className="text-lg font-semibold text-fg">Can still make</h2>
               <p className="text-sm text-fg-muted">From the materials in stock now — each size on its own</p>
             </div>
             {d.canMake.length === 0 ? (
@@ -126,7 +126,7 @@ export default function ProductionHomePage() {
           </Card>
 
           <Card className="overflow-hidden p-0 lg:col-span-2" data-testid="production-recent-fills">
-            <h2 className="px-4 pb-2 pt-4 text-[17px] font-semibold text-fg">Recent fills</h2>
+            <h2 className="px-4 pb-2 pt-4 text-lg font-semibold text-fg">Recent fills</h2>
             {d.recentFills.length === 0 ? (
               <p className="border-t border-line-subtle px-4 py-6 text-sm text-fg-muted">No bottles recorded as filled yet. <Link href="/admin/stock?fill=1" className="font-medium text-accent hover:underline">Record a fill</Link>.</p>
             ) : (

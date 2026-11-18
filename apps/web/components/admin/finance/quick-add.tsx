@@ -53,7 +53,7 @@ export function QuickAdd({ home, initial, partnerId, onClose }: { home: OwnerHom
               <li key={c.kind}>
                 <button type="button" onClick={() => setKind(c.kind)} className="liquid group flex h-full w-full flex-col items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50" data-testid={`quick-add-${c.kind.toLowerCase()}`}>
                   <span className="liquid-key h-11 w-11"><c.icon className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" /></span>
-                  <span className="min-w-0"><span className="block text-[15px] font-semibold text-fg">{c.title}</span><span className="mt-0.5 block text-sm text-fg-muted">{c.detail}</span></span>
+                  <span className="min-w-0"><span className="block text-base font-semibold text-fg">{c.title}</span><span className="mt-0.5 block text-sm text-fg-muted">{c.detail}</span></span>
                 </button>
               </li>
             ))}

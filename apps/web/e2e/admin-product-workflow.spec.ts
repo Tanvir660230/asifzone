@@ -47,7 +47,7 @@ test.describe("product workflow: draft → ready → published → unpublished",
       await page.getByRole("button", { name: /add material/i }).click();
       await page.getByLabel("Name", { exact: true }).fill(name);
       await page.getByRole("button", { name: "Save", exact: true }).click();
-      await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+      await expect(page.getByText(name, { exact: true }).filter({ visible: true }).first()).toBeVisible();
     }
   });
 

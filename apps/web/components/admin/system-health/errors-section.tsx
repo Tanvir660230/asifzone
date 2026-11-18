@@ -26,14 +26,14 @@ function ErrorDetail({ id }: { id: string }) {
   if (isLoading || !data) return <div className="h-24 animate-pulse rounded-xl bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading" />;
   return (
     <div className="space-y-2">
-      <p className="text-[13px] text-fg-muted">
+      <p className="text-sm text-fg-muted">
         First seen {formatStoreDateTime(data.firstSeenAt)} · last seen {formatStoreDateTime(data.lastSeenAt)}
       </p>
       {data.sampleStack && (
         <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-ink-900/[0.035] p-3 font-mono text-xs leading-relaxed text-fg">{data.sampleStack}</pre>
       )}
       {data.lastCorrelationId && (
-        <p className="text-[13px] text-fg-muted">
+        <p className="text-sm text-fg-muted">
           Support code <span className="select-all font-mono text-fg">{data.lastCorrelationId}</span> — share it with your developer to find this in the logs.
         </p>
       )}
@@ -51,14 +51,14 @@ function ErrorRow({ row, canRepair, onResolve, resolving }: { row: opsApi.ErrorG
         <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-4 hover:bg-ink-900/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 [&::-webkit-details-marker]:hidden">
           <Icon size={18} className="mt-0.5 shrink-0 text-fg-muted" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="line-clamp-2 break-words text-[15px] font-medium text-fg">{row.title}</p>
-            <p className="mt-0.5 truncate text-[13px] text-fg-muted">
+            <p className="line-clamp-2 break-words text-base font-medium text-fg">{row.title}</p>
+            <p className="mt-0.5 truncate text-sm text-fg-muted">
               {where}
               {row.lastPath ? ` · ${row.lastPath}` : ""}
             </p>
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-[13px] font-semibold tabular-nums text-fg">×{formatCount(row.count)}</p>
+            <p className="text-sm font-semibold tabular-nums text-fg">×{formatCount(row.count)}</p>
             <p className="text-xs text-fg-subtle">{timeAgo(row.lastSeenAt)}</p>
           </div>
           <ChevronRight size={16} className="mt-0.5 shrink-0 text-fg-subtle transition-transform duration-fast group-open:rotate-90" aria-hidden="true" />
@@ -100,7 +100,7 @@ export function ErrorsSection() {
           <h2 id="errors-heading" className="font-display text-lg tracking-tight text-fg">
             Errors
           </h2>
-          <p className="text-[13px] text-fg-muted">Things that broke on the server or in a visitor&apos;s browser. Each row is one kind of error.</p>
+          <p className="text-sm text-fg-muted">Things that broke on the server or in a visitor&apos;s browser. Each row is one kind of error.</p>
         </div>
         <SegmentedControl aria-label="Show errors" options={STATUS_OPTIONS} value={status} onChange={setStatus} />
       </div>

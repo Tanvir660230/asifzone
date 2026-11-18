@@ -107,7 +107,7 @@ export default function UserBehaviorPage() {
             ) : (
               <table className="w-full min-w-[320px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Status</th>
                     <th className="pb-2 pr-4">Count</th>
                     <th className="pb-2">Verified purchase</th>
@@ -130,7 +130,7 @@ export default function UserBehaviorPage() {
 
       {/* Feedback */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Contact-form feedback</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Contact-form feedback</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           {!feedback ? (
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)

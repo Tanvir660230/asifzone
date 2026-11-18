@@ -71,7 +71,7 @@ export interface OrdersListProps {
 /** Cell padding per density: compact fits about twice the rows of comfortable on one screen. */
 const DENSITY_PAD: Record<ListDensity, string> = {
   compact: "px-3 py-1",
-  standard: "px-3 py-2.5",
+  standard: "px-3 py-1.5",
   comfortable: "px-3 py-3.5",
 };
 /** Every column the table can draw: checkbox, order, product, customer, payment, total, status, courier, placed, actions. */
@@ -90,7 +90,7 @@ function SortableHeader({ column, label, props, align, className }: { column: So
         type="button"
         onClick={() => props.onSort(column)}
         className={cn(
-          "inline-flex items-center gap-1 whitespace-nowrap font-semibold uppercase tracking-wider transition-colors",
+          "inline-flex items-center gap-1 whitespace-nowrap font-semibold transition-colors",
           active ? "text-ink-900" : "text-ink-500 hover:text-ink-800",
         )}
       >
@@ -155,7 +155,7 @@ function CardItems({ summary }: { summary: OrderListItemSummary }) {
           <Package size={13} className="text-ink-300" aria-hidden="true" />
         )}
       </span>
-      <span className="min-w-0 truncate text-[13px] text-ink-700">
+      <span className="min-w-0 truncate text-sm text-ink-700">
         {name}
         {detail && <span className="text-fg-subtle"> · {detail}</span>}
       </span>
@@ -267,12 +267,18 @@ function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<
 }
 
 /** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
+/** Whether the order changed status after it was placed. The same transaction as the order itself (a phone order
+ * confirmed on creation) is no separate move. */
+function hasMoved(order: AdminOrderListItem): boolean {
+  const moved = order.statusChangedAt;
+  return Boolean(moved) && new Date(moved!).getTime() - new Date(order.createdAt).getTime() >= 1_000;
+}
+
 function MovedLine({ order }: { order: AdminOrderListItem }) {
   const moved = order.statusChangedAt;
-  // Same transaction as the order itself (a phone order confirmed on creation) = no separate move to show.
-  if (!moved || new Date(moved).getTime() - new Date(order.createdAt).getTime() < 1_000) return null;
+  if (!moved || !hasMoved(order)) return null;
   return (
-    <span className="mt-0.5 block text-xs text-fg-subtle" data-testid="order-moved">
+    <span className="mt-0.5 block text-xs text-fg-subtle" data-testid="order-moved" title={`Placed ${formatStoreDate(order.createdAt)} · ${formatStoreTime(order.createdAt)}`}>
       {orderStatusShortLabel(order.status)} {formatStoreDate(moved)} · {formatStoreTime(moved)}
     </span>
   );
@@ -369,7 +375,7 @@ export function OrdersList(props: OrdersListProps) {
   return (
     <>
       {/* Long pages (up to 200 rows) scroll inside the frame, so the column titles stay in view. */}
-      <TableContainer className="mt-4 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
+      <TableContainer className="mt-3 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
@@ -430,8 +436,9 @@ export function OrdersList(props: OrdersListProps) {
                     </button>
                     <AttentionMarker order={order} />
                   </span>
-                  {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. */}
-                  {shows("placed") && density !== "compact" && (
+                  {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. A row is two
+                      lines at most: once the order has moved, the line says when (its tooltip keeps the placed time). */}
+                  {shows("placed") && density !== "compact" && !hasMoved(order) && (
                     <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
                       {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
                     </span>
@@ -494,9 +501,9 @@ export function OrdersList(props: OrdersListProps) {
       <div className="mt-3 xl:hidden" aria-busy={props.isFetching || undefined}>
         {!isLoading && items.length > 0 && (
           readOnly ? (
-            <p className="mb-1.5 flex min-h-[40px] items-center px-1 text-[13px] tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</p>
+            <p className="mb-1.5 flex min-h-[40px] items-center px-1 text-sm tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</p>
           ) : (
-            <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-[13px] text-fg-muted">
+            <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-sm text-fg-muted">
               <Checkbox checked={allSelected} onChange={onToggleAll} />
               Select all on this page
               <span className="ml-auto tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</span>
@@ -534,8 +541,8 @@ export function OrdersList(props: OrdersListProps) {
                   )}
                   <button type="button" onClick={() => onOpen(order.id)} className="min-w-0 flex-1 text-left">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-[15px] font-semibold text-fg">{order.customerName}</span>
-                      <span className="shrink-0 text-[15px] font-semibold tabular-nums text-fg">{formatPrice(order.total)}</span>
+                      <span className="truncate text-base font-semibold text-fg">{order.customerName}</span>
+                      <span className="shrink-0 text-base font-semibold tabular-nums text-fg">{formatPrice(order.total)}</span>
                     </span>
                     <span className="mt-0.5 flex items-center justify-between gap-3 text-xs text-fg-subtle">
                       <span className="flex min-w-0 items-center gap-1">

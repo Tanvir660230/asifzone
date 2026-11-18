@@ -23,7 +23,7 @@ export function SetupChecklist({ title, description, steps, testId }: { title: s
   return (
     <Card className="p-5 sm:p-6" data-testid={testId}>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>
         <p className="text-sm tabular-nums text-fg-muted">{steps.length - left} of {steps.length} done</p>
         {description && <p className="w-full text-sm text-fg-muted">{description}</p>}
       </div>

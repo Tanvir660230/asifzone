@@ -25,7 +25,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
             <p className="text-sm font-medium text-fg">
               Single-key shortcuts
             </p>
-            <p className="mt-0.5 text-[13px] text-fg-muted">Shortcuts that are one letter or symbol. Turn off if they fire by accident.</p>
+            <p className="mt-0.5 text-sm text-fg-muted">Shortcuts that are one letter or symbol. Turn off if they fire by accident.</p>
           </div>
           <Switch checked={singleKeys} onChange={setSingleKeys} aria-label="Single-key shortcuts" />
         </div>
@@ -34,13 +34,13 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
           if (!items.length) return null;
           return (
             <section key={group}>
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">{group}</h3>
+              <h3 className="mb-2 text-xs font-semibold text-ink-400">{group}</h3>
               <dl className="space-y-1.5 text-sm">
                 {items.map((s) => (
                   <div key={s.keys} className={cn("flex items-center justify-between gap-4", !singleKeys && isCharacterKeyShortcut(s.keys) && "opacity-45")}>
                     <dt className="text-ink-700">{s.description}</dt>
                     <dd>
-                      <kbd className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-[11px] font-medium text-ink-600">{s.display}</kbd>
+                      <kbd className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-xs font-medium text-ink-600">{s.display}</kbd>
                     </dd>
                   </div>
                 ))}
@@ -49,7 +49,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
                     <div key={t.key} className={cn("flex items-center justify-between gap-4 pl-3", !singleKeys && "opacity-45")}>
                       <dt className="text-ink-500">{t.node.breadcrumb ?? t.node.label}</dt>
                       <dd>
-                        <kbd className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-[11px] font-medium uppercase text-ink-600">g {t.key}</kbd>
+                        <kbd className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-xs font-medium text-ink-600">g {t.key}</kbd>
                       </dd>
                     </div>
                   ))}

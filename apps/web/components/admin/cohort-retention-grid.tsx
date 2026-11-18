@@ -19,7 +19,7 @@ export function CohortRetentionGrid({ cohorts }: { cohorts: CohortRetention[] })
     <div className="overflow-x-auto">
       <table data-no-stack="" className="w-full min-w-[560px] text-sm">
         <thead>
-          <tr className="text-left text-xs uppercase tracking-wide text-ink-500">
+          <tr className="ui-card-table-head">
             <th className="pb-2 pr-4">Cohort</th>
             <th className="pb-2 pr-4 text-right">Size</th>
             {Array.from({ length: MAX_OFFSET + 1 }, (_, i) => (

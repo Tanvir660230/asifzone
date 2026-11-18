@@ -74,13 +74,13 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await page.getByLabel("Material visibility").selectOption("false");
     await page.getByLabel("Care instructions visibility").selectOption("false");
     await page.getByRole("button", { name: "Save template" }).click();
-    await expect(page.getByText(SIMPLE_TEMPLATE).first()).toBeVisible();
+    await expect(page.getByText(SIMPLE_TEMPLATE).filter({ visible: true }).first()).toBeVisible();
     await page.goto("/admin/catalog/types");
     await page.getByRole("button", { name: /add product type/i }).click();
     await page.getByLabel("Name", { exact: true }).fill(SIMPLE_TYPE);
     await page.getByLabel("Template").selectOption({ label: SIMPLE_TEMPLATE });
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(SIMPLE_TYPE).first()).toBeVisible();
+    await expect(page.getByText(SIMPLE_TYPE).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("1, 7–12, 18 — a simple product (no colour, size, variants, care, material, size guide, FAQ or related) is created and published", async ({ page }) => {

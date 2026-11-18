@@ -35,7 +35,7 @@ export function TemplatePicker({ thread, onSent }: { thread: ConversationDetail;
   if (isLoading) return <div className="h-24 animate-pulse rounded-lg bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading templates" />;
   if (isError) {
     return (
-      <p className="text-[13px] text-fg-muted">
+      <p className="text-sm text-fg-muted">
         {describeApiError(error, "Couldn't load your WhatsApp templates.")}{" "}
         <button type="button" className="font-medium text-accent hover:underline" onClick={() => refetch()}>
           Try again
@@ -45,7 +45,7 @@ export function TemplatePicker({ thread, onSent }: { thread: ConversationDetail;
   }
   if (!template) {
     return (
-      <p className="text-[13px] text-fg-muted">
+      <p className="text-sm text-fg-muted">
         No approved templates yet. Create one in WhatsApp Manager › Message templates — for example &ldquo;Assalamu alaikum {"{{1}}"}, apnar order {"{{2}}"} er
         bepare kotha bolte chai.&rdquo; — and it appears here once Meta approves it.
       </p>
@@ -56,12 +56,12 @@ export function TemplatePicker({ thread, onSent }: { thread: ConversationDetail;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="wa-template" className="text-[13px] text-fg-muted">
+        <label htmlFor="wa-template" className="text-sm text-fg-muted">
           Template
         </label>
         <Select
           id="wa-template"
-          className="h-8 w-auto py-0 text-[13px]"
+          className="h-8 w-auto py-0 text-sm"
           value={`${template.name}|${template.language}`}
           onChange={(e) => {
             setKey(e.target.value);
@@ -79,7 +79,7 @@ export function TemplatePicker({ thread, onSent }: { thread: ConversationDetail;
         <div className="grid gap-2 sm:grid-cols-2">
           {template.params.map((p, i) => (
             <div key={p} className="min-w-0">
-              <label htmlFor={`wa-param-${i}`} className="mb-1 block text-[12px] text-fg-muted">
+              <label htmlFor={`wa-param-${i}`} className="mb-1 block text-xs text-fg-muted">
                 {template.named ? p.replace(/_/g, " ") : `Blank ${p}`}
               </label>
               <Input id={`wa-param-${i}`} autoComplete="off" value={values[i] ?? ""} onChange={(e) => setValues((v) => Object.assign([...v], { [i]: e.target.value }))} />
@@ -87,11 +87,11 @@ export function TemplatePicker({ thread, onSent }: { thread: ConversationDetail;
           ))}
         </div>
       )}
-      <p className="whitespace-pre-wrap rounded-lg bg-ink-900/[0.03] px-3 py-2 text-[14px] leading-relaxed text-fg" aria-label="Preview">
+      <p className="whitespace-pre-wrap rounded-lg bg-ink-900/[0.03] px-3 py-2 text-sm leading-relaxed text-fg" aria-label="Preview">
         {renderTemplate(template, values)}
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12px] text-fg-subtle">Meta charges for each template message. When they reply, you can write freely again.</p>
+        <p className="text-xs text-fg-subtle">Meta charges for each template message. When they reply, you can write freely again.</p>
         <Button type="button" size="sm" disabled={!filled || send.isPending} loading={send.isPending} onClick={() => send.mutate()}>
           Send template
         </Button>

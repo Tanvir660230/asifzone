@@ -202,7 +202,7 @@ function StepCard({ controller: b }: { controller: ProductBuilderController }) {
   return (
     <section className="rounded-2xl border border-line-subtle bg-surface shadow-sm" aria-labelledby={titleId} key={step.id}>
       <header className="border-b border-line-subtle px-5 py-5 sm:px-7">
-        <p className="text-caption font-semibold uppercase text-fg-subtle">
+        <p className="text-caption font-semibold text-fg-subtle">
           Step {b.currentIndex + 1} of {total}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">

@@ -71,14 +71,14 @@ function UnlinkedTags({ tags, campaigns, canLink, onLinked }: { tags: UnlinkedAd
   return (
     <Card className="p-0" data-testid="unlinked-ad-tags">
       <div className="space-y-1 px-5 pt-4 sm:px-6">
-        <h2 className="text-[15px] font-semibold text-fg">Ad visits not linked to a campaign</h2>
+        <h2 className="text-base font-semibold text-fg">Ad visits not linked to a campaign</h2>
         <p className="text-sm text-fg-muted">Meta sends each campaign&rsquo;s id with the visit. Pick the campaign each id belongs to and its orders start counting (find the id in Ads Manager › Campaign ID).</p>
       </div>
       <ul className="mt-3 divide-y divide-line-subtle border-t border-line-subtle">
         {tags.map((t) => (
           <li key={t.tag} className="flex flex-wrap items-center gap-3 px-5 py-3 sm:px-6">
             <span className="min-w-0 flex-1">
-              <span className="block font-mono text-[13px] text-fg">{t.tag}</span>
+              <span className="block font-mono text-sm text-fg">{t.tag}</span>
               <span className="block text-xs text-fg-muted tabular-nums">{t.sessions.toLocaleString("en-US")} visits · {t.orders} order{t.orders === 1 ? "" : "s"}</span>
             </span>
             {canLink && open.length > 0 && (

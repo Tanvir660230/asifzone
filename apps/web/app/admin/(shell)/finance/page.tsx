@@ -12,7 +12,7 @@ import { navChildren, navNode, type NavAccess, type NavItem } from "@/lib/admin/
 /** The menu sections the map covers, in sidebar order (blueprint tab 2 §2): Money, Books, Reports › profit and costs,
  * Settings › Books setup. Store analytics is not a money page, so Reports lists only its book-side pages. */
 const SECTIONS = ["finance", "books", "analytics", "settings.books"];
-const IN_MAP = (item: NavItem) => item.node.id !== "finance.home" && item.node.id !== "reports.analytics" && item.node.id !== "analytics.ai-assistant";
+const IN_MAP = (item: NavItem) => item.node.id !== "finance.home" && item.node.id !== "analytics.ai-assistant" && item.node.kind !== "report";
 
 /** One heading per section for its loose pages, and one per grouping page (Money › Payments & refunds) for its own pages. */
 function mapGroups(access: NavAccess) {
@@ -69,7 +69,7 @@ function FinanceMap() {
   return (
     <section aria-labelledby="finance-map-title" data-testid="finance-map">
       <div className="mb-1 flex items-center gap-2">
-        <h2 id="finance-map-title" className="text-[17px] font-semibold tracking-tight text-fg">Everything in Money and Books</h2>
+        <h2 id="finance-map-title" className="text-lg font-semibold tracking-tight text-fg">Everything in Money and Books</h2>
       </div>
       <p className="mb-4 text-sm text-fg-muted">Every finance page, grouped the way the menu is. Not sure where something lives? Start here.</p>
       <div className="gap-x-10 md:columns-2">

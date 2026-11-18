@@ -245,7 +245,7 @@ export default function ProductIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Return rate</th>
                     <th className="pb-2 pr-4">Refund rate (order-level)</th>
@@ -317,7 +317,7 @@ export default function ProductIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">SKU</th>
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Size / Color</th>
@@ -467,7 +467,7 @@ export default function ProductIntelligencePage() {
             <ShoppingCart size={20} />
           </span>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Abandoned carts</p>
+            <p className="text-xs font-semibold text-ink-400">Abandoned carts</p>
             <p className="mt-0.5 text-xl font-semibold tabular-nums text-ink-900">
               {cartAbandonment ? `${cartAbandonment.cartCount} carts · ${formatPrice(cartAbandonment.potentialRevenue)} potential` : "—"}
             </p>

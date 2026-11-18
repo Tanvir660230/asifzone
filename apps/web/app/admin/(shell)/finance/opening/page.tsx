@@ -112,7 +112,7 @@ function StepHeading({ n, title, detail, done }: { n: number; title: string; det
         {done ? <CheckCircle2 className="h-4 w-4" /> : n}
       </span>
       <div className="min-w-0">
-        <h2 className="text-[17px] font-semibold tracking-tight text-fg">{title}</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>
         {detail && <p className="mt-0.5 text-sm text-fg-muted">{detail}</p>}
       </div>
     </div>
@@ -408,7 +408,7 @@ function PostedSummary({ business, batch }: { business: financeApi.BusinessSetti
         <div className="flex items-start gap-3">
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success-600" aria-hidden />
           <div className="min-w-0">
-            <h2 className="text-[17px] font-semibold tracking-tight text-fg">Your books started on {formatBookDate(batch.openingDate)}</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-fg">Your books started on {formatBookDate(batch.openingDate)}</h2>
             <p className="mt-1 text-sm text-fg-muted">
               The opening balances are posted and fixed. Financial year starts in {MONTHS[business.business.fiscalYearStartMonth - 1]}. To correct an opening figure, add a correcting entry in{" "}
               <Link href="/admin/finance/journals" className="text-accent hover:underline">Journals</Link>.
@@ -423,7 +423,7 @@ function PostedSummary({ business, batch }: { business: financeApi.BusinessSetti
         </dl>
       </Card>
       <Card className="p-5 sm:p-6">
-        <h2 className="mb-3 text-[17px] font-semibold tracking-tight text-fg">What comes next</h2>
+        <h2 className="mb-3 text-lg font-semibold tracking-tight text-fg">What comes next</h2>
         <ul className="space-y-2 text-sm">
           {!business.inventoryCostingActivatedAt && (
             <li><Badge variant="warning" className="mr-2">Next</Badge><Link href="/admin/finance/inventory-cutover" className="text-accent hover:underline">Confirm the value of your stock</Link> so every sale&apos;s profit uses real costs.</li>

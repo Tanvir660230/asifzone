@@ -35,9 +35,9 @@ export function HeroRevenueCard({
   return (
     <Card className={cn("flex flex-col justify-between p-6 sm:p-7", className)}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[13px] font-medium text-fg-muted">{label}</p>
+        <p className="text-sm font-medium text-fg-muted">{label}</p>
         {hasTrend && (
-          <span className={cn("flex shrink-0 items-center gap-1 whitespace-nowrap text-[12.5px] font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
+          <span className={cn("flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
             {isUp ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
             {Math.abs(trendPct!).toFixed(0)}% <span className="font-medium text-fg-muted">{trendLabel}</span>
           </span>
@@ -45,8 +45,8 @@ export function HeroRevenueCard({
       </div>
 
       <div className="mt-3 space-y-1">
-        <p className="text-[40px] font-semibold tabular-nums leading-tight tracking-tight text-fg">{value}</p>
-        <p className="flex items-center gap-1.5 text-[13px] text-fg-muted">
+        <p className="text-figure-lg font-semibold tabular-nums leading-tight tracking-tight text-fg">{value}</p>
+        <p className="flex items-center gap-1.5 text-sm text-fg-muted">
           <ShoppingBag size={14} aria-hidden /> {todayOrders} order{todayOrders === 1 ? "" : "s"} {ordersSuffix}
         </p>
       </div>

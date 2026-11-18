@@ -34,8 +34,8 @@ export default function FinancialAnalyticsPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">This month</h2>
-        <p className="-mt-2 mb-3 text-[12px] text-fg-subtle">Click a number to see what it&apos;s made of.</p>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">This month</h2>
+        <p className="-mt-2 mb-3 text-xs text-fg-subtle">Click a number to see what it&apos;s made of.</p>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!overview ? (
             Array.from({ length: 11 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -66,7 +66,7 @@ export default function FinancialAnalyticsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Right now</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Right now</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           {!overview ? (
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -81,7 +81,7 @@ export default function FinancialAnalyticsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Lifetime</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Lifetime</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!overview ? (
             Array.from({ length: 6 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -98,7 +98,7 @@ export default function FinancialAnalyticsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Money leaving the business (lifetime)</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Money leaving the business (lifetime)</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           {!costs ? (
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -124,7 +124,7 @@ export default function FinancialAnalyticsPage() {
             ) : (
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Date</th>
                     <th className="pb-2 pr-4">Net merchandise</th>
                     <th className="pb-2 pr-4">COGS</th>

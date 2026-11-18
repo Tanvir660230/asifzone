@@ -51,14 +51,14 @@ function ReportsSheetInner() {
       </Button>
       <Drawer open={open} onClose={() => setOpen(false)} title="Reports" widthClassName="max-w-lg">
         <div className="space-y-4 px-6 py-5">
-          <p className="text-[13px] text-fg-muted">The data behind Analytics as CSV. Orders and Products have their own filtered exports on their lists.</p>
+          <p className="text-sm text-fg-muted">The data behind Analytics as CSV. Orders and Products have their own filtered exports on their lists.</p>
           <ul className="divide-y divide-line-subtle rounded-2xl border border-line">
             {REPORTS.map((r) => (
               <li key={r.id} className="flex items-start gap-3 p-4">
                 <r.icon size={18} className="mt-0.5 shrink-0 text-fg-muted" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-medium text-fg">{r.title}</p>
-                  <p className="mt-0.5 text-[13px] text-fg-muted">{r.description}</p>
+                  <p className="text-sm font-medium text-fg">{r.title}</p>
+                  <p className="mt-0.5 text-sm text-fg-muted">{r.description}</p>
                 </div>
                 <a href={r.href} className={buttonVariants({ variant: "outline", size: "sm" })} aria-label={`Download ${r.title} as CSV`}>
                   <Download size={14} aria-hidden="true" /> CSV

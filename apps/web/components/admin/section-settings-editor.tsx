@@ -94,7 +94,7 @@ export function SectionSettingsEditor({ level, base, value, onChange }: SectionS
                   </div>
                   <div>
                     <p className={cn("text-sm font-medium", s.enabled ? "text-ink-900" : "text-ink-500")}>{s.label}</p>
-                    <p className="text-[11px] text-ink-400">
+                    <p className="text-xs text-ink-400">
                       {AREA_LABEL[s.area]}
                       {setHere ? " · set here" : ""}
                       {!setHere && level !== "store" && base.source.enabled !== "default" ? ` · from ${SOURCE_LABEL[base.source.enabled]}` : ""}
@@ -138,7 +138,7 @@ export function SectionSettingsEditor({ level, base, value, onChange }: SectionS
                       aria-label={`${s.label} text`}
                     />
                   )}
-                  <p className="mt-0.5 text-[11px] text-ink-400">{CONTENT_HELP[s.contentType]}</p>
+                  <p className="mt-0.5 text-xs text-ink-400">{CONTENT_HELP[s.contentType]}</p>
                 </div>
               )}
             </li>

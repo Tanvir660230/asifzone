@@ -40,7 +40,7 @@ export function SaveViewButton({ onSave, saving, className }: { onSave: (label: 
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className={cn(
-          "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-accent transition-colors duration-fast ease-smooth hover:bg-accent/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-accent transition-colors duration-fast ease-smooth hover:bg-accent/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           className,
         )}
       >
@@ -51,7 +51,7 @@ export function SaveViewButton({ onSave, saving, className }: { onSave: (label: 
           <Field label="Name this view" htmlFor="save-view-name">
             <Input id="save-view-name" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} placeholder="e.g. Dhaka COD, unpaid" autoFocus />
           </Field>
-          <label className="flex items-center gap-2 text-[13px] text-fg">
+          <label className="flex items-center gap-2 text-sm text-fg">
             <Checkbox checked={shared} onChange={(e) => setShared(e.target.checked)} />
             Share with the team
           </label>

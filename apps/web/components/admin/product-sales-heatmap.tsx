@@ -40,7 +40,7 @@ export function ProductSalesHeatmap({ data }: { data: ProductSalesHeatmapData })
           >
             <div />
             {data.days.map((day, i) => (
-              <div key={day} className="text-center text-[10px] text-ink-400">
+              <div key={day} className="text-center text-xs text-ink-400">
                 {i % 2 === 0 ? formatDayLabel(day) : ""}
               </div>
             ))}
@@ -72,7 +72,7 @@ export function ProductSalesHeatmap({ data }: { data: ProductSalesHeatmapData })
           ))}
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-end gap-2 text-[10px] text-ink-400">
+      <div className="mt-3 flex items-center justify-end gap-2 text-xs text-ink-400">
         <span>Less</span>
         {[0.05, 0.2, 0.4, 0.6, 0.9].map((alpha) => (
           <span key={alpha} className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: `rgb(var(--color-ink-900) / ${alpha})` }} />

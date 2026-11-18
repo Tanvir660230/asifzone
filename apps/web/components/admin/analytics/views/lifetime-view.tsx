@@ -30,7 +30,7 @@ export default function LifetimeDataPage() {
 
       {/* Lifetime headline figures — reused from the Executive Overview */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">All-time</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">All-time</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!overview ? (
             Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)

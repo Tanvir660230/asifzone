@@ -78,8 +78,8 @@ export function CostFigures({
 }) {
   const cell = (label: string, value: number | null, grey: boolean | undefined, tone?: "attention") => (
     <div className="min-w-0">
-      <dt className="text-[11px] font-medium text-fg-subtle">{label}</dt>
-      <dd className={cn("mt-0.5 text-[15px] font-semibold tracking-tight text-fg", tone === "attention" && value && !grey ? "text-warning-700" : "")}>
+      <dt className="text-xs font-medium text-fg-subtle">{label}</dt>
+      <dd className={cn("mt-0.5 text-base font-semibold tracking-tight text-fg", tone === "attention" && value && !grey ? "text-warning-700" : "")}>
         <Amount value={value} provisional={grey} />
       </dd>
     </div>

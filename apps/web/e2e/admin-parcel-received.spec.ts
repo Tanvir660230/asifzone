@@ -88,7 +88,7 @@ test.describe("parcel received back", () => {
       await card.getByTestId("parcel-received").click();
       await expect(page.getByText("Parcel received — good units are back in stock, the rest written off")).toBeVisible();
       await expect(page.getByTestId("parcel-coming-back")).toHaveCount(0);
-      await expect(page.getByText(/Parcel received back — 1 good, 1 damaged \(box crushed\)/).first()).toBeVisible();
+      await expect(page.getByText(/Parcel received back — 1 good, 1 damaged \(box crushed\)/).filter({ visible: true }).first()).toBeVisible();
     } finally {
       await adminFetch(page, `/api/orders/${id}`, "DELETE");
       await adminFetch(page, `/api/orders/${id}/permanent`, "DELETE");

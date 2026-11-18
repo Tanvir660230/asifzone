@@ -70,7 +70,7 @@ export default function ReconciliationRunPage() {
           ["Outstanding in the books · adjustments", `${figures.outstandingLedgerCount} · ${figures.adjustmentCount}`],
         ].map(([label, value]) => (
           <Card key={label} className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">{label}</p>
+            <p className="text-xs font-semibold text-ink-500">{label}</p>
             <p className="mt-1 text-base font-semibold tabular-nums text-ink-900">{value}</p>
           </Card>
         ))}
@@ -88,7 +88,7 @@ export default function ReconciliationRunPage() {
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">Statement lines in the period</h2>
+          <h2 className="text-xs font-semibold text-ink-500">Statement lines in the period</h2>
           {inProgress && can("finance.reconcile") && <Button size="sm" variant="outline" loading={auto.isPending} onClick={() => auto.mutate()}>Auto-match</Button>}
         </div>
         <Card className="p-0">
@@ -108,7 +108,7 @@ export default function ReconciliationRunPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">In the books, not on the statement (outstanding)</h2>
+        <h2 className="mb-2 text-xs font-semibold text-ink-500">In the books, not on the statement (outstanding)</h2>
         <Card className="p-0">
           <ul className="divide-y divide-line-subtle text-sm">
             {d.outstandingLedgerLines.map((l) => (

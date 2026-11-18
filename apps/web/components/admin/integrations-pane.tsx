@@ -64,7 +64,7 @@ function MetaWebhookHelp({ url, token, unsaved, onGenerate }: { url: string; tok
       <div>
         <p className="text-ink-500">Callback URL</p>
         <div className="mt-0.5 flex items-start justify-between gap-2">
-          <p className="min-w-0 break-all font-mono text-[11px] text-ink-700">{url}</p>
+          <p className="min-w-0 break-all font-mono text-xs text-ink-700">{url}</p>
           <Button type="button" size="sm" variant="link" className="shrink-0 text-xs" onClick={() => copy(url, "Callback URL")}>
             <Copy className="h-3.5 w-3.5" aria-hidden="true" />
             Copy
@@ -75,7 +75,7 @@ function MetaWebhookHelp({ url, token, unsaved, onGenerate }: { url: string; tok
         <p className="text-ink-500">Verify token</p>
         {token ? (
           <div className="mt-0.5 flex items-start justify-between gap-2">
-            <p className="min-w-0 break-all font-mono text-[11px] text-ink-700">{token}</p>
+            <p className="min-w-0 break-all font-mono text-xs text-ink-700">{token}</p>
             <Button type="button" size="sm" variant="link" className="shrink-0 text-xs" onClick={() => copy(token, "Verify token")}>
               <Copy className="h-3.5 w-3.5" aria-hidden="true" />
               {unsaved ? "Copy — save first" : "Copy"}
@@ -235,7 +235,7 @@ function IntegrationCard({ definition, state, view }: { definition: IntegrationD
                   Generate token
                 </Button>
               </div>
-              <p className="mt-1 break-all font-mono text-[11px] text-ink-700">
+              <p className="mt-1 break-all font-mono text-xs text-ink-700">
                 {steadfastWebhookUrl}
                 {webhookToken || "<your token>"}
               </p>
@@ -302,7 +302,7 @@ function IntegrationCard({ definition, state, view }: { definition: IntegrationD
                 ))}
             </div>
             <div className="flex items-center gap-3">
-              {changed.length > 0 && !save.isPending && <span className="text-[12px] text-fg-subtle">Unsaved changes</span>}
+              {changed.length > 0 && !save.isPending && <span className="text-xs text-fg-subtle">Unsaved changes</span>}
               <Button type="submit" size="sm" disabled={!changed.length} loading={save.isPending}>
                 Save
               </Button>

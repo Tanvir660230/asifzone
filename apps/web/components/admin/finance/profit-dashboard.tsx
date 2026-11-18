@@ -138,10 +138,10 @@ function Hero({ totals, prior, compareWith, label }: { totals: ProfitTotals; pri
   return (
     <div className="liquid-pass p-5 sm:p-7" data-testid="profit-hero">
       <p className="text-sm text-fg-muted">{label}</p>
-      <p className={cn("mt-1 text-[2rem] font-semibold leading-tight tracking-tight tabular-nums sm:text-[2.75rem]", loss ? "text-danger-600" : "text-fg")}>
+      <p className={cn("mt-1 text-figure-md font-semibold leading-tight tracking-tight tabular-nums sm:text-figure-lg", loss ? "text-danger-600" : "text-fg")}>
         {loss ? `${money(-totals.profit)} loss` : `${money(totals.profit)} profit`}
       </p>
-      <p className="mt-1 text-[15px] text-fg-muted">
+      <p className="mt-1 text-base text-fg-muted">
         from <span className="font-medium tabular-nums text-fg">{money(totals.sales)}</span> in sales
         {totals.marginPct !== null && totals.sales > 0 && <> · you keep <span className="font-medium tabular-nums text-fg">{money(Math.max(0, totals.marginPct))}</span> of every {formatPrice(100)}</>}
       </p>
@@ -177,11 +177,11 @@ function Kpi({ label, value, prior, good, note, href }: { label: string; value: 
   return (
     <Link href={href} className="group block" aria-label={`${label}: ${money(value)}`}>
       <Card className="flex h-full flex-col p-3.5 transition-colors duration-fast group-hover:border-line-strong sm:p-5">
-        <p className="flex items-center justify-between gap-2 text-[13px] font-medium text-fg-muted">
+        <p className="flex items-center justify-between gap-2 text-sm font-medium text-fg-muted">
           {label}
           <ChevronRight className="h-4 w-4 shrink-0 text-ink-300 group-hover:text-accent max-sm:hidden" aria-hidden />
         </p>
-        <p className="pt-1 text-[20px] font-semibold leading-tight tracking-tight tabular-nums text-fg sm:pt-2 sm:text-[26px]">{money(value)}</p>
+        <p className="pt-1 text-xl font-semibold leading-tight tracking-tight tabular-nums text-fg sm:pt-2 sm:text-2xl">{money(value)}</p>
         <p className="mt-1 text-xs text-fg-muted">{note}</p>
         {prior !== null && diff !== 0 && (
           <p className={cn("mt-auto flex items-center gap-0.5 pt-2 text-xs font-semibold tabular-nums", better ? "text-success-700" : "text-danger-600")}>
@@ -206,7 +206,7 @@ function ChartCard({ data, period, onChange, highlight }: { data: booksApi.Profi
     <Card className="p-4 sm:p-6" data-testid="profit-chart">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-[17px] font-semibold tracking-tight text-fg">{METRIC_LABEL[metric]} by {grain}</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">{METRIC_LABEL[metric]} by {grain}</h2>
           <p className="text-xs text-fg-muted">{highlight ? "The last two weeks, the chosen day lit. " : ""}A sale counts on the day its parcel is delivered; ads on the day they ran.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -238,7 +238,7 @@ function WhereItWent({ totals }: { totals: ProfitTotals }) {
   const loss = totals.profit < 0;
   return (
     <Card className="p-5 sm:p-6" data-testid="profit-breakdown">
-      <h2 className="text-[17px] font-semibold tracking-tight text-fg">Where every {formatPrice(100)} of sales went</h2>
+      <h2 className="text-lg font-semibold tracking-tight text-fg">Where every {formatPrice(100)} of sales went</h2>
       {base > 0 ? (
         <>
           <div className="mt-4 flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-ink-100" aria-hidden="true">
@@ -287,7 +287,7 @@ function AdsCard({ q, totals }: { q: UseQueryResult<Awaited<ReturnType<typeof bo
     <Card className="flex flex-col p-5 sm:p-6" data-testid="profit-ads">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[17px] font-semibold tracking-tight text-fg">Ads</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Ads</h2>
           <p className="text-sm text-fg-muted">
             {money(totals.ads)} spent{totals.salesPerAdTaka !== null && <> · each {formatPrice(1)} brought <span className="font-medium tabular-nums text-fg">{formatPrice(totals.salesPerAdTaka)}</span> of delivered sales</>}
           </p>
@@ -328,7 +328,7 @@ function AdStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 flex-col-reverse">
       <dt className="mt-0.5 text-xs text-fg-muted">{label}</dt>
-      <dd className="text-[17px] font-semibold tabular-nums tracking-tight text-fg">{value}</dd>
+      <dd className="text-lg font-semibold tabular-nums tracking-tight text-fg">{value}</dd>
     </div>
   );
 }

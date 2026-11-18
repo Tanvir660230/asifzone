@@ -105,7 +105,7 @@ export function NavTabs({ tabs, scrollable = false, className, "aria-label": ari
     <nav
       aria-label={ariaLabel}
       // Phones keep the tabs on one line that scrolls sideways — wrapped, they stack into a second row of tabs.
-      className={cn("flex gap-1 border-b border-line-subtle", scrollable ? "overflow-x-auto" : "flex-wrap max-sm:flex-nowrap max-sm:overflow-x-auto", className)}
+      className={cn("flex gap-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", scrollable ? "overflow-x-auto" : "flex-wrap max-sm:flex-nowrap max-sm:overflow-x-auto", className)}
     >
       {tabs.map((t) => {
         const active = activeHref !== undefined ? t.href === activeHref : pathname.startsWith(t.href);
@@ -115,8 +115,10 @@ export function NavTabs({ tabs, scrollable = false, className, "aria-label": ari
             href={t.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "-mb-px whitespace-nowrap border-b-2 px-3.5 py-2 text-sm font-medium transition-colors duration-fast ease-smooth sm:px-4",
-              active ? "border-accent text-fg" : "border-transparent text-fg-subtle hover:border-line-strong hover:text-ink-700",
+              // Capsules, not an underlined row: in the Store Console the section bar above already underlines the module's
+              // pages, and two identical rows of tabs read as one confused menu.
+              "flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-[13px] transition-colors duration-fast ease-smooth lg:h-7",
+              active ? "bg-ink-900/[0.08] font-semibold text-fg" : "font-medium text-fg-muted hover:bg-ink-900/[0.045] hover:text-fg",
             )}
           >
             {t.label}

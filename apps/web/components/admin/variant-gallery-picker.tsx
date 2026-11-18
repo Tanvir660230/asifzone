@@ -37,11 +37,11 @@ export function VariantGalleryPicker({ images, value, onChange, label }: Variant
             >
               <Thumbnail src={img.url} alt="" className="h-full w-full object-cover" />
               {selected && (
-                <span className="absolute left-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">
+                <span className="absolute left-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold text-accent-fg">
                   {position + 1}
                 </span>
               )}
-              {position === 0 && <span className="absolute inset-x-0 bottom-0 bg-ink-900/70 text-center text-[9px] uppercase tracking-wide text-cream-50">Main</span>}
+              {position === 0 && <span className="absolute inset-x-0 bottom-0 bg-ink-900/70 text-center text-[9px] text-cream-50">Main</span>}
             </button>
           );
         })}

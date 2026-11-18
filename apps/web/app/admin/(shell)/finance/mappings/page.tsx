@@ -77,7 +77,7 @@ export default function AccountMappingPage() {
             if (!rows.length) return null;
             return (
               <section key={sec.prefix} aria-labelledby={`map-${sec.prefix}`}>
-                <h2 id={`map-${sec.prefix}`} className="mb-2 text-[15px] font-semibold text-fg">{sec.title}</h2>
+                <h2 id={`map-${sec.prefix}`} className="mb-2 text-base font-semibold text-fg">{sec.title}</h2>
                 <Card className="divide-y divide-line-subtle p-0">
                   {rows.map((m) => <MappingRow key={m.key} mapping={m} type={sec.type} isGroup={sec.prefix === "group"} accounts={chart.data?.accounts ?? []} canEdit={can("finance.configure")} />)}
                 </Card>

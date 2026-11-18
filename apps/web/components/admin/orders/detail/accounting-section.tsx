@@ -12,17 +12,8 @@ import * as financeApi from "@/lib/api/finance";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DetailSection } from "./detail-section";
+import { financeEventLabel } from "@/lib/admin/finance-event-label";
 
-/** What each commerce event means for the books, in the owner's words (also Finance › Sales accounting). */
-export const EVENT_LABEL: Record<string, string> = {
-  "commerce.order.recognised": "Sale and its cost recorded",
-  "commerce.order.recognition_reversed": "Sale reversed",
-  "commerce.payment.received": "Payment received",
-  "commerce.refund.completed": "Refund paid",
-  "commerce.return.restocked": "Return put back in stock",
-  "commerce.return.written_off": "Return written off",
-  "commerce.store_credit.entry": "Store credit",
-};
 export const STATUS: Record<string, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
   POSTED: { label: "In the books", variant: "success" },
   RECEIVED: { label: "Waiting", variant: "warning" },
@@ -88,7 +79,7 @@ function EventRow({ event }: { event: AccountingEvent }) {
           className={cn("flex min-w-0 items-center gap-1.5 text-left text-sm", journal ? "text-ink-900 hover:text-ink-700" : "cursor-default text-ink-900")}
         >
           {journal && (open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ink-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-400" />)}
-          <span className="truncate">{EVENT_LABEL[event.eventType] ?? event.eventType}</span>
+          <span className="truncate">{financeEventLabel(event.eventType)}</span>
         </button>
         <span className="flex items-center gap-2 text-xs text-ink-500">
           <span className="whitespace-nowrap tabular-nums">{formatBookDate(event.financialDate)}</span>

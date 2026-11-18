@@ -154,6 +154,24 @@ label when estimated. Advanced fields behind "More options", owner-only tools be
 another page, cards around a single table, gradients and glass in the admin, decorative icons, two buttons that do the
 same thing.
 
+**Scale (owner, 2026-11-12: "size efficiency").** The console takes no desktop zoom: from 1024 px its root is 15 px
+(`html:has([data-surface="admin"])`, globals.css), so every rem size tightens together. Body 13.5 px, captions 12 px,
+tables 13 px, page title 22.5 px on one row with its actions. Density tokens (`surfaces.admin.density`): toolbar 52,
+section bar 40, row 40, control 34, page gutter 24. A list page shows about fifteen rows on a laptop. Phones and tablets
+keep the larger reading sizes.
+
+**Navigation — one rule at every width.** The sidebar lists modules only. The bar under the toolbar (`SectionBar`) lists
+the current module's pages. A group's own pages (Catalog setup, Bills to pay, Stock › More) are one row of tabs above the
+page, drawn by the group's layout (`SectionFrame`) from 1024 px and by the page's `<ModuleTabs />` below it. Never a
+second menu column beside the page, and never the same list in two places.
+
+**Lists are tables.** A page that lists records (bills, receipts, returns, journals) draws one row per record, never
+a card per record: a document's lines sit as small text under its number in the first cell, dates use `formatBookDate`
+("23 Oct 2026"), the status is a capitalised `Badge`, actions close the row. The first cell's content is wrapped in one
+block so the phone card list stacks it. Cards are for a record with its own figures and progress (a loan, a prepaid
+cost), not for a list. Every admin table gets the compact row padding from tablet width, whatever padding step the page
+wrote. In-page route tabs (`NavTabs`) are capsules; underlined tabs belong to the section bar alone.
+
 **Page anatomy** — five rows, always in this order: shell (sidebar from the navigation manifest, top bar with search
 Ctrl/⌘ K, Create, bell, account) → header (`PageHeader`: title, one-line description, primary action; back link on record
 pages) → section bar (a section's pages as tabs when 2–6, an inner list when more) → filter row (search left, chips,
@@ -162,9 +180,9 @@ saved views, date range right) → body (table, record or form). Lists full widt
 
 | Pattern | Rules | Built from |
 |---|---|---|
-| List | First column identity, then status, then 3–5 decision columns; money right-aligned; row opens the record; bulk bar on selection; cards below the breakpoint | `DataTable` |
-| Record page | Status and primary next action in the header; side column for links, totals, timeline | `PageHeader`, `Card` |
-| Form | Titled sections, required first, inline validation, sticky save bar, discard guard | `Field`, form sections |
+| List | First column identity, then status, then 3–5 decision columns; money right-aligned; row opens the record; bulk bar on selection; cards below the breakpoint; buttons live in the row menu, never in a cell (a phone card is itself a button) | `ListPage` + `DataTable` (`components/admin/patterns/list-page.tsx`) |
+| Record page | Back link; title with its status; a line of facts; the legal next actions on the right of the same row; titled sections; side column for links, totals, timeline | `RecordPage`, `RecordSection` (`components/admin/patterns/record-page.tsx`) |
+| Form | Titled sections in one column of at most 720 px (`max-w-form`), required first, inline validation, a save bar pinned to the bottom that says "Unsaved changes", leaving with changes asks first | `FormPage` (`components/admin/patterns/form-page.tsx`), `FormSection`, `Field` |
 | Quick sheet (Received goods, Fill, Count) | Drawer on desktop, full screen on phone; one task; preview before Save | `Drawer` |
 | Confirm dialog | Title = action + object; body lists the consequences the server will apply; destructive button right | `Modal` / confirm |
 | Status change | Only legal next states; reason inline when required; toast with Undo when reversible | shared state machine |
@@ -173,6 +191,8 @@ saved views, date range right) → body (table, record or form). Lists full widt
 
 **Words.** Sentence case; verbs on buttons ("Receive return", not "Submit"); the owner's nouns (bottles, parcel, bill,
 production run), not system words (GRN, BOM, settlement); one name per thing across menu, title, button and toast.
+
+**Guard.** `tests/architecture/admin-style-drift.test.ts` is a ratchet over `app/admin` and `components/admin`: no file may gain a hand-picked font size (`text-[11px]`), `uppercase` or a raw colour (`bg-[#…]`) beyond its count in `admin-style-baseline.json`, and a file that improves lowers its count (`UPDATE_STYLE_BASELINE=1 pnpm --filter web test admin-style`). Never raise a count to get past it.
 
 **States.** Loading: a skeleton in the content's shape, previous data kept while refetching. Empty: why, and the one
 action that fills it; filtered-empty offers Clear filters. Error: a plain sentence, what to do, Retry, the server's reason

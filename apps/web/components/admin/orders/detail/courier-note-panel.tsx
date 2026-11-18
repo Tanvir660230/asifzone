@@ -23,7 +23,7 @@ export function CourierNotePanel({ order, detail, canEdit }: { order: Order; det
   useEffect(() => setDraft(null), [order.id]);
 
   const heading = (
-    <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-ink-400">
       <MessageSquareText size={13} aria-hidden="true" /> Note for the courier
     </p>
   );

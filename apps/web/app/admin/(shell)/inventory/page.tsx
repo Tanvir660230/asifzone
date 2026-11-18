@@ -1,5 +1,6 @@
 "use client";
 
+import { Table, TableContainer, TableHead, TableHeaderCell } from "@/components/ui/table";
 import { formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,9 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { AdjustStockModal, type AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
@@ -89,39 +89,37 @@ export default function InventoryPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Inventory"
-        action={
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowReconciliation(true);
-                reconciliationQuery.refetch();
-              }}
-            >
-              <ShieldCheck size={16} /> Check integrity
-            </Button>
-            <Button variant="primary" onClick={() => openAdjust(null)}>
-              <Plus size={16} /> Adjust stock
-            </Button>
-          </div>
-        }
-      />
-
-      <SegmentedControl
-        aria-label="Inventory view"
-        size="md"
-        className="mb-5"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "levels", label: "Stock levels" },
-          { value: "movements", label: "Movements" },
-        ]}
-      />
-
+    <ListPage
+      title="Stock history & adjustments"
+      action={
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowReconciliation(true);
+              reconciliationQuery.refetch();
+            }}
+          >
+            <ShieldCheck size={16} /> Check integrity
+          </Button>
+          <Button variant="primary" onClick={() => openAdjust(null)}>
+            <Plus size={16} /> Adjust stock
+          </Button>
+        </div>
+      }
+      tabs={false}
+      filters={
+        <SegmentedControl
+          aria-label="Inventory view"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "levels", label: "Stock levels" },
+            { value: "movements", label: "Movements" },
+          ]}
+        />
+      }
+    >
       {tab === "levels" && <StockLevels onAdjust={(prefill) => openAdjust(prefill)} canAdjust={canAdjust} />}
 
       {tab === "movements" && (
@@ -162,21 +160,20 @@ export default function InventoryPage() {
 
       {/* sm and up: the table below. Below sm: a card list (below that) — same split as the other
           admin list pages. */}
-      <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="ui-table-head">
+      <TableContainer className="hidden sm:block">
+        <Table>
+            <TableHead>
               <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Reason</th>
-                <th className="px-4 py-3 text-right">Change</th>
-                <th className="px-4 py-3">Order</th>
-                <th className="px-4 py-3">Admin</th>
-                <th className="px-4 py-3">Note</th>
-                <th className="px-4 py-3"><span className="sr-only">Correction</span></th>
+                <TableHeaderCell>Date</TableHeaderCell>
+                <TableHeaderCell>Product</TableHeaderCell>
+                <TableHeaderCell>Reason</TableHeaderCell>
+                <TableHeaderCell align="right">Change</TableHeaderCell>
+                <TableHeaderCell>Order</TableHeaderCell>
+                <TableHeaderCell>Admin</TableHeaderCell>
+                <TableHeaderCell>Note</TableHeaderCell>
+                <TableHeaderCell><span className="sr-only">Correction</span></TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {isLoading && <TableSkeleton rows={8} cols={8} />}
               {!isLoading && data?.items.length === 0 && (
@@ -187,7 +184,7 @@ export default function InventoryPage() {
                 </tr>
               )}
               {data?.items.map((m) => (
-                <tr key={m.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
+                <tr key={m.id} className="ui-table-row">
                   <td className="px-4 py-3 text-ink-500">{formatStoreDateTime(m.createdAt)}</td>
                   <td className="px-4 py-3">
                     {m.variant ? (
@@ -222,9 +219,8 @@ export default function InventoryPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+        </Table>
+      </TableContainer>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:hidden">
         {isLoading &&
@@ -329,6 +325,6 @@ export default function InventoryPage() {
           )
         )}
       </Modal>
-    </div>
+    </ListPage>
   );
 }

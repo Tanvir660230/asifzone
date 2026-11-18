@@ -214,7 +214,7 @@ export default function ExecutiveOverviewPage() {
           leverage thing on the page for someone with 15 seconds. */}
       <section aria-label="AI insights">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">AI Insights &amp; Alerts</h2>
+          <h2 className="text-xs font-semibold text-ink-500">AI Insights &amp; Alerts</h2>
           <Link href="/admin/analytics/overview?view=insights" className="flex items-center gap-1 text-xs font-medium text-ink-500 hover:text-ink-900">
             View all <ArrowUpRight size={12} />
           </Link>
@@ -250,7 +250,7 @@ export default function ExecutiveOverviewPage() {
       <Card className="p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Sales trend</p>
+            <p className="text-xs font-semibold text-ink-400">Sales trend</p>
             <p className="mt-1 text-sm text-ink-500">Daily realised net sales for the selected range.</p>
           </div>
           <Link href="/admin/analytics/sales" className="flex shrink-0 items-center gap-1 text-sm font-medium text-ink-500 hover:text-ink-900">
@@ -492,7 +492,7 @@ export default function ExecutiveOverviewPage() {
             </div>
             {returns && returns.topReasons.length > 0 && (
               <div className="mt-5">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Most common reasons (this range)</p>
+                <p className="mb-2 text-xs font-semibold text-ink-400">Most common reasons (this range)</p>
                 <RankedBarList
                   emptyLabel="No reasons recorded yet for this range."
                   items={toBarItems(returns.topReasons, { key: (r) => r.reason, label: (r) => r.reason, value: (r) => r.count, valueLabel: (r) => String(r.count) })}
@@ -534,7 +534,7 @@ export default function ExecutiveOverviewPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-ink-900">{item.title}</p>
                       {item.body && <p className="mt-0.5 truncate text-xs text-ink-500">{item.body}</p>}
-                      <p className="mt-0.5 text-[11px] text-ink-400">{timeAgo(item.createdAt)}</p>
+                      <p className="mt-0.5 text-xs text-ink-400">{timeAgo(item.createdAt)}</p>
                     </div>
                     {!item.readAt && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brass-400" />}
                   </div>

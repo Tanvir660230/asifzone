@@ -175,7 +175,7 @@ function PickListSection({ data, className }: { data: PickListResponse; classNam
       </div>
       <Card className="overflow-hidden p-0 print:border-0 print:shadow-none">
         <table className="w-full text-sm">
-          <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-fg-subtle print:bg-transparent">
+          <thead className="bg-surface-muted text-left text-xs font-medium text-fg-subtle print:bg-transparent">
             <tr>
               <th scope="col" className="w-10 px-3 py-2">
                 <span className="sr-only">Picked</span>
@@ -276,7 +276,7 @@ function PackingSheetCard({ sheet: s, packed, onToggle }: { sheet: PackingSheet;
       </div>
 
       <table className="mt-4 w-full text-sm">
-        <thead className="text-left text-xs uppercase tracking-wide text-fg-subtle">
+        <thead className="text-left text-xs font-medium text-fg-subtle">
           <tr className="border-b border-line-subtle">
             <th scope="col" className="py-2 pr-3">Item</th>
             <th scope="col" className="py-2 pr-3 text-right">Qty</th>

@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { FilterBar, useFilterState } from "@/components/admin/filters";
 import type { FilterDefinition } from "@/lib/admin/filters";
 import * as paymentsApi from "@/lib/api/payments-admin";
@@ -50,9 +49,8 @@ export default function RefundsPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
-    <div>
-      <PageHeader title="Refunds" description="Money owed or returned to customers. Record or complete a refund from its order." />
-      <ModuleTabs />
+    <ListPage title="Refunds" description="Money owed or returned to customers. Record or complete a refund from its order."
+    >
       <div className="space-y-3">
         <FilterBar
           defs={FILTERS}
@@ -130,6 +128,6 @@ export default function RefundsPage() {
           </div>
         )}
       </div>
-    </div>
+    </ListPage>
   );
 }

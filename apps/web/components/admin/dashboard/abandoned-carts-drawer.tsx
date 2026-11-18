@@ -74,7 +74,7 @@ export function AbandonedCartsDrawer({ open, onClose }: { open: boolean; onClose
             { label: "Can be reminded", value: String(reachable.length) },
           ].map((s) => (
             <div key={s.label} className="rounded-xl bg-surface-muted px-3.5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">{s.label}</p>
+              <p className="text-xs font-semibold text-ink-400">{s.label}</p>
               <p className="mt-0.5 truncate text-lg font-semibold tabular-nums text-ink-900">{isLoading ? "…" : s.value}</p>
             </div>
           ))}
@@ -123,11 +123,11 @@ export function AbandonedCartsDrawer({ open, onClose }: { open: boolean; onClose
                       {c.itemCount > 1 ? ` · ${c.itemCount} items` : ""} · left {timeAgo(c.updatedAt)}
                     </p>
                     {!c.reachable ? (
-                      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-ink-400">
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-400">
                         <PhoneOff size={11} /> {c.phone ? "Not opted in to SMS" : "No phone number"}
                       </p>
                     ) : c.reminderSentAt ? (
-                      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-success-600">
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-success-600">
                         <BellRing size={11} /> Reminded {timeAgo(c.reminderSentAt)}
                       </p>
                     ) : null}

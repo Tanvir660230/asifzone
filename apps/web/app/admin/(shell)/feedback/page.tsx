@@ -85,16 +85,16 @@ function MessageBlock({ message, contactName, thread }: { message: ConversationM
   const out = message.direction === "OUT";
   return (
     <li className={cn("rounded-2xl px-4 py-3", out ? "ml-6 bg-accent/[0.06] sm:ml-16" : "mr-6 bg-ink-900/[0.03] sm:mr-16")}>
-      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[12px]">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-xs">
         <span className="flex items-center gap-1 font-medium text-fg">
           {out && message.author === "AI" && <Sparkles size={12} className="text-accent" aria-hidden="true" />}
           {out ? outLabel(message, thread) : contactName}
         </span>
         <span className="text-fg-subtle">{formatStoreDateTime(message.createdAt)}</span>
       </div>
-      <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-fg">{message.body}</p>
+      <p className="whitespace-pre-wrap text-base leading-relaxed text-fg">{message.body}</p>
       {out && (
-        <div className="mt-2 text-[12px]">
+        <div className="mt-2 text-xs">
           <DeliveryState message={message} />
         </div>
       )}
@@ -128,7 +128,7 @@ function WindowNote({ thread, channel }: { thread: ConversationDetail; channel: 
   const w = thread.replyWindow;
   if (!w.open) {
     return (
-      <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-[13px] text-warning-800">
+      <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
         <Clock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
         {channel === "WHATSAPP"
           ? `More than 24 hours since their last message — WhatsApp now allows only an approved template.${thread.phone ? " Or reply by SMS." : ""}`
@@ -137,11 +137,11 @@ function WindowNote({ thread, channel }: { thread: ConversationDetail; channel: 
     );
   }
   if (w.humanAgentTag) {
-    return <p className="text-[12px] text-fg-muted">More than 24 hours since their last message — this goes out as a staff reply, allowed for 7 days.</p>;
+    return <p className="text-xs text-fg-muted">More than 24 hours since their last message — this goes out as a staff reply, allowed for 7 days.</p>;
   }
   const left = w.closesAt ? timeUntil(w.closesAt) : null;
   return left ? (
-    <p className="flex items-center gap-1 text-[12px] text-fg-subtle">
+    <p className="flex items-center gap-1 text-xs text-fg-subtle">
       <Clock size={12} aria-hidden="true" /> Reply window closes in {left}
     </p>
   ) : null;
@@ -191,7 +191,7 @@ function Composer({ thread }: { thread: ConversationDetail }) {
 
   if (!channel) {
     return (
-      <p className="border-t border-line-subtle px-6 py-4 text-[13px] text-fg-muted">
+      <p className="border-t border-line-subtle px-6 py-4 text-sm text-fg-muted">
         {thread.replyChannels.length === 0 ? (
           "This customer left no way to reply."
         ) : (
@@ -226,11 +226,11 @@ function Composer({ thread }: { thread: ConversationDetail }) {
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] text-fg-muted">Reply on</span>
+        <span className="text-sm text-fg-muted">Reply on</span>
         {options.length > 1 ? (
           <SegmentedControl aria-label="Reply on" value={channel} onChange={(v) => setChannel(v)} options={options.map((c) => ({ value: c, label: replyChannelLabel(c, thread.channel) }))} />
         ) : (
-          <span className="text-[13px] font-medium text-fg">{replyChannelLabel(channel, thread.channel)}</span>
+          <span className="text-sm font-medium text-fg">{replyChannelLabel(channel, thread.channel)}</span>
         )}
       </div>
       <WindowNote thread={thread} channel={channel} />
@@ -240,7 +240,7 @@ function Composer({ thread }: { thread: ConversationDetail }) {
         <>
           <div aria-live="polite">
             {draft && (
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="flex items-center gap-1 font-medium text-accent">
                   <Sparkles size={12} aria-hidden="true" /> {draft.fromLibrary ? "Saved answer" : `AI draft · ${INTENT_LABEL[draft.intent] ?? draft.intent}`}
                   <span className="font-normal text-fg-subtle">— check it, then send</span>
@@ -264,7 +264,7 @@ function Composer({ thread }: { thread: ConversationDetail }) {
             placeholder={`Write to ${thread.contactName.split(" ")[0]}…`}
           />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className={cn("text-[12px]", tooLong ? "text-danger-600" : "text-fg-subtle")}>
+            <p className={cn("text-xs", tooLong ? "text-danger-600" : "text-fg-subtle")}>
               {tooLong ? `${formatCount(body.trim().length)}/${max} — too long` : deliveryHint(channel, thread, body.trim().length)}
             </p>
             <Button type="submit" size="sm" disabled={!ready}>
@@ -330,7 +330,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   return (
     <article className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line-subtle px-6 py-4">
-        <button type="button" onClick={onBack} className="mb-3 flex items-center gap-1 text-[13px] font-medium text-accent lg:hidden">
+        <button type="button" onClick={onBack} className="mb-3 flex items-center gap-1 text-sm font-medium text-accent lg:hidden">
           <ArrowLeft size={14} aria-hidden="true" /> Inbox
         </button>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -339,11 +339,11 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               <ChannelIcon channel={thread.channel} size={17} className="text-fg-muted" />
               {thread.subject}
             </h2>
-            <p className="mt-1 text-[13px] text-fg-muted">
+            <p className="mt-1 text-sm text-fg-muted">
               <span className="font-medium text-fg">{thread.contactName}</span>
               {[thread.email, thread.phone].filter(Boolean).length > 0 && <> · {[thread.email, thread.phone].filter(Boolean).join(" · ")}</>}
             </p>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-fg-muted">
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-fg-muted">
               <UserCheck size={13} aria-hidden="true" />
               {thread.assignedTo ? <>Handled by {thread.assignedTo.id === me ? "you" : thread.assignedTo.name}</> : "Not assigned"}
               {thread.assignedTo?.id === me ? (
@@ -357,7 +357,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               )}
             </p>
             {thread.customer && (
-              <Link href={`/admin/customers/${thread.customer.id}`} className="mt-1 inline-flex items-center gap-1 text-[13px] text-accent hover:underline">
+              <Link href={`/admin/customers/${thread.customer.id}`} className="mt-1 inline-flex items-center gap-1 text-sm text-accent hover:underline">
                 <UserRound size={13} aria-hidden="true" /> Customer with this number: {thread.customer.name}
               </Link>
             )}
@@ -459,7 +459,7 @@ export default function InboxPage() {
               options={STATUS.map((s) => ({ value: s.value, label: s.label }))}
             />
             <div className="flex items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-[13px] text-fg-muted">
+              <label className="flex items-center gap-2 text-sm text-fg-muted">
                 <Checkbox
                   checked={mine}
                   onChange={(e) => {
@@ -474,7 +474,7 @@ export default function InboxPage() {
               </label>
               <Select
                 id="inbox-channel"
-                className="h-8 w-auto py-0 text-[13px]"
+                className="h-8 w-auto py-0 text-sm"
                 value={channel ?? ""}
                 onChange={(e) => {
                   setPage(1);
@@ -525,21 +525,21 @@ export default function InboxPage() {
                     <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", isNew ? "bg-accent" : "bg-transparent")} aria-label={isNew ? "New" : undefined} />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline justify-between gap-2">
-                        <span className={cn("truncate text-[14px] text-fg", isNew && "font-semibold")}>{c.contactName}</span>
-                        <span className="shrink-0 text-[12px] text-fg-subtle">{timeAgo(c.lastMessageAt)}</span>
+                        <span className={cn("truncate text-sm text-fg", isNew && "font-semibold")}>{c.contactName}</span>
+                        <span className="shrink-0 text-xs text-fg-subtle">{timeAgo(c.lastMessageAt)}</span>
                       </span>
-                      <span className={cn("flex items-center gap-1.5 truncate text-[13px]", isNew ? "font-medium text-fg" : "text-fg-muted")}>
+                      <span className={cn("flex items-center gap-1.5 truncate text-sm", isNew ? "font-medium text-fg" : "text-fg-muted")}>
                         <ChannelIcon channel={c.channel} size={13} className="text-fg-subtle" />
                         <span className="truncate">{c.subject}</span>
-                        {c.messageCount > 1 && <span className="shrink-0 rounded-full bg-ink-900/[0.06] px-1.5 text-[11px] font-medium tabular-nums text-fg-muted">{c.messageCount}</span>}
+                        {c.messageCount > 1 && <span className="shrink-0 rounded-full bg-ink-900/[0.06] px-1.5 text-xs font-medium tabular-nums text-fg-muted">{c.messageCount}</span>}
                         {c.hasDraft && (
-                          <span className="ml-auto flex shrink-0 items-center gap-0.5 rounded-full bg-accent/[0.08] px-1.5 text-[11px] font-medium text-accent">
+                          <span className="ml-auto flex shrink-0 items-center gap-0.5 rounded-full bg-accent/[0.08] px-1.5 text-xs font-medium text-accent">
                             <Sparkles size={10} aria-hidden="true" /> Draft
                           </span>
                         )}
                       </span>
-                      <span className="block truncate text-[13px] text-fg-subtle">{c.preview}</span>
-                      {c.assignedTo && <span className="mt-0.5 block truncate text-[12px] text-fg-subtle">Handled by {c.assignedTo.id === currentAdmin?.admin.id ? "you" : c.assignedTo.name}</span>}
+                      <span className="block truncate text-sm text-fg-subtle">{c.preview}</span>
+                      {c.assignedTo && <span className="mt-0.5 block truncate text-xs text-fg-subtle">Handled by {c.assignedTo.id === currentAdmin?.admin.id ? "you" : c.assignedTo.name}</span>}
                     </span>
                   </button>
                 </li>
@@ -557,7 +557,7 @@ export default function InboxPage() {
           {openId ? (
             <Thread key={openId} id={openId} onBack={() => setParam({ open: null })} />
           ) : (
-            <div className="hidden h-full items-center justify-center text-[13px] text-fg-subtle lg:flex">Select a conversation to read it</div>
+            <div className="hidden h-full items-center justify-center text-sm text-fg-subtle lg:flex">Select a conversation to read it</div>
           )}
         </section>
       </div>

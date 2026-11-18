@@ -28,7 +28,7 @@ function Task({ icon: Icon, tone, title, detail, chips, action, testId }: { icon
     <li data-testid={testId} className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-3 px-4 py-4 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] sm:items-center sm:px-5">
       <span className={cn("grid h-10 w-10 place-items-center rounded-xl", TONE[tone])} aria-hidden="true"><Icon className="h-5 w-5" /></span>
       <div className="min-w-0">
-        <p className="text-[15px] font-semibold text-fg">{title}</p>
+        <p className="text-base font-semibold text-fg">{title}</p>
         {detail && <p className="mt-0.5 text-sm text-fg-muted">{detail}</p>}
         {chips && <div className="mt-2 flex flex-wrap gap-1.5">{chips}</div>}
       </div>

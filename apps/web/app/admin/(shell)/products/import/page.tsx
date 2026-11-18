@@ -23,7 +23,7 @@ const SHOW_ISSUES = 100;
 
 const Tile = ({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "bad" | "good" }) => (
   <div className="rounded-lg border border-ink-100 bg-cream-50 px-3 py-2">
-    <p className="text-[11px] uppercase tracking-wide text-ink-400">{label}</p>
+    <p className="text-xs text-ink-400">{label}</p>
     <p className={cn("text-xl font-medium", tone === "bad" && value > 0 ? "text-danger-600" : tone === "good" && value > 0 ? "text-emerald-700" : "text-ink-900")}>{value}</p>
   </div>
 );
@@ -214,7 +214,7 @@ export default function ProductImportPage() {
               </h3>
               <div className="overflow-x-auto rounded-lg border border-danger-200">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-danger-50 text-xs uppercase tracking-wide text-ink-500">
+                  <thead className="bg-danger-50 text-xs font-medium text-ink-500">
                     <tr>
                       <th className="px-3 py-2">Line</th>
                       <th className="px-3 py-2">Column</th>
@@ -263,7 +263,7 @@ export default function ProductImportPage() {
                     <div className="flex flex-wrap items-baseline gap-2">
                       <span
                         className={cn(
-                          "rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
+                          "rounded-full px-2 py-0.5 text-xs font-medium",
                           item.action === "create" ? "bg-emerald-100 text-emerald-800" : item.changes.length ? "bg-brass-100 text-brass-800" : "bg-ink-100 text-ink-600",
                         )}
                       >

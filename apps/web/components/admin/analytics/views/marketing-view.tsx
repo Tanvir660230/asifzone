@@ -93,7 +93,7 @@ export default function MarketingIntelligencePage() {
             ) : (
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Code</th>
                     <th className="pb-2 pr-4">Orders</th>
                     <th className="pb-2 pr-4">Discount given</th>
@@ -124,7 +124,7 @@ export default function MarketingIntelligencePage() {
             ) : (
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Bundle</th>
                     <th className="pb-2 pr-4">Orders</th>
                     <th className="pb-2 pr-4">Discount given</th>
@@ -158,7 +158,7 @@ export default function MarketingIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Sale</th>
                     <th className="pb-2 pr-4">Window</th>
                     <th className="pb-2 pr-4">Units sold</th>
@@ -196,7 +196,7 @@ export default function MarketingIntelligencePage() {
             ) : (
               <table className="w-full min-w-[480px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Campaign</th>
                     <th className="pb-2 pr-4">Channel</th>
                     <th className="pb-2 pr-4">Sent</th>

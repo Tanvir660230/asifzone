@@ -89,7 +89,7 @@ export default function LedgerPage() {
                           <span className="flex items-center gap-1 tabular-nums text-ink-900">{a.restricted ? <><Lock aria-hidden className="h-3.5 w-3.5 text-ink-500" /><span className="text-ink-500">owner only</span></> : formatPrice(a.balance ?? 0)}</span>
                         </button>
                       ) : (
-                        <div className="bg-surface-muted px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-600"><span className="font-mono">{a.code}</span> {a.name}</div>
+                        <div className="bg-surface-muted px-4 py-2 text-xs font-medium text-ink-600"><span className="font-mono">{a.code}</span> {a.name}</div>
                       )}
                     </li>
                   ))}

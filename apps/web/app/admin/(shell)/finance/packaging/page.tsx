@@ -91,7 +91,7 @@ export default function PackagingPage() {
               if (!rules.length) return null;
               return (
                 <div key={g.label} className="space-y-1.5" data-testid="packing-rule-group">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">{g.label}</h3>
+                  <h3 className="text-xs font-semibold text-fg-subtle">{g.label}</h3>
                   <Card className="divide-y divide-line p-0 text-sm">
                     {rules.map((r) => {
                       const m = stockOf.get(r.material.id);

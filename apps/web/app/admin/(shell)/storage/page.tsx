@@ -1,5 +1,6 @@
 "use client";
 
+import { Table, TableContainer, TableHead, TableHeaderCell } from "@/components/ui/table";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HardDrive, ImageOff, RotateCcw, Trash2 } from "lucide-react";
@@ -8,7 +9,6 @@ import { ModuleTabs } from "@/components/admin/module-tabs";
 import { StatTile } from "@/components/admin/stat-tile";
 import { EmptyState } from "@/components/admin/empty-state";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -149,25 +149,24 @@ export default function StoragePage() {
         </Button>
       </div>
 
-      <div className="mb-8 overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+      <TableContainer className="mb-8">
+        <Table>
+            <TableHead>
               <tr>
-                <th className="w-10 px-4 py-3">
+                <TableHeaderCell className="w-10">
                   <Checkbox
                     aria-label="Select all"
                     checked={allSelected}
                     onChange={() => setSelected(allSelected ? new Set() : new Set(report?.unused.map((f) => f.path)))}
                   />
-                </th>
-                <th className="px-4 py-3">Preview</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">File</th>
-                <th className="px-4 py-3">Size</th>
-                <th className="px-4 py-3">Uploaded</th>
+                </TableHeaderCell>
+                <TableHeaderCell>Preview</TableHeaderCell>
+                <TableHeaderCell>Type</TableHeaderCell>
+                <TableHeaderCell>File</TableHeaderCell>
+                <TableHeaderCell>Size</TableHeaderCell>
+                <TableHeaderCell>Uploaded</TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {unusedQuery.isLoading && <TableSkeleton rows={6} cols={6} />}
               {!unusedQuery.isLoading && report?.unused.length === 0 && (
@@ -178,7 +177,7 @@ export default function StoragePage() {
                 </tr>
               )}
               {report?.unused.map((file) => (
-                <tr key={file.path} className="border-t border-ink-100 hover:bg-ink-50/60">
+                <tr key={file.path} className="ui-table-row">
                   <td className="px-4 py-2">
                     <Checkbox aria-label={`Select ${file.path}`} checked={selected.has(file.path)} onChange={() => toggle(file.path)} />
                   </td>
@@ -197,9 +196,8 @@ export default function StoragePage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+        </Table>
+      </TableContainer>
 
       <h2 className="mb-3 text-sm font-semibold text-ink-800">Trash</h2>
       <p className="-mt-2 mb-3 text-sm text-ink-500">Restore a batch to put its files back exactly where they were. Each batch is deleted for good after 30 days.</p>

@@ -47,7 +47,7 @@ export function MonthlySharing() {
   return (
     <Card className="p-0" data-testid="monthly-sharing">
       <div className="space-y-1 px-5 pt-5 sm:px-6">
-        <p className="text-[17px] font-semibold tracking-tight text-fg">Sharing each month&apos;s profit</p>
+        <p className="text-lg font-semibold tracking-tight text-fg">Sharing each month&apos;s profit</p>
         <p className="text-sm text-fg-muted">A month is shared once it is closed in the books and you have checked its profit. Then each partner&apos;s share is posted once, at that month&apos;s rate.</p>
       </div>
       {q.isLoading ? <div className="p-5 sm:p-6"><Skeleton className="h-24 w-full" /></div>
@@ -95,7 +95,7 @@ function MonthRow({ m }: { m: SharePeriod }) {
     <li className="px-5 py-3.5 sm:px-6">
       <button type="button" className="flex w-full items-center justify-between gap-3 text-left" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="min-w-0">
-          <span className="block text-[15px] font-medium text-fg">{monthLabel(m.period)}</span>
+          <span className="block text-base font-medium text-fg">{monthLabel(m.period)}</span>
           <span className="text-xs text-fg-muted">{m.netProfit === null ? "Profit known once prepared" : `${m.netProfit < 0 ? "Loss" : "Profit"} ${formatPrice(Math.abs(m.netProfit))}`}{m.postedAt && m.status === "POSTED" ? ` · shared ${formatBookDate(m.postedAt.slice(0, 10))}` : ""}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2"><Badge variant={stage.variant} dot>{stage.label}</Badge><ChevronDown className={cn("h-4 w-4 text-fg-muted transition-transform", open && "rotate-180")} /></span>
@@ -168,7 +168,7 @@ export function Corrections({ partnerNames }: { partnerNames: Map<string, string
     <Card className="p-0" data-testid="share-corrections">
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 sm:px-6">
         <div className="min-w-0">
-          <p className="text-[17px] font-semibold tracking-tight text-fg">Corrections</p>
+          <p className="text-lg font-semibold tracking-tight text-fg">Corrections</p>
           <p className="text-sm text-fg-muted">When a shared month&apos;s profit changes, or a share was posted twice or by mistake. A share is never edited — and nothing is taken back without an accounting decision.</p>
         </div>
         <Button size="sm" variant="outline" loading={detect.isPending} onClick={() => detect.mutate()}>Check shared months</Button>

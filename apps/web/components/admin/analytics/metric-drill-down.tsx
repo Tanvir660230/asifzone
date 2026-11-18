@@ -53,11 +53,11 @@ export function MetricDrillDown({ target, onClose }: { target: DrillTarget | nul
       {target && def && (
         <div className="space-y-4 px-6 py-5">
           <div>
-            <p className="text-[13px] text-fg-muted">
+            <p className="text-sm text-fg-muted">
               {target.rangeLabel}
               {data && <> · total {fmt(data.metrics[target.metric]?.value ?? 0)}</>}
             </p>
-            <p className="mt-1 text-[12px] text-fg-subtle">{def.description}</p>
+            <p className="mt-1 text-xs text-fg-subtle">{def.description}</p>
           </div>
           {groupings.length > 1 && (
             <SegmentedControl
@@ -67,7 +67,7 @@ export function MetricDrillDown({ target, onClose }: { target: DrillTarget | nul
               options={groupings.map((g) => ({ value: g, label: GROUPING_LABEL[g] }))}
             />
           )}
-          {groupings.length === 0 && <p className="text-[13px] text-fg-muted">This number has no breakdown in the registry.</p>}
+          {groupings.length === 0 && <p className="text-sm text-fg-muted">This number has no breakdown in the registry.</p>}
           {isError && !data && <ErrorState onRetry={() => refetch()} />}
           {isLoading && <div className="h-48 animate-pulse rounded-xl bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading" />}
           {data && rows.length === 0 && <EmptyState icon={BarChart3} title="Nothing in this range" />}
@@ -81,7 +81,7 @@ export function MetricDrillDown({ target, onClose }: { target: DrillTarget | nul
                   </span>
                 );
                 return (
-                  <li key={r.key} className="text-[13px]">
+                  <li key={r.key} className="text-sm">
                     <div className="flex items-baseline justify-between gap-3">
                       {href ? (
                         <Link href={href} className="min-w-0 truncate text-accent hover:underline">

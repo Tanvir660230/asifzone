@@ -76,7 +76,7 @@ export default function CustomerIntelligencePage() {
 
       {/* Value */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Value</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Value</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!overview ? (
             Array.from({ length: 2 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -92,7 +92,7 @@ export default function CustomerIntelligencePage() {
       {/* Segments — reused directly from the customers list's own stats endpoint, so counts here
           always match filtering the customers list by the same tag. */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Segments (lifetime)</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Segments (lifetime)</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
           {!stats ? (
             Array.from({ length: 10 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -125,7 +125,7 @@ export default function CustomerIntelligencePage() {
             ) : (
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Customer</th>
                     <th className="pb-2 pr-4">Recency</th>
                     <th className="pb-2 pr-4">Frequency</th>
@@ -147,7 +147,7 @@ export default function CustomerIntelligencePage() {
                       <td className="py-2">
                         <div className="flex flex-wrap gap-1">
                           {c.tags.map((t) => (
-                            <span key={t} className="rounded-full bg-ink-50 px-2 py-0.5 text-[11px] font-medium text-ink-600">
+                            <span key={t} className="rounded-full bg-ink-50 px-2 py-0.5 text-xs font-medium text-ink-600">
                               {t}
                             </span>
                           ))}

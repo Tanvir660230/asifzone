@@ -93,7 +93,7 @@ function Completeness({ value }: { value: ListedProduct["completeness"] }) {
       <span className="h-1 w-10 overflow-hidden rounded-full bg-ink-900/[0.08]" role="meter" aria-valuenow={value.score} aria-valuemin={0} aria-valuemax={100} aria-label={`Completeness. ${title}`}>
         <span className={cn("block h-full rounded-full", tone)} style={{ width: `${value.score}%` }} />
       </span>
-      <span className="text-[13px] tabular-nums text-fg-muted">{value.score}%</span>
+      <span className="text-sm tabular-nums text-fg-muted">{value.score}%</span>
     </span>
   );
 }
@@ -280,8 +280,8 @@ export default function ProductsPage() {
                     <button type="button" onClick={() => open(p)} className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40" disabled={trash} aria-label={`Edit ${p.name}`}>
                       <Thumb p={p} className="aspect-square w-full" />
                       <div className="space-y-1.5 p-3">
-                        <p className="line-clamp-2 min-h-[2.5em] text-[13px] font-medium leading-snug text-fg">{p.name}</p>
-                        <p className="text-[14px] font-semibold tabular-nums text-fg">{priceLabel(p)}</p>
+                        <p className="line-clamp-2 min-h-[2.5em] text-sm font-medium leading-snug text-fg">{p.name}</p>
+                        <p className="text-sm font-semibold tabular-nums text-fg">{priceLabel(p)}</p>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <StockBadge p={p} />
                         </div>
@@ -444,7 +444,7 @@ export default function ProductsPage() {
                                 {p.name}
                               </Link>
                             )}
-                            <p className="truncate text-[12px] text-fg-subtle">
+                            <p className="truncate text-xs text-fg-subtle">
                               {[p.type?.name, `${variantCount} variant${variantCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}
                             </p>
                           </div>

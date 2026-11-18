@@ -155,7 +155,8 @@ describe("navigation manifest — derivation", () => {
     const owner = access("OWNER");
     expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Accounts & cash", "Expenses", "Bills to pay", "Payments & refunds", "Courier & gateway", "Loans", "Prepaid costs", "Bank reconciliation"]);
     expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Month-end", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
-    expect(navChildren("analytics", owner).map((c) => c.node.label)).toEqual(["Profit", "Product costs & price planner", "Store analytics", "Purchasing reports", "AI assistant"]);
+    expect(navChildren("analytics", owner).map((c) => c.node.label)).toEqual(["Overview", "Sales", "Products", "Customers", "Marketing", "Operations", "Profit", "Product costs & price planner", "Purchasing reports", "AI assistant"]);
+    expect(navNode("analytics")?.index).toBe("/admin/analytics/overview");
     expect(resolveNavNode("/admin/finance/my-cash")?.parent).toBe("finance.money");
     expect(deprecatedRedirect("/admin/finance/refills")).toBe("/admin/stock?open=filled");
     for (const route of ["/admin/payments/transactions", "/admin/payments/refunds", "/admin/payments/attempts", "/admin/payments/overview"]) expect(resolveNavNode(route)?.parent, route).toBe("finance.selling");

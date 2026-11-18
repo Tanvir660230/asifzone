@@ -9,7 +9,6 @@ import { MobileNavBar, useMobileBack } from "@/components/admin/mobile-nav-bar";
 import { MoreSheet } from "@/components/admin/more-sheet";
 import { PhoneTables } from "@/components/admin/phone-tables";
 import { SectionBar } from "@/components/admin/section-bar";
-import { isStockSectionPath } from "@/components/admin/stock/stock-side-nav";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
 import { PeriodChip } from "@/components/admin/period-chip";
@@ -42,8 +41,8 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   useKeyboardFlag();
   // The module's pages under the toolbar whenever the sidebar isn't listing them: under a collapsed rail, and below lg.
   const sectionBar = access.ready ? sectionBarFor(pathname, access) : null;
-  // The Stock section lists its pages in its own grouped menu on wide screens (StockFrame), so its bar is for phones only.
-  const sectionBarMode = sidebar.collapsed && !isStockSectionPath(pathname) ? "always" : "compact";
+  // One navigation rule at every width (owner, 2026-11-12): the sidebar lists modules, this bar lists the module's pages.
+  const sectionBarMode = "always" as const;
   // The Create menu: the navigation manifest's create commands this admin may run, each with its module's icon.
   const createItems = useCreateCommands().map((c) => ({
     label: c.label,
@@ -164,8 +163,8 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                 aria-label="Search"
               >
                 <Search size={16} className="shrink-0" />
-                <span className="hidden truncate text-[13.5px] text-fg-subtle sm:inline">Search orders, products, customers…</span>
-                <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] font-medium leading-none text-fg-subtle sm:inline">
+                <span className="hidden truncate text-sm text-fg-subtle sm:inline">Search orders, products, customers…</span>
+                <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-xs font-medium leading-none text-fg-subtle sm:inline">
                   {modKey} K
                 </kbd>
               </button>
@@ -207,7 +206,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
             </header>
             <SectionBar bar={sectionBar} mode={sectionBarMode} />
           </div>
-          <main id="main-content" tabIndex={-1} className="flex-1 outline-none px-4 pb-6 pt-4 sm:px-page sm:py-8 print:p-0">
+          <main id="main-content" tabIndex={-1} className="flex-1 outline-none px-4 pb-6 pt-4 sm:px-page sm:pb-8 sm:pt-5 print:p-0">
             {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
                 ultra-wide monitors, where a single table row would otherwise be too long to follow. */}
             <div className={cn("mx-auto w-full", pageWidthFor(pathname) === "form" ? "max-w-[880px]" : "max-w-[2400px]")}>

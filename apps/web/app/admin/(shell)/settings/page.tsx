@@ -276,7 +276,7 @@ export default function SettingsPage() {
     const saving = savingSection === section;
     return (
       <div className="flex items-center justify-end gap-3 pt-1">
-        {dirty && !saving && <span className="text-[12px] text-fg-subtle">Unsaved changes</span>}
+        {dirty && !saving && <span className="text-xs text-fg-subtle">Unsaved changes</span>}
         <Button type="button" size="sm" disabled={!dirty || updateMutation.isPending} onClick={() => saveSection(section)}>
           {saving ? "Saving…" : "Save"}
         </Button>
@@ -667,8 +667,8 @@ export default function SettingsPage() {
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-ink-900/[0.03] px-3 py-2.5">
-              <p className="text-[13px] text-fg-muted">Delivery fees and free-delivery limits are set per area.</p>
-              <Link href="/admin/settings/delivery-zones" className="shrink-0 text-[13px] font-medium text-accent hover:underline">
+              <p className="text-sm text-fg-muted">Delivery fees and free-delivery limits are set per area.</p>
+              <Link href="/admin/settings/delivery-zones" className="shrink-0 text-sm font-medium text-accent hover:underline">
                 Delivery zones
               </Link>
             </div>

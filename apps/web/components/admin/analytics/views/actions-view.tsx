@@ -35,14 +35,14 @@ function ActionRow({ a }: { a: ProductAction }) {
         <Icon size={16} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[14px] leading-snug text-fg">
+        <p className="text-sm leading-snug text-fg">
           <Link href={productEditHref(a.productId)} className="font-semibold hover:underline">
             {a.name}
           </Link>
           <span className="text-fg-muted"> · </span>
           {a.title}
         </p>
-        <p className="mt-0.5 text-[13px] leading-snug text-fg-muted">{a.detail}</p>
+        <p className="mt-0.5 text-sm leading-snug text-fg-muted">{a.detail}</p>
       </div>
       <span className="sr-only">Type: {k.label}</span>
     </li>
@@ -73,7 +73,7 @@ export default function ActionsView() {
       onClick={() => setFilter(value)}
       disabled={value !== "all" && count === 0}
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast disabled:opacity-40",
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors duration-fast disabled:opacity-40",
         filter === value ? "bg-ink-900 text-cream-50" : "bg-ink-900/[0.05] text-fg hover:bg-ink-900/[0.08]",
       )}
     >
@@ -91,7 +91,7 @@ export default function ActionsView() {
 
       {shown.length === 0 ? (
         <Card className="p-8 text-center">
-          <p className="text-[15px] font-medium text-fg">Nothing to do here</p>
+          <p className="text-base font-medium text-fg">Nothing to do here</p>
           <p className="mt-1 text-sm text-fg-muted">No product needs this kind of attention right now.</p>
         </Card>
       ) : (
@@ -100,7 +100,7 @@ export default function ActionsView() {
           if (!items.length) return null;
           return (
             <section key={g.priority} aria-labelledby={`actions-${g.priority}`}>
-              <h3 id={`actions-${g.priority}`} className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-fg-muted">
+              <h3 id={`actions-${g.priority}`} className="mb-2 text-xs font-semibold text-fg-muted">
                 {g.title} <span className="tabular-nums">· {items.length}</span>
               </h3>
               <Card className="p-4 sm:p-5">
@@ -115,7 +115,7 @@ export default function ActionsView() {
         })
       )}
 
-      <p className="text-[12px] leading-relaxed text-fg-muted">
+      <p className="text-xs leading-relaxed text-fg-muted">
         From the last 30 days of views, add-to-carts and orders, current stock, and the last 60 days of deliveries. Store averages:{" "}
         {(data.baseline.viewToCartRate * 100).toFixed(1)}% of views add to cart, {(data.baseline.viewToOrderRate * 100).toFixed(1)}% order,{" "}
         {Math.round(data.baseline.refusalRate * 100)}% of parcels refused.

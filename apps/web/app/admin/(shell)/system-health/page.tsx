@@ -50,10 +50,10 @@ function CheckRow({ check }: { check: Check }) {
         <AlertTriangle size={18} className="mt-0.5 shrink-0 text-warning-600" aria-hidden="true" />
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] font-medium text-fg">{check.title}</p>
-        <p className="mt-0.5 text-[13px] text-fg-muted">{ok ? check.what : (check.summary ?? check.what)}</p>
+        <p className="text-base font-medium text-fg">{check.title}</p>
+        <p className="mt-0.5 text-sm text-fg-muted">{ok ? check.what : (check.summary ?? check.what)}</p>
       </div>
-      <span className={cn("shrink-0 text-[13px] tabular-nums", ok ? "text-fg-subtle" : "font-semibold text-warning-700")}>{ok ? "OK" : formatCount(check.count)}</span>
+      <span className={cn("shrink-0 text-sm tabular-nums", ok ? "text-fg-subtle" : "font-semibold text-warning-700")}>{ok ? "OK" : formatCount(check.count)}</span>
       {!ok && <ChevronRight size={16} className="mt-0.5 shrink-0 text-fg-subtle transition-transform duration-fast group-open:rotate-90" aria-hidden="true" />}
     </div>
   );
@@ -64,7 +64,7 @@ function CheckRow({ check }: { check: Check }) {
         <summary className="cursor-pointer list-none rounded-xl hover:bg-ink-900/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 [&::-webkit-details-marker]:hidden">{head}</summary>
         <div className="space-y-3 px-5 pb-5 pl-[52px]">
           {check.fix && (
-            <p className="text-[13px] text-fg">
+            <p className="text-sm text-fg">
               <span className="font-medium">How to fix: </span>
               {check.fix}
             </p>
@@ -336,8 +336,8 @@ export default function SystemHealthPage() {
           <div className={cn("flex items-center gap-3 rounded-2xl px-5 py-4", attention ? "bg-warning-50" : "bg-success-50")}>
             {attention ? <AlertTriangle size={22} className="text-warning-600" aria-hidden="true" /> : <CheckCircle2 size={22} className="text-success-600" aria-hidden="true" />}
             <div>
-              <p className="text-[15px] font-semibold text-fg">{attention ? `${attention} check${attention === 1 ? "" : "s"} need${attention === 1 ? "s" : ""} a look` : "Everything is running normally"}</p>
-              <p className="text-[13px] text-fg-muted">Checked {timeAgo(data.generatedAt)}</p>
+              <p className="text-base font-semibold text-fg">{attention ? `${attention} check${attention === 1 ? "" : "s"} need${attention === 1 ? "s" : ""} a look` : "Everything is running normally"}</p>
+              <p className="text-sm text-fg-muted">Checked {timeAgo(data.generatedAt)}</p>
             </div>
           </div>
           <ul className="divide-y divide-line-subtle overflow-hidden rounded-2xl border border-line bg-surface shadow-xs">
@@ -345,7 +345,7 @@ export default function SystemHealthPage() {
               <CheckRow key={c.key} check={c} />
             ))}
           </ul>
-          <p className="text-[13px] text-fg-muted">
+          <p className="text-sm text-fg-muted">
             Payment, SMS, email and courier connections are under{" "}
             <Link href="/admin/settings" className="text-accent underline underline-offset-2">
               Settings

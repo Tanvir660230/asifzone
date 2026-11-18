@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Layers } from "lucide-react";
 import { SKU_TOKEN_HELP, defaultTypeCode, renderSkuPattern, validateSkuPattern } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
+import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { toast } from "@/components/ui/toast";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
@@ -31,9 +34,9 @@ function TypeCodeRow({ type, canManage, onSaved }: { type: catalogApi.ManagedTyp
   });
 
   return (
-    <tr className="border-t border-ink-100">
-      <td className="px-4 py-2.5 text-ink-900">{type.name}</td>
-      <td className="px-4 py-2.5">
+    <TableRow className="h-row-dense">
+      <TableCell className="py-1.5 text-ink-900">{type.name}</TableCell>
+      <TableCell className="py-1.5">
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value.toUpperCase())}
@@ -41,11 +44,11 @@ function TypeCodeRow({ type, canManage, onSaved }: { type: catalogApi.ManagedTyp
           placeholder={defaultTypeCode(type.name)}
           disabled={!canManage}
           maxLength={6}
-          className="h-8 w-28 font-mono text-xs uppercase"
+          className="h-8 w-28 font-mono text-xs"
           aria-label={`SKU code for ${type.name}`}
         />
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -53,7 +56,7 @@ export default function SkuSettingsPage() {
   const queryClient = useQueryClient();
   const canManage = useCanManageCatalog();
   const { data } = useQuery({ queryKey: ["catalog-sku-settings"], queryFn: catalogApi.getSkuSettings });
-  const { data: typesData } = useQuery({ queryKey: ["catalog-types", "manage"], queryFn: catalogApi.listManagedTypes });
+  const { data: typesData, isLoading: typesLoading, error: typesError, refetch: refetchTypes } = useQuery({ queryKey: ["catalog-types", "manage"], queryFn: catalogApi.listManagedTypes });
 
   const [prefix, setPrefix] = useState("");
   const [pattern, setPattern] = useState("");
@@ -80,7 +83,7 @@ export default function SkuSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="SKUs" description="Define what kinds of products the store sells, and what each kind collects and shows." />
+      <PageHeader title="SKUs" />
       <ModuleTabs />
 
       <p data-page-intro="" className="mb-4 text-sm text-ink-500">
@@ -93,7 +96,7 @@ export default function SkuSettingsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
             <div>
               <Label htmlFor="sku-prefix">Prefix</Label>
-              <Input id="sku-prefix" value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase())} disabled={!canManage} maxLength={8} className="font-mono uppercase" />
+              <Input id="sku-prefix" value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase())} disabled={!canManage} maxLength={8} className="font-mono" />
             </div>
             <div>
               <Label htmlFor="sku-pattern">Pattern</Label>
@@ -121,7 +124,7 @@ export default function SkuSettingsPage() {
           </ul>
 
           <div className="rounded-lg border border-ink-100 bg-white p-3" data-testid="sku-example">
-            <p className="mb-1 text-xs uppercase tracking-wide text-ink-400">Examples</p>
+            <p className="mb-1 text-xs font-medium text-ink-500">Examples</p>
             {example ? (
               <p className="font-mono text-sm text-ink-900">
                 {example} <span className="text-ink-300">·</span> {example2}
@@ -141,21 +144,32 @@ export default function SkuSettingsPage() {
         </FormSection>
 
         <FormSection title="SKU code per product type" description="Used by {TYPE}. Leave blank to use the first three letters of the type's name (shown greyed).">
-          <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-            <table className="ui-table">
-              <thead className="ui-table-head">
+          <TableContainer>
+            <Table aria-label="SKU code per product type">
+              <TableHead>
                 <tr>
-                  <th className="px-4 py-2">Product type</th>
-                  <th className="px-4 py-2">Code</th>
+                  <TableHeaderCell>Product type</TableHeaderCell>
+                  <TableHeaderCell className="w-40">Code</TableHeaderCell>
                 </tr>
-              </thead>
+              </TableHead>
               <tbody>
+                {typesLoading && <TableSkeleton rows={3} cols={2} />}
+                {typesError && !typesLoading && (
+                  <TableMessageRow colSpan={2}>
+                    <ErrorState onRetry={() => void refetchTypes()} />
+                  </TableMessageRow>
+                )}
+                {!typesLoading && !typesError && (typesData?.types ?? []).length === 0 && (
+                  <TableMessageRow colSpan={2}>
+                    <EmptyState icon={Layers} title="No product types yet" description="Add a product type first; its SKU code is set here." />
+                  </TableMessageRow>
+                )}
                 {(typesData?.types ?? []).map((t) => (
                   <TypeCodeRow key={t.id} type={t} canManage={canManage} onSaved={() => queryClient.invalidateQueries({ queryKey: ["catalog-types"] })} />
                 ))}
               </tbody>
-            </table>
-          </div>
+            </Table>
+          </TableContainer>
         </FormSection>
       </div>
     </div>

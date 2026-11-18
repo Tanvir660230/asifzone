@@ -120,7 +120,7 @@ export function StatementImportDialog({ accountId, onClose }: { accountId: strin
           </Field>
         </div>
         <fieldset>
-          <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Column names in your file</legend>
+          <legend className="mb-2 text-xs font-semibold text-ink-500">Column names in your file</legend>
           <p className="mb-2 text-xs text-ink-500">Map either the debit and credit columns, or one signed amount column. Leave unused fields empty.</p>
           <div className="grid gap-3 sm:grid-cols-3">
             {MAPPING_FIELDS.map(([field, label]) => (

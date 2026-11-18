@@ -25,7 +25,7 @@ export function StoreHistory({ orderId }: { orderId: string }) {
   const tone = risk.level === "high" ? "border-danger-100 bg-danger-50/60 text-danger-700" : risk.level === "medium" ? "border-warning-100 bg-warning-50/60 text-warning-700" : "border-line bg-ink-900/[0.02] text-fg-muted";
   const Icon = risk.level === "low" ? ShieldCheck : AlertTriangle;
   return (
-    <div className={cn("rounded-lg border px-3 py-2 text-[13px] leading-snug", tone)}>
+    <div className={cn("rounded-lg border px-3 py-2 text-sm leading-snug", tone)}>
       <p className="flex items-start gap-1.5">
         <Icon size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
         <span>

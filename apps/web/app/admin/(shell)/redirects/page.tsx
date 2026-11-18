@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, CornerDownRight } from "lucide-react";
 import { createRedirectSchema, type CreateRedirectInput, type Redirect } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ListPage } from "@/components/admin/patterns/list-page";
+import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import * as redirectsApi from "@/lib/api/admin-redirects";
 import { ApiError } from "@/lib/api-client";
 
@@ -81,7 +80,7 @@ function RedirectForm({
 
 export default function AdminRedirectsPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["admin-redirects"], queryFn: () => redirectsApi.listRedirects() });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["admin-redirects"], queryFn: () => redirectsApi.listRedirects() });
   const [editing, setEditing] = useState<Redirect | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,66 +120,44 @@ export default function AdminRedirectsPage() {
     await deleteMutation.mutateAsync(redirect.id);
   }
 
-  return (
-    <div>
-      <PageHeader
-        title="Redirects"
-        action={
-          <Button variant="brass" onClick={() => setEditing("new")}>
-            <Plus size={16} /> Add redirect
-          </Button>
-        }
-      />
-      <ModuleTabs />
-      <p data-page-intro="" className="mb-4 -mt-2 text-sm text-ink-500">
-        Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
-      </p>
+  const columns: DataTableColumn<Redirect>[] = [
+    { id: "from", header: "From", card: "title", cell: (r) => <span className="break-all font-mono text-xs text-ink-900">{r.fromPath}</span> },
+    { id: "to", header: "To", cell: (r) => <span className="break-all font-mono text-xs text-ink-500">{r.toPath}</span> },
+    { id: "code", header: "Type", className: "w-24", cell: (r) => <span className="tabular-nums text-ink-500">{r.statusCode}</span> },
+    { id: "active", header: "Status", className: "w-28", cell: (r) => <Badge variant={r.isActive ? "success" : "neutral"}>{r.isActive ? "Active" : "Inactive"}</Badge> },
+  ];
+  const rowActions = (r: Redirect): DataTableRowAction<Redirect>[] => [
+    { label: "Edit", icon: Pencil, onSelect: () => setEditing(r) },
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => void handleDelete(r) },
+  ];
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="ui-table-head">
-              <tr>
-                <th className="px-4 py-3">From</th>
-                <th className="px-4 py-3">To</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && <TableSkeleton rows={5} cols={5} />}
-              {!isLoading && data?.items.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-ink-400">
-                    No redirects yet.
-                  </td>
-                </tr>
-              )}
-              {data?.items.map((r) => (
-                <tr key={r.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3 font-mono text-xs">{r.fromPath}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-ink-500">{r.toPath}</td>
-                  <td className="px-4 py-3 text-ink-500">{r.statusCode}</td>
-                  <td className="px-4 py-3">
-                    <Badge className={r.isActive ? "bg-success-100 text-success-700" : ""}>{r.isActive ? "Active" : "Inactive"}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => setEditing(r)} className="rounded-full text-ink-500 hover:text-ink-900 [@media(pointer:coarse)]:p-3.5" aria-label="Edit">
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(r)} className="rounded-full text-ink-500 hover:text-danger-600 [@media(pointer:coarse)]:p-3.5" aria-label="Delete">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+  return (
+    <ListPage
+      title="Redirects"
+      action={
+        <Button variant="brass" onClick={() => setEditing("new")}>
+          <Plus size={16} /> Add redirect
+        </Button>
+      }
+      intro={
+        <>
+          Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
+        </>
+      }
+    >
+      <DataTable<Redirect>
+        caption="Redirects"
+        columns={columns}
+        rows={isLoading ? undefined : data?.items}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={CornerDownRight} title="No redirects yet" description="Send visitors from an old link to the right page." variant="bordered" />}
+        density="dense"
+        onRowOpen={setEditing}
+        rowActions={rowActions}
+      />
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add redirect" : "Edit redirect"}>
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -189,6 +166,6 @@ export default function AdminRedirectsPage() {
         )}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

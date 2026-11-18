@@ -190,7 +190,7 @@ function HistoryList({ events }: { events: ShipmentEvent[] }) {
             )}
             {e.reason && <p className="mt-1.5 text-xs text-fg"><span className="text-fg-subtle">Reason:</span> {e.reason}</p>}
             {e.note && <p className="mt-1 text-xs text-fg-muted">{e.note}</p>}
-            {(e.source || e.reference) && <p className="mt-1 text-[11px] text-fg-subtle">{[e.source, e.reference].filter(Boolean).join(" · ")}</p>}
+            {(e.source || e.reference) && <p className="mt-1 text-xs text-fg-subtle">{[e.source, e.reference].filter(Boolean).join(" · ")}</p>}
           </li>
         );
       })}
@@ -201,7 +201,7 @@ function HistoryList({ events }: { events: ShipmentEvent[] }) {
 function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: React.ReactNode }) {
   return (
     <div className="mb-3">
-      <h3 className="text-[13px] font-semibold uppercase tracking-wider text-fg-subtle">{children}</h3>
+      <h3 className="text-sm font-semibold text-fg-subtle">{children}</h3>
       {hint && <p className="mt-1 text-xs text-fg-muted">{hint}</p>}
     </div>
   );
@@ -372,12 +372,12 @@ export function ShipmentCostDrawer({
               </Field>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-              <div><dt className="text-[11px] text-fg-subtle">Courier</dt><dd className="text-fg">{shipment.courier}</dd></div>
-              <div><dt className="text-[11px] text-fg-subtle">Zone</dt><dd className="text-fg">{shipment.deliveryZone ?? "—"}</dd></div>
-              <div><dt className="text-[11px] text-fg-subtle">Courier says</dt><dd className="text-fg">{shipment.courierStatus ?? "—"}</dd></div>
-              <div><dt className="text-[11px] text-fg-subtle">Booked COD</dt><dd className="tabular-nums text-fg">{shipment.bookedCodAmount === null ? "—" : formatPrice(shipment.bookedCodAmount)}</dd></div>
-              <div><dt className="text-[11px] text-fg-subtle">Payout</dt><dd className="text-fg">{shipment.courierPayoutRef ?? "Not paid out yet"}</dd></div>
-              <div><dt className="text-[11px] text-fg-subtle">Courier collected</dt><dd className="tabular-nums text-fg">{shipment.courierCollected === null ? "—" : formatPrice(shipment.courierCollected)}</dd></div>
+              <div><dt className="text-xs text-fg-subtle">Courier</dt><dd className="text-fg">{shipment.courier}</dd></div>
+              <div><dt className="text-xs text-fg-subtle">Zone</dt><dd className="text-fg">{shipment.deliveryZone ?? "—"}</dd></div>
+              <div><dt className="text-xs text-fg-subtle">Courier says</dt><dd className="text-fg">{shipment.courierStatus ?? "—"}</dd></div>
+              <div><dt className="text-xs text-fg-subtle">Booked COD</dt><dd className="tabular-nums text-fg">{shipment.bookedCodAmount === null ? "—" : formatPrice(shipment.bookedCodAmount)}</dd></div>
+              <div><dt className="text-xs text-fg-subtle">Payout</dt><dd className="text-fg">{shipment.courierPayoutRef ?? "Not paid out yet"}</dd></div>
+              <div><dt className="text-xs text-fg-subtle">Courier collected</dt><dd className="tabular-nums text-fg">{shipment.courierCollected === null ? "—" : formatPrice(shipment.courierCollected)}</dd></div>
             </dl>
             {steadfast && canRecord && (
               <Button type="button" variant="outline" size="sm" className="mt-3" loading={refresh.isPending} onClick={() => refresh.mutate()}>
@@ -548,7 +548,7 @@ export function ShipmentCostDrawer({
               </Button>
             )}
           </div>
-          {dirty && <p className="text-right text-[11px] text-fg-subtle">Will be: {SHIPMENT_FINANCIAL_STATUS_LABEL[p.financialStatus]}</p>}
+          {dirty && <p className="text-right text-xs text-fg-subtle">Will be: {SHIPMENT_FINANCIAL_STATUS_LABEL[p.financialStatus]}</p>}
         </div>
       </form>
     </Drawer>

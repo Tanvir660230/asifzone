@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, PackageCheck } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
-import { BackLink } from "@/components/ui/back-link";
+import { RecordPage, RecordSection } from "@/components/admin/patterns/record-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,7 +24,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchaseOrder } from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice, upperFirst } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 /** One purchase order (docs/FINANCE_PHASE_4D.md): its lines, what has arrived, and the actions its state allows. */
@@ -58,25 +58,23 @@ export default function PurchaseOrderPage() {
   const receivable = ["APPROVED", "PARTIALLY_RECEIVED", "RECEIVED"].includes(o.status) && o.lines.some((l) => l.lineType === "STOCK");
 
   return (
-    <div className="space-y-6">
-      <BackLink href="/admin/finance/purchase-orders" label="Purchase orders" />
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl text-ink-900">{o.number}</h1>
-          <p className="text-sm text-ink-600">{o.supplier.displayName} · ordered {o.orderDate}{o.expectedDate ? ` · expected ${o.expectedDate}` : ""}</p>
-        </div>
-        <Badge variant={PO_STATUS_BADGE[o.status]} data-testid="po-status">{PO_STATUS_LABEL[o.status]}</Badge>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {can("purchasing.manage") && o.status === "DRAFT" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "submit" })} data-testid="po-submit">Submit for approval</Button>}
-        {can("purchasing.approve") && o.status === "SUBMITTED" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "approve" })} data-testid="po-approve">Approve</Button>}
-        {can("purchasing.manage") && o.status === "SUBMITTED" && <Button size="sm" variant="outline" onClick={() => act.mutate({ action: "return-to-draft" })}>Back to draft</Button>}
-        {can("purchasing.receive") && receivable && <Button size="sm" onClick={() => setReceiving(true)} data-testid="po-receive"><PackageCheck className="h-4 w-4" /> Receive goods</Button>}
-        {can("purchasing.approve") && ["APPROVED", "PARTIALLY_RECEIVED", "RECEIVED"].includes(o.status) && <Button size="sm" variant="outline" onClick={() => setReasonFor("close")}>Close order</Button>}
-        {can("purchasing.manage") && ["DRAFT", "SUBMITTED", "APPROVED"].includes(o.status) && !o.lines.some((l) => l.qtyReceived > 0) && <Button size="sm" variant="outline" onClick={() => setReasonFor("cancel")}>Cancel order</Button>}
-        {can("purchasing.manage") && o.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>Delete draft</Button>}
-      </div>
+    <RecordPage
+      back={{ href: "/admin/finance/purchase-orders", label: "Purchase orders" }}
+      title={o.number}
+      subtitle={<>{o.supplier.displayName} · ordered {formatBookDate(o.orderDate)}{o.expectedDate ? ` · expected ${formatBookDate(o.expectedDate)}` : ""}</>}
+      status={<Badge variant={PO_STATUS_BADGE[o.status]} data-testid="po-status">{upperFirst(PO_STATUS_LABEL[o.status])}</Badge>}
+      actions={
+        <>
+          {can("purchasing.manage") && o.status === "DRAFT" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "submit" })} data-testid="po-submit">Submit for approval</Button>}
+          {can("purchasing.approve") && o.status === "SUBMITTED" && <Button size="sm" loading={act.isPending} onClick={() => act.mutate({ action: "approve" })} data-testid="po-approve">Approve</Button>}
+          {can("purchasing.manage") && o.status === "SUBMITTED" && <Button size="sm" variant="outline" onClick={() => act.mutate({ action: "return-to-draft" })}>Back to draft</Button>}
+          {can("purchasing.receive") && receivable && <Button size="sm" onClick={() => setReceiving(true)} data-testid="po-receive"><PackageCheck className="h-4 w-4" /> Receive goods</Button>}
+          {can("purchasing.approve") && ["APPROVED", "PARTIALLY_RECEIVED", "RECEIVED"].includes(o.status) && <Button size="sm" variant="outline" onClick={() => setReasonFor("close")}>Close order</Button>}
+          {can("purchasing.manage") && ["DRAFT", "SUBMITTED", "APPROVED"].includes(o.status) && !o.lines.some((l) => l.qtyReceived > 0) && <Button size="sm" variant="outline" onClick={() => setReasonFor("cancel")}>Cancel order</Button>}
+          {can("purchasing.manage") && o.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>Delete draft</Button>}
+        </>
+      }
+    >
       {receivable && overview.data && !overview.data.costingActive && (
         <Alert variant="info" title="Receipts post after the valuation cutover">You can prepare a receipt now; posting it waits until inventory costing is switched on (Finance → Setup & checks → Opening stock value).</Alert>
       )}
@@ -120,26 +118,25 @@ export default function PurchaseOrderPage() {
         <p className="border-t border-line px-4 py-3 text-right text-sm tabular-nums text-ink-900">Total before tax <strong>{formatPrice(o.total)}</strong></p>
       </Card>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-ink-900">Goods receipts</h2>
+      <RecordSection title="Goods receipts">
         {o.receipts?.length ? (
           <Card className="divide-y divide-line p-0">
             {o.receipts.map((r) => (
               <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <Link href={`/admin/finance/goods-receipts?purchaseOrderId=${o.id}`} className="font-mono text-xs underline-offset-4 hover:underline">{r.number}</Link>
-                <span className="tabular-nums text-ink-600">{r.receiptDate}</span>
-                <Badge variant={GRN_STATUS_BADGE[r.status]}>{GRN_STATUS_LABEL[r.status]}</Badge>
+                <span className="tabular-nums text-ink-600">{formatBookDate(r.receiptDate)}</span>
+                <Badge variant={GRN_STATUS_BADGE[r.status]}>{upperFirst(GRN_STATUS_LABEL[r.status])}</Badge>
               </div>
             ))}
           </Card>
         ) : (
           <p className="text-sm text-ink-600">Nothing received yet.</p>
         )}
-      </section>
+      </RecordSection>
 
       {reasonFor && <ReasonModal title={reasonFor === "cancel" ? "Cancel this order" : "Close this order"} hint={reasonFor === "close" ? "No more goods will be received on it." : "Nothing was received, so it can be cancelled."} loading={act.isPending} onClose={() => setReasonFor(null)} onConfirm={(reason) => act.mutate({ action: reasonFor, reason })} />}
       {receiving && <ReceiveModal order={o} costingActive={Boolean(overview.data?.costingActive)} onClose={() => setReceiving(false)} onDone={() => { refresh(); setReceiving(false); }} />}
-    </div>
+    </RecordPage>
   );
 }
 

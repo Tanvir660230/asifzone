@@ -75,7 +75,7 @@ export function RoleSummary({ role }: { role: string }) {
   const keys = entry.kind === "ALL" ? store?.lacks ?? [] : entry.kind === "STORE" ? entry.lacks : entry.permissions.filter((p) => p in LABEL);
   const items = [...new Set(keys.map((p) => LABEL[p] ?? p))];
   return (
-    <div className="rounded-xl bg-surface-muted px-3.5 py-3 text-[13px] text-fg-muted" aria-live="polite">
+    <div className="rounded-xl bg-surface-muted px-3.5 py-3 text-sm text-fg-muted" aria-live="polite">
       <p>
         <span className="font-medium text-fg">{ROLE_NAMES[entry.role] ?? entry.role}:</span>{" "}
         {entry.kind === "ALL"

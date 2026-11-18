@@ -22,12 +22,12 @@ function isHot(row: OutcomeRow, overall: number, minParcels: number) {
 function Tile({ label, value, note, tone }: { label: string; value: string; note?: React.ReactNode; tone?: "danger" }) {
   return (
     <Card className="p-3.5 sm:p-4">
-      <p className="flex items-center gap-2 text-[13px] font-medium text-fg-muted">
+      <p className="flex items-center gap-2 text-sm font-medium text-fg-muted">
         {tone === "danger" && <span className="h-2 w-2 rounded-full bg-danger-500" aria-hidden />}
         {label}
       </p>
-      <p className="pt-1 text-[22px] font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-[26px]">{value}</p>
-      {note && <p className="mt-1 text-[12.5px] leading-snug text-fg-muted">{note}</p>}
+      <p className="pt-1 text-xl font-semibold leading-tight tracking-tight tabular-nums text-fg sm:text-2xl">{value}</p>
+      {note && <p className="mt-1 text-xs leading-snug text-fg-muted">{note}</p>}
     </Card>
   );
 }
@@ -67,14 +67,14 @@ function WeeklyBars({ weeks }: { weeks: DeliveryOutcomes["weekly"] }) {
           </div>
         ))}
       </div>
-      <div aria-hidden className="mt-1.5 flex gap-1.5 text-[11px] tabular-nums text-fg-muted">
+      <div aria-hidden className="mt-1.5 flex gap-1.5 text-xs tabular-nums text-fg-muted">
         {weeks.map((w, i) => (
           <span key={w.week} className="flex-1 truncate text-center">
             {i % Math.ceil(weeks.length / 6) === 0 ? formatBusinessDate(w.week) : ""}
           </span>
         ))}
       </div>
-      <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-muted">
+      <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-success-500" aria-hidden /> Delivered
         </span>
@@ -137,7 +137,7 @@ function OutcomeTable({ title, rows, overall, minParcels, showDays = true, note 
             </tbody>
           </Table>
         </TableContainer>
-        {note && <p className="mt-3 text-[12px] leading-relaxed text-fg-muted">{note}</p>}
+        {note && <p className="mt-3 text-xs leading-relaxed text-fg-muted">{note}</p>}
       </CardContent>
     </Card>
   );
@@ -158,7 +158,7 @@ function RefusalBars({ title, rows, overall }: { title: string; rows: OutcomeRow
           <ul className="space-y-3">
             {rows.map((r) => (
               <li key={r.key}>
-                <div className="flex items-baseline justify-between gap-3 text-[13px]">
+                <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="min-w-0 truncate text-fg">{r.key}</span>
                   <span className="shrink-0 tabular-nums text-fg-muted">
                     <span className={cn("font-semibold", r.refusalRate > overall * 1.5 && r.refused > 0 ? "text-danger-600" : "text-fg")}>{pct(r.refusalRate)}</span> refused ·{" "}
@@ -173,7 +173,7 @@ function RefusalBars({ title, rows, overall }: { title: string; rows: OutcomeRow
             ))}
           </ul>
         )}
-        <p className="mt-3 text-[12px] text-fg-muted">The dark tick is the store&apos;s average refusal rate ({pct(overall)}).</p>
+        <p className="mt-3 text-xs text-fg-muted">The dark tick is the store&apos;s average refusal rate ({pct(overall)}).</p>
       </CardContent>
     </Card>
   );
@@ -207,7 +207,7 @@ function RepeatRefusers({ list }: { list: DeliveryOutcomes["repeatRefusers"] }) 
                       <Link href={`/admin/orders/${r.lastOrderId}`} className="font-medium text-fg hover:underline">
                         {r.name}
                       </Link>
-                      <span className="block text-[12px] tabular-nums text-fg-muted">{r.phone}</span>
+                      <span className="block text-xs tabular-nums text-fg-muted">{r.phone}</span>
                     </TableCell>
                     <TableCell align="right" className="font-semibold text-danger-600">
                       {formatCount(r.refused)}
@@ -300,7 +300,7 @@ export default function DeliveriesView() {
 
       <RepeatRefusers list={data.repeatRefusers} />
 
-      <p className="text-[12px] leading-relaxed text-fg-muted">
+      <p className="text-xs leading-relaxed text-fg-muted">
         A parcel counts in the period it finished: delivered, part delivered, or refused (the courier cancelled it after booking, or it
         came back). A delivered parcel the customer returns later stays a delivery.
       </p>

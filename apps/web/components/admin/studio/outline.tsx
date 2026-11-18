@@ -54,7 +54,7 @@ export function Outline({ sections, selectedId, checks, emptyIds, deviceLabel, o
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto px-3 py-3">
-        <p className="px-2 pb-2 text-caption font-semibold uppercase text-fg-subtle">Sections · top to bottom</p>
+        <p className="px-2 pb-2 text-caption font-semibold text-fg-subtle">Sections · top to bottom</p>
         <DndContext id="studio-outline-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
             <ol className="space-y-1" aria-label="Homepage sections, top to bottom">

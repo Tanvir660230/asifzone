@@ -34,7 +34,7 @@ export function JourneyFunnel({ steps, bottleneckKey }: JourneyFunnelProps) {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-ink-800">{step.label}</span>
                 {isBottleneck && (
-                  <span className="flex items-center gap-1 rounded-full bg-warning-50 px-2 py-0.5 text-[11px] font-semibold text-warning-600">
+                  <span className="flex items-center gap-1 rounded-full bg-warning-50 px-2 py-0.5 text-xs font-semibold text-warning-600">
                     <AlertTriangle size={11} /> Biggest drop-off
                   </span>
                 )}

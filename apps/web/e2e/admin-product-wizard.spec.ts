@@ -75,14 +75,14 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
     await page.getByLabel("Material visibility").selectOption("false");
     await page.getByLabel("Care instructions visibility").selectOption("false");
     await page.getByRole("button", { name: "Save template" }).click();
-    await expect(page.getByText(TEMPLATE_NAME).first()).toBeVisible();
+    await expect(page.getByText(TEMPLATE_NAME).filter({ visible: true }).first()).toBeVisible();
 
     await page.goto("/admin/catalog/types");
     await page.getByRole("button", { name: /add product type/i }).click();
     await page.getByLabel("Name", { exact: true }).fill(TYPE_NAME);
     await page.getByLabel("Template").selectOption({ label: TEMPLATE_NAME });
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(TYPE_NAME).first()).toBeVisible();
+    await expect(page.getByText(TYPE_NAME).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("2. the 'new' wizard never shows Care & Material or Size Guide (or anything past Pricing) before the product exists", async ({ page }) => {

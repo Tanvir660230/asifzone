@@ -590,7 +590,7 @@ function Stepper({ label, hint, value, max, onChange, testId }: { label: string;
   return (
     <div className={cn("rounded-xl border px-2.5 py-2", value > 0 ? "border-line-strong bg-surface" : "border-line-subtle bg-surface-muted/60")} data-testid={`stepper-${testId}`}>
       <p className="text-xs font-medium text-fg">{label}</p>
-      <p className="text-[11px] text-fg-subtle">{hint}</p>
+      <p className="text-xs text-fg-subtle">{hint}</p>
       <div className="mt-1.5 flex items-center justify-between gap-1">
         <button type="button" aria-label={`One less ${label.toLowerCase()}`} disabled={value <= 0} onClick={() => onChange(Math.max(0, value - 1))} className="flex h-9 w-9 items-center justify-center rounded-full text-fg ring-1 ring-line hover:bg-ink-900/[0.05] disabled:opacity-40">
           <Minus size={14} />

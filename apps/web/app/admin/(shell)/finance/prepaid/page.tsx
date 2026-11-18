@@ -58,7 +58,7 @@ export default function PrepaidPage() {
       ) : (
         <>
           <p className="text-sm text-fg-muted">
-            Still to be used <span className="ml-1 text-[17px] font-semibold tabular-nums tracking-tight text-fg">{formatPrice(d.totals.remaining)}</span>
+            Still to be used <span className="ml-1 text-lg font-semibold tabular-nums tracking-tight text-fg">{formatPrice(d.totals.remaining)}</span>
             {d.totals.endingSoon ? <Badge variant="warning" className="ml-2 align-middle">{d.totals.endingSoon} ending within 30 days</Badge> : null}
           </p>
           <div className="grid gap-3 lg:grid-cols-2">
@@ -74,7 +74,7 @@ export default function PrepaidPage() {
                     <Badge variant={STATUS[p.status].variant} className="shrink-0">{STATUS[p.status].label}</Badge>
                   </div>
                   <div className="flex items-end justify-between gap-3">
-                    <p className="tabular-nums"><span className="text-[22px] font-semibold tracking-tight text-fg">{formatPrice(p.perMonth)}</span><span className="text-sm text-fg-muted"> a month</span></p>
+                    <p className="tabular-nums"><span className="text-xl font-semibold tracking-tight text-fg">{formatPrice(p.perMonth)}</span><span className="text-sm text-fg-muted"> a month</span></p>
                     <p className="text-right text-sm tabular-nums text-fg-muted">{p.daysLeft ? `${p.daysLeft} days left` : STATUS[p.status].label}</p>
                   </div>
                   <div>

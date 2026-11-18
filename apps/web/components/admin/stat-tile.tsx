@@ -32,11 +32,11 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
 
   // Same card language as MetricCard: label first, one big number, the icon small in the corner (Store Console surface).
   const tile = (
-    <Card data-stat-tile="" className={cn("group relative flex h-full flex-col p-3.5 transition-colors sm:p-5 duration-fast ease-smooth", interactive && "hover:border-line-strong")}>
+    <Card data-stat-tile="" className={cn("group relative flex h-full flex-col p-3.5 transition-colors sm:px-4 sm:py-3.5 duration-fast ease-smooth", interactive && "hover:border-line-strong")}>
       <div className="flex items-start gap-2">
         {/* A tile only ever gets tone="warning" when its underlying count is actually > 0 (callers gate it). */}
         {tone === "warning" && <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-warning-500" aria-hidden />}
-        <p className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-fg-muted">{label}</p>
+        <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-fg-muted">{label}</p>
         {/* Phones drop the decorative icon so the label keeps one line and the tile stays short. */}
         <span className={cn("shrink-0 max-sm:hidden [&>svg]:h-4 [&>svg]:w-4", TONE_ICON[tone])} aria-hidden>
           {icon}
@@ -45,12 +45,12 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
       {/* flex-wrap, not truncate, on this row — the value is the whole point of the tile, so if the trend doesn't fit
           beside it the trend wraps instead of the number being cut. The value keeps `truncate` only as a floor for
           pathological widths (it has no spaces to wrap on); its full text is in the title. */}
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1 sm:pt-2">
-        <p title={value} className={cn("max-w-full truncate font-semibold leading-tight tracking-tight tabular-nums text-fg", String(value).length > 6 ? "text-[17px] sm:text-[19px]" : "text-[20px] sm:text-[26px]")}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1 sm:pt-1.5">
+        <p title={value} className={cn("max-w-full truncate font-semibold leading-tight tracking-tight tabular-nums text-fg", String(value).length > 6 ? "text-lg sm:text-lg" : "text-xl sm:text-xl")}>
           {value}
         </p>
         {hasTrend && (
-          <span className={cn("flex shrink-0 items-center gap-0.5 text-[12.5px] font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
+          <span className={cn("flex shrink-0 items-center gap-0.5 text-xs font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
             {isUp ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
             {Math.abs(trendPct!).toFixed(0)}%
           </span>
@@ -83,7 +83,7 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
 /** Matches StatTile's exact shape so the KPI grid doesn't reflow/pop when the query resolves. */
 export function StatTileSkeleton() {
   return (
-    <Card data-stat-tile="" className="flex flex-col p-3.5 sm:p-5">
+    <Card data-stat-tile="" className="flex flex-col p-3.5 sm:px-4 sm:py-3.5">
       <div className="h-3.5 w-24 rounded ui-skeleton" />
       <div className="mt-3 h-7 w-20 rounded ui-skeleton" />
     </Card>

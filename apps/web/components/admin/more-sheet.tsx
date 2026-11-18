@@ -82,15 +82,15 @@ export function MoreSheet({ open, onClose, onSearch }: { open: boolean; onClose:
 
             <div className="flex h-11 items-center justify-between px-2">
               {pushed ? (
-                <button type="button" onClick={() => setPushed(null)} className="flex h-11 items-center pr-2 text-[17px] tracking-[-0.02em] text-accent active:opacity-50">
+                <button type="button" onClick={() => setPushed(null)} className="flex h-11 items-center pr-2 text-ios-body text-accent active:opacity-50">
                   <ChevronLeft size={28} strokeWidth={2.2} className="-mr-0.5" aria-hidden />
                   Menu
                 </button>
               ) : (
                 <span className="w-16" />
               )}
-              <p className="truncate text-[17px] font-semibold tracking-[-0.02em] text-fg">{pushed ? pushed.node.label : "Menu"}</p>
-              <button type="button" onClick={onClose} className="h-11 w-16 pr-2 text-right text-[17px] font-semibold tracking-[-0.02em] text-accent active:opacity-50">
+              <p className="truncate text-ios-body font-semibold text-fg">{pushed ? pushed.node.label : "Menu"}</p>
+              <button type="button" onClick={onClose} className="h-11 w-16 pr-2 text-right text-ios-body font-semibold text-accent active:opacity-50">
                 Done
               </button>
             </div>
@@ -115,7 +115,7 @@ export function MoreSheet({ open, onClose, onSearch }: { open: boolean; onClose:
                       onClose();
                       onSearch();
                     }}
-                    className="flex h-10 w-full items-center gap-2 rounded-[10px] bg-ink-900/[0.06] px-3 text-left text-[17px] tracking-[-0.02em] text-fg-subtle"
+                    className="flex h-10 w-full items-center gap-2 rounded-[10px] bg-ink-900/[0.06] px-3 text-left text-ios-body text-fg-subtle"
                   >
                     <Search size={17} aria-hidden />
                     Search
@@ -128,7 +128,7 @@ export function MoreSheet({ open, onClose, onSearch }: { open: boolean; onClose:
                   {tree.map((group) =>
                     group.modules.length === 0 ? null : (
                       <section key={group.domain} aria-label={group.label ?? (group.domain === "system" ? "Store administration" : "Overview")}>
-                        {group.label && <h2 className="mb-1.5 px-4 text-[13px] text-fg-muted">{group.label}</h2>}
+                        {group.label && <h2 className="mb-1.5 px-4 text-ios-footnote text-fg-muted">{group.label}</h2>}
                         <InsetGroup>
                           {group.modules.map((item) => {
                             const Icon = item.node.icon ? NAV_ICONS[item.node.icon] : undefined;
@@ -184,7 +184,7 @@ export function MoreSheet({ open, onClose, onSearch }: { open: boolean; onClose:
 
 // One row of an inset grouped list: 44pt minimum, a hairline between rows that starts after the icon.
 const rowClass =
-  "relative flex min-h-11 w-full items-center gap-3 px-3.5 py-2 text-left text-[17px] tracking-[-0.02em] text-fg transition-colors duration-fast active:bg-ink-900/[0.06] [&:not(:last-child)]:after:absolute [&:not(:last-child)]:after:bottom-0 [&:not(:last-child)]:after:left-[56px] [&:not(:last-child)]:after:right-0 [&:not(:last-child)]:after:h-px [&:not(:last-child)]:after:bg-ink-900/[0.08]";
+  "relative flex min-h-11 w-full items-center gap-3 px-3.5 py-2 text-left text-ios-body text-fg transition-colors duration-fast active:bg-ink-900/[0.06] [&:not(:last-child)]:after:absolute [&:not(:last-child)]:after:bottom-0 [&:not(:last-child)]:after:left-[56px] [&:not(:last-child)]:after:right-0 [&:not(:last-child)]:after:h-px [&:not(:last-child)]:after:bg-ink-900/[0.08]";
 
 function InsetGroup({ children }: { children: React.ReactNode }) {
   return <div className="overflow-hidden rounded-xl bg-surface">{children}</div>;

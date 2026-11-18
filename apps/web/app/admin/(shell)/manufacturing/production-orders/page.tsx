@@ -30,7 +30,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as mfg from "@/lib/api/manufacturing";
 import type { ProducibleProduct, ProductionOrderStatus } from "@/lib/api/manufacturing";
 import * as purchasingApi from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, upperFirst } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 /** Production orders (docs/MANUFACTURING.md §5): what is being made, by whom, in which sizes and colours, from which
@@ -95,7 +95,7 @@ export default function ProductionOrdersPage() {
                   <TableCell align="right" className="tabular-nums">{o.plannedUnits.toLocaleString()}</TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">{o.expectedDate ?? "—"}</TableCell>
                   {showCost && <TableCell align="right" className="tabular-nums">{o.planned ? formatPrice(o.planned.totalCost) : "—"}</TableCell>}
-                  <TableCell><Badge variant={MO_STATUS_BADGE[o.status]}>{MO_STATUS_LABEL[o.status]}</Badge></TableCell>
+                  <TableCell><Badge variant={MO_STATUS_BADGE[o.status]}>{upperFirst(MO_STATUS_LABEL[o.status])}</Badge></TableCell>
                 </TableRow>
               ))}
             </tbody>

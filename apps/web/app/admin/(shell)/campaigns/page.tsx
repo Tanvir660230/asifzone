@@ -16,11 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ListPage } from "@/components/admin/patterns/list-page";
+import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
+import { formatStoreDateTime } from "@/lib/format";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { ApiError } from "@/lib/api-client";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
@@ -32,12 +32,12 @@ const RichTextEditor = dynamic(
   { ssr: false },
 );
 
-const STATUS_COLOR: Record<Campaign["status"], string> = {
-  DRAFT: "bg-ink-100 text-ink-600",
-  SCHEDULED: "bg-info-100 text-info-700",
-  SENDING: "bg-brass-100 text-brass-700",
-  SENT: "bg-success-100 text-success-700",
-  FAILED: "bg-danger-100 text-danger-700",
+const STATUS_VARIANT: Record<Campaign["status"], "neutral" | "success" | "info" | "warning" | "danger" | "accent"> = {
+  DRAFT: "neutral",
+  SCHEDULED: "info",
+  SENDING: "accent",
+  SENT: "success",
+  FAILED: "danger",
 };
 
 const SEGMENT_OPTIONS: Array<{ value: CreateCampaignInput["segmentType"]; label: string }> = [
@@ -50,7 +50,7 @@ const SEGMENT_OPTIONS: Array<{ value: CreateCampaignInput["segmentType"]; label:
 export default function CampaignsPage() {
   const channels = useProviderCapabilities(); // Phase 12 D-4: a channel without a configured provider can't be chosen
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["admin-campaigns"], queryFn: () => campaignsApi.listCampaigns() });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["admin-campaigns"], queryFn: () => campaignsApi.listCampaigns() });
   const [showCompose, setShowCompose] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,93 +146,44 @@ export default function CampaignsPage() {
     await sendMutation.mutateAsync(campaign.id);
   }
 
+  const columns: DataTableColumn<Campaign>[] = [
+    { id: "name", header: "Name", card: "title", cell: (c) => <span className="font-medium text-ink-900">{c.name}</span> },
+    { id: "channel", header: "Channel", cell: (c) => <span className="text-ink-500">{c.channel}</span> },
+    { id: "audience", header: "Audience", cell: (c) => <span className="text-ink-500">{c.segment?.name.split(" — ")[1] ?? "—"}</span> },
+    { id: "recipients", header: "Recipients", align: "right", className: "w-28", cell: (c) => <span className="tabular-nums text-ink-600">{c.recipientCount}</span> },
+    { id: "status", header: "Status", cell: (c) => <Badge variant={STATUS_VARIANT[c.status]}>{c.status.charAt(0) + c.status.slice(1).toLowerCase()}</Badge> },
+    { id: "scheduled", header: "Scheduled", cell: (c) => <span className="text-ink-500">{c.scheduledAt ? formatStoreDateTime(c.scheduledAt) : "—"}</span> },
+  ];
+  const rowActions = (c: Campaign): DataTableRowAction<Campaign>[] => [
+    ...(c.status === "DRAFT" || c.status === "SCHEDULED" ? [{ label: "Send now", icon: Send, onSelect: () => void handleSendNow(c) }] : []),
+    ...(c.status === "DRAFT" ? [{ label: "Edit", icon: Pencil, onSelect: () => openEdit(c) }] : []),
+    ...(c.status === "SCHEDULED" ? [{ label: "Cancel schedule", icon: XCircle, destructive: true, onSelect: () => void cancelScheduleMutation.mutateAsync(c.id) }] : []),
+    ...(c.status === "DRAFT" ? [{ label: "Delete", icon: Trash2, destructive: true, onSelect: () => void handleDelete(c) }] : []),
+  ];
+
   return (
-    <div>
-      <PageHeader
-        title="Campaigns"
-        description="Compose and schedule email/SMS/push sends to a saved customer audience."
-        action={
-          <Button variant="brass" onClick={openCreate}>
-            <Plus size={16} /> New campaign
-          </Button>
-        }
+    <ListPage
+      title="Campaigns"
+      description="Compose and schedule email/SMS/push sends to a saved customer audience."
+      action={
+        <Button variant="brass" onClick={openCreate}>
+          <Plus size={16} /> New campaign
+        </Button>
+      }
+    >
+      <DataTable<Campaign>
+        caption="Campaigns"
+        columns={columns}
+        rows={isLoading ? undefined : data?.items}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={Send} title="No campaigns yet" description="Send an SMS or email to a group of customers, now or at a set time." variant="bordered" />}
+        density="dense"
+        onRowOpen={(c) => c.status === "DRAFT" && openEdit(c)}
+        rowActions={rowActions}
       />
-
-      <ModuleTabs />
-
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="ui-table-head">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Channel</th>
-                <th className="px-4 py-3">Audience</th>
-                <th className="px-4 py-3">Recipients</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Scheduled</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && <TableSkeleton rows={5} cols={7} />}
-              {!isLoading && data?.items.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
-                    No campaigns yet.
-                  </td>
-                </tr>
-              )}
-              {data?.items.map((c) => (
-                <tr key={c.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
-                  <td className="px-4 py-3 text-ink-500">{c.channel}</td>
-                  <td className="px-4 py-3 text-ink-500">{c.segment?.name.split(" — ")[1] ?? "—"}</td>
-                  <td className="px-4 py-3 text-ink-500">{c.recipientCount}</td>
-                  <td className="px-4 py-3">
-                    <Badge className={STATUS_COLOR[c.status]}>{c.status.charAt(0) + c.status.slice(1).toLowerCase()}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-ink-500">
-                    {c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      {(c.status === "DRAFT" || c.status === "SCHEDULED") && (
-                        <button
-                          title="Send now"
-                          onClick={() => handleSendNow(c)}
-                          className="text-ink-400 hover:text-brass-600"
-                        >
-                          <Send size={16} />
-                        </button>
-                      )}
-                      {c.status === "DRAFT" && (
-                        <button title="Edit" onClick={() => openEdit(c)} className="text-ink-400 hover:text-ink-900">
-                          <Pencil size={16} />
-                        </button>
-                      )}
-                      {c.status === "SCHEDULED" && (
-                        <button
-                          title="Cancel schedule"
-                          onClick={() => cancelScheduleMutation.mutateAsync(c.id)}
-                          className="text-ink-400 hover:text-danger-600"
-                        >
-                          <XCircle size={16} />
-                        </button>
-                      )}
-                      {c.status === "DRAFT" && (
-                        <button title="Delete" onClick={() => handleDelete(c)} className="text-ink-400 hover:text-danger-600">
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
 
       <Modal open={showCompose} onClose={() => setShowCompose(false)} title={editing ? "Edit campaign" : "New campaign"}>
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -309,6 +260,6 @@ export default function CampaignsPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

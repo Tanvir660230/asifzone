@@ -3,20 +3,18 @@
 import { useState } from "react";
 import { attentionKeys } from "@/lib/query-keys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Trash2, X } from "lucide-react";
-import type { ReviewStatus } from "@clothing-brand/shared";
+import { Check, MessageSquareText, Trash2, X } from "lucide-react";
+import type { ProductReview, ReviewStatus } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { ListPage } from "@/components/admin/patterns/list-page";
+import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
-import { Pagination } from "@/components/admin/pagination";
 import { StarRating } from "@/components/storefront/star-rating";
 import { ReviewPhotoStrip } from "@/components/storefront/review-photos";
-import { cn } from "@/lib/utils";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import { ApiError } from "@/lib/api-client";
 import { formatStoreDate, approvalStatusBadgeVariant } from "@/lib/format";
@@ -30,6 +28,8 @@ const TABS: Array<{ label: string; value: ReviewStatus | "ALL" }> = [
   { label: "All", value: "ALL" },
 ];
 
+type Review = ProductReview;
+
 export default function AdminReviewsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ReviewStatus | "ALL">("PENDING");
@@ -37,11 +37,10 @@ export default function AdminReviewsPage() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error: loadError, refetch } = useQuery({
     queryKey: ["admin-reviews", tab, page, pageSize],
     queryFn: () => adminReviewsApi.listReviewsAdmin({ status: tab === "ALL" ? undefined : tab, page, pageSize }),
   });
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
 
   const moderateMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: "APPROVED" | "REJECTED" }) =>
@@ -77,30 +76,65 @@ export default function AdminReviewsPage() {
     deleteMutation.mutate(id);
   }
 
-  return (
-    <div>
-      <PageHeader title="Reviews" description="Moderate customer product reviews before they go live." />
-
-      <ModuleTabs />
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-ink-100">
-        <div className="flex gap-1">
-          {TABS.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => {
-                setTab(t.value);
-                setPage(1);
-              }}
-              className={cn(
-                "border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-                tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+  const columns: DataTableColumn<Review>[] = [
+    { id: "product", header: "Product", card: "title", className: "w-48", cell: (r) => <span className="font-medium text-ink-900">{r.product?.name ?? "—"}</span> },
+    {
+      id: "customer",
+      header: "Customer",
+      cell: (r) => (
+        <div className="text-ink-600">
+          {r.customerName}
+          {r.isVerifiedPurchase && <div className="text-xs text-brass-600">Verified purchase</div>}
         </div>
+      ),
+    },
+    { id: "rating", header: "Rating", cell: (r) => <StarRating value={r.rating} /> },
+    {
+      id: "review",
+      header: "Review",
+      className: "min-w-[18rem]",
+      cell: (r) => (
+        <div className="max-w-md text-ink-500">
+          {r.title && <p className="font-medium text-ink-700">{r.title}</p>}
+          <p className="line-clamp-2">{r.body}</p>
+          {/* Customer photos: checked here before approval, since approving publishes them too. */}
+          <ReviewPhotoStrip images={r.images ?? []} author={r.customerName} />
+        </div>
+      ),
+    },
+    { id: "date", header: "Date", cell: (r) => <span className="whitespace-nowrap text-ink-500">{formatStoreDate(r.createdAt)}</span> },
+    {
+      id: "status",
+      header: "Status",
+      cell: (r) => (
+        <Badge variant={approvalStatusBadgeVariant(r.status)} dot>
+          {r.status.charAt(0) + r.status.slice(1).toLowerCase()}
+        </Badge>
+      ),
+    },
+  ];
+  const rowActions = (r: Review): DataTableRowAction<Review>[] => [
+    ...(r.status !== "APPROVED" ? [{ label: "Approve", icon: Check, onSelect: () => void handleApprove(r.id) }] : []),
+    ...(r.status !== "REJECTED" ? [{ label: "Reject", icon: X, onSelect: () => void handleReject(r.id) }] : []),
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => void handleDelete(r.id) },
+  ];
+
+  return (
+    <ListPage
+      title="Reviews"
+      description="Moderate customer product reviews before they go live."
+      filters={
+        <SegmentedControl
+          aria-label="Which reviews"
+          value={tab}
+          onChange={(value) => {
+            setTab(value);
+            setPage(1);
+          }}
+          options={TABS.map((t) => ({ value: t.value, label: t.label }))}
+        />
+      }
+      filtersEnd={
         <PageSizeSelect
           value={pageSize}
           onChange={(size) => {
@@ -108,91 +142,24 @@ export default function AdminReviewsPage() {
             setPage(1);
           }}
         />
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="ui-table-head">
-              <tr>
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Rating</th>
-                <th className="px-4 py-3">Review</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && <TableSkeleton rows={5} cols={7} />}
-              {!isLoading && data?.items.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
-                    No reviews here.
-                  </td>
-                </tr>
-              )}
-              {data?.items.map((review) => (
-                <tr key={review.id} className="border-t border-ink-100 align-top transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3 font-medium">{review.product?.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-ink-500">
-                    {review.customerName}
-                    {review.isVerifiedPurchase && <div className="text-xs text-brass-600">Verified purchase</div>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StarRating value={review.rating} />
-                  </td>
-                  <td className="px-4 py-3 max-w-xs text-ink-500">
-                    {review.title && <p className="font-medium text-ink-700">{review.title}</p>}
-                    <p className="line-clamp-3">{review.body}</p>
-                    {/* Customer photos: checked here before approval, since approving publishes them too. */}
-                    <ReviewPhotoStrip images={review.images ?? []} author={review.customerName} />
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-ink-500">{formatStoreDate(review.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={approvalStatusBadgeVariant(review.status)} dot>{review.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      {review.status !== "APPROVED" && (
-                        <button
-                          onClick={() => handleApprove(review.id)}
-                          className="text-ink-400 hover:text-success-600"
-                          aria-label="Approve"
-                          title="Approve"
-                        >
-                          <Check size={16} />
-                        </button>
-                      )}
-                      {review.status !== "REJECTED" && (
-                        <button
-                          onClick={() => handleReject(review.id)}
-                          className="text-ink-400 hover:text-danger-600"
-                          aria-label="Reject"
-                          title="Reject"
-                        >
-                          <X size={16} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(review.id)}
-                        className="text-ink-400 hover:text-danger-600"
-                        aria-label="Delete"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
-      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+      }
+    >
+      <DataTable<Review>
+        caption="Reviews"
+        columns={columns}
+        rows={isLoading ? undefined : data?.items}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={MessageSquareText} title={tab === "PENDING" ? "Nothing waiting for review" : "No reviews here"} variant="bordered" />}
+        page={page}
+        pageSize={pageSize}
+        total={data?.total}
+        onPageChange={setPage}
+        rowActions={rowActions}
+      />
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

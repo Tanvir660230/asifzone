@@ -13,12 +13,13 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { CategoryForm } from "@/components/admin/category-form";
 import { CategoryTree } from "@/components/admin/category-tree";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import * as categoriesApi from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
 import { useCapability } from "@/hooks/use-capability";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/ui/tabs";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -219,33 +220,28 @@ export default function CategoriesPage() {
     ) : null;
 
   return (
-    <div>
-      <PageHeader
-        title="Categories"
-        action={
-          tab === "active" && (
-            <Button variant="brass" onClick={() => openNew(null)}>
-              <Plus size={16} /> Add category
-            </Button>
-          )
-        }
-      />
-
-      <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
-        {(["active", "trash"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
-              tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
-            )}
-          >
-            {t === "trash" ? "Trash" : "Active"}
-          </button>
-        ))}
-      </div>
-
+    <ListPage
+      title="Categories"
+      action={
+        tab === "active" && (
+          <Button variant="brass" onClick={() => openNew(null)}>
+            <Plus size={16} /> Add category
+          </Button>
+        )
+      }
+      tabs={false}
+      filters={
+        <SegmentedControl
+          aria-label="Categories or Trash"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "trash", label: "Trash" },
+          ]}
+        />
+      }
+    >
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -318,8 +314,8 @@ export default function CategoriesPage() {
           <aside aria-label="Category details" className="sticky top-chrome rounded-2xl border border-line bg-surface p-5 shadow-xs">
             {editing === null ? (
               <div className="py-12 text-center">
-                <p className="text-[15px] font-medium text-fg">Select a category</p>
-                <p className="mt-1 text-[13px] text-fg-muted">Its details open here. Drag in the list to reorder or move it under another.</p>
+                <p className="text-base font-medium text-fg">Select a category</p>
+                <p className="mt-1 text-sm text-fg-muted">Its details open here. Drag in the list to reorder or move it under another.</p>
                 <Button variant="outline" size="sm" className="mt-4" onClick={() => openNew(null)}>
                   <Plus size={14} aria-hidden="true" /> Add category
                 </Button>
@@ -332,7 +328,7 @@ export default function CategoriesPage() {
                       {editing === "new" ? "New category" : editing.name}
                     </h2>
                     {editingCategory && (
-                      <p className="mt-0.5 text-[13px] text-fg-muted">
+                      <p className="mt-0.5 text-sm text-fg-muted">
                         /{editingCategory.slug} · {childCount} subcategor{childCount === 1 ? "y" : "ies"}
                         {stockData?.stock?.[editingCategory.id] && (
                           <> · {stockData.stock[editingCategory.id]!.inStockProducts} of {stockData.stock[editingCategory.id]!.totalProducts} products in stock</>
@@ -360,6 +356,6 @@ export default function CategoriesPage() {
         {!wide && form}
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

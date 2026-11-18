@@ -123,7 +123,7 @@ export default function TodayOperationsPage() {
                     {idle ? <Check size={15} /> : i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">{stage.label}</p>
+                    <p className="text-xs font-medium text-fg-subtle">{stage.label}</p>
                     {loading ? (
                       <Skeleton className="mt-1 h-6 w-40" />
                     ) : idle ? (

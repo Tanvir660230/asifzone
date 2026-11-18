@@ -141,10 +141,10 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.getByLabel("Field type").selectOption("SELECT");
     await page.getByLabel(/Options \(one per line\)/).fill("Hand embroidery\nMachine embroidery\nNone");
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText(EMBROIDERY).first()).toBeVisible();
+    await expect(page.getByText(EMBROIDERY).filter({ visible: true }).first()).toBeVisible();
 
     await page.goto("/admin/catalog/templates");
-    await page.getByRole("button", { name: "Edit Panjabi template", exact: true }).click();
+    await page.getByText("Panjabi template", { exact: true }).filter({ visible: true }).first().click();
     await page.getByLabel("Field to add").selectOption({ label: `${EMBROIDERY} (Select (one option))` });
     await page.getByRole("button", { name: /^Add$/ }).click();
     await page.getByRole("button", { name: "Save template" }).click();
@@ -194,7 +194,7 @@ test.describe("product management system — the brief's acceptance tests", () =
 
     // Assign to the Cap type: the Cap template now uses this guide.
     await page.goto("/admin/catalog/templates");
-    await page.getByRole("button", { name: "Edit Cap template", exact: true }).click();
+    await page.getByText("Cap template", { exact: true }).filter({ visible: true }).first().click();
     await page.getByLabel("Size guide", { exact: true }).selectOption({ label: GUIDE });
     await page.getByRole("button", { name: "Save template" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -379,21 +379,21 @@ test.describe("product management system — the brief's acceptance tests", () =
   test("4b. the custom attribute and every type's fields render on the storefront", async ({ page }) => {
     await page.goto(`/product/${slug.panjabi}`);
     await page.getByRole("button", { name: /^specifications$/i }).click();
-    for (const text of [`${EMBROIDERY}:`, "Hand embroidery", "Collar:", "Band", "Pattern:", "Embroidered", "Fine cotton"]) await expect(page.getByText(text).first()).toBeVisible();
+    for (const text of [`${EMBROIDERY}:`, "Hand embroidery", "Collar:", "Band", "Pattern:", "Embroidered", "Fine cotton"]) await expect(page.getByText(text).filter({ visible: true }).first()).toBeVisible();
 
     await page.goto(`/product/${slug.cap}`);
     await page.getByRole("button", { name: /^specifications$/i }).click();
     await expect(page.getByText("Closure Type:")).toBeVisible();
-    await expect(page.getByText("Snapback").first()).toBeVisible();
+    await expect(page.getByText("Snapback").filter({ visible: true }).first()).toBeVisible();
 
     await page.goto(`/product/${slug.shoe}`);
     await page.getByRole("button", { name: /^specifications$/i }).click();
     await expect(page.getByText("Shoe Type:")).toBeVisible();
-    await expect(page.getByText("Loafer").first()).toBeVisible();
+    await expect(page.getByText("Loafer").filter({ visible: true }).first()).toBeVisible();
 
     await page.goto(`/product/${slug.watch}`);
     await page.getByRole("button", { name: /^specifications$/i }).click();
-    for (const text of ["Strap Material:", "Genuine Leather", "Glass:", "Sapphire Crystal", "Warranty:", "2 years"]) await expect(page.getByText(text).first()).toBeVisible();
+    for (const text of ["Strap Material:", "Genuine Leather", "Glass:", "Sapphire Crystal", "Warranty:", "2 years"]) await expect(page.getByText(text).filter({ visible: true }).first()).toBeVisible();
   });
 
   test("7. page sections: enabled ones render, disabled ones don't, and the order follows the settings", async ({ page }) => {
@@ -444,11 +444,11 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(page.getByTestId("product-price")).toContainText("1,400"); // the variant's price override
 
     await page.getByRole("button", { name: "Add to Cart" }).first().click();
-    await expect(page.getByText(/added to (cart|bag)/i).first()).toBeVisible();
+    await expect(page.getByText(/added to (cart|bag)/i).filter({ visible: true }).first()).toBeVisible();
 
     await page.goto("/cart");
-    await expect(page.getByText(N.panjabi).first()).toBeVisible();
-    await expect(page.getByText("1,400").first()).toBeVisible();
+    await expect(page.getByText(N.panjabi).filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText("1,400").filter({ visible: true }).first()).toBeVisible();
 
     await page.goto("/checkout");
     await page.getByLabel("Full name").fill("E2E Acceptance Shopper");
@@ -461,7 +461,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.getByLabel("Cash on Delivery").check();
     await page.getByRole("button", { name: /^Place Order/ }).click();
     await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
-    await expect(page.getByText(N.panjabi).first()).toBeVisible();
+    await expect(page.getByText(N.panjabi).filter({ visible: true }).first()).toBeVisible();
 
     // The order took exactly one unit from exactly that variant, at the variant's price.
     const after = await apiProduct(slug.panjabi);
@@ -533,7 +533,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.goto(`/preview/${id}`);
     await page.getByRole("button", { name: "Highlights", exact: true }).click();
     await page.getByRole("button", { name: "FAQ", exact: true }).click();
-    await expect(page.getByText("Safe words").first()).toBeVisible(); // the harmless text survives sanitising
+    await expect(page.getByText("Safe words").filter({ visible: true }).first()).toBeVisible(); // the harmless text survives sanitising
     await page.waitForTimeout(500); // give any injected handler a chance to fire
 
     expect(dialogs).toBe(0);
@@ -565,7 +565,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.goto(`/product/${freshSlug}`);
     await expect(page.getByRole("heading", { level: 1, name: `E2E Accept XSS ${RUN}` })).toBeVisible();
     await page.getByRole("button", { name: "FAQ", exact: true }).click();
-    await expect(page.getByText("Safe words").first()).toBeVisible();
+    await expect(page.getByText("Safe words").filter({ visible: true }).first()).toBeVisible();
     await page.waitForTimeout(500);
 
     // Every structured-data block is still valid JSON, and the answer is in it as data.

@@ -14,9 +14,8 @@ import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMess
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
@@ -116,26 +115,25 @@ export default function CourierNotesPage() {
     (draft.trigger === "PRODUCT" || (Number.isInteger(percent) && percent >= 1 && percent <= 99));
 
   return (
-    <div>
-      <PageHeader
-        title="Courier notes"
-        description="What the rider is told about a parcel, written once and applied by product, category or discount."
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add courier note
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
-
-      <p className="mb-4 max-w-3xl text-sm text-ink-500">
-        Instructions printed on the parcel for the courier&rsquo;s rider, e.g. <em>পারফিউম — প্যাকেট খোলা যাবে না</em>. Tick a note on a product
-        (in the product editor&rsquo;s Pricing step) or a whole category, or make it apply to any order with a big discount. When an order is booked,
-        every note that applies is sent together, followed by the customer&rsquo;s own note. Staff can still rewrite it on an order before booking.
-      </p>
-
+    <ListPage
+      title="Courier notes"
+      description="What the rider is told about a parcel, written once and applied by product, category or discount."
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add courier note
+          </Button>
+        )
+      }
+      intro={
+        <>
+            Instructions printed on the parcel for the courier&rsquo;s rider, e.g. <em>পারফিউম — প্যাকেট খোলা যাবে না</em>. Tick a note on a product
+            (in the product editor&rsquo;s Pricing step) or a whole category, or make it apply to any order with a big discount. When an order is booked,
+            every note that applies is sent together, followed by the customer&rsquo;s own note. Staff can still rewrite it on an order before booking.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change courier notes."}
+    >
       {isError ? (
         <Alert
           variant="danger"
@@ -200,7 +198,6 @@ export default function CourierNotesPage() {
           </Table>
         </TableContainer>
       )}
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change courier notes.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add courier note" : "Edit courier note"} widthClassName="max-w-lg">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -303,6 +300,6 @@ export default function CourierNotesPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

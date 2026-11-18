@@ -1,12 +1,9 @@
 import type { ReactNode } from "react";
-import { InnerNav } from "@/components/admin/inner-nav";
+import { SectionFrame } from "@/components/admin/section-frame";
 
-/** Catalog setup (Blueprint V2 N4): its ten pages as an inner list beside the page on wide screens; tabs on phones. */
+/** Catalog setup: its ten pages as one row of tabs above the page (components/admin/section-frame.tsx). */
 export default function CatalogSetupLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-8">
-      <InnerNav title="Catalog setup" />
-      <div className="min-w-0">{children}</div>
-    </div>
+    <SectionFrame>{children}</SectionFrame>
   );
 }

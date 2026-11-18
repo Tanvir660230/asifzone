@@ -93,8 +93,8 @@ export interface NavNode {
   goKey?: string;
   /** Old routes that now live here — the middleware redirects them (query string kept). Same `[param]` names as `route`. */
   deprecatedRoutes?: string[];
-  /** A grouping page whose pages show as a vertical inner list beside the page on wide screens (macOS Settings-style)
-   * instead of a tab row — for long sets like Catalog setup's ten. Its layout renders <InnerNav>. */
+  /** A grouping page whose layout draws its pages as one row of tabs above every page of the group
+   * (components/admin/section-frame.tsx), so the row is there from laptop width up whatever the page renders. */
   innerList?: boolean;
 }
 
@@ -771,7 +771,7 @@ export const NAV_NODES: readonly NavNode[] = [
     domain: "manage",
     route: "/admin/finance/reports",
     capability: "purchasing.view",
-    order: 1,
+    order: 8,
     description: "Purchase register, stock value, price changes and supplier payments as CSV.",
     keywords: ["report", "purchase register", "grni", "price variance", "inventory valuation", "stock value", "cost adjustments", "supplier payments", "csv"],
   },
@@ -865,7 +865,7 @@ export const NAV_NODES: readonly NavNode[] = [
     domain: "manage",
     route: "/admin/finance/product-costs",
     capability: "costing.view",
-    order: -2,
+    order: 7,
     description: "What one sale of each product and size costs — making and selling — the profit left, and the price for your target.",
     keywords: ["cost", "cost sheet", "unit cost", "margin", "price", "pricing", "making cost", "recipe cost", "delivery cost", "suggested price", "target margin", "khoroch", "dam"],
   },
@@ -1064,21 +1064,21 @@ export const NAV_NODES: readonly NavNode[] = [
     label: "Reports",
     kind: "module",
     domain: "manage",
-    index: "/admin/finance/profit",
+    // Analysis first, one click from the sidebar (owner, 2026-11-18: "I used to see the analysis nicely, now I can't").
+    index: "/admin/analytics/overview",
     activeFor: ["/admin/analytics", "/admin/bi", "/admin/ai-assistant", "/admin/reports"],
     icon: "reports",
     order: 90,
     goKey: "a",
     keywords: ["business intelligence", "bi", "reports"],
   },
-  { id: "reports.profit", label: "Profit", kind: "page", parent: "analytics", domain: "manage", index: "/admin/finance/profit", order: -3, innerList: true, description: "Book profit by order and product, and month by month.", keywords: ["profit", "month by month"] },
-  { id: "reports.analytics", label: "Store analytics", kind: "page", parent: "analytics", domain: "manage", index: "/admin/analytics/overview", order: 0, description: "Sales, products, customers, marketing and operations — sales estimates, not book profit.", keywords: ["analytics", "bi", "sales estimate"] },
+  { id: "reports.profit", label: "Profit", kind: "page", parent: "analytics", domain: "manage", index: "/admin/finance/profit", order: 6, innerList: true, description: "Book profit by order and product, and month by month.", keywords: ["profit", "month by month"] },
   ...ANALYTICS_TABS.map(
     ([slug, label, keywords, deprecatedRoutes], i): NavNode => ({
       id: `analytics.${slug}`,
       label,
       kind: "report",
-      parent: "reports.analytics",
+      parent: "analytics",
       domain: "manage",
       route: `/admin/analytics/${slug}`,
       capability: "analytics.view",
@@ -1095,7 +1095,7 @@ export const NAV_NODES: readonly NavNode[] = [
     domain: "manage",
     route: "/admin/ai-assistant",
     featureFlag: "ai-assistant",
-    order: 2,
+    order: 9,
     keywords: ["ai", "chat"],
   },
 

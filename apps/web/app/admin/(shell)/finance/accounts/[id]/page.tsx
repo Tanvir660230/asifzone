@@ -98,7 +98,7 @@ export default function FinanceAccountPage() {
             ["Approval above", a.approvalThreshold === null ? "no approval step" : formatPrice(a.approvalThreshold)],
           ].map(([label, value]) => (
             <Card key={label} className="p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">{label}</p>
+              <p className="text-xs font-semibold text-ink-500">{label}</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-ink-900">{value}</p>
             </Card>
           ))}

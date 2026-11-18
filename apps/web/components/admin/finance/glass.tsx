@@ -28,7 +28,7 @@ export function AmountInput({ id, value, onChange, label = "Amount", autoFocus, 
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           style={{ width: `${Math.max(value.length, 1) + 0.6}ch` }}
-          className="min-w-0 max-w-full bg-transparent text-left text-[2.75rem] font-semibold leading-none tracking-tight tabular-nums text-fg outline-none placeholder:text-ink-300"
+          className="min-w-0 max-w-full bg-transparent text-left text-figure-lg font-semibold leading-none tracking-tight tabular-nums text-fg outline-none placeholder:text-ink-300"
           data-testid={`${id}-input`}
           data-display=""
         />

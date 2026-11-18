@@ -107,7 +107,7 @@ export default function VisitorAnalyticsPage() {
 
       {/* Visitors & sessions */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Visitors &amp; Sessions</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Visitors &amp; Sessions</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
           {!overview || !funnel || !loggedInVsGuest ? (
             Array.from({ length: 10 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -141,7 +141,7 @@ export default function VisitorAnalyticsPage() {
 
       {/* Engagement */}
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Engagement</h2>
+        <h2 className="mb-3 text-xs font-semibold text-ink-500">Engagement</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
           {!engagement ? (
             Array.from({ length: 5 }).map((_, i) => <StatTileSkeleton key={i} />)
@@ -179,7 +179,7 @@ export default function VisitorAnalyticsPage() {
 
       {/* Geography */}
       <section>
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Geography</h2>
+        <h2 className="mb-2 text-xs font-semibold text-ink-500">Geography</h2>
         <p className="mb-3 text-xs text-ink-400">
           From an offline IP-to-location lookup — country is reliable, but region/city accuracy is rough, especially for mobile-carrier
           IPs, which often resolve to the same city regardless of the visitor&apos;s actual location.
@@ -300,7 +300,7 @@ export default function VisitorAnalyticsPage() {
             ) : (
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                  <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Started</th>
                     <th className="pb-2 pr-4">Visitor</th>
                     <th className="pb-2 pr-4">Entry page</th>

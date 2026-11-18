@@ -170,7 +170,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
             className="pointer-events-none absolute top-0 z-10 min-w-[9.5rem] -translate-x-1/2 rounded-2xl border border-ink-100 bg-cream-50 px-4 py-3 shadow-lg"
             style={{ left: `${(hovered.x / WIDTH) * 100}%` }}
           >
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+            <p className="text-xs font-semibold text-ink-400">
               {formatBusinessDate(hovered.date, { weekday: "short", month: "short", day: "numeric" })}
             </p>
             <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-ink-900">{formatPrice(hovered.revenue)}</p>

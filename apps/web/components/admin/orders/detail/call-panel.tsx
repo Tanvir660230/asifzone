@@ -171,7 +171,7 @@ export function CallPanel({ order, perms, commands }: { order: Order; perms: Ord
             <>
               <a
                 href={`tel:${order.customerPhone}`}
-                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-accent px-4 text-[15px] font-semibold text-accent-fg transition-opacity hover:opacity-90"
+                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-accent px-4 text-base font-semibold text-accent-fg transition-opacity hover:opacity-90"
               >
                 <Phone size={18} aria-hidden="true" /> Call {order.customerPhone}
               </a>

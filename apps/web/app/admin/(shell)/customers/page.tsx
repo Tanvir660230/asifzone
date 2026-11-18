@@ -1,5 +1,6 @@
 "use client";
 
+import { Table, TableContainer, TableHead, TableHeaderCell } from "@/components/ui/table";
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,10 +8,6 @@ import {
   SlidersHorizontal,
   Users,
   UserPlus,
-  Flame,
-  Star,
-  Wallet,
-  Moon,
   Eye,
   Phone,
   MessageCircle,
@@ -32,10 +29,9 @@ import { Drawer } from "@/components/ui/drawer";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
-import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
+import { SummaryStrip } from "@/components/admin/summary-strip";
 import { EmptyState } from "@/components/admin/empty-state";
 import { CustomerDetailPanel } from "@/components/admin/customer-detail-panel";
 import { SmsComposer } from "@/components/admin/sms-composer";
@@ -51,7 +47,7 @@ import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 const PAGE_SIZE = 20;
 /** Segment tabs: plain text, the selected one on a soft grey capsule (same as the Orders status tabs). */
 const SEGMENT_BASE =
-  "flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+  "flex h-8 shrink-0 items-center rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 const SEGMENT_ON = "bg-ink-900/[0.08] text-fg";
 const SEGMENT_OFF = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
@@ -143,7 +139,7 @@ function SortableHeader({
       type="button"
       onClick={() => onSort(column)}
       className={cn(
-        "flex items-center gap-1 whitespace-nowrap font-medium uppercase tracking-wide transition-colors",
+        "flex items-center gap-1 whitespace-nowrap font-medium transition-colors",
         active ? "text-ink-900" : "text-ink-500 hover:text-ink-700",
       )}
     >
@@ -156,7 +152,6 @@ function SortableHeader({
 export default function CustomersPage() {
   const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: SMS actions only when SMS is configured
   const [search, setSearch] = useState("");
-  const [allStats, setAllStats] = useState(false);
   const [tag, setTag] = useState<CustomerTag | "">("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
   const [page, setPage] = useState(1);
@@ -368,40 +363,17 @@ export default function CustomersPage() {
         }
       />
 
-      <div className={cn("grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6", allStats ? "mb-6" : "mb-2 sm:mb-6")}>
-        {stats ? (
-          <>
-            <StatTile label="Total customers" value={stats.totalCustomers.toLocaleString()} icon={<Users size={18} />} />
-            <StatTile label="New this month" value={stats.newThisMonth.toLocaleString()} icon={<UserPlus size={18} />} />
-            {/* Phones show the first two and the list right away; the rest are one tap away. */}
-            <div className={allStats ? "contents" : "contents max-sm:hidden"}>
-            <StatTile label="Repeat customers" value={stats.repeatCustomers.toLocaleString()} icon={<Flame size={18} />} />
-            <StatTile label="Lifetime realised net sales" value={formatPriceWhole(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
-            <StatTile label="VIP customers" value={stats.vipCustomers.toLocaleString()} icon={<Star size={18} />} tone="accent" />
-            <StatTile
-              label="Inactive customers"
-              value={stats.inactive30.toLocaleString()}
-              icon={<Moon size={18} />}
-              tone={stats.inactive30 > 0 ? "warning" : "default"}
-            />
-            </div>
-          </>
-        ) : (
-          <>
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-          </>
-        )}
-      </div>
-      {stats && (
-        <button type="button" onClick={() => setAllStats((v) => !v)} className="mb-4 text-sm text-accent sm:hidden" aria-expanded={allStats}>
-          {allStats ? "Show fewer numbers" : "Show 4 more numbers"}
-        </button>
-      )}
+      <SummaryStrip
+        loading={!stats}
+        figures={[
+          { label: "Total customers", value: stats?.totalCustomers.toLocaleString() },
+          { label: "New this month", value: stats?.newThisMonth.toLocaleString() },
+          { label: "Repeat customers", value: stats?.repeatCustomers.toLocaleString() },
+          { label: "Lifetime realised net sales", value: stats ? formatPriceWhole(stats.lifetimeRevenue) : null, tone: "accent" },
+          { label: "VIP customers", value: stats?.vipCustomers.toLocaleString() },
+          { label: "Inactive customers", value: stats?.inactive30.toLocaleString(), tone: stats && stats.inactive30 > 0 ? "warning" : "default" },
+        ]}
+      />
 
       {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx and the Orders page's
           equivalent bar: this floats over the scrolling customer rows, and translucency there let
@@ -422,7 +394,7 @@ export default function CustomersPage() {
             <SlidersHorizontal size={14} /> <span className="sm:hidden">Filters</span>
             <span className="max-sm:hidden">More filters</span>
             {activeMoreFiltersCount > 0 && (
-              <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
+              <span className="rounded-full bg-accent px-1.5 text-xs font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
             )}
           </Button>
           {/* Phones keep the default page size; the row stays search + Filters. */}
@@ -468,7 +440,7 @@ export default function CustomersPage() {
 
         {/* Views: one-click slices of the list. */}
         <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5">
-          <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
+          <span className="mr-1 shrink-0 text-sm font-medium text-fg-muted">Views</span>
           {QUICK_FILTERS.map((f) => (
             <button
               key={f.id}
@@ -476,7 +448,7 @@ export default function CustomersPage() {
               aria-pressed={quickFilter === f.id}
               onClick={() => selectQuickFilter(f.id)}
               className={cn(
-                "flex h-8 shrink-0 items-center rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth",
+                "flex h-8 shrink-0 items-center rounded-full border px-3 text-sm font-medium transition-colors duration-fast ease-smooth",
                 quickFilter === f.id ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong",
               )}
             >
@@ -577,50 +549,49 @@ export default function CustomersPage() {
           already-scrolling page made the mouse wheel scroll this small box first before the page
           would move, which read as broken/janky (see the same fix on the Orders page).
           sm and up: the table below. Below sm: a card list (below that). */}
-      <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="ui-table">
-            <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+      <TableContainer className="mt-4 hidden sm:block">
+        <Table>
+            <TableHead>
               <tr>
-                <th className="w-10 px-4 py-3">
+                <TableHeaderCell className="w-10">
                   <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
-                </th>
+                </TableHeaderCell>
                 {/* z-[1], matching the frozen column's <td> below and the identical pattern on the
                     Products page — not z-20: that tied with the sticky filter bar above (z-10) and
                     the app shell header (z-20) in the same stacking context, so as this non-sticky
                     header row scrolled past them, it painted in FRONT of both instead of being
                     covered by them, showing up as a floating box overlapping the tabs/header. */}
-                <th aria-sort={ariaSortFor("name")} className="sticky left-0 z-[1] bg-surface px-4 py-3">
+                <TableHeaderCell aria-sort={ariaSortFor("name")} className="sticky left-0 z-[1] bg-surface">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>
-                </th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="hidden px-4 py-3 2xl:table-cell">Email</th>
-                <th aria-sort={ariaSortFor("totalOrders")} className="px-4 py-3">
+                </TableHeaderCell>
+                <TableHeaderCell>Phone</TableHeaderCell>
+                <TableHeaderCell className="hidden 2xl:table-cell">Email</TableHeaderCell>
+                <TableHeaderCell aria-sort={ariaSortFor("totalOrders")}>
                   <div className="flex justify-end">
                     <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Orders
                     </SortableHeader>
                   </div>
-                </th>
-                <th aria-sort={ariaSortFor("totalSpent")} className="px-4 py-3">
+                </TableHeaderCell>
+                <TableHeaderCell aria-sort={ariaSortFor("totalSpent")}>
                   <div className="flex justify-end">
                     <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Delivered
                     </SortableHeader>
                   </div>
-                </th>
-                <th aria-sort={ariaSortFor("lastOrderAt")} className="px-4 py-3">
+                </TableHeaderCell>
+                <TableHeaderCell aria-sort={ariaSortFor("lastOrderAt")}>
                   <SortableHeader column="lastOrderAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Last Order
                   </SortableHeader>
-                </th>
-                <th className="px-4 py-3">Status</th>
-                <th className="hidden whitespace-nowrap px-4 py-3 2xl:table-cell">Last SMS</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                </TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell className="hidden whitespace-nowrap 2xl:table-cell">Last SMS</TableHeaderCell>
+                <TableHeaderCell align="right">Actions</TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {isLoading && <TableSkeleton rows={6} cols={10} />}
               {!isLoading && items.length === 0 && (
@@ -687,9 +658,8 @@ export default function CustomersPage() {
                 );
               })}
             </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+        </Table>
+      </TableContainer>
 
       {/* Below sm: one continuous bordered list instead of the table above — same card-list pattern
           (and same reasoning: the sticky filter zone scrolls over it, so no floating-card shadow

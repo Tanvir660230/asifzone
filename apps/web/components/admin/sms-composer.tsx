@@ -109,7 +109,7 @@ export function SmsComposer({
             type="button"
             onClick={() => insertToken(v.token)}
             title={`Insert ${v.label}`}
-            className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-500 transition-colors hover:border-ink-400 hover:text-ink-900"
+            className="rounded-full border border-ink-200 px-2 py-0.5 text-xs text-ink-500 transition-colors hover:border-ink-400 hover:text-ink-900"
           >
             {v.token}
           </button>
@@ -130,7 +130,7 @@ export function SmsComposer({
 
       {preview && (
         <div className="rounded-lg border border-info-200 bg-info-50 p-3 text-sm text-ink-700">
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-info-600">
+          <p className="mb-1 text-xs font-medium text-info-600">
             Preview{previewLabel ? ` — ${previewLabel}` : ""}
           </p>
           {preview}

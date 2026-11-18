@@ -14,11 +14,9 @@ import { Modal } from "@/components/ui/modal";
 import { Pagination } from "@/components/ui/pagination";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { TableSkeleton } from "@/components/ui/table";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { Table, TableContainer, TableHead, TableHeaderCell, TableSkeleton } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
@@ -153,10 +151,8 @@ export default function AdminReturnRequestsPage() {
   );
 
   return (
-    <div>
-      <PageHeader title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
-      <ModuleTabs />
-
+    <ListPage title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order."
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl
           aria-label="Filter by review status"
@@ -170,22 +166,21 @@ export default function AdminReturnRequestsPage() {
         {data && <span className="text-xs tabular-nums text-ink-400">{data.total} {data.total === 1 ? "request" : "requests"}</span>}
       </div>
 
-      <div className="hidden overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-sm md:block">
-        <HScrollShadow className="overflow-x-auto" edgeFrom="from-surface">
-          <table className="ui-table">
-            <thead className="ui-table-head">
+      <TableContainer className="hidden md:block">
+        <Table>
+            <TableHead>
               <tr>
-                <th scope="col" className="px-4 py-3">Order</th>
-                <th scope="col" className="px-4 py-3">Customer</th>
-                <th scope="col" className="px-4 py-3">Type</th>
-                <th scope="col" className="px-4 py-3">Reason</th>
-                <th scope="col" className="px-4 py-3">Requested</th>
-                <th scope="col" className="px-4 py-3">Status</th>
-                <th scope="col" className="px-4 py-3 text-right">
+                <TableHeaderCell>Order</TableHeaderCell>
+                <TableHeaderCell>Customer</TableHeaderCell>
+                <TableHeaderCell>Type</TableHeaderCell>
+                <TableHeaderCell>Reason</TableHeaderCell>
+                <TableHeaderCell>Requested</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell align="right">
                   <span className="sr-only">Actions</span>
-                </th>
+                </TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {isLoading && <TableSkeleton rows={5} cols={7} />}
               {!isLoading && items.length === 0 && (
@@ -223,9 +218,8 @@ export default function AdminReturnRequestsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+        </Table>
+      </TableContainer>
 
       <div className="space-y-3 md:hidden">
         {isLoading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-36 rounded-xl ui-skeleton" aria-hidden="true" />)}
@@ -285,7 +279,7 @@ export default function AdminReturnRequestsPage() {
             ) : review.decision === "APPROVED" ? (
               <div className="space-y-3">
               <div className="rounded-xl border border-line-subtle bg-surface-muted p-3.5">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">What happens</p>
+                <p className="mb-2 text-xs font-semibold text-ink-500">What happens</p>
                 <ul className="list-disc space-y-1 pl-4 text-sm text-ink-700">
                   {approvalEffects(review.request).map((t) => (
                     <li key={t}>{t}</li>
@@ -314,6 +308,6 @@ export default function AdminReturnRequestsPage() {
           </div>
         )}
       </Modal>
-    </div>
+    </ListPage>
   );
 }

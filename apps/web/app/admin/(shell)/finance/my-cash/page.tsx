@@ -69,7 +69,7 @@ export default function MyCashPage() {
         <>
           {d.incoming.length > 0 && (
             <Card className="space-y-3 border-warning-300 bg-warning-50/40 p-4 sm:p-5" data-testid="incoming-handovers">
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">Waiting for you to confirm</h2>
+              <h2 className="text-lg font-semibold tracking-tight text-fg">Waiting for you to confirm</h2>
               <p className="text-sm text-fg-muted">Confirm only once the cash is in your hand — until then it still counts as the sender’s.</p>
               <ul className="divide-y divide-line-subtle">
                 {d.incoming.map((m) => <IncomingRow key={m.id} m={m} onDone={refresh} />)}
@@ -82,7 +82,7 @@ export default function MyCashPage() {
           ) : (
             <Card className="p-5 sm:p-6">
               <div className="flex items-baseline justify-between gap-3 border-b border-line-subtle pb-3">
-                <h2 className="text-[17px] font-semibold tracking-tight text-fg">With you now</h2>
+                <h2 className="text-lg font-semibold tracking-tight text-fg">With you now</h2>
                 <span className="text-xl font-semibold tabular-nums text-fg" data-testid="cash-total">{formatPrice(d.total)}</span>
               </div>
               <ul className="divide-y divide-line-subtle">

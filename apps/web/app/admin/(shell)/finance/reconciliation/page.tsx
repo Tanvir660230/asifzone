@@ -59,7 +59,7 @@ export default function ReconciliationPage() {
 
       {can("finance.reconcile") && (
         <Card className="p-4">
-          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Start a reconciliation</h2>
+          <h2 className="mb-3 text-xs font-semibold text-ink-500">Start a reconciliation</h2>
           <div className="grid gap-3 sm:grid-cols-5">
             <Field htmlFor="rc-account" label="Account" required>
               <Select id="rc-account" value={form.financialAccountId} onChange={set("financialAccountId")}>

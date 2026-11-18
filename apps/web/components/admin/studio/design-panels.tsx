@@ -48,7 +48,7 @@ interface DesignOutlineProps {
 export function DesignOutline({ design, selectedId, checks, onSelect }: DesignOutlineProps) {
   return (
     <div className="h-full overflow-y-auto px-3 py-3">
-      <p className="px-2 pb-2 text-caption font-semibold uppercase text-fg-subtle">Every page of your store</p>
+      <p className="px-2 pb-2 text-caption font-semibold text-fg-subtle">Every page of your store</p>
       <ul className="space-y-1">
         {DESIGN_GROUPS.map((group) => {
           const id = designSelectionId(group);

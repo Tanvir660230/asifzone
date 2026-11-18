@@ -13,14 +13,12 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { ListPage } from "@/components/admin/patterns/list-page";
+import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
-import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
 interface Draft {
   name: string;
@@ -37,7 +35,7 @@ export default function ProductTypesPage() {
   const queryClient = useQueryClient();
   const canManage = useCanManageCatalog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  const { data, isLoading } = useQuery({ queryKey: ["catalog-types", "manage"], queryFn: catalogApi.listManagedTypes });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["catalog-types", "manage"], queryFn: catalogApi.listManagedTypes });
   const { data: templatesData } = useQuery({ queryKey: ["catalog-templates"], queryFn: catalogApi.listTemplates });
   const types = data?.types ?? [];
   const templates = (templatesData?.templates ?? []).filter((t) => !t.isArchived);
@@ -101,83 +99,71 @@ export default function ProductTypesPage() {
 
   const parentOptions = types.filter((t) => editing === "new" || (editing && t.id !== editing.id));
 
+  const columns: DataTableColumn<catalogApi.ManagedType>[] = [
+      {
+        id: "name",
+        header: "Type",
+        card: "title",
+        cell: (t) => (
+          <div className="min-w-0">
+            <div className="font-medium text-ink-900">{t.name}</div>
+            <div className="text-xs text-ink-400">
+              {t.key}
+              {t.parentId && ` · in ${types.find((p) => p.id === t.parentId)?.name ?? "…"}`}
+            </div>
+          </div>
+        ),
+      },
+      { id: "template", header: "Template", cell: (t) => <span className="text-ink-600">{t.template.name}</span> },
+      { id: "products", header: "Products", align: "right", className: "w-28", cell: (t) => <span className="tabular-nums text-ink-600">{t.productCount}</span> },
+      {
+        id: "status",
+        header: "Status",
+        className: "w-40",
+        cell: (t) => (
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant={t.isActive ? "success" : "neutral"}>{t.isActive ? "Active" : "Archived"}</Badge>
+            {t.isSystem && <Badge>Built-in</Badge>}
+          </div>
+        ),
+      },
+    ];
+  const rowActions = (row: catalogApi.ManagedType) => [
+    { label: "Edit", icon: Pencil, onSelect: () => openEditor(row) },
+    ...(row.isSystem ? [] : [{ label: "Delete", icon: Trash2, destructive: true, onSelect: () => handleDelete(row) }]),
+  ];
+
   return (
-    <div>
-      <PageHeader
-        title="Product types"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")} disabled={templates.length === 0}>
-              <Plus size={16} /> Add product type
-            </Button>
-          )
-        }
+    <ListPage
+      title="Product types"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")} disabled={templates.length === 0}>
+            <Plus size={16} /> Add product type
+          </Button>
+        )
+      }
+      intro={
+        <>
+          A product type (Panjabi, Watch, Cap…) points at a <strong>template</strong> that decides its fields, size guide and
+          variant options. New types appear in the product editor immediately — no developer needed.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change catalog setup."}
+    >
+      <DataTable<catalogApi.ManagedType>
+        caption="Product types"
+        columns={columns}
+        rows={isLoading ? undefined : types}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={Layers} title="No product types yet" description="Add your first type to start creating products." variant="bordered" />}
+        density="dense"
+        onRowOpen={canManage ? openEditor : undefined}
+        rowActions={canManage ? rowActions : undefined}
       />
-      <ModuleTabs />
-
-      <p className="mb-4 text-sm text-ink-500">
-        A product type (Panjabi, Watch, Cap…) points at a <strong>template</strong> that decides its fields, size guide and
-        variant options. New types appear in the product editor immediately — no developer needed.
-      </p>
-
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="ui-table">
-          <thead className="ui-table-head">
-            <tr>
-              <th className="px-4 py-3">Type</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Template</th>
-              <th className="px-4 py-3">Products</th>
-              <th className="px-4 py-3">Status</th>
-              {canManage && <th className="px-4 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={4} cols={canManage ? 5 : 4} />}
-            {!isLoading && types.length === 0 && (
-              <tr>
-                <td colSpan={5}>
-                  <EmptyState icon={Layers} title="No product types yet" description="Add your first type to start creating products." />
-                </td>
-              </tr>
-            )}
-            {types.map((t) => (
-              <tr key={t.id} className="border-t border-ink-100 hover:bg-ink-50/60">
-                <td className="px-4 py-3">
-                  <div className="font-medium text-ink-900">{t.name}</div>
-                  <div className="text-xs text-ink-400">
-                    {t.key}
-                    {t.parentId && ` · in ${types.find((p) => p.id === t.parentId)?.name ?? "…"}`}
-                  </div>
-                </td>
-                <td className="hidden px-4 py-3 text-ink-600 sm:table-cell">{t.template.name}</td>
-                <td className="px-4 py-3 text-ink-600">{t.productCount}</td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    <Badge className={cn(t.isActive && "bg-success-100 text-success-700")}>{t.isActive ? "Active" : "Archived"}</Badge>
-                    {t.isSystem && <Badge>Built-in</Badge>}
-                  </div>
-                </td>
-                {canManage && (
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => openEditor(t)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")} aria-label={`Edit ${t.name}`}>
-                        <Pencil size={16} />
-                      </button>
-                      {!t.isSystem && (
-                        <button onClick={() => handleDelete(t)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")} aria-label={`Delete ${t.name}`}>
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Add product type" : `Edit ${editing ? editing.name : ""}`} widthClassName="max-w-lg">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -240,6 +226,6 @@ export default function ProductTypesPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

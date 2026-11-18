@@ -11,6 +11,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FilterBar, useFilterState } from "@/components/admin/filters";
@@ -124,9 +125,8 @@ export default function AuditLogPage() {
   const changes = auditChanges(open?.metadata ?? null);
 
   return (
-    <div>
-      <PageHeader title="Audit log" description="Every change made in the Store Console — who made it, what changed and when." />
-      <ModuleTabs />
+    <ListPage title="Audit log" description="Every change made in the Store Console — who made it, what changed and when."
+    >
       <div className="space-y-3">
         <FilterBar
           defs={filtersDef}
@@ -215,7 +215,7 @@ export default function AuditLogPage() {
             </dl>
             {changes.length > 0 && (
               <div>
-                <p className="mb-1.5 text-[13px] font-medium text-fg">What changed</p>
+                <p className="mb-1.5 text-sm font-medium text-fg">What changed</p>
                 <TableContainer>
                   <Table aria-label="What changed">
                     <TableHead>
@@ -240,7 +240,7 @@ export default function AuditLogPage() {
             )}
             {open.metadata && (
               <details open={changes.length === 0}>
-                <summary className="cursor-pointer text-[13px] font-medium text-fg">{changes.length > 0 ? "Technical details" : "Details"}</summary>
+                <summary className="cursor-pointer text-sm font-medium text-fg">{changes.length > 0 ? "Technical details" : "Details"}</summary>
                 <pre className="mt-1.5 max-h-80 overflow-auto rounded-lg bg-ink-900/[0.03] p-3 font-mono text-xs leading-relaxed text-fg">{JSON.stringify(open.metadata, null, 2)}</pre>
               </details>
             )}
@@ -259,6 +259,6 @@ export default function AuditLogPage() {
           </div>
         )}
       </Drawer>
-    </div>
+    </ListPage>
   );
 }

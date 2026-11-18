@@ -14,16 +14,14 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { ListPage } from "@/components/admin/patterns/list-page";
+import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { TagInput } from "@/components/admin/tag-input";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
-import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
 interface Draft {
   terms: string[];
@@ -50,7 +48,7 @@ export default function SearchSynonymsPage() {
   const searchParams = useSearchParams();
   const canManage = useCanManageCatalog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  const { data, isLoading } = useQuery({ queryKey: ["catalog-search-synonyms"], queryFn: catalogApi.listSearchSynonyms });
+  const { data, isLoading, error: loadError, refetch } = useQuery({ queryKey: ["catalog-search-synonyms"], queryFn: catalogApi.listSearchSynonyms });
   const synonyms = data?.synonyms ?? [];
 
   const [editing, setEditing] = useState<catalogApi.SearchSynonymRow | "new" | null>(null);
@@ -106,27 +104,34 @@ export default function SearchSynonymsPage() {
     }
   }
 
+  const columns: DataTableColumn<catalogApi.SearchSynonymRow>[] = [
+      { id: "terms", header: "Words that find each other", card: "title", cell: (row) => <TermChips terms={row.terms} /> },
+      { id: "status", header: "Status", className: "w-28", cell: (row) => (row.isActive ? <Badge variant="success">Active</Badge> : <Badge>Off</Badge>) },
+    ];
+  const rowActions = (row: catalogApi.SearchSynonymRow) => [
+    { label: "Edit", icon: Pencil, onSelect: () => openEditor(row) },
+    { label: "Delete", icon: Trash2, destructive: true, onSelect: () => handleDelete(row) },
+  ];
+
   return (
-    <div>
-      <PageHeader
-        title="Search synonyms"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add synonym group
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
-
-      <p className="mb-4 text-sm text-ink-500">
-        Words customers type that should find the same products. Put every spelling in one group — e.g. <em>ator, attar, আতর, perfume</em> —
-        and searching any of them finds products that use any other, across the whole store. For a word that only fits one product, use
-        that product&rsquo;s <strong>search tags</strong> instead.
-      </p>
-
+    <ListPage
+      title="Search synonyms"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add synonym group
+          </Button>
+        )
+      }
+      intro={
+        <>
+          Words customers type that should find the same products. Put every spelling in one group — e.g. <em>ator, attar, আতর, perfume</em> —
+          and searching any of them finds products that use any other, across the whole store. For a word that only fits one product, use
+          that product&rsquo;s <strong>search tags</strong> instead.
+        </>
+      }
+      footnote={!canManage && "Only the store owner can change search synonyms."}
+    >
       {/* Test a search */}
       <div className="mb-6 rounded-lg border border-ink-100 bg-cream-50 p-4">
         <Label htmlFor="syn-test">Test a search</Label>
@@ -141,11 +146,11 @@ export default function SearchSynonymsPage() {
         {debouncedQuery && preview.data && (
           <div className="mt-3 space-y-3 text-sm">
             <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-ink-400">Searches for</p>
+              <p className="mb-1.5 text-xs font-medium text-fg-muted">Searches for</p>
               <TermChips terms={preview.data.terms} />
             </div>
             <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-ink-400">
+              <p className="mb-1.5 text-xs font-medium text-fg-muted">
                 {preview.data.total === 0 ? "No products found" : `${preview.data.total} product${preview.data.total === 1 ? "" : "s"} found`}
               </p>
               {preview.data.total === 0 ? (
@@ -178,48 +183,19 @@ export default function SearchSynonymsPage() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="ui-table">
-          <thead className="ui-table-head">
-            <tr>
-              <th className="px-4 py-3">Words that find each other</th>
-              <th className="px-4 py-3">Status</th>
-              {canManage && <th className="px-4 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={3} cols={canManage ? 3 : 2} />}
-            {!isLoading && synonyms.length === 0 && (
-              <tr>
-                <td colSpan={3}>
-                  <EmptyState icon={ArrowLeftRight} title="No synonym groups yet" description="Add the spellings and words your customers search with." />
-                </td>
-              </tr>
-            )}
-            {synonyms.map((row) => (
-              <tr key={row.id} className={cn("border-t border-ink-100 hover:bg-ink-50/60", !row.isActive && "opacity-60")}>
-                <td className="px-4 py-3">
-                  <TermChips terms={row.terms} />
-                </td>
-                <td className="px-4 py-3">{row.isActive ? <Badge variant="success">Active</Badge> : <Badge>Off</Badge>}</td>
-                {canManage && (
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => openEditor(row)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")} aria-label={`Edit ${row.terms.join(", ")}`}>
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(row)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")} aria-label={`Delete ${row.terms.join(", ")}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change search synonyms.</p>}
+      <DataTable<catalogApi.SearchSynonymRow>
+        caption="Search synonyms"
+        columns={columns}
+        rows={isLoading ? undefined : synonyms}
+        getRowId={(row) => row.id}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => void refetch()}
+        empty={<EmptyState icon={ArrowLeftRight} title="No synonym groups yet" description="Add the spellings and words your customers search with." variant="bordered" />}
+        density="dense"
+        onRowOpen={canManage ? openEditor : undefined}
+        rowActions={canManage ? rowActions : undefined}
+      />
 
       {data && data.builtIn.length > 0 && (
         <details className="mt-6 rounded-lg border border-ink-100 bg-cream-50 p-4">
@@ -269,6 +245,6 @@ export default function SearchSynonymsPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

@@ -90,7 +90,7 @@ export function MatchDialog({ line: given, accounts, reconciliationId, onClose }
 
         {line.matches.length > 0 && (
           <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Matches</h3>
+            <h3 className="mb-2 text-xs font-semibold text-ink-500">Matches</h3>
             <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm">
               {line.matches.map((m) => (
                 <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2">
@@ -113,7 +113,7 @@ export function MatchDialog({ line: given, accounts, reconciliationId, onClose }
 
         {!final && line.unmatchedAmount > 0 && (
           <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">In the books ({moneyIn ? "money in" : "money out"}, not yet matched)</h3>
+            <h3 className="mb-2 text-xs font-semibold text-ink-500">In the books ({moneyIn ? "money in" : "money out"}, not yet matched)</h3>
             {candidates.isLoading && <p className="text-sm text-ink-500">Looking…</p>}
             {candidates.data?.candidates.length === 0 && <p className="text-sm text-ink-500">Nothing in the books matches. If the bank is right, resolve it with an adjustment below.</p>}
             <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm" data-testid="match-candidates">
@@ -144,7 +144,7 @@ export function MatchDialog({ line: given, accounts, reconciliationId, onClose }
         {!final && line.unmatchedAmount > 0 && (
           <section className="space-y-3 rounded-xl border border-line-subtle p-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Resolve with an adjustment</h3>
+              <h3 className="text-xs font-semibold text-ink-500">Resolve with an adjustment</h3>
               <Button size="sm" variant="ghost" loading={flag.isPending} onClick={() => flag.mutate(!line.adjustmentRequired)}>
                 {line.adjustmentRequired ? "Clear the flag" : "Flag: adjustment required"}
               </Button>

@@ -127,7 +127,7 @@ export default function CourierCheckPage() {
 
           <Card className="space-y-3 p-4 sm:p-5">
             <div>
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">Bring in Steadfast’s payouts</h2>
+              <h2 className="text-lg font-semibold tracking-tight text-fg">Bring in Steadfast’s payouts</h2>
               <p className="text-sm text-fg-muted">Each new payout becomes a draft, matched to its orders by consignment. Check the money reached the account, then post it.</p>
             </div>
             {can("finance.transact") && (

@@ -107,7 +107,7 @@ export function CountedSheet({ overview, onClose }: { overview: StockOverview; o
     return (
       <Modal open onClose={onClose} title="Count" description={`Recorded for ${formatBookDate(result.date)}.`} widthClassName="max-w-2xl" footer={<Button onClick={onClose} data-testid="counted-close">Done</Button>}>
         <div className="space-y-3" data-testid="counted-result">
-          <p className="flex items-center gap-2 text-[15px] text-fg"><CheckCircle2 className="h-5 w-5 text-success-600" aria-hidden="true" /> {num(result.lines.length)} counted, {num(result.lines.filter((l) => l.difference && !l.pendingApprovalId).length)} booked as a difference</p>
+          <p className="flex items-center gap-2 text-base text-fg"><CheckCircle2 className="h-5 w-5 text-success-600" aria-hidden="true" /> {num(result.lines.length)} counted, {num(result.lines.filter((l) => l.difference && !l.pendingApprovalId).length)} booked as a difference</p>
           {result.lines.some((l) => l.pendingApprovalId) && <p className="text-sm text-warning-700" data-testid="counted-waiting">Losses over the limit wait for the owner&apos;s approval. The stock changes once approved.</p>}
           <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm">
             {result.lines.map((l) => {

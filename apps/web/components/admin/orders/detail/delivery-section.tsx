@@ -354,7 +354,7 @@ export function DeliverySection({
         {booked ? (
           <div className="space-y-2 rounded-xl border border-line-subtle bg-surface-muted p-3.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-ink-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cream-50">{COURIER_PROVIDER_LABEL}</span>
+              <span className="rounded-md bg-ink-900 px-2 py-0.5 text-xs font-bold text-cream-50">{COURIER_PROVIDER_LABEL}</span>
               <CourierCell order={order} compact />
               {trackingCode && (
                 <IconButton size="sm" aria-label="Copy tracking code" onClick={() => copyToClipboard(trackingCode, "Tracking code copied")}>
@@ -453,7 +453,7 @@ export function DeliverySection({
 
         {order.courierLosses && order.courierLosses.length > 0 && (
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Courier loss ledger</p>
+            <p className="mb-1.5 text-xs font-semibold text-ink-400">Courier loss ledger</p>
             <ul className="divide-y divide-line-subtle rounded-xl border border-line-subtle text-sm">
               {order.courierLosses.map((l) => (
                 <li key={l.id} className="flex items-center justify-between gap-3 px-3 py-2">

@@ -149,7 +149,7 @@ function Figure({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="bg-surface px-3 py-2.5">
       <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className="mt-0.5 text-[15px] font-semibold tabular-nums text-fg">{value}</dd>
+      <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{value}</dd>
     </div>
   );
 }

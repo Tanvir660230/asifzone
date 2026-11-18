@@ -30,7 +30,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { PurchasableVariant, PurchaseOrderStatus } from "@/lib/api/purchasing";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, upperFirst } from "@/lib/format";
 import { PermissionState } from "@/components/admin/permission-state";
 
 
@@ -98,7 +98,7 @@ export default function PurchaseOrdersPage() {
                     <TableCell className="whitespace-nowrap tabular-nums">{po.expectedDate ?? "—"}</TableCell>
                     <TableCell align="right" className="tabular-nums">{ordered ? `${received} / ${ordered}` : "—"}</TableCell>
                     <TableCell align="right" className="tabular-nums">{formatPrice(po.total)}</TableCell>
-                    <TableCell><Badge variant={PO_STATUS_BADGE[po.status]}>{PO_STATUS_LABEL[po.status]}</Badge></TableCell>
+                    <TableCell><Badge variant={PO_STATUS_BADGE[po.status]}>{upperFirst(PO_STATUS_LABEL[po.status])}</Badge></TableCell>
                   </TableRow>
                 );
               })}

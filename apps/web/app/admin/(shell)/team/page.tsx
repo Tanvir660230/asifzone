@@ -27,8 +27,7 @@ import { Modal } from "@/components/ui/modal";
 import { PasswordInput } from "@/components/account/password-input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import * as authApi from "@/lib/auth";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { ApiError } from "@/lib/api-client";
@@ -358,20 +357,15 @@ export default function AdminTeamPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Team"
-        action={
-          <Button onClick={() => setInviting(true)}>
-            <Plus size={16} /> Invite admin
-          </Button>
-        }
-      />
-      <ModuleTabs />
-      <p data-page-intro="" className="mb-4 -mt-2 text-sm text-fg-muted">
-        Who can open the Store Console. Accounts only ever come from an invite sent here — there&rsquo;s no public sign-up.
-      </p>
-
+    <ListPage
+      title="Team"
+      action={
+        <Button onClick={() => setInviting(true)}>
+          <Plus size={16} /> Invite admin
+        </Button>
+      }
+      intro={<>Who can open the Store Console. Accounts only ever come from an invite sent here — there&rsquo;s no public sign-up.</>}
+    >
       {ownersWithoutTwoStep.length > 0 && (
         <Card className="mb-4 flex items-start gap-3 p-4" data-testid="team-two-step-nudge">
           <ShieldOff className="mt-0.5 h-5 w-5 shrink-0 text-warning-600" aria-hidden />
@@ -438,7 +432,7 @@ export default function AdminTeamPage() {
 
       {(invitesLoading || (invitesData && invitesData.invites.length > 0)) && (
         <>
-          <h2 className="mb-3 mt-8 text-[17px] font-semibold tracking-tight text-fg">Pending invites</h2>
+          <h2 className="mb-3 mt-8 text-lg font-semibold tracking-tight text-fg">Pending invites</h2>
           <TableContainer>
             <Table className="min-w-[560px]">
               <TableHead>
@@ -507,6 +501,6 @@ export default function AdminTeamPage() {
       </Modal>
 
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }
