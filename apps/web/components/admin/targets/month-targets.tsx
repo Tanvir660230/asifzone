@@ -14,7 +14,7 @@ import { toast } from "@/components/ui/toast";
 import { useCapability } from "@/hooks/use-capability";
 import { describeApiError } from "@/lib/api-client";
 import * as targetsApi from "@/lib/api/targets";
-import { formatPriceWhole } from "@/lib/format";
+import { formatPriceWhole, storeCurrencySymbol } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<targetsApi.TargetStatus, { label: string; variant: "success" | "info" | "warning" | "danger" | "neutral" }> = {
@@ -144,7 +144,8 @@ function SetTargetsDialog({ month, current, onClose }: { month: string; current:
   const [error, setError] = useState<string | null>(null);
 
   const parse = (v: string, whole = false) => {
-    const t = v.replace(/[,\s৳]/g, "");
+    // digits and a decimal point only: commas, spaces and the currency sign a pasted figure may carry are dropped
+    const t = v.replace(/[^\d.]/g, "");
     if (t === "") return null;
     const n = Number(t);
     if (!Number.isFinite(n) || n <= 0 || (whole && !Number.isInteger(n))) return NaN;
@@ -191,14 +192,14 @@ function SetTargetsDialog({ month, current, onClose }: { month: string; current:
         }}
       >
         {error && <p className="text-sm text-danger-600">{error}</p>}
-        <Field htmlFor="target-net-sales" label="Net sales (৳)" hint="Delivered sales after discounts and returns — the Reports figure.">
+        <Field htmlFor="target-net-sales" label={`Net sales (${storeCurrencySymbol()})`} hint="Delivered sales after discounts and returns — the Reports figure.">
           <Input id="target-net-sales" inputMode="numeric" value={values.netSales} onChange={(e) => setValues({ ...values, netSales: e.target.value })} placeholder="e.g. 300000" />
         </Field>
         <Field htmlFor="target-orders" label="Orders" hint="Orders placed in the month.">
           <Input id="target-orders" inputMode="numeric" value={values.orders} onChange={(e) => setValues({ ...values, orders: e.target.value })} placeholder="e.g. 400" />
         </Field>
         {current.profit && (
-          <Field htmlFor="target-profit" label="Profit (৳)" hint="Profit in the books, after goods, delivery, ads and running costs.">
+          <Field htmlFor="target-profit" label={`Profit (${storeCurrencySymbol()})`} hint="Profit in the books, after goods, delivery, ads and running costs.">
             <Input id="target-profit" inputMode="numeric" value={values.profit} onChange={(e) => setValues({ ...values, profit: e.target.value })} placeholder="e.g. 60000" />
           </Field>
         )}
