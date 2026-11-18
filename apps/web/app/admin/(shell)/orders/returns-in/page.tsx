@@ -1,8 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { ScanStation } from "@/components/admin/parcel-scans/scan-station";
 import { ReceiveStation } from "@/components/admin/parcel-scans/receive-station";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -22,13 +21,11 @@ export default function Page() {
   const canInspect = can("returns.manage");
   const view = params.get("view") === "batch" || (ready && !canInspect) ? "batch" : "inspect";
   return (
-    <div>
-      <PageHeader
-        title="Returns in"
-        descriptionOnPhone
-        description="Scan a parcel that came back, say what is in it and confirm. Only what is physically in hand goes back into stock."
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Returns in"
+      descriptionOnPhone
+      description="Scan a parcel that came back, say what is in it and confirm. Only what is physically in hand goes back into stock."
+    >
       {ready && !can("parcels.scan") ? (
         <EmptyState icon={ScanLine} title="Scanning isn't on your account" description="Ask an owner to give you parcel scanning." />
       ) : (
@@ -49,6 +46,6 @@ export default function Page() {
           {view === "inspect" ? <ReceiveStation /> : <ScanStation kind="RETURN" />}
         </>
       )}
-    </div>
+    </ListPage>
   );
 }

@@ -11,9 +11,8 @@ import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
@@ -81,18 +80,16 @@ export default function CareGuidesPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Care guides"
-        action={
-          canManage && (
-            <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add care guide
-            </Button>
-          )
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Care guides"
+      action={
+        canManage && (
+          <Button variant="brass" onClick={() => openEditor("new")}>
+            <Plus size={16} /> Add care guide
+          </Button>
+        )
+      }
+    >
 
       <p className="mb-4 text-sm text-ink-500">
         Reusable care instructions (&ldquo;Cotton care&rdquo;, &ldquo;Leather care&rdquo;). Set a default on a template, choose another per
@@ -180,6 +177,6 @@ export default function CareGuidesPage() {
         </form>
       </Modal>
       {confirmDialog}
-    </div>
+    </ListPage>
   );
 }

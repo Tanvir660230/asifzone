@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpenCheck, Pause, Plus, Sparkles, Trash2 } from "lucide-react";
 import { SAVED_ANSWER_PLACEHOLDERS, type SavedAnswerView } from "@clothing-brand/shared";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
@@ -241,19 +240,17 @@ export default function SavedAnswersPage() {
   const empty = data && data.suggested.length === 0 && data.approved.length === 0;
 
   return (
-    <div>
-      <PageHeader
-        title="Saved answers"
-        description="Answers the Inbox learned from your team's replies. Approved ones answer the same question instantly — without the AI."
-        action={
-          canEdit && !creating ? (
-            <Button type="button" size="sm" onClick={() => setCreating(true)}>
-              <Plus size={14} aria-hidden="true" /> New answer
-            </Button>
-          ) : undefined
-        }
-      />
-      <ModuleTabs />
+    <ListPage
+      title="Saved answers"
+      description="Answers the Inbox learned from your team's replies. Approved ones answer the same question instantly — without the AI."
+      action={
+        canEdit && !creating ? (
+          <Button type="button" size="sm" onClick={() => setCreating(true)}>
+            <Plus size={14} aria-hidden="true" /> New answer
+          </Button>
+        ) : undefined
+      }
+    >
       <div className="max-w-3xl space-y-6">
         {data && (
           <p className="flex items-center gap-2 text-sm text-fg-muted">
@@ -308,6 +305,6 @@ export default function SavedAnswersPage() {
           </section>
         )}
       </div>
-    </div>
+    </ListPage>
   );
 }

@@ -16,8 +16,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Popover } from "@/components/ui/popover";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrdersList } from "@/components/admin/orders/orders-list";
@@ -104,21 +103,18 @@ export default function OrderHistoryPage() {
   );
 
   return (
-    <div>
-      <PageHeader
-        title="Order history"
-        descriptionOnPhone
-        description="Finished orders, kept out of the daily list: delivered and settled, or cancelled and returned with nothing left to do."
-        action={
-          perms.exportCsv ? (
-            <Button variant="outline" loading={exporting} onClick={exportCsv} title="Export these finished orders as CSV" aria-label="Export CSV" className="max-sm:w-10 max-sm:px-0">
-              {!exporting && <Download size={16} />} <span className="max-sm:hidden">Export CSV</span>
-            </Button>
-          ) : undefined
-        }
-      />
-
-      <ModuleTabs />
+    <ListPage
+      title="Order history"
+      descriptionOnPhone
+      description="Finished orders, kept out of the daily list: delivered and settled, or cancelled and returned with nothing left to do."
+      action={
+        perms.exportCsv ? (
+          <Button variant="outline" loading={exporting} onClick={exportCsv} title="Export these finished orders as CSV" aria-label="Export CSV" className="max-sm:w-10 max-sm:px-0">
+            {!exporting && <Download size={16} />} <span className="max-sm:hidden">Export CSV</span>
+          </Button>
+        ) : undefined
+      }
+    >
 
       <div className="z-raised -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:top-chrome sm:-mx-page sm:space-y-3 sm:px-page sm:pt-3">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
@@ -260,6 +256,6 @@ export default function OrderHistoryPage() {
       </Drawer>
 
       {commands.dialogs}
-    </div>
+    </ListPage>
   );
 }
