@@ -854,14 +854,6 @@
   [data-surface="admin"] .ui-table-row-interactive {
     @apply hover:bg-ink-900/[0.025];
   }
-  /* Small caps-labels ("TODAY'S ORDERS") read as sentence-case footnotes in the console, as Apple sets them. The labels
-     are authored in sentence case; only the transform and tracking come off. */
-  [data-surface="admin"] .uppercase:is(.tracking-wide, .tracking-wider, .tracking-widest) {
-    @apply normal-case tracking-normal;
-  }
-  [data-surface="admin"] .uppercase.text-\[11px\]:is(.tracking-wide, .tracking-wider) {
-    @apply text-xs;
-  }
   /* Menus highlight like macOS: the pointed-at item fills with the accent. */
   [data-surface="admin"] .ui-floating {
     @apply rounded-xl border-ink-900/10 bg-surface/90;
