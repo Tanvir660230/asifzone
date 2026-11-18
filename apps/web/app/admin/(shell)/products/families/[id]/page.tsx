@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
-import { PageHeader } from "@/components/admin/page-header";
+import { RecordPage } from "@/components/admin/patterns/record-page";
 import { PermissionState } from "@/components/admin/permission-state";
 import { ProductPicker } from "@/components/admin/product-picker";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -127,24 +127,24 @@ export default function ProductFamilyEditor({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <BackLink href={LIST} label="Product families" />
-      <PageHeader
-        title={isNew ? "New family" : name || "Family"}
-        description="Each product's page shows the family's other products as photo tiles, in this order. Products on sale only — unpublished ones stay listed here but hidden on the store."
-        action={
-          <span className="flex gap-2">
-            {!isNew && (
-              <Button variant="outline" onClick={() => void askDelete()} disabled={remove.isPending}>
-                <Trash2 className="h-4 w-4" aria-hidden /> Delete
-              </Button>
-            )}
-            <Button onClick={() => save.mutate()} disabled={!canSave} data-testid="family-save">
-              {save.isPending ? "Saving…" : "Save"}
+    <RecordPage
+      back={{ href: LIST, label: "Product families" }}
+      title={isNew ? "New family" : name || "Family"}
+      subtitle="Each product's page shows the family's other products as photo tiles, in this order. Products on sale only — unpublished ones stay listed here but hidden on the store."
+      actions={
+        <span className="flex gap-2">
+          {!isNew && (
+            <Button variant="outline" onClick={() => void askDelete()} disabled={remove.isPending}>
+              <Trash2 className="h-4 w-4" aria-hidden /> Delete
             </Button>
-          </span>
-        }
-      />
+          )}
+          <Button onClick={() => save.mutate()} disabled={!canSave} data-testid="family-save">
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+        </span>
+      }
+      className="mx-auto max-w-3xl"
+    >
 
       <Card>
         <CardContent className="space-y-5 p-5">
@@ -221,6 +221,6 @@ export default function ProductFamilyEditor({ params }: { params: Promise<{ id: 
         </CardContent>
       </Card>
       {confirmDialog}
-    </div>
+    </RecordPage>
   );
 }

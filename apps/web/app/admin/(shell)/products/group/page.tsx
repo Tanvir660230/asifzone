@@ -7,7 +7,6 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { AlertTriangle, ArrowRight, Info, Layers, Undo2 } from "lucide-react";
 import type { GroupingPlan, Product, ProductGroupingInput } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
-import { BackLink } from "@/components/ui/back-link";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -16,7 +15,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { PageHeader } from "@/components/admin/page-header";
+import { RecordPage } from "@/components/admin/patterns/record-page";
 import { PermissionState } from "@/components/admin/permission-state";
 import { ProductPicker } from "@/components/admin/product-picker";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -122,13 +121,13 @@ function GroupProducts() {
   }
 
   return (
-    <div className="space-y-6 pb-16">
+    <RecordPage
+      back={{ href: "/admin/products", label: "Products" }}
+      title="Group colours into one product"
+      subtitle="Shoppers see one product with a colour picker instead of a separate product per colour. Stock, SKUs and order history stay with each variant."
+      className="pb-16"
+    >
       {dialog}
-      <BackLink href="/admin/products" label="Products" />
-      <PageHeader
-        title="Group colours into one product"
-        description="Shoppers see one product with a colour picker instead of a separate product per colour. Stock, SKUs and order history stay with each variant."
-      />
 
       <ol className="space-y-5">
         <Step n={1} title="The product to keep" hint="Its name, description, photos and address stay. Pick the one your ads and customers already know.">
@@ -258,7 +257,7 @@ function GroupProducts() {
           .
         </p>
       )}
-    </div>
+    </RecordPage>
   );
 }
 
