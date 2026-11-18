@@ -4,8 +4,7 @@ import { Table, TableContainer, TableHead, TableHeaderCell } from "@/components/
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageOff, RotateCcw, Trash2 } from "lucide-react";
-import { PageHeader } from "@/components/admin/page-header";
-import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import { SummaryStrip } from "@/components/admin/summary-strip";
 import { EmptyState } from "@/components/admin/empty-state";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
@@ -107,19 +106,15 @@ export default function StoragePage() {
 
   if (currentAdmin && !canManage) {
     return (
-      <div>
-        <PageHeader title="Storage" />
-        <ModuleTabs />
+      <ListPage title="Storage">
         <p className="text-sm text-ink-500">Only store owners can clean up uploaded files.</p>
-      </div>
+      </ListPage>
     );
   }
 
   return (
-    <div>
+    <ListPage title="Storage">
       {dialog}
-      <PageHeader title="Storage" />
-      <ModuleTabs />
       <p data-page-intro="" className="-mt-3 mb-4 max-w-3xl text-sm text-ink-500">
         Images uploaded to the site that nothing uses any more — an old banner, a replaced category image, a photo removed
         from a description, or an upload that was never saved. A file counts as in use if it appears anywhere in the store&apos;s
@@ -220,6 +215,6 @@ export default function StoragePage() {
           </div>
         ))}
       </div>
-    </div>
+    </ListPage>
   );
 }

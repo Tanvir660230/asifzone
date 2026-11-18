@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { SearchInput } from "@/components/ui/search-input";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { PageHeader } from "@/components/admin/page-header";
+import { ListPage } from "@/components/admin/patterns/list-page";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatPrice } from "@/lib/format";
@@ -54,12 +53,7 @@ export default function PaymentsOverviewPage() {
   const searchResults = debouncedPhone.trim().length >= 4 ? (searchData?.results ?? []) : [];
 
   return (
-    <div className="space-y-8">
-      <div>
-        <PageHeader title="Gateway monitor" description="Today's SSLCommerz and EPS checkouts, the EPS reconciliation queue and refund-risk signals — updated roughly every minute." />
-        <ModuleTabs />
-      </div>
-
+    <ListPage title="Gateway monitor" description="Today's SSLCommerz and EPS checkouts, the EPS reconciliation queue and refund-risk signals — updated roughly every minute." className="space-y-8">
       {/* Customer lookup */}
       <section>
         <h2 className="mb-3 text-xs font-semibold text-ink-500">
@@ -210,6 +204,6 @@ export default function PaymentsOverviewPage() {
           )}
         </Card>
       </section>
-    </div>
+    </ListPage>
   );
 }
