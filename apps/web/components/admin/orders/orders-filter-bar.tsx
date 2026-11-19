@@ -81,8 +81,9 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
-      // Sticky from sm up only: on a phone the two pill rows would pin ~40% of the screen, so there it scrolls away.
-      <div className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
+      // Sticky on tablets only: on a phone the two pill rows would pin ~40% of the screen, and from xl the table's own
+      // column titles pin under the top bar instead — both scroll it away.
+      <div className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky xl:static sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           {canSeeTrash && (
             <div className="hidden sm:block">

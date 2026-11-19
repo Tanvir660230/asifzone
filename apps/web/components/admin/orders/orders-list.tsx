@@ -69,10 +69,6 @@ export interface OrdersListProps {
   readOnly?: boolean;
 }
 
-/** From xl the Orders pages are a fixed-height workspace: the page fills the window under the top bar (less main's
- * 1.25rem top + 2rem bottom padding, and 2px of chrome borders) and only the table's rows scroll. Pages pass it to ListPage's className. */
-export const ORDERS_WORKSPACE_CLASS = "xl:flex xl:h-[calc(100dvh-var(--density-chrome)-3.25rem-2px)] xl:flex-col";
-
 /** Cell padding per density: compact fits about twice the rows of comfortable on one screen. */
 const DENSITY_PAD: Record<ListDensity, string> = {
   compact: "px-3 py-1",
@@ -128,8 +124,8 @@ function ProductCell({ summary, compact = false }: { summary: OrderListItemSumma
         )}
       </span>
       <span className="min-w-0">
-        <span className={cn("block max-w-[200px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline", variant && "font-medium")}>{lead}</span>
-        {subtitle && <span className="block max-w-[200px] truncate text-xs text-fg-muted">{subtitle}</span>}
+        <span className={cn("block max-w-[170px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline", variant && "font-medium")}>{lead}</span>
+        {subtitle && <span className="block max-w-[170px] truncate text-xs text-fg-muted">{subtitle}</span>}
       </span>
     </>
   );
@@ -432,14 +428,10 @@ export function OrdersList(props: OrdersListProps) {
           </span>
         </p>
       )}
-      {/* From xl the page is a fixed-height workspace (ORDERS_WORKSPACE_CLASS on the page): this frame takes the room left
-          under the toolbar and only the rows scroll, under their sticky titles. One scroller, so the page never slides the
-          frame up under the toolbar (the 2026-11-19 overlap). */}
-      <TableContainer
-        className="mt-3 hidden xl:flex xl:min-h-[18rem] xl:flex-1 xl:flex-col"
-        wrapperClassName="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
-        scrollClassName="xl:min-h-0 xl:flex-1 xl:overflow-y-auto"
-      >
+      {/* One scroller — the page. Scrolling moves the title and filters up out of the way and the column titles stay pinned
+          under the top bar (the filter bar stops being sticky from xl). The frame doesn't clip (overflow visible), or the
+          titles couldn't stick to the page. The 2026-11-19 overlap came from a second, inner scroller. */}
+      <TableContainer className="mt-3 hidden xl:block xl:overflow-visible" scrollClassName="xl:overflow-visible">
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
@@ -455,7 +447,7 @@ export function OrdersList(props: OrdersListProps) {
             setOnTable(false);
           }}
         >
-          <TableHead className="sticky top-0 z-raised">
+          <TableHead className="sticky top-chrome z-raised">
             <tr>
               {!readOnly && (
                 <TableHeaderCell className="w-10 px-3 py-2.5">
@@ -539,14 +531,15 @@ export function OrdersList(props: OrdersListProps) {
                   </TableCell>
                 )}
                 <TableCell className={pad}>
-                  <span className="flex items-center gap-1.5">
+                  {/* Pill, then the Packed button under it: side by side they made the column too wide for a laptop. */}
+                  <span className="flex flex-col items-start gap-1">
                     <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
                     {/* The packing table's one job: being prepared → Packed, one click (Undo in the toast). */}
                     {perms.manage && order.status === "PROCESSING" && canMarkPacked(order) && (
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 whitespace-nowrap"
+                        className="h-7 whitespace-nowrap"
                         disabled={commands.pending.pack}
                         onClick={() => commands.markPacked([order])}
                         aria-label={`Mark ${order.orderNumber} packed`}

@@ -19,7 +19,7 @@ import { Select } from "@/components/ui/select";
 import { ListPage } from "@/components/admin/patterns/list-page";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
-import { ORDERS_WORKSPACE_CLASS, OrdersList } from "@/components/admin/orders/orders-list";
+import { OrdersList } from "@/components/admin/orders/orders-list";
 import { OrdersDisplayMenu } from "@/components/admin/orders/orders-display-menu";
 import { CountBadge, tabBase, tabOff, tabOn } from "@/components/admin/orders/orders-filter-bar";
 import { paymentMethodLabel } from "@/components/admin/orders/order-filters";
@@ -104,7 +104,6 @@ export default function OrderHistoryPage() {
 
   return (
     <ListPage
-      className={ORDERS_WORKSPACE_CLASS}
       title="Order history"
       descriptionOnPhone
       description="Finished orders, kept out of the daily list: delivered and settled, or cancelled and returned with nothing left to do."
@@ -117,7 +116,7 @@ export default function OrderHistoryPage() {
       }
     >
 
-      <div className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:top-chrome sm:-mx-page sm:space-y-3 sm:px-page sm:pt-3">
+      <div className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:top-chrome xl:static sm:-mx-page sm:space-y-3 sm:px-page sm:pt-3">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           <SearchInput
             ref={searchRef}
