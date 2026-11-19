@@ -10,8 +10,9 @@ import { QrCodeSvg } from "./qr-code-svg";
 
 type LabelOrder = Order & { payment: OrderPaymentSummary };
 
-/** font-normal / semibold / bold / extrabold — every weight the label below uses. */
-const LABEL_FONT_WEIGHTS = [400, 600, 700, 800] as const;
+/** font-normal / medium / semibold / bold / extrabold — every weight the labels below use. A weight missing here is
+ * measured in a fallback face and prints wider than the fit allowed for (the large label's medium address did). */
+const LABEL_FONT_WEIGHTS = [400, 500, 600, 700, 800] as const;
 
 interface LabelCardProps {
   order: LabelOrder;
@@ -273,7 +274,7 @@ function thanaDistrict(order: LabelOrder): { thana: string | null; district: str
   return { thana, district: district && district !== thana ? district : null };
 }
 
-const PANEL = "rounded-[0.6em] border-[0.1em] border-ink-900";
+const PANEL = "rounded-[0.6em] border-[0.12em] border-ink-900";
 
 /** Line icons (stroke only, so a thermal head prints a clean outline). */
 function Icon({ name, className = "" }: { name: "user" | "phone" | "pin" | "alert"; className?: string }) {
@@ -321,26 +322,31 @@ function PhoneDigits({ phone }: { phone: string }) {
 
 /** Small uppercase caption. */
 function Caption({ children, className = "" }: { children: string; className?: string }) {
-  return <p className={`text-[0.6em] font-bold uppercase leading-none tracking-[0.16em] ${className}`}>{children}</p>;
+  return <p className={`text-[0.6em] font-semibold uppercase leading-none tracking-[0.12em] ${className}`}>{children}</p>;
 }
 
-/** Logo left; courier pill + order number right. */
+/** Logo left; right: the store's phone (owner: the company number, not the courier, belongs up here) over the order
+ * number. */
 function LargeHeader({ view, detail }: { view: LabelView; detail: DetailLevel }) {
   const { store, order } = view;
   const name = store?.storeName ?? "Store";
-  const wordmark = <span className="text-[1.3em] font-extrabold uppercase leading-none tracking-[0.06em]">{name}</span>;
+  const wordmark = <span className="text-[1.3em] font-bold uppercase leading-none tracking-[0.06em]">{name}</span>;
   return (
-    <div className="flex items-center justify-between gap-[0.8em]">
+    <div className="flex items-center justify-between gap-[0.8em] border-b-[0.08em] border-ink-900 pb-[0.45em]">
       {store?.logoUrl && detail.logo ? (
         <StoreLogoImage src={store.logoUrl} alt={name} className="shrink-0 [&_img]:object-left" style={{ height: "2.4em", width: "6.5em" }} fallback={wordmark} />
       ) : (
         wordmark
       )}
-      <div className="flex flex-col items-end leading-[1.1]">
-        {order.carrier && (
-          <span className="rounded-full border-[0.1em] border-ink-900 px-[0.6em] py-[0.08em] text-[0.6em] font-bold uppercase tracking-[0.14em]">{order.carrier}</span>
+      <div className="flex flex-col items-end leading-[1.15]">
+        {store?.contactPhone && (
+          <p className="flex items-center gap-[0.35em] whitespace-nowrap text-[0.92em] font-semibold tabular-nums">
+            <Icon name="phone" className="text-[0.85em]" />
+            {/* Printed as the store wrote it in Settings (its own spacing, e.g. "+880 1813-048872"). */}
+            {store.contactPhone}
+          </p>
         )}
-        <p className={`${order.carrier ? "mt-[0.2em]" : ""} whitespace-nowrap text-[1em] font-extrabold tabular-nums`}>{order.orderNumber}</p>
+        <p className={`${store?.contactPhone ? "mt-[0.25em]" : ""} whitespace-nowrap text-[0.8em] font-medium tabular-nums`}>{order.orderNumber}</p>
       </div>
     </div>
   );
@@ -359,28 +365,28 @@ function DeliverTo({ view, className = "" }: { view: LabelView; className?: stri
       <span className="mt-[0.35em] flex h-[1.57em] items-center">
         <Icon name="user" />
       </span>
-      <p lang="bn" className="mt-[0.35em] text-[1.4em] font-extrabold leading-[1.12]">{order.customerName}</p>
+      <p lang="bn" className="mt-[0.35em] text-[1.4em] font-bold leading-[1.12]">{order.customerName}</p>
 
       <span className="mt-[0.2em] flex h-[1.43em] items-center">
         <Icon name="phone" />
       </span>
-      <p className="mt-[0.2em] whitespace-nowrap text-[1.3em] font-extrabold leading-[1.1] tracking-[0.02em] tabular-nums">
+      <p className="mt-[0.2em] whitespace-nowrap text-[1.3em] font-bold leading-[1.1] tabular-nums">
         <PhoneDigits phone={order.customerPhone} />
       </p>
 
       <span className="mt-[0.3em] flex h-[1.29em] items-center">
         <Icon name="pin" />
       </span>
-      <p lang="bn" className="mt-[0.3em] text-[0.98em] font-bold leading-[1.32]">{order.shippingAddressLine}</p>
+      <p lang="bn" className="mt-[0.3em] text-[0.98em] font-medium leading-[1.34]">{order.shippingAddressLine}</p>
 
       {(thana || district) && (
         <>
           <span aria-hidden />
           {/* Thana first, then district, in a thin outlined tag (owner: no black fill). */}
-          <p className="mt-[0.45em] flex w-fit max-w-full items-center rounded-[0.4em] border-[0.1em] border-ink-900 px-[0.55em] py-[0.12em] text-[0.82em] uppercase leading-[1.25] tracking-[0.08em]">
-            {thana && <span className="font-extrabold">{thana}</span>}
+          <p className="mt-[0.45em] flex w-fit max-w-full items-center rounded-[0.4em] border-[0.1em] border-ink-900 px-[0.55em] py-[0.12em] text-[0.8em] uppercase leading-[1.25] tracking-[0.06em]">
+            {thana && <span className="font-bold">{thana}</span>}
             {thana && district && <span aria-hidden className="mx-[0.5em] h-[0.9em] w-[0.1em] shrink-0 bg-ink-900" />}
-            {district && <span className="font-semibold">{district}</span>}
+            {district && <span className="font-medium">{district}</span>}
           </p>
         </>
       )}
@@ -395,7 +401,7 @@ function LargeCod({ view, amountEm, className = "" }: { view: LabelView; amountE
     return (
       <div className={frame}>
         <Caption>Collect · COD</Caption>
-        <span className="mt-[0.3em] whitespace-nowrap font-extrabold leading-none tracking-[-0.01em] tabular-nums" style={{ fontSize: `${amountEm}em` }}>
+        <span className="mt-[0.3em] whitespace-nowrap font-bold leading-none tracking-[-0.02em] tabular-nums" style={{ fontSize: `${amountEm}em` }}>
           {formatPrice(view.cod)}
         </span>
       </div>
@@ -405,15 +411,15 @@ function LargeCod({ view, amountEm, className = "" }: { view: LabelView; amountE
   return (
     <div className={frame}>
       <Caption>Payment</Caption>
-      <span className="mt-[0.3em] font-extrabold uppercase leading-none tracking-[0.04em]" style={{ fontSize: `${amountEm * 0.75}em` }}>
+      <span className="mt-[0.3em] font-bold uppercase leading-none tracking-[0.02em]" style={{ fontSize: `${amountEm * 0.75}em` }}>
         {settled ? "Paid" : "Online"}
       </span>
-      <span className="mt-[0.25em] text-[0.78em] font-semibold leading-tight">{settled ? "Collect nothing" : view.paidCaption}</span>
+      <span className="mt-[0.25em] text-[0.78em] font-medium leading-tight">{settled ? "Collect nothing" : view.paidCaption}</span>
     </div>
   );
 }
 
-/** QR (booked orders) with the parcel id and the date beside it. */
+/** QR (booked orders) with the courier, parcel id and date beside it. */
 function ParcelBox({ view, detail, qrEm: full, className = "" }: { view: LabelView; detail: DetailLevel; qrEm: number; className?: string }) {
   const { order } = view;
   const showQr = detail.qr !== "none" && order.courierTrackingLink;
@@ -424,16 +430,10 @@ function ParcelBox({ view, detail, qrEm: full, className = "" }: { view: LabelVi
           <QrCodeSvg value={order.courierTrackingLink!} size={128} fill />
         </div>
       )}
-      <div className="text-[0.8em] font-bold leading-[1.3] tabular-nums">
-        {order.courierConsignmentId ? (
-          <>
-            <p className="font-semibold">Parcel</p>
-            <p className="whitespace-nowrap">{order.courierConsignmentId}</p>
-          </>
-        ) : (
-          <p className="whitespace-nowrap">Not booked yet</p>
-        )}
-        {detail.infoTable && <p className="mt-[0.15em] whitespace-nowrap text-[0.78em] font-bold uppercase tracking-[0.14em]">{view.date}</p>}
+      <div className="min-w-0 tabular-nums">
+        <Caption className="whitespace-nowrap">{order.carrier ?? "Parcel"}</Caption>
+        <p className="mt-[0.3em] whitespace-nowrap text-[0.95em] font-bold leading-none">{order.courierConsignmentId ?? "Not booked yet"}</p>
+        {detail.infoTable && <p className="mt-[0.35em] whitespace-nowrap text-[0.72em] font-medium leading-none">{view.date}</p>}
       </div>
     </div>
   );
@@ -442,7 +442,7 @@ function ParcelBox({ view, detail, qrEm: full, className = "" }: { view: LabelVi
 function LargeNote({ order, className = "" }: { order: LabelOrder; className?: string }) {
   if (!order.courierNoteForLabel) return null;
   return (
-    <p lang="bn" className={`grid grid-cols-[1.09em_minmax(0,1fr)] gap-x-[0.54em] px-[0.87em] text-[0.92em] font-bold leading-[1.28] ${className}`}>
+    <p lang="bn" className={`grid grid-cols-[1.09em_minmax(0,1fr)] gap-x-[0.54em] px-[0.87em] text-[0.92em] font-semibold leading-[1.3] ${className}`}>
       <span className="flex h-[1.28em] items-center">
         <Icon name="alert" />
       </span>
@@ -457,8 +457,8 @@ function QtyBadge({ qty }: { qty: number }) {
     // One inline run inside a centred box: the number and "pc" share a text baseline, the box centres the run.
     <span className="inline-flex h-[1.5em] min-w-[2.6em] items-center justify-center rounded-[0.4em] border-[0.12em] border-ink-900 px-[0.3em] leading-none tabular-nums">
       <span className="whitespace-nowrap">
-        <span className="text-[1.1em] font-extrabold">{qty}</span>
-        <span className="ml-[0.12em] text-[0.7em] font-bold">pc</span>
+        <span className="text-[1.1em] font-bold">{qty}</span>
+        <span className="ml-[0.12em] text-[0.72em] font-medium">pc</span>
       </span>
     </span>
   );
@@ -473,11 +473,11 @@ function LargeItems({ view, detail, className = "", twoColumns = false }: { view
     <div className="flex items-baseline justify-between border-b-[0.08em] border-ink-900 pb-[0.25em]">
       <Caption>In this parcel</Caption>
       <p className="whitespace-nowrap leading-none">
-        <span className="text-[0.66em] font-bold uppercase tracking-[0.12em]">
+        <span className="text-[0.62em] font-semibold uppercase tracking-[0.12em]">
           {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
         </span>
-        <span className="text-[1.05em] font-extrabold tabular-nums">{view.pieces}</span>
-        <span className="text-[0.72em] font-bold"> pc{view.pieces === 1 ? "" : "s"}</span>
+        <span className="text-[1.05em] font-bold tabular-nums">{view.pieces}</span>
+        <span className="text-[0.72em] font-medium"> pc{view.pieces === 1 ? "" : "s"}</span>
       </p>
     </div>
   );
@@ -492,8 +492,8 @@ function LargeItems({ view, detail, className = "", twoColumns = false }: { view
             return (
               <span key={item.id}>
                 {i > 0 && <span className="font-bold"> / </span>}
-                <span className="text-[1.15em] font-extrabold tabular-nums">{item.quantity} pc</span> {item.productNameSnapshot}
-                {variant && <span className="font-bold"> · {variant}</span>}
+                <span className="text-[1.1em] font-bold tabular-nums">{item.quantity} pc</span> {item.productNameSnapshot}
+                {variant && <span className="font-semibold"> · {variant}</span>}
               </span>
             );
           })}
@@ -513,9 +513,9 @@ function LargeItems({ view, detail, className = "", twoColumns = false }: { view
           return (
             <div key={item.id} className="contents">
               <QtyBadge qty={item.quantity} />
-              <span lang="bn" className="pt-[0.14em]">
+              <span lang="bn" className="pt-[0.14em] font-medium">
                 {item.productNameSnapshot}
-                {variant && <span className="font-bold"> · {variant}</span>}
+                {variant && <span className="font-semibold"> · {variant}</span>}
               </span>
             </div>
           );
@@ -528,7 +528,14 @@ function LargeItems({ view, detail, className = "", twoColumns = false }: { view
 
 /** The barcode with blank space either side (scanners want a quiet zone of ~10 bar widths). */
 function LargeBarcode({ view, heightEm, onReady, className }: { view: LabelView; heightEm: number; onReady: () => void; className: string }) {
-  return <Barcode view={view} heightEm={heightEm} digitsEm={0.95} onReady={onReady} className={`px-[7%] ${className}`} />;
+  return (
+    <div className={`px-[7%] ${className}`}>
+      <div style={{ height: `${heightEm}em` }}>
+        <BarcodeSvg value={view.barcodeValue} height={60} width={2} onReady={onReady} fill />
+      </div>
+      <p className="mt-[0.25em] text-center text-[0.92em] font-semibold leading-none tracking-[0.12em] tabular-nums">{view.barcodeValue}</p>
+    </div>
+  );
 }
 
 /** 75×100 portrait: header, Deliver to, COD panel beside the QR, note, items, barcode. */
