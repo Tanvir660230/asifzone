@@ -31,6 +31,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import { formatCount, orderStatusShortLabel, paymentStatusLabel } from "@/lib/format";
 import { rememberOrdersListUrl } from "@/lib/admin/orders-return";
 import { cn } from "@/lib/utils";
+import { useStickyToolbarHeight } from "@/components/admin/orders/use-sticky-toolbar";
 
 /** The statuses a finished order can end in. */
 const FINISHED_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "RETURNED", "REFUNDED"];
@@ -43,6 +44,7 @@ const FINISHED_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "C
  */
 export default function OrderHistoryPage() {
   const state = useOrdersListState({ mode: "history" });
+  const barRef = useStickyToolbarHeight<HTMLDivElement>();
   const perms = useOrderPermissions();
   const commands = useOrderCommands({ onOpenOrder: (id) => state.openOrder(id), onPurged: () => state.openOrder(null) });
   const searchRef = useRef<HTMLInputElement>(null);
@@ -116,7 +118,7 @@ export default function OrderHistoryPage() {
       }
     >
 
-      <div className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:top-chrome xl:static sm:-mx-page sm:space-y-3 sm:px-page sm:pt-3">
+      <div ref={barRef} className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:top-chrome sm:-mx-page sm:space-y-3 sm:px-page sm:pt-3">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           <SearchInput
             ref={searchRef}

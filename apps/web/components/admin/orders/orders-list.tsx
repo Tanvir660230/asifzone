@@ -428,9 +428,10 @@ export function OrdersList(props: OrdersListProps) {
           </span>
         </p>
       )}
-      {/* One scroller — the page. Scrolling moves the title and filters up out of the way and the column titles stay pinned
-          under the top bar (the filter bar stops being sticky from xl). The frame doesn't clip (overflow visible), or the
-          titles couldn't stick to the page. The 2026-11-19 overlap came from a second, inner scroller. */}
+      {/* One scroller — the page. Scrolling moves the title up out of the way; the filter bar stays pinned under the top bar
+          and the column titles pin right under the filter bar, at its measured height (use-sticky-toolbar.ts). The frame
+          doesn't clip (overflow visible), or the titles couldn't stick to the page. The 2026-11-19 overlap came from a
+          second, inner scroller and a guessed toolbar height. */}
       <TableContainer className="mt-3 hidden xl:block xl:overflow-visible" scrollClassName="xl:overflow-visible">
         <Table
           aria-label="Orders"
@@ -447,7 +448,7 @@ export function OrdersList(props: OrdersListProps) {
             setOnTable(false);
           }}
         >
-          <TableHead className="sticky top-chrome z-raised">
+          <TableHead className="sticky top-[calc(var(--density-chrome)+var(--orders-toolbar-h,0px))] z-raised">
             <tr>
               {!readOnly && (
                 <TableHeaderCell className="w-10 px-3 py-2.5">

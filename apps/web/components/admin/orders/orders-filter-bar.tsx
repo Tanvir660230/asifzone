@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { ORDER_STATUSES } from "./order-domain";
 import { type OrdersListState } from "./use-orders-list-state";
 import { OrdersDisplayMenu } from "./orders-display-menu";
+import { useStickyToolbarHeight } from "./use-sticky-toolbar";
 import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
 /** Queues that mean "a person has to act" — the rest (COD, cancelled/returned) are only slices of the list. */
@@ -59,6 +60,7 @@ const viewOn = "border-accent bg-accent text-accent-fg";
 export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListState; stats: OrderStats | undefined; canSeeTrash: boolean }>(
   function OrdersFilterBar({ state, stats, canSeeTrash }, searchRef) {
     const [moreOpen, setMoreOpen] = useState(false);
+    const barRef = useStickyToolbarHeight<HTMLDivElement>();
     const [viewsOpen, setViewsOpen] = useState(false);
     const viewsRef = useRef<HTMLButtonElement>(null);
     // Saved views (DR-18): a named Orders URL. `view` (active/trash) is part of what a view saves here.
@@ -81,9 +83,9 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
-      // Sticky on tablets only: on a phone the two pill rows would pin ~40% of the screen, and from xl the table's own
-      // column titles pin under the top bar instead — both scroll it away.
-      <div className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky xl:static sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
+      // Sticky from sm up (on a phone the pill rows would pin ~40% of the screen, so there it scrolls away). Its measured
+      // height places the table's sticky column titles right under it (use-sticky-toolbar.ts).
+      <div ref={barRef} className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           {canSeeTrash && (
             <div className="hidden sm:block">
