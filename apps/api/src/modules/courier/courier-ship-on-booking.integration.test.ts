@@ -3,11 +3,11 @@ import { overrideIntegrationsForTests } from "../../config/integration-overrides
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { updateOrderStatus } from "../orders/order.service";
-import { BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS, bookOrderWithSteadfast, bookOrdersWithSteadfastBulk, syncPendingCourierStatuses } from "./courier.service";
+import { BOOKED_NOT_PROCESSING_REPAIR_WINDOW_MS, bookOrderWithSteadfast, bookOrdersWithSteadfastBulk, syncPendingCourierStatuses } from "./courier.service";
 
-// Owner, 2026-10-25 (admin audit): booking a parcel with Steadfast means it's leaving — the order becomes SHIPPED at
-// booking. Before, it stopped at PACKED and nothing ever moved it on (Steadfast reports no pickup), so 124 live orders sat
-// in "Packed" while "Shipped" stayed at 0.
+// Owner, 2026-11-19 (replaces D-AA3 of 2026-10-25): a booking only proves Steadfast has a record — the parcel is still
+// here. Booking moves a pending or confirmed order to PROCESSING (being packed); it never ships it. The order becomes
+// SHIPPED when the parcel is handed to the rider (dispatch scan, parcel-scan.integration.test.ts).
 
 const realFetch = globalThis.fetch;
 let restoreSteadfast: () => void = () => {};
@@ -46,33 +46,36 @@ afterAll(async () => {
   await cleanupFixtures();
 });
 
-describe("booking with Steadfast ships the order", () => {
-  it("a pending order goes through Packed to Shipped when it is booked", async () => {
+describe("booking with Steadfast puts the order in Processing", () => {
+  it("a pending order goes through Confirmed to Processing when it is booked — not Shipped", async () => {
     const order = await newOrder();
     const booked = await bookOrderWithSteadfast(order.id);
-    expect(booked.status).toBe("SHIPPED");
-    const steps = await history(order.id);
-    expect(steps.slice(-2)).toEqual(["PACKED", "SHIPPED"]);
+    expect(booked.status).toBe("PROCESSING");
+    expect((await history(order.id)).slice(-2)).toEqual(["CONFIRMED", "PROCESSING"]);
   });
 
-  it("an order already marked Packed moves on to Shipped", async () => {
-    const order = await newOrder();
+  it("a confirmed order moves to Processing; one already Packed stays Packed", async () => {
     const admin = await ownerId();
-    for (const s of ["CONFIRMED", "PROCESSING", "PACKED"] as const) await updateOrderStatus(order.id, { status: s }, admin);
-    expect((await bookOrderWithSteadfast(order.id)).status).toBe("SHIPPED");
+    const confirmed = await newOrder();
+    await updateOrderStatus(confirmed.id, { status: "CONFIRMED" }, admin);
+    expect((await bookOrderWithSteadfast(confirmed.id)).status).toBe("PROCESSING");
+
+    const packed = await newOrder();
+    for (const s of ["CONFIRMED", "PROCESSING", "PACKED"] as const) await updateOrderStatus(packed.id, { status: s }, admin);
+    expect((await bookOrderWithSteadfast(packed.id)).status).toBe("PACKED");
   });
 
-  it("bulk booking ships every booked order", async () => {
+  it("bulk booking moves every booked order to Processing", async () => {
     const a = await newOrder();
     const b = await newOrder();
     const res = await bookOrdersWithSteadfastBulk([a.id, b.id]);
     expect(res.booked.map((x) => x.orderId).sort()).toEqual([a.id, b.id].sort());
     const rows = await prisma.order.findMany({ where: { id: { in: [a.id, b.id] } }, select: { status: true } });
-    expect(rows.map((r) => r.status)).toEqual(["SHIPPED", "SHIPPED"]);
+    expect(rows.map((r) => r.status)).toEqual(["PROCESSING", "PROCESSING"]);
   });
 });
 
-describe("the courier sweep repairs a booked parcel that never shipped (P0.5)", () => {
+describe("the courier sweep moves on a booking left at Pending (P0.5)", () => {
   async function bookedButStuck(bookedAt: Date) {
     const order = await newOrder();
     seq++;
@@ -83,15 +86,15 @@ describe("the courier sweep repairs a booked parcel that never shipped (P0.5)", 
     return order;
   }
 
-  it("ships a recent booking left at Pending, through Packed", async () => {
+  it("moves a recent booking left at Pending to Processing, through Confirmed", async () => {
     const order = await bookedButStuck(new Date());
     await syncPendingCourierStatuses();
-    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("SHIPPED");
-    expect((await history(order.id)).slice(-2)).toEqual(["PACKED", "SHIPPED"]);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PROCESSING");
+    expect((await history(order.id)).slice(-2)).toEqual(["CONFIRMED", "PROCESSING"]);
   });
 
   it("leaves a booking older than the repair window alone", async () => {
-    const order = await bookedButStuck(new Date(Date.now() - BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS - 60_000));
+    const order = await bookedButStuck(new Date(Date.now() - BOOKED_NOT_PROCESSING_REPAIR_WINDOW_MS - 60_000));
     await syncPendingCourierStatuses();
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING");
   });

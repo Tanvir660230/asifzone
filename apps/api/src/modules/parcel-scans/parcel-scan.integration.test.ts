@@ -90,6 +90,29 @@ describe("dispatch scanning", () => {
     await cancelBatch(later.id);
   });
 
+  it("a booked order still in Processing becomes Shipped at the handover, through Packed, and the shipped SMS goes once", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 500 });
+    const order = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
+    await changeOrderStatus(order.id, { status: "CONFIRMED", note: null }, owner);
+    await changeOrderStatus(order.id, { status: "PROCESSING", note: null }, owner);
+    await prisma.order.update({ where: { id: order.id }, data: { trackingNumber: `PSTPRC${seq++}${Date.now()}`, courierConsignmentId: `7${Date.now()}${seq}`, courierBookedAt: new Date() } });
+    const stockBefore = await stockOf(variants[0]!.id);
+    const shippedSms = () => prisma.outboxEvent.count({ where: { aggregateId: order.id, consumer: "customer-order-sms", payload: { path: ["touchpoint"], equals: "SHIPPED" } } });
+
+    const batch = await createBatch(owner, "DISPATCH");
+    expect((await scan(batch.id, order.orderNumber)).result).toBe("ACCEPTED");
+    await confirmBatch(batch.id, owner);
+
+    const after = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(after.status).toBe("SHIPPED");
+    expect(after.handedOverAt).not.toBeNull();
+    const steps = (await prisma.orderStatusHistory.findMany({ where: { orderId: order.id }, orderBy: { createdAt: "asc" }, select: { status: true } })).map((h) => h.status);
+    expect(steps).toContain("PACKED");
+    expect(steps.at(-1)).toBe("SHIPPED");
+    expect(await shippedSms()).toBe(1);
+    expect(await stockOf(variants[0]!.id)).toBe(stockBefore);
+  });
+
   it("refuses unbooked, unconfirmed, cancelled and trashed orders without changing them", async () => {
     const { variants } = await createStockedProduct({ stocks: [5], basePrice: 500 });
     const pending = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);

@@ -2,17 +2,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, placeOrder } from "../../test-fixtures";
-import { bookOrderWithSteadfast, shipOnBooking, syncPendingCourierStatuses } from "./courier.service";
+import { bookOrderWithSteadfast, moveOnBooking, syncPendingCourierStatuses } from "./courier.service";
 
-// Blueprint P0.5 failure injection: the SHIPPED step fails after PACKED was applied. Both steps share one transaction,
-// so nothing commits — the order is never left half-way at PACKED — and the courier sweep then ships it.
+// Blueprint P0.5 failure injection: the PROCESSING step fails after CONFIRMED was applied. Both steps share one
+// transaction, so nothing commits — the order is never left half-way — and the courier sweep then moves it on (D-OF1).
 const failShipped = { on: false };
 vi.mock("../orders/order.service", async (importOriginal) => {
   const real = await importOriginal<typeof import("../orders/order.service")>();
   return {
     ...real,
     applyOrderTransition: async (...args: Parameters<typeof real.applyOrderTransition>) => {
-      if (failShipped.on && args[2].status === "SHIPPED") throw new Error("injected failure between PACKED and SHIPPED");
+      if (failShipped.on && args[2].status === "PROCESSING") throw new Error("injected failure between CONFIRMED and PROCESSING");
       return real.applyOrderTransition(...args);
     },
   };
@@ -40,8 +40,8 @@ afterAll(async () => {
   await cleanupFixtures();
 });
 
-describe("booking ships in one transaction", () => {
-  it("a failure between Packed and Shipped commits neither, and the sweep repairs it", async () => {
+describe("booking moves the order on in one transaction", () => {
+  it("a failure between Confirmed and Processing commits neither, and the sweep repairs it", async () => {
     const { variants } = await createStockedProduct({ stocks: [10] });
     const order = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
 
@@ -50,13 +50,13 @@ describe("booking ships in one transaction", () => {
     const stuck = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(stuck.courierConsignmentId).not.toBeNull();
     expect(stuck.status).toBe("PENDING");
-    expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: { in: ["PACKED", "SHIPPED"] } } })).toBe(0);
+    expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: { in: ["CONFIRMED", "PROCESSING"] } } })).toBe(0);
 
     failShipped.on = false;
     expect((await syncPendingCourierStatuses()).repaired).toBeGreaterThanOrEqual(1);
-    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("SHIPPED");
-    // already shipped (a stale status read): nothing moves, and it isn't counted as a repair
-    expect(await shipOnBooking(order.id, "PACKED")).toBe(false);
-    expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: "SHIPPED" } })).toBe(1);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PROCESSING");
+    // already in processing (a stale status read): nothing moves, and it isn't counted as a repair
+    expect(await moveOnBooking(order.id, "PROCESSING")).toBe(false);
+    expect(await prisma.orderStatusHistory.count({ where: { orderId: order.id, status: "PROCESSING" } })).toBe(1);
   });
 });

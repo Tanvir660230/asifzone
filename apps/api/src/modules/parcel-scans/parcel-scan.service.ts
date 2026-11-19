@@ -14,15 +14,18 @@ import { AppError } from "../../lib/app-error";
 import { getTimezone } from "../../domain/config/commerce-settings";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
 import { RETURN_EXPECTED_STATUSES } from "../orders/parcel-queues";
+import { applyOrderTransition, runTransitionSideEffects, type OrderTransitionOutcome } from "../orders/order.service";
 import { resolveOrderCode } from "./parcel-resolve.service";
 
 /**
  * Dispatch and return scanning (Order Operations plan, phase 4). A scan resolves a code to an order and says at once
  * whether it can be added; nothing about the order changes until the batch is confirmed, which then writes the handover
- * (DISPATCH) or the physical receipt (RETURN) on every accepted order in one transaction. Never stock, money or the
- * order's status: a return scan only says the parcel is physically back — inspection (receiveReturnedParcel, returns.manage)
- * is the step that restocks. The one exception allowed by the plan: with shippedSmsTrigger = HANDOVER, the "shipped" SMS
- * held at booking goes out at the handover confirmation.
+ * (DISPATCH) or the physical receipt (RETURN) on every accepted order in one transaction. Never stock or money. A return
+ * scan never changes the order's status: it only says the parcel is physically back — inspection (receiveReturnedParcel,
+ * returns.manage) is the step that restocks. The handover is the moment a booked order SHIPS (owner decision D-OF1,
+ * 2026-11-19): an order still before SHIPPED moves to SHIPPED, through PACKED, and its "shipped" SMS goes then. An order
+ * shipped at booking under the old rule keeps its status; a "shipped" SMS held for the handover (shippedSmsTrigger =
+ * HANDOVER) goes out at the confirmation.
  *
  * Exactly-once: a scan's clientScanId (made on the device) is unique, so a retried / offline-queued scan returns the
  * first result; accepting a scan locks the order row, so the same parcel scanned on two devices at once is accepted once.
@@ -164,6 +167,7 @@ export async function voidScan(batchId: string, eventId: string) {
  */
 export async function confirmBatch(batchId: string, adminId: string) {
   const timeZone = await getTimezone();
+  const shipped: OrderTransitionOutcome[] = [];
   await prisma.$transaction(async (tx) => {
     const [batch] = await tx.$queryRaw<Array<{ kind: string; status: string }>>`SELECT kind, status FROM "ParcelScanBatch" WHERE id = ${batchId} FOR UPDATE`;
     if (!batch) throw AppError.notFound("Batch not found");
@@ -189,6 +193,12 @@ export async function confirmBatch(batchId: string, adminId: string) {
     const when = formatDateTime(now, timeZone);
     for (const o of orders) {
       if (kind === "DISPATCH") {
+        // D-OF1: the handover ships it — PACKED first when it wasn't packed, so the timeline keeps every step.
+        const shipsNow = ["CONFIRMED", "PROCESSING", "PACKED"].includes(o.status);
+        if (shipsNow) {
+          if (o.status !== "PACKED") shipped.push(await applyOrderTransition(tx, o.id, { status: "PACKED", note: `Packed (dispatch scan, ${when})` }, { quietNoop: true, adminId }));
+          shipped.push(await applyOrderTransition(tx, o.id, { status: "SHIPPED", note: `Handed to the courier (dispatch scan, ${when})` }, { quietNoop: true, adminId }));
+        }
         await tx.order.update({
           where: { id: o.id },
           data: {
@@ -196,7 +206,8 @@ export async function confirmBatch(batchId: string, adminId: string) {
             handedOverByAdminId: adminId,
             handedOverBatchId: batchId,
             shippedSmsDeferred: false,
-            statusHistory: { create: { status: o.status, note: `Handed to the courier (dispatch scan, ${when})`, changedByAdminId: adminId } },
+            // Shipped just now: the SHIPPED step above already says it was handed over.
+            ...(shipsNow ? {} : { statusHistory: { create: { status: o.status, note: `Handed to the courier (dispatch scan, ${when})`, changedByAdminId: adminId } } }),
           },
         });
         // The "shipped" SMS held at booking (shippedSmsTrigger = HANDOVER) goes now — once, keyed by the order.
@@ -219,6 +230,8 @@ export async function confirmBatch(batchId: string, adminId: string) {
     }
     await tx.parcelScanBatch.update({ where: { id: batchId }, data: { status: "CONFIRMED", confirmedAt: now, confirmedByAdminId: adminId } });
   });
+  // The shipped SMS, admin notices and the rest run once the handover has committed.
+  for (const outcome of shipped) await runTransitionSideEffects(outcome);
   return getBatch(batchId);
 }
 

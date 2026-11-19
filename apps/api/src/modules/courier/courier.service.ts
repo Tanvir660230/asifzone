@@ -25,18 +25,19 @@ import { fillForBookedOrder, planAutoFill, type AutoFillPlan } from "../../domai
 // items came back — see reconcilePartialDelivery in order.service.ts.
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 
-// Owner decision D-AA3 (2026-10-25): a booked order becomes SHIPPED at booking, through PACKED when it hadn't been packed
-// yet (shipOnBooking, below) — so the SHIPPED SMS goes out at booking. A booking still only proves a courier RECORD exists,
-// not that the parcel left: physical handover is a separate fact (Order Operations plan, Phase 4 dispatch scan). Orders
-// already at SHIPPED or later are left alone — booking never rewinds or re-nudges anything an admin progressed by hand.
-// Both steps commit in one transaction (blueprint P0.5); the sweep repairs a booking left behind (repairBookedNotShipped).
-const PRE_PACKED_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING"];
+// Owner decision D-OF1 (2026-11-19, replaces D-AA3 of 2026-10-25): a booking only proves Steadfast has a RECORD — the
+// parcel is still here. A pending or confirmed order moves to PROCESSING at booking (moveOnBooking, below: through
+// CONFIRMED when it was still pending, so the timeline keeps every step); it becomes SHIPPED when it is handed to the rider
+// (the dispatch scan, parcel-scan.service confirmBatch). Orders already at PROCESSING or later are left alone — booking
+// never rewinds anything an admin progressed by hand. Both steps commit in one transaction (blueprint P0.5); the sweep
+// moves on a booking left behind (repairBookedNotProcessing).
+const BEFORE_PROCESSING_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED"];
 
 // Steadfast's status_by_cid API never reports a distinct "picked up / in transit" state — it only ever returns
 // in_review/pending/hold (or an *_approval_pending / unknown state) until the parcel resolves to delivered/
 // partial_delivered/cancelled. Used below to word a "cancelled" report: an order still before SHIPPED was voided before
-// pickup. Since D-AA3 every booked order is SHIPPED, so for those the courier's word can't tell "returned to us" from
-// "never picked up" — the parcel is counted back only when it is received on the order (receiveReturnedParcel).
+// pickup. An order SHIPPED by the handover scan really left, so for those the courier's word means "coming back" — the
+// parcel is counted back only when it is received on the order (receiveReturnedParcel).
 const PRE_SHIP_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"];
 
 // An order in one of these has already been voided, fulfilled, or restocked — booking a real
@@ -134,8 +135,8 @@ async function applyCourierStatusToOrder(order: BookedOrder, status: string, sou
   if (!mapped || mapped === order.status || TERMINAL_ORDER_STATUSES.includes(order.status) || !canTransitionOrder(order.status, mapped)) return;
 
   // Steadfast reports both "we voided this before pickup" and "delivery failed, the parcel is coming back" as the same
-  // "cancelled" — and since D-AA3 the order is SHIPPED from booking, so a SHIPPED order may never have been picked up. The
-  // note says only what is known: the courier cancelled it, and any parcel must be received back before it counts as stock.
+  // "cancelled". Orders shipped at booking before D-OF1 may never have been picked up, so the note says only what is known:
+  // the courier cancelled it, and any parcel must be received back before it counts as stock.
   const note =
     status === "cancelled" && !PRE_SHIP_ORDER_STATUSES.includes(order.status)
       ? "Steadfast cancelled this consignment — if the parcel left, receive it back on the order before its units count as stock"
@@ -241,7 +242,7 @@ async function attachExistingConsignment(
   });
   if (saved.count !== 1) throw AppError.conflict("This order is already booked with a courier");
 
-  await shipOnBooking(order.id, order.status);
+  await moveOnBooking(order.id, order.status);
   await syncOrderShipmentsSafely(order.id);
   await fillForBookedOrder(order.id, consignment.consignmentId, fillPlan);
   notify({
@@ -303,26 +304,23 @@ export async function linkSteadfastConsignment(orderId: string, input: { consign
   return getOrderById(orderId);
 }
 
-/** Owner, 2026-10-25 (admin audit, docs/BUSINESS_DECISIONS.md D-AA3): a parcel booked with Steadfast is leaving, so the
- * order becomes SHIPPED at booking — through PACKED when it hadn't been packed yet, so the timeline keeps every step.
- * Steadfast reports no pickup, so nothing else would ever move it on. Returns whether the order's status changed. */
-export async function shipOnBooking(orderId: string, status: OrderStatus): Promise<boolean> {
-  if (!PRE_PACKED_ORDER_STATUSES.includes(status) && status !== "PACKED") return false;
-  // Plan M4: the "shipped" SMS goes at booking (today's default) or, once the owner switches shippedSmsTrigger to
-  // HANDOVER after the pilot, at the dispatch scan — the order status means the same either way.
-  const deferShippedSms = (await getSettings()).shippedSmsTrigger === "HANDOVER";
-  // Both steps commit in ONE transaction (blueprint P0.5): a failure between them used to leave a booked parcel stuck at
-  // PACKED. Each step validates against the locked status, so a concurrent change wins and the next step is skipped.
+/** Owner, 2026-11-19 (docs/BUSINESS_DECISIONS.md D-OF1): booking puts a pending or confirmed order into PROCESSING —
+ * through CONFIRMED when it was still pending — and never ships it: the order becomes SHIPPED at the handover scan.
+ * Returns whether the order's status changed. */
+export async function moveOnBooking(orderId: string, status: OrderStatus): Promise<boolean> {
+  if (!BEFORE_PROCESSING_ORDER_STATUSES.includes(status)) return false;
+  // Both steps commit in ONE transaction (blueprint P0.5). Each validates against the locked status, so a concurrent change
+  // wins and the next step is skipped.
   const outcomes = await prisma.$transaction(async (tx) => {
     const done: OrderTransitionOutcome[] = [];
     let current = status;
-    if (PRE_PACKED_ORDER_STATUSES.includes(current)) {
-      const packed = await applyOrderTransition(tx, orderId, { status: "PACKED", note: "Booked with Steadfast" }, { quietNoop: true });
-      done.push(packed);
-      current = packed.order.status;
+    if (current === "PENDING") {
+      const confirmed = await applyOrderTransition(tx, orderId, { status: "CONFIRMED", note: "Booked with Steadfast" }, { quietNoop: true });
+      done.push(confirmed);
+      current = confirmed.order.status;
     }
-    if (current === "PACKED") {
-      done.push(await applyOrderTransition(tx, orderId, { status: "SHIPPED", note: "Booked with Steadfast — handed to the courier" }, { quietNoop: true, deferShippedSms }));
+    if (current === "CONFIRMED") {
+      done.push(await applyOrderTransition(tx, orderId, { status: "PROCESSING", note: "Booked with Steadfast — waiting to be packed and handed to the rider" }, { quietNoop: true }));
     }
     return done;
   });
@@ -330,18 +328,17 @@ export async function shipOnBooking(orderId: string, status: OrderStatus): Promi
   return outcomes.some((o) => o.changed);
 }
 
-/** A booked parcel whose ship step never committed (the process died between saving the consignment and shipOnBooking,
- * or the step failed) is moved on by the courier sweep — booking means the parcel is leaving (D-AA3). Never fails the
- * sweep; returns how many orders it moved. Only recent bookings: parcels booked before D-AA3 stayed PACKED by design, and
- * shipping them now would text customers about parcels long gone. */
-export const BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS = 48 * 60 * 60_000;
-async function repairBookedNotShipped(now: Date = new Date()): Promise<number> {
+/** A booked parcel whose order never reached PROCESSING (the process died between saving the consignment and
+ * moveOnBooking, or the step failed) is moved on by the courier sweep. Never fails the sweep; returns how many orders it
+ * moved. Only recent bookings, so an old booking someone left on purpose is never touched. */
+export const BOOKED_NOT_PROCESSING_REPAIR_WINDOW_MS = 48 * 60 * 60_000;
+async function repairBookedNotProcessing(now: Date = new Date()): Promise<number> {
   const stuck = await prisma.order.findMany({
     where: {
       courierConsignmentId: { not: null },
-      courierBookedAt: { gte: new Date(now.getTime() - BOOKED_NOT_SHIPPED_REPAIR_WINDOW_MS) },
+      courierBookedAt: { gte: new Date(now.getTime() - BOOKED_NOT_PROCESSING_REPAIR_WINDOW_MS) },
       deletedAt: null,
-      status: { in: [...PRE_PACKED_ORDER_STATUSES, "PACKED"] },
+      status: { in: BEFORE_PROCESSING_ORDER_STATUSES },
       OR: [{ courierStatus: null }, { courierStatus: { notIn: TERMINAL_COURIER_STATUSES } }],
     },
     select: { id: true, status: true },
@@ -349,9 +346,9 @@ async function repairBookedNotShipped(now: Date = new Date()): Promise<number> {
   let repaired = 0;
   for (const order of stuck) {
     try {
-      if (await shipOnBooking(order.id, order.status)) repaired++;
+      if (await moveOnBooking(order.id, order.status)) repaired++;
     } catch (err) {
-      captureError(err, { msg: `[courier-status-cron] could not ship booked order ${order.id}:` });
+      captureError(err, { msg: `[courier-status-cron] could not move booked order ${order.id} on:` });
     }
   }
   return repaired;
@@ -427,7 +424,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
     },
   });
 
-  await shipOnBooking(orderId, order.status);
+  await moveOnBooking(orderId, order.status);
   await syncOrderShipmentsSafely(orderId);
   await fillForBookedOrder(orderId, String(consignment.consignment_id), fillPlan);
 
@@ -545,7 +542,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierNoteSent: courierNotes.get(order.id) ?? null,
       },
     });
-    await shipOnBooking(order.id, order.status);
+    await moveOnBooking(order.id, order.status);
     await syncOrderShipmentsSafely(order.id);
     await fillForBookedOrder(order.id, String(result.consignment_id), fillPlan);
     booked.push({ orderId: order.id, orderNumber: order.orderNumber, trackingNumber: result.tracking_code });
@@ -920,8 +917,8 @@ export async function syncPendingCourierStatuses(
   opts: { now?: Date; maxPerRun?: number; budgetMs?: number; orderIds?: string[] } = {},
 ): Promise<CourierSweepResult> {
   const now = opts.now ?? new Date();
-  // Blueprint P0.5: a booking left at PACKED (or before) by a failure moves on before the status checks.
-  const repaired = opts.orderIds ? 0 : await repairBookedNotShipped(now);
+  // Blueprint P0.5: a booking left before PROCESSING by a failure moves on before the status checks.
+  const repaired = opts.orderIds ? 0 : await repairBookedNotProcessing(now);
   const level = await currentPollLevel(now);
   const where = {
     ...OPEN_PARCEL_WHERE,
