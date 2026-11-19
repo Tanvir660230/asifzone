@@ -409,6 +409,15 @@ export function OrdersList(props: OrdersListProps) {
   useShortcut("list.prev", () => moveActive(-1), keys);
   useShortcut("list.open", () => active && onOpen(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
   useShortcut("list.select", () => active && onToggle(active.id), { enabled: keys.enabled && onTable && Boolean(active) && !readOnly });
+  // P / B / L on the highlighted row: the packing table's and the booking desk's repeat jobs without the mouse.
+  const rowKeys = { enabled: keys.enabled && onTable && Boolean(active) && !readOnly };
+  useShortcut("orders.markPacked", () => active && perms.manage && canMarkPacked(active) && commands.markPacked([active]), rowKeys);
+  useShortcut(
+    "orders.book",
+    () => active && !courierBookingBlocker(active) && (perms.courier ? commands.bookCourier(active) : perms.courierNotConnected && commands.explainCourierNotConnected()),
+    rowKeys,
+  );
+  useShortcut("orders.printLabel", () => active && !active.deletedAt && commands.printLabels([active.id]), rowKeys);
 
   return (
     <>
@@ -541,6 +550,7 @@ export function OrdersList(props: OrdersListProps) {
                         disabled={commands.pending.pack}
                         onClick={() => commands.markPacked([order])}
                         aria-label={`Mark ${order.orderNumber} packed`}
+                        title="Mark packed (P on the highlighted row)"
                         data-testid="row-mark-packed"
                       >
                         <PackageCheck size={13} /> Packed
