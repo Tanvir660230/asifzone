@@ -15,6 +15,7 @@ import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrdersFilterBar } from "@/components/admin/orders/orders-filter-bar";
 import { ORDERS_WORKSPACE_CLASS, OrdersList } from "@/components/admin/orders/orders-list";
 import { OrdersBulkBar } from "@/components/admin/orders/orders-bulk-bar";
+import { PackScanBar } from "@/components/admin/orders/pack-scan-bar";
 import { orderKeys, prefetchOrder, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { useOrderCommands } from "@/components/admin/orders/use-order-commands";
 import { useOrdersListState } from "@/components/admin/orders/use-orders-list-state";
@@ -223,6 +224,9 @@ export default function OrdersPage() {
           </Button>
         </div>
       )}
+
+      {/* To pack: the packing table scans each label as it goes on, and that order becomes Packed. */}
+      {state.queue === "toPack" && perms.manage && <PackScanBar />}
 
       {isError && data && (
         <div role="status" className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-warning-200 bg-warning-50 px-3.5 py-2.5 text-sm text-warning-700">
