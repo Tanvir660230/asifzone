@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DETAIL_LEVELS, MIN_UNIT_PX, chooseLevel, gradeFit, pickLayout, searchUnit, unitBounds } from "./label-fit";
+import { DETAIL_LEVELS, MIN_UNIT_PX, chooseLevel, gradeFit, isLargeSticker, pickLayout, searchUnit, unitBounds } from "./label-fit";
 import { LABEL_TEMPLATES, resolveGeometry } from "./label-templates";
 
 describe("pickLayout", () => {
@@ -9,6 +9,21 @@ describe("pickLayout", () => {
     expect(pickLayout(96, 146)).toBe("stack"); // 4×6"
     expect(pickLayout(77, 47)).toBe("wide"); // 80×50
     expect(pickLayout(93, 66.25)).toBe("wide"); // A4 8-up cell
+  });
+});
+
+describe("isLargeSticker", () => {
+  it("takes only the 75×100 sticker, either way round", () => {
+    const cell = (id: string) => {
+      const t = LABEL_TEMPLATES.find((x) => x.id === id)!;
+      const g = resolveGeometry(t, "portrait", t.defaultMarginMm);
+      return isLargeSticker(g.cellWmm, g.cellHmm);
+    };
+    expect(cell("sticker-75x100")).toBe(true);
+    expect(cell("sticker-100x75")).toBe(true);
+    for (const id of ["sticker-80x50", "sticker-76x76", "sticker-51x76", "sticker-100x150", "sticker-60x40", "sticker-50x30", "a4-1up", "a4-2up", "a4-4up", "a4-6up", "a4-8up"]) {
+      expect(cell(id), id).toBe(false);
+    }
   });
 });
 
