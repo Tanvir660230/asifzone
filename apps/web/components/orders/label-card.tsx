@@ -305,6 +305,20 @@ function Icon({ name, className = "" }: { name: "user" | "phone" | "pin" | "aler
   );
 }
 
+/** A Bangladeshi mobile number as 01XXX XXXXXX — the way people read it out — with a gap, not a character, between the
+ * groups, so the digits stay exactly as typed. Anything else prints as is. */
+function PhoneDigits({ phone }: { phone: string }) {
+  const m = /^(\+?88)?(01\d{3})(\d{6})$/.exec(phone.replace(/[\s-]/g, ""));
+  if (!m) return <>{phone}</>;
+  return (
+    <>
+      {m[1] && <span className="mr-[0.3em]">{m[1]}</span>}
+      <span className="mr-[0.32em]">{m[2]}</span>
+      {m[3]}
+    </>
+  );
+}
+
 /** Small uppercase caption. */
 function Caption({ children, className = "" }: { children: string; className?: string }) {
   return <p className={`text-[0.6em] font-bold uppercase leading-none tracking-[0.16em] ${className}`}>{children}</p>;
@@ -350,7 +364,9 @@ function DeliverTo({ view, className = "" }: { view: LabelView; className?: stri
       <span className="mt-[0.2em] flex h-[1.43em] items-center">
         <Icon name="phone" />
       </span>
-      <p className="mt-[0.2em] text-[1.3em] font-extrabold leading-[1.1] tracking-[0.02em] tabular-nums">{order.customerPhone}</p>
+      <p className="mt-[0.2em] whitespace-nowrap text-[1.3em] font-extrabold leading-[1.1] tracking-[0.02em] tabular-nums">
+        <PhoneDigits phone={order.customerPhone} />
+      </p>
 
       <span className="mt-[0.3em] flex h-[1.29em] items-center">
         <Icon name="pin" />

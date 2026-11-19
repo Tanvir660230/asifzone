@@ -99,7 +99,9 @@ export function unitBounds(wMm: number, hMm: number): UnitBounds {
   if (isLargeSticker(wMm, hMm)) {
     // The large design sets its own hierarchy (COD and name are 2-3× the body), so the body stays calm; a short order
     // no longer grows into shouted text — the spare room becomes whitespace instead.
-    const max = Math.min(widthPx / (layout === "stack" ? 25 : 34), 11);
+    // Short orders grow into the spare room up to ≈ 12px body (measured on the print: a one-item 75×100 left a third
+    // of the sticker blank at 10.7px); long orders still shrink to fit, as before.
+    const max = Math.min(widthPx / (layout === "stack" ? 21.5 : 30), 12.5);
     return { max, comfortable: Math.min(max, 8), min: MIN_UNIT_PX };
   }
   const byWidth = layout === "stack" ? widthPx / 17 : Math.min(widthPx / 24, (hMm * PX_PER_MM) / 11);
