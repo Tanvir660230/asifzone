@@ -271,7 +271,7 @@ function LargeHeader({ view, detail }: { view: LabelView; detail: DetailLevel })
   const name = store?.storeName ?? "Store";
   const wordmark = <span className="text-[1.45em] font-extrabold leading-none tracking-[-0.01em]">{name}</span>;
   return (
-    <div className="flex items-center justify-between gap-[0.8em] border-b-[0.16em] border-ink-900 pb-[0.45em]">
+    <div className="flex items-center justify-between gap-[0.8em] border-b-[0.1em] border-ink-900 pb-[0.45em]">
       {store?.logoUrl && detail.logo ? (
         <StoreLogoImage src={store.logoUrl} alt={name} className="shrink-0 [&_img]:object-left" style={{ height: "2.6em", width: "6.5em" }} fallback={wordmark} />
       ) : (
@@ -309,12 +309,13 @@ function DeliverTo({ view, nameEm }: { view: LabelView; nameEm: number }) {
   );
 }
 
-/** The amount to collect: white on solid black, caption above the amount. Paid orders get an outlined box instead, so
- * "collect nothing" can never be mistaken for an amount. */
+/** The amount to collect in a thin rounded frame: small caption, big amount. Light on ink (the owner found a solid black
+ * block too heavy) — the amount itself carries the weight. Paid orders use the same frame with PAID. */
 function LargeCod({ view, amountEm, className = "" }: { view: LabelView; amountEm: number; className?: string }) {
+  const frame = `flex flex-col justify-center rounded-[0.45em] border-[0.1em] border-ink-900 px-[0.65em] py-[0.45em] ${className}`;
   if (view.cod > 0) {
     return (
-      <div className={`flex flex-col justify-center bg-ink-900 px-[0.6em] py-[0.45em] text-white ${className}`}>
+      <div className={frame}>
         <span className="text-[0.62em] font-bold uppercase leading-none tracking-[0.16em]">Cash on delivery</span>
         <span className="mt-[0.25em] whitespace-nowrap font-extrabold leading-none tabular-nums" style={{ fontSize: `${amountEm}em` }}>
           {formatPrice(view.cod)}
@@ -325,11 +326,12 @@ function LargeCod({ view, amountEm, className = "" }: { view: LabelView; amountE
   // Nothing to collect: paid (COD settled, or paid online) — or an online payment still pending, which must never read "Paid".
   const settled = view.order.paymentMethod === "COD" || view.order.paymentStatus === "PAID";
   return (
-    <div className={`flex flex-col justify-center border-[0.16em] border-ink-900 px-[0.6em] py-[0.4em] ${className}`}>
-      <span className="font-extrabold uppercase leading-none tracking-[0.06em]" style={{ fontSize: `${amountEm * 0.8}em` }}>
+    <div className={frame}>
+      <span className="text-[0.62em] font-bold uppercase leading-none tracking-[0.16em]">Payment</span>
+      <span className="mt-[0.25em] font-extrabold uppercase leading-none tracking-[0.04em]" style={{ fontSize: `${amountEm * 0.75}em` }}>
         {settled ? "Paid" : "Online"}
       </span>
-      <span className="mt-[0.3em] text-[0.78em] font-bold leading-tight">{settled ? "Collect nothing" : view.paidCaption}</span>
+      <span className="mt-[0.25em] text-[0.78em] font-semibold leading-tight">{settled ? "Collect nothing" : view.paidCaption}</span>
     </div>
   );
 }
@@ -356,9 +358,9 @@ function ParcelBox({ view, detail, qrEm: full, className = "" }: { view: LabelVi
 function LargeNote({ order, className = "" }: { order: LabelOrder; className?: string }) {
   if (!order.courierNoteForLabel) return null;
   return (
-    <div className={`flex items-stretch border-[0.12em] border-ink-900 ${className}`}>
-      <span className="flex shrink-0 items-center bg-ink-900 px-[0.45em] text-[0.62em] font-bold uppercase tracking-[0.14em] text-white">Note</span>
-      <p lang="bn" className="min-w-0 flex-1 px-[0.5em] py-[0.25em] text-[0.92em] font-bold leading-[1.28]">
+    <div className={`border-l-[0.2em] border-ink-900 pl-[0.55em] ${className}`}>
+      <Caption>Note</Caption>
+      <p lang="bn" className="mt-[0.2em] text-[0.92em] font-bold leading-[1.28]">
         {order.courierNoteForLabel}
       </p>
     </div>
