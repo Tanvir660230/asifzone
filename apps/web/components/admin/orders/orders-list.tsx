@@ -68,6 +68,10 @@ export interface OrdersListProps {
   readOnly?: boolean;
 }
 
+/** From xl the Orders pages are a fixed-height workspace: the page fills the window under the top bar (less main's
+ * 1.25rem top + 2rem bottom padding, and 2px of chrome borders) and only the table's rows scroll. Pages pass it to ListPage's className. */
+export const ORDERS_WORKSPACE_CLASS = "xl:flex xl:h-[calc(100dvh-var(--density-chrome)-3.25rem-2px)] xl:flex-col";
+
 /** Cell padding per density: compact fits about twice the rows of comfortable on one screen. */
 const DENSITY_PAD: Record<ListDensity, string> = {
   compact: "px-3 py-1",
@@ -266,7 +270,6 @@ function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<
   );
 }
 
-/** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
 /** Whether the order changed status after it was placed. The same transaction as the order itself (a phone order
  * confirmed on creation) is no separate move. */
 function hasMoved(order: AdminOrderListItem): boolean {
@@ -274,6 +277,7 @@ function hasMoved(order: AdminOrderListItem): boolean {
   return Boolean(moved) && new Date(moved!).getTime() - new Date(order.createdAt).getTime() >= 1_000;
 }
 
+/** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
 function MovedLine({ order }: { order: AdminOrderListItem }) {
   const moved = order.statusChangedAt;
   if (!moved || !hasMoved(order)) return null;
@@ -358,24 +362,37 @@ export function OrdersList(props: OrdersListProps) {
   const [focused, setFocused] = useState(false);
   // Enter/X only while the table itself has focus: on a button inside a row, Enter must stay that button's.
   const [onTable, setOnTable] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  // The highlight follows the ORDER, not the row number: the 30 s refresh hands over a new list, and the row the admin
+  // was on must stay highlighted (it clears only when that order leaves the view).
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeIndex = activeId ? items.findIndex((o) => o.id === activeId) : -1;
   const active = activeIndex >= 0 ? items[activeIndex] : undefined;
-  useEffect(() => setActiveIndex(-1), [items]);
   useEffect(() => {
-    if (!active) return;
-    prefetchOrder(queryClient, active.id);
-    document.querySelector<HTMLElement>(`[data-testid="order-row"][data-row-index="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [active, activeIndex, queryClient]);
+    if (!activeId) return;
+    prefetchOrder(queryClient, activeId);
+    document.querySelector<HTMLElement>(`[data-testid="order-row"][data-order-id="${activeId}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [activeId, queryClient]);
   const keys = { enabled: focused && items.length > 0 };
-  useShortcut("list.next", () => setActiveIndex((i) => Math.min(i + 1, items.length - 1)), keys);
-  useShortcut("list.prev", () => setActiveIndex((i) => Math.max(i - 1, 0)), keys);
+  const moveActive = (step: number) => {
+    const from = activeIndex === -1 ? (step > 0 ? -1 : items.length) : activeIndex;
+    const next = items[Math.min(Math.max(from + step, 0), items.length - 1)];
+    if (next) setActiveId(next.id);
+  };
+  useShortcut("list.next", () => moveActive(1), keys);
+  useShortcut("list.prev", () => moveActive(-1), keys);
   useShortcut("list.open", () => active && onOpen(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
   useShortcut("list.select", () => active && onToggle(active.id), { enabled: keys.enabled && onTable && Boolean(active) && !readOnly });
 
   return (
     <>
-      {/* Long pages (up to 200 rows) scroll inside the frame, so the column titles stay in view. */}
-      <TableContainer className="mt-3 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
+      {/* From xl the page is a fixed-height workspace (ORDERS_WORKSPACE_CLASS on the page): this frame takes the room left
+          under the toolbar and only the rows scroll, under their sticky titles. One scroller, so the page never slides the
+          frame up under the toolbar (the 2026-11-19 overlap). */}
+      <TableContainer
+        className="mt-3 hidden xl:flex xl:min-h-[18rem] xl:flex-1 xl:flex-col"
+        wrapperClassName="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+        scrollClassName="xl:min-h-0 xl:flex-1 xl:overflow-y-auto"
+      >
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
@@ -421,6 +438,7 @@ export function OrdersList(props: OrdersListProps) {
                 className={cn(selected.has(order.id) && "bg-accent/[0.05]", index === activeIndex && "bg-ink-50 outline outline-1 -outline-offset-1 outline-ink-300")}
                 data-testid="order-row"
                 data-row-index={index}
+                data-order-id={order.id}
                 data-active={index === activeIndex || undefined}
                 {...warm(order.id)}
               >

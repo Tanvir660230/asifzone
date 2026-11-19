@@ -10,7 +10,7 @@ import { ScanLine } from "lucide-react";
 export default function Page() {
   const { can, ready } = useCapabilities();
   return (
-    <ListPage title="Dispatch scan" descriptionOnPhone description="Scan each parcel as the courier collects it. A scan records the handover only — never stock, payment or the order's status.">
+    <ListPage title="Dispatch scan" descriptionOnPhone description="Scan each parcel as the rider collects it. Confirming the batch marks those orders Shipped and texts the customers. Stock and payment don't change.">
       {ready && !can("parcels.scan") ? (
         <EmptyState icon={ScanLine} title="Scanning isn't on your account" description="Ask an owner to give you parcel scanning." />
       ) : (

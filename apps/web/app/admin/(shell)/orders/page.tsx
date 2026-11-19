@@ -13,7 +13,7 @@ import { toast } from "@/components/ui/toast";
 import { ListPage } from "@/components/admin/patterns/list-page";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrdersFilterBar } from "@/components/admin/orders/orders-filter-bar";
-import { OrdersList } from "@/components/admin/orders/orders-list";
+import { ORDERS_WORKSPACE_CLASS, OrdersList } from "@/components/admin/orders/orders-list";
 import { OrdersBulkBar } from "@/components/admin/orders/orders-bulk-bar";
 import { orderKeys, prefetchOrder, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { useOrderCommands } from "@/components/admin/orders/use-order-commands";
@@ -179,6 +179,7 @@ export default function OrdersPage() {
 
   return (
     <ListPage
+      className={ORDERS_WORKSPACE_CLASS}
       title="Orders"
       descriptionOnPhone
       description={
