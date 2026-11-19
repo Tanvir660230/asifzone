@@ -638,16 +638,8 @@ export default function SettingsPage() {
 
         <FormSection
           title="Dispatch"
-          description="Booking a courier and the rider taking the parcel are separate steps — the Dispatch scan records the handover. Choose when customers get the “shipped” message."
+          description="Booking with Steadfast moves an order to Processing. It becomes Shipped — and the customer gets the “shipped” SMS — when the parcel is scanned out to the rider in Orders › Dispatch scan."
         >
-          <div className="max-w-sm">
-            <Label htmlFor="shippedSmsTrigger">Send the “shipped” SMS</Label>
-            <Select id="shippedSmsTrigger" {...register("shippedSmsTrigger")}>
-              <option value="BOOKING">When the courier is booked (current)</option>
-              <option value="HANDOVER">When the parcel is scanned out to the courier</option>
-            </Select>
-            <p className="mt-1 text-xs text-ink-400">Switch to the scan only once every parcel is scanned at handover — an unscanned parcel would send no message.</p>
-          </div>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="stuckInTransitDays">Stuck in transit after (days)</Label>

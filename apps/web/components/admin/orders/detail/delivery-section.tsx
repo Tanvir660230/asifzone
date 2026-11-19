@@ -286,7 +286,8 @@ function LostBookingPanel({ order, commands, canLink }: { order: Order; commands
   );
 }
 
-/** Where the parcel physically is (docs/WAREHOUSE_OPERATIONS.md §2): SHIPPED is set at booking, so this says whether it
+/** Where the parcel physically is (docs/WAREHOUSE_OPERATIONS.md §2): SHIPPED is set at the handover scan (orders shipped at
+ * booking before D-OF1 may not have left), so this says whether it
  * has actually left, how long it has waited and what to do next — and names facts that disagree. */
 function ParcelStageLine({ order }: { order: Order }) {
   const unitsExpectedBack = order.items.reduce(
