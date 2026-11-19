@@ -1,4 +1,4 @@
-import type { ConversationChannelName, ConversationDetail, ConversationListRow, WhatsAppTemplate, ConversationMessageRow, ConversationReplyInput, PaginatedResult } from "@clothing-brand/shared";
+import type { ConversationChannelName, ConversationConversion, ConversationDetail, ConversationListRow, WhatsAppTemplate, ConversationMessageRow, ConversationReplyInput, PaginatedResult } from "@clothing-brand/shared";
 import { apiFetch, type FetchSignal } from "../api-client";
 
 /** Messages › Inbox (Blueprint V2 R2): conversations with customers. */
@@ -16,6 +16,11 @@ export function listConversations(params: ConversationListParams = {}, { signal 
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "") query.set(key, String(value));
   return apiFetch<PaginatedResult<ConversationListRow>>(`/api/v1/admin/conversations?${query.toString()}`, { signal });
+}
+
+/** Chats → orders per channel, for the Inbox's summary line. */
+export function getChatConversion(days = 30) {
+  return apiFetch<ConversationConversion>(`/api/v1/admin/conversations/conversion?days=${days}`);
 }
 
 export function getConversation(id: string) {

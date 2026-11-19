@@ -708,6 +708,10 @@ export async function createManualOrder(input: AdminCreateOrderInput, adminId: s
     throw new AppError(403, "Changing the price or delivery charge needs the Adjust price permission", { code: "FORBIDDEN" });
   }
   const pricingWords = staffPricing ? staffPricingNote(staffPricing, input.pricingNote ?? null) : "";
+  // Chat to order: the conversation must exist before anything is created (an unknown id makes no order).
+  if (input.conversationId && !(await prisma.conversation.findUnique({ where: { id: input.conversationId }, select: { id: true } }))) {
+    throw AppError.notFound("That conversation no longer exists");
+  }
   const order = await createOrder(input, input.customerId ?? null, {
     changedByAdminId: adminId,
     statusNote: `Order manually entered from the admin panel${pricingWords}`,
@@ -718,6 +722,8 @@ export async function createManualOrder(input: AdminCreateOrderInput, adminId: s
     // Staff may apply the selected customer's store balance (§16: usable on manual orders); the rest stays due.
     storeCreditCustomerId: input.useStoreCredit && input.customerId ? input.customerId : null,
   });
+  // A replayed create (same idempotency key) lands here again with the same order: setting the link twice is harmless.
+  if (input.conversationId) await prisma.order.update({ where: { id: order.id }, data: { conversationId: input.conversationId } });
 
   return getOrderById(order.id);
 }
