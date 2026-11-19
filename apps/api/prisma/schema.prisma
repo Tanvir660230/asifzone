@@ -1975,6 +1975,8 @@ enum PaymentLinkStatus {
 enum PaymentLinkPurpose {
   ORDER_BALANCE
   MODIFICATION
+  /// Just the delivery charge, collected first from a customer who refused parcels before (staff decide).
+  DELIVERY_ADVANCE
 }
 
 /// A customer-submitted star rating + write-up for a product. Starts PENDING and only counts
