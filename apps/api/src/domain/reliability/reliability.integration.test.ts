@@ -282,7 +282,7 @@ describe("courier booking (D-4)", () => {
     }
   });
 
-  it("staff link the parcel Steadfast already holds: the order is booked and SHIPPED, the lost-booking flag cleared", async () => {
+  it("staff link the parcel Steadfast already holds: the order is booked and in Processing (D-OF1), the lost-booking flag cleared", async () => {
     try {
       const order = await lostBooking();
       stubSteadfast("success", 5, { knownInvoices: [order.orderNumber] });
@@ -291,7 +291,7 @@ describe("courier booking (D-4)", () => {
       const linked = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `sfr${cid}bd` });
       expect(linked.status).toBe(200);
       const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
-      expect(row).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, carrier: "Steadfast", status: "SHIPPED", courierSyncError: null, courierBookingStartedAt: null, courierStatus: "in_review" });
+      expect(row).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, carrier: "Steadfast", status: "PROCESSING", courierSyncError: null, courierBookingStartedAt: null, courierStatus: "in_review" });
 
       const other = await lostBooking();
       stubSteadfast("success", 5);
@@ -319,7 +319,7 @@ describe("courier booking (D-4)", () => {
       const linked = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD`, trackingLink: link });
       expect(linked.status).toBe(200);
       const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
-      expect(row).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, courierTrackingLink: link, carrier: "Steadfast", status: "SHIPPED", courierStatus: null });
+      expect(row).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, courierTrackingLink: link, carrier: "Steadfast", status: "PROCESSING", courierStatus: null });
       expect(row.courierSyncError).toMatch(/Steadfast/); // the key problem stays visible on the order
 
       const notSteadfast = await owner.post(`/api/orders/${order.id}/courier/link`, { consignmentId: cid, trackingCode: `SFR${cid}BD`, trackingLink: "https://evil.invalid/tl/abc" });
@@ -375,7 +375,7 @@ describe("courier booking (D-4)", () => {
       stubSteadfast("success", 5);
       const cid = String(++consignmentSeq);
       await handleSteadfastWebhook({ consignment_id: Number(cid), invoice: order.orderNumber, tracking_id: `SFR${cid}BD`, notification_type: "tracking_update" });
-      expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, status: "SHIPPED", courierSyncError: null });
+      expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ courierConsignmentId: cid, trackingNumber: `SFR${cid}BD`, status: "PROCESSING", courierSyncError: null });
 
       const cid2 = String(++consignmentSeq);
       await handleSteadfastWebhook({ consignment_id: Number(cid2), invoice: plain.orderNumber, tracking_id: `SFR${cid2}BD` });
