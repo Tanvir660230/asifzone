@@ -37,7 +37,7 @@ import { OrdersDisplayMenu } from "./orders-display-menu";
 import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
 /** Queues that mean "a person has to act" — the rest (COD, cancelled/returned) are only slices of the list. */
-const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "callNow", "confirmEscalated", "inspectionPending", "scanDiscrepancy", "stuckInTransit", "returnOverdue", "followUpDue", "codPendingStale", "readyToBook", "handoverPending", "courierIssue", "cancelledButPaid", "refundDue"]);
+const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "callNow", "confirmEscalated", "inspectionPending", "scanDiscrepancy", "stuckInTransit", "returnOverdue", "followUpDue", "codPendingStale", "readyToBook", "toPack", "handoverPending", "courierIssue", "cancelledButPaid", "refundDue"]);
 
 export function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
   if (value === undefined) return null;

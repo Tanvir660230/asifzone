@@ -16,6 +16,7 @@ import {
   FileText,
   MoreHorizontal,
   Package,
+  PackageCheck,
   Phone,
   Printer,
   RefreshCw,
@@ -38,7 +39,7 @@ import { CourierCell, DeliveryScoreBadge, OrderRiskBadge, OrderStatusBadge, Paym
 import { useOrderRisk } from "./use-order-risk";
 import type { OrderRisk } from "@/lib/api/admin-analytics";
 import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
-import type { OrderCommands } from "./use-order-commands";
+import { canMarkPacked, type OrderCommands } from "./use-order-commands";
 import type { OrderOptionalColumn, SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
 import { useShortcut } from "@/hooks/use-shortcut";
@@ -489,7 +490,23 @@ export function OrdersList(props: OrdersListProps) {
                   </TableCell>
                 )}
                 <TableCell className={pad}>
-                  <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                  <span className="flex items-center gap-1.5">
+                    <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                    {/* The packing table's one job: being prepared → Packed, one click (Undo in the toast). */}
+                    {perms.manage && order.status === "PROCESSING" && canMarkPacked(order) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 whitespace-nowrap"
+                        disabled={commands.pending.pack}
+                        onClick={() => commands.markPacked([order])}
+                        aria-label={`Mark ${order.orderNumber} packed`}
+                        data-testid="row-mark-packed"
+                      >
+                        <PackageCheck size={13} /> Packed
+                      </Button>
+                    )}
+                  </span>
                   {shows("courier") && order.courierConsignmentId && (
                     <div className="mt-1 2xl:hidden">
                       <CourierCell order={order} compact />
@@ -538,6 +555,8 @@ export function OrdersList(props: OrdersListProps) {
             const canBook = (perms.courier || perms.courierNotConnected) && !courierBookingBlocker(order);
             // A pending order's first job is the confirmation call, so Confirm leads the card while it is a legal move.
             const canConfirm = perms.manage && !order.deletedAt && order.status === "PENDING" && allowedNextOrderStatuses(order.status).includes("CONFIRMED");
+            // Booked and being prepared: the next job is packing it.
+            const canPack = perms.manage && order.status === "PROCESSING" && canMarkPacked(order);
             return (
               <article
                 key={order.id}
@@ -606,6 +625,10 @@ export function OrdersList(props: OrdersListProps) {
                     // confirms without one).
                     <Button variant="outline" size="sm" onClick={() => onOpen(order.id)}>
                       <Check size={13} /> Confirm
+                    </Button>
+                  ) : canPack ? (
+                    <Button variant="outline" size="sm" disabled={commands.pending.pack} onClick={() => commands.markPacked([order])} data-testid="card-mark-packed">
+                      <PackageCheck size={13} /> Packed
                     </Button>
                   ) : canBook ? (
                     <Button
