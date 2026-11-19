@@ -276,8 +276,14 @@ function thanaDistrict(order: LabelOrder): { thana: string | null; district: str
 const PANEL = "rounded-[0.6em] border-[0.1em] border-ink-900";
 
 /** Line icons (stroke only, so a thermal head prints a clean outline). */
-function Icon({ name, className = "" }: { name: "phone" | "pin" | "alert"; className?: string }) {
+function Icon({ name, className = "" }: { name: "user" | "phone" | "pin" | "alert"; className?: string }) {
   const paths = {
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </>
+    ),
     phone: <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />,
     pin: (
       <>
@@ -330,23 +336,37 @@ function DeliverTo({ view, className = "" }: { view: LabelView; className?: stri
   const { order } = view;
   const { thana, district } = thanaDistrict(order);
   return (
-    <div className={`${PANEL} px-[0.7em] pb-[0.6em] pt-[0.55em] ${className}`}>
+    // One icon column, one text column: the caption, name, phone, address and area tag all start on the same line, and
+    // each icon is centred on the first line of its row (the cell's height = that row's first line box, in base em).
+    <div className={`${PANEL} grid grid-cols-[1em_minmax(0,1fr)] gap-x-[0.5em] px-[0.7em] pb-[0.65em] pt-[0.6em] ${className}`}>
+      <span aria-hidden />
       <Caption>Deliver to</Caption>
-      <p lang="bn" className="mt-[0.3em] text-[1.4em] font-extrabold leading-[1.12]">{order.customerName}</p>
-      <p className="mt-[0.15em] flex items-center gap-[0.35em] text-[1.3em] font-extrabold leading-[1.1] tracking-[0.02em] tabular-nums">
-        <Icon name="phone" className="text-[0.8em]" />
-        {order.customerPhone}
-      </p>
-      <p lang="bn" className="mt-[0.3em] flex gap-[0.4em] text-[0.98em] font-bold leading-[1.32]">
-        <Icon name="pin" className="mt-[0.15em]" />
-        <span className="min-w-0">{order.shippingAddressLine}</span>
-      </p>
+
+      <span className="mt-[0.35em] flex h-[1.57em] items-center">
+        <Icon name="user" />
+      </span>
+      <p lang="bn" className="mt-[0.35em] text-[1.4em] font-extrabold leading-[1.12]">{order.customerName}</p>
+
+      <span className="mt-[0.2em] flex h-[1.43em] items-center">
+        <Icon name="phone" />
+      </span>
+      <p className="mt-[0.2em] text-[1.3em] font-extrabold leading-[1.1] tracking-[0.02em] tabular-nums">{order.customerPhone}</p>
+
+      <span className="mt-[0.3em] flex h-[1.29em] items-center">
+        <Icon name="pin" />
+      </span>
+      <p lang="bn" className="mt-[0.3em] text-[0.98em] font-bold leading-[1.32]">{order.shippingAddressLine}</p>
+
       {(thana || district) && (
-        // The tag is the hub's cue: thana in white on black, the district beside it.
-        <div className="mt-[0.45em] flex w-fit max-w-full overflow-hidden rounded-[0.4em] border-[0.1em] border-ink-900 text-[0.8em] font-bold uppercase leading-[1.25] tracking-[0.08em]">
-          {thana && <span className="bg-ink-900 px-[0.5em] py-[0.15em] text-white">{thana}</span>}
-          {district && <span className="px-[0.5em] py-[0.15em]">{district}</span>}
-        </div>
+        <>
+          <span aria-hidden />
+          {/* Thana first, then district, in a thin outlined tag (owner: no black fill). */}
+          <p className="mt-[0.45em] flex w-fit max-w-full items-center rounded-[0.4em] border-[0.1em] border-ink-900 px-[0.55em] py-[0.12em] text-[0.82em] uppercase leading-[1.25] tracking-[0.08em]">
+            {thana && <span className="font-extrabold">{thana}</span>}
+            {thana && district && <span aria-hidden className="mx-[0.5em] h-[0.9em] w-[0.1em] shrink-0 bg-ink-900" />}
+            {district && <span className="font-semibold">{district}</span>}
+          </p>
+        </>
       )}
     </div>
   );
@@ -406,18 +426,24 @@ function ParcelBox({ view, detail, qrEm: full, className = "" }: { view: LabelVi
 function LargeNote({ order, className = "" }: { order: LabelOrder; className?: string }) {
   if (!order.courierNoteForLabel) return null;
   return (
-    <p lang="bn" className={`flex gap-[0.4em] text-[0.92em] font-bold leading-[1.28] ${className}`}>
-      <Icon name="alert" className="mt-[0.12em]" />
+    <p lang="bn" className={`grid grid-cols-[1.09em_minmax(0,1fr)] gap-x-[0.54em] px-[0.87em] text-[0.92em] font-bold leading-[1.28] ${className}`}>
+      <span className="flex h-[1.28em] items-center">
+        <Icon name="alert" />
+      </span>
       <span className="min-w-0">{order.courierNoteForLabel}</span>
     </p>
   );
 }
 
-/** Qty in a small rounded badge so the packer reads it at a glance. Same trimming ladder as Items. */
+/** How many pieces of this product, big and boxed so the packer reads it at a glance (owner: "koy pc" bigger). */
 function QtyBadge({ qty }: { qty: number }) {
   return (
-    <span className="inline-flex h-[1.45em] min-w-[1.9em] items-center justify-center rounded-[0.4em] border-[0.1em] border-ink-900 px-[0.2em] text-[0.82em] font-extrabold leading-none tabular-nums">
-      {qty}×
+    // One inline run inside a centred box: the number and "pc" share a text baseline, the box centres the run.
+    <span className="inline-flex h-[1.5em] min-w-[2.6em] items-center justify-center rounded-[0.4em] border-[0.12em] border-ink-900 px-[0.3em] leading-none tabular-nums">
+      <span className="whitespace-nowrap">
+        <span className="text-[1.1em] font-extrabold">{qty}</span>
+        <span className="ml-[0.12em] text-[0.7em] font-bold">pc</span>
+      </span>
     </span>
   );
 }
@@ -425,12 +451,18 @@ function QtyBadge({ qty }: { qty: number }) {
 function LargeItems({ view, detail, className = "", twoColumns = false }: { view: LabelView; detail: DetailLevel; className?: string; twoColumns?: boolean }) {
   const { items } = view.order;
   if (items.length === 0) return null;
-  const count = `${items.length} item${items.length === 1 ? "" : "s"} · ${view.pieces} pc${view.pieces === 1 ? "" : "s"}`;
   const variantOf = (item: (typeof items)[number]) => [item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(", ");
+  // Total pieces big on the right (the number the packer counts), the product count small beside it.
   const head = (
-    <div className="flex items-baseline justify-between">
+    <div className="flex items-baseline justify-between border-b-[0.08em] border-ink-900 pb-[0.25em]">
       <Caption>In this parcel</Caption>
-      <Caption>{count}</Caption>
+      <p className="whitespace-nowrap leading-none">
+        <span className="text-[0.66em] font-bold uppercase tracking-[0.12em]">
+          {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
+        </span>
+        <span className="text-[1.05em] font-extrabold tabular-nums">{view.pieces}</span>
+        <span className="text-[0.72em] font-bold"> pc{view.pieces === 1 ? "" : "s"}</span>
+      </p>
     </div>
   );
   if (detail.items === "summary") return <div className={className}>{head}</div>;
@@ -444,7 +476,7 @@ function LargeItems({ view, detail, className = "", twoColumns = false }: { view
             return (
               <span key={item.id}>
                 {i > 0 && <span className="font-bold"> / </span>}
-                <span className="font-extrabold tabular-nums">{item.quantity}×</span> {item.productNameSnapshot}
+                <span className="text-[1.15em] font-extrabold tabular-nums">{item.quantity} pc</span> {item.productNameSnapshot}
                 {variant && <span className="font-bold"> · {variant}</span>}
               </span>
             );
@@ -459,13 +491,13 @@ function LargeItems({ view, detail, className = "", twoColumns = false }: { view
   return (
     <div className={className}>
       {head}
-      <div className={`mt-[0.3em] grid ${cols} items-center gap-x-[0.45em] gap-y-[0.18em] text-[0.9em] leading-[1.24]`}>
+      <div className={`mt-[0.35em] grid ${cols} items-start gap-x-[0.5em] gap-y-[0.22em] text-[0.9em] leading-[1.24]`}>
         {shown.map((item) => {
           const variant = variantOf(item);
           return (
             <div key={item.id} className="contents">
               <QtyBadge qty={item.quantity} />
-              <span lang="bn">
+              <span lang="bn" className="pt-[0.14em]">
                 {item.productNameSnapshot}
                 {variant && <span className="font-bold"> · {variant}</span>}
               </span>
@@ -494,7 +526,7 @@ function LargeTallLabel({ view, detail, onBarcodeReady }: PartProps) {
         <ParcelBox view={view} detail={detail} qrEm={4.8} className="shrink-0" />
       </div>
       <LargeNote order={view.order} className="mt-[0.6em]" />
-      <LargeItems view={view} detail={detail} className="mt-[0.6em]" />
+      <LargeItems view={view} detail={detail} className="mt-[0.6em] px-[0.8em]" />
       <div className="min-h-0 flex-1" aria-hidden />
       <LargeBarcode view={view} heightEm={detail.slimBarcode ? 2.6 : 3.3} onReady={onBarcodeReady} className="mt-[0.5em]" />
     </>
@@ -510,11 +542,11 @@ function LargeWideLabel({ view, detail, onBarcodeReady }: PartProps) {
         <DeliverTo view={view} className="min-w-0 flex-1" />
         <div className="flex w-[35%] shrink-0 flex-col gap-[0.5em]">
           <LargeCod view={view} amountEm={2.1} />
-          <ParcelBox view={view} detail={detail} qrEm={4.4} />
+          <ParcelBox view={view} detail={detail} qrEm={4.4} className="px-[0.8em]" />
         </div>
       </div>
       <LargeNote order={view.order} className="mt-[0.5em]" />
-      <LargeItems view={view} detail={detail} twoColumns className="mt-[0.5em]" />
+      <LargeItems view={view} detail={detail} twoColumns className="mt-[0.5em] px-[0.8em]" />
       <div className="min-h-0 flex-1" aria-hidden />
       <LargeBarcode view={view} heightEm={detail.slimBarcode ? 2.2 : 2.8} onReady={onBarcodeReady} className="mt-[0.45em]" />
     </>
