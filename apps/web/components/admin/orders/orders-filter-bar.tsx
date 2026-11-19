@@ -76,6 +76,8 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
     const shownQueues = ORDER_QUEUE_IDS.filter((id) => state.queue === id || (QUEUE_NEEDS_PERSON.has(id) && (queueCount(id) ?? 0) > 0));
     const moreQueues = ORDER_QUEUE_IDS.filter((id) => !shownQueues.includes(id));
     const returnsPending = stats?.returnRequestsPending ?? 0;
+    // On the active list the status pills and the views row already show (pressed) what these chips would say.
+    const chips = active ? state.chips.filter((c) => !c.key.startsWith("f.status:") && !c.key.startsWith("f.queue:")) : state.chips;
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
@@ -346,9 +348,9 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
           </>
         )}
 
-        {state.chips.length > 0 && (
+        {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5" aria-label="Active filters">
-            {state.chips.map((chip) => (
+            {chips.map((chip) => (
               <button
                 key={chip.key}
                 type="button"

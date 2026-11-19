@@ -490,7 +490,6 @@ export function OrdersList(props: OrdersListProps) {
                     <button type="button" onClick={() => onOpen(order.id)} className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline">
                       {order.orderNumber}
                     </button>
-                    <AttentionMarker order={order} hideSyncError={hideSync(order)} />
                   </span>
                   {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. A row is two
                       lines at most: once the order has moved, the line says when (its tooltip keeps the placed time). */}
@@ -501,6 +500,10 @@ export function OrdersList(props: OrdersListProps) {
                   )}
                   {/* Sorted by latest activity, an order placed days ago can sit at the top — say when it last moved. */}
                   {density !== "compact" && <MovedLine order={order} />}
+                  {/* A problem gets its own line, so the words never widen the column (rows without one stay two lines). */}
+                  <span className="mt-1 flex empty:hidden">
+                    <AttentionMarker order={order} hideSyncError={hideSync(order)} />
+                  </span>
                 </TableCell>
                 {shows("product") && (
                   <TableCell className={pad}>

@@ -37,12 +37,13 @@ export default function OrdersPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const commands = useOrderCommands({ onOpenOrder: setDrawerOrderId, onPurged: () => setDrawerOrderId(null) });
 
-  // "/" or ⌘K focuses search — unless the admin is already typing somewhere.
+  // "/" focuses the order search — unless the admin is already typing somewhere. ⌘K stays the console's global search
+  // (the top bar shows it), so the two never compete.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
       const typing = t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.tagName === "SELECT" || t?.isContentEditable;
-      if ((e.key === "/" && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) {
+      if (e.key === "/" && !typing) {
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -181,6 +182,7 @@ export default function OrdersPage() {
   return (
     <ListPage
       className={ORDERS_WORKSPACE_CLASS}
+      dense
       title="Orders"
       descriptionOnPhone
       description={
@@ -265,11 +267,13 @@ export default function OrdersPage() {
         empty={empty}
       />
 
-      <Pagination page={page} totalPages={totalPages} onChange={state.setPage} />
+      {/* From xl the pages and the history note share one row under the table — the workspace keeps its height for rows. */}
+      <div className="xl:flex xl:flex-row-reverse xl:items-center xl:justify-between xl:gap-4">
+      <Pagination page={page} totalPages={totalPages} onChange={state.setPage} className="xl:mt-3" />
 
       {/* The work list leaves finished orders out; say where they went (a search still finds every order). */}
       {filterParams.scope === "active" && (
-        <p className="mt-4 text-center text-sm text-fg-muted" data-testid="orders-history-hint">
+        <p className="mt-4 text-center text-sm text-fg-muted xl:mt-3 xl:text-left" data-testid="orders-history-hint">
           Finished orders — delivered and settled, or cancelled with nothing left to do — are in{" "}
           <Link href="/admin/orders/history" className="font-medium text-accent underline-offset-2 hover:underline">
             Order history
@@ -277,6 +281,7 @@ export default function OrdersPage() {
           .
         </p>
       )}
+      </div>
 
       {/* Room for the floating bulk bar, so it never covers the last row or the pagination. */}
       {selectedOrders.length > 0 && <div className="h-28 sm:h-20" aria-hidden="true" />}

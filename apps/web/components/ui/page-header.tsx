@@ -13,22 +13,30 @@ interface PageHeaderProps {
   eyebrow?: ReactNode;
   /** `lg` for top-level pages, `md` for sub-pages and the customer account area. */
   size?: "lg" | "md";
+  /** Workspace pages (Orders): from xl the description sits beside the title and the block takes one short row, so the
+   * list below gets the height. */
+  dense?: boolean;
   className?: string;
 }
 
 /** The single page-title block: title, optional description and actions; stacks on mobile. In the Store Console on
  * phones (globals.css, `[data-page-header]`) it tightens to a large title with one swipeable row of actions. */
-export function PageHeader({ title, description, descriptionOnPhone, action, eyebrow, size = "lg", className }: PageHeaderProps) {
+export function PageHeader({ title, description, descriptionOnPhone, action, eyebrow, size = "lg", dense = false, className }: PageHeaderProps) {
   return (
     <div
       data-page-header=""
-      className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4", size === "lg" ? "mb-8" : "mb-6", className)}
+      className={cn(
+        "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
+        size === "lg" ? "mb-8" : "mb-6",
+        dense && "xl:mb-3 xl:items-center",
+        className,
+      )}
     >
-      <div className="min-w-0">
+      <div className={cn("min-w-0", dense && "xl:flex xl:items-baseline xl:gap-4")}>
         {eyebrow && <p data-page-eyebrow="" className="mb-1 text-caption font-semibold uppercase text-fg-subtle">{eyebrow}</p>}
-        <h1 className={cn("font-display text-fg", size === "lg" ? "text-display-md" : "text-display-sm sm:text-display-md")}>{title}</h1>
+        <h1 className={cn("font-display text-fg", size === "lg" ? "text-display-md" : "text-display-sm sm:text-display-md", dense && "xl:text-display-sm")}>{title}</h1>
         {description && (
-          <p data-page-description={descriptionOnPhone ? "keep" : ""} className="mt-1.5 text-sm text-fg-muted">
+          <p data-page-description={descriptionOnPhone ? "keep" : ""} className={cn("mt-1.5 text-sm text-fg-muted", dense && "xl:mt-0")}>
             {description}
           </p>
         )}
