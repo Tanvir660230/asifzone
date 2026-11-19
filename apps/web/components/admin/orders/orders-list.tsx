@@ -33,7 +33,7 @@ import { Popover } from "@/components/ui/popover";
 import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
-import { formatCount, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
+import { formatCount, formatPrice, formatStoreDate, formatStoreTime, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CourierCell, DeliveryScoreBadge, OrderRiskBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
 import { useOrderRisk } from "./use-order-risk";
@@ -111,8 +111,11 @@ function ProductCell({ summary, compact = false }: { summary: OrderListItemSumma
   if (!summary.firstItem) return <span className="text-xs text-ink-400">—</span>;
   const { name, size, color, imageUrl, productSlug } = summary.firstItem;
   const extra = summary.totalItems - 1;
-  const variant = [size, color].filter(Boolean).join(" / ");
-  const subtitle = extra > 0 ? `${variant ? `${variant} · ` : ""}+${extra} more item${extra > 1 ? "s" : ""}` : variant;
+  // Size and colour lead: a page of one product (every row "Haven Sleeveless Jacket – …") differs only there.
+  const variant = [size, color].filter(Boolean).join(" · ");
+  const more = extra > 0 ? `+${extra} more item${extra > 1 ? "s" : ""}` : "";
+  const lead = compact ? [variant, name].filter(Boolean).join(" · ") : variant || name;
+  const subtitle = compact ? "" : [variant ? name : "", more].filter(Boolean).join(" · ");
   const content = (
     <>
       <span
@@ -125,8 +128,8 @@ function ProductCell({ summary, compact = false }: { summary: OrderListItemSumma
         )}
       </span>
       <span className="min-w-0">
-        <span className="block max-w-[180px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline">{name}</span>
-        {subtitle && !compact && <span className="block max-w-[180px] truncate text-xs text-ink-400">{subtitle}</span>}
+        <span className={cn("block max-w-[200px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline", variant && "font-medium")}>{lead}</span>
+        {subtitle && <span className="block max-w-[200px] truncate text-xs text-fg-muted">{subtitle}</span>}
       </span>
     </>
   );
@@ -150,7 +153,7 @@ function CardItems({ summary }: { summary: OrderListItemSummary }) {
   if (!summary.firstItem) return null;
   const { name, size, color, imageUrl } = summary.firstItem;
   const extra = summary.totalItems - 1;
-  const detail = [[size, color].filter(Boolean).join(" / "), extra > 0 ? `+${extra} more` : ""].filter(Boolean).join(" · ");
+  const variant = [size, color].filter(Boolean).join(" · ");
   return (
     <span className="mt-2 flex items-center gap-2.5">
       <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50">
@@ -161,8 +164,9 @@ function CardItems({ summary }: { summary: OrderListItemSummary }) {
         )}
       </span>
       <span className="min-w-0 truncate text-sm text-ink-700">
+        {variant && <span className="font-semibold text-fg">{variant} · </span>}
         {name}
-        {detail && <span className="text-fg-subtle"> · {detail}</span>}
+        {extra > 0 && <span className="text-fg-subtle"> · +{extra} more</span>}
       </span>
     </span>
   );
@@ -289,26 +293,45 @@ function MovedLine({ order }: { order: AdminOrderListItem }) {
   );
 }
 
-/** A small marker next to the order number when something about it needs attention (full list in the detail view). */
-function AttentionMarker({ order }: { order: AdminOrderListItem }) {
-  const items = orderAttention(order).filter((i) => i.tone !== "info");
+/** What about the order needs attention, in words (the first item, "+n" for more; the full list is in the detail view).
+ * A tooltip-only icon said nothing on a phone and, on every row, nothing at all. `hideSyncError`: the list's banner
+ * already covers a sync failure shared by many orders. */
+function AttentionMarker({ order, hideSyncError = false }: { order: AdminOrderListItem; hideSyncError?: boolean }) {
+  const items = orderAttention(order).filter((i) => i.tone !== "info" && !(hideSyncError && i.key === "courier-sync"));
   if (items.length === 0) return null;
   const urgent = items.some((i) => i.tone === "danger");
+  const first = items.find((i) => i.tone === "danger") ?? items[0]!;
   const text = items.map((i) => i.label).join(" · ");
   return (
-    <span className={cn("inline-flex", urgent ? "text-danger-600" : "text-warning-600")} title={text}>
-      <AlertCircle size={14} aria-hidden="true" />
+    <span
+      className={cn(
+        "inline-flex min-w-0 max-w-[210px] items-center gap-1 rounded-md px-1.5 py-px text-xs font-medium",
+        urgent ? "bg-danger-100 text-danger-700" : "bg-warning-100 text-warning-700",
+      )}
+      title={text}
+      data-testid="order-attention"
+    >
+      <AlertCircle size={11} className="shrink-0" aria-hidden="true" />
       <span className="sr-only">Needs attention: {text}</span>
+      <span className="truncate" aria-hidden="true">{first.label}</span>
+      {items.length > 1 && <span className="shrink-0" aria-hidden="true">+{items.length - 1}</span>}
     </span>
   );
 }
 
+/** One courier sync error shared by 3+ orders on the page is a key or connection problem, not 3 parcel problems: the
+ * list says it once (above the rows) and the rows stop repeating it. */
+function sharedCourierSyncError(items: AdminOrderListItem[]): { message: string; count: number } | null {
+  const counts = new Map<string, number>();
+  for (const o of items) if (o.courierSyncError) counts.set(o.courierSyncError, (counts.get(o.courierSyncError) ?? 0) + 1);
+  let top: { message: string; count: number } | null = null;
+  for (const [message, count] of counts) if (count >= 3 && (!top || count > top.count)) top = { message, count };
+  return top;
+}
+
 function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListItem; risk?: OrderRisk } & Pick<OrdersListProps, "commands" | "perms">) {
   return (
-    <span className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700" aria-hidden="true">
-        {initials(order.customerName)}
-      </span>
+    <span className="flex items-center">
       <span className="min-w-0">
         <span className="block max-w-[180px] truncate text-ink-800" title={order.customerName}>
           {order.customerName}
@@ -326,6 +349,7 @@ function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListI
             score={order.deliveryScore}
             onCheck={perms.manage && perms.courierConfigured ? () => commands.checkDeliveryScore([order], true) : undefined}
             checking={commands.pending.scoreOrderId === order.id}
+            onlyIfWorrying
           />
           <OrderRiskBadge risk={risk} />
         </span>
@@ -357,6 +381,8 @@ export function OrdersList(props: OrdersListProps) {
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
   // COD risk of the undecided orders on this page — one batched lookup (§4.8).
   const risk = useOrderRisk(items);
+  const syncProblem = readOnly ? null : sharedCourierSyncError(items);
+  const hideSync = (o: AdminOrderListItem) => Boolean(syncProblem && o.courierSyncError === syncProblem.message);
 
   // Keyboard (the registry's list shortcuts): J/K move the highlighted row, Enter opens it, X selects it. Bound only while
   // focus is inside the table, like DataTable, so nothing else on the page competes for the keys.
@@ -386,6 +412,17 @@ export function OrdersList(props: OrdersListProps) {
 
   return (
     <>
+      {syncProblem && (
+        <p role="status" data-testid="courier-sync-banner" className="mt-3 flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-3.5 py-2.5 text-sm text-warning-700">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">
+            Courier sync failing on {formatCount(syncProblem.count)} orders: “<span className="break-all">{syncProblem.message}</span>”. Usually the courier key.{" "}
+            <Link href="/admin/settings?pane=integrations" className="whitespace-nowrap font-medium underline underline-offset-2">
+              Check Integrations
+            </Link>
+          </span>
+        </p>
+      )}
       {/* From xl the page is a fixed-height workspace (ORDERS_WORKSPACE_CLASS on the page): this frame takes the room left
           under the toolbar and only the rows scroll, under their sticky titles. One scroller, so the page never slides the
           frame up under the toolbar (the 2026-11-19 overlap). */}
@@ -453,7 +490,7 @@ export function OrdersList(props: OrdersListProps) {
                     <button type="button" onClick={() => onOpen(order.id)} className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline">
                       {order.orderNumber}
                     </button>
-                    <AttentionMarker order={order} />
+                    <AttentionMarker order={order} hideSyncError={hideSync(order)} />
                   </span>
                   {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. A row is two
                       lines at most: once the order has moved, the line says when (its tooltip keeps the placed time). */}
@@ -475,7 +512,7 @@ export function OrdersList(props: OrdersListProps) {
                 </TableCell>
                 {shows("payment") && (
                   <TableCell className={cn("hidden 2xl:table-cell", pad)}>
-                    <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
+                    <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} quiet />
                   </TableCell>
                 )}
                 {shows("total") && (
@@ -484,7 +521,7 @@ export function OrdersList(props: OrdersListProps) {
                     {/* On a 1280 laptop how it's paid sits under the amount; the Payment column fits from 2xl. */}
                     {shows("payment") && (
                       <div className="mt-1 flex justify-end font-normal 2xl:hidden">
-                        <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
+                        <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" quiet />
                       </div>
                     )}
                   </TableCell>
@@ -509,13 +546,13 @@ export function OrdersList(props: OrdersListProps) {
                   </span>
                   {shows("courier") && order.courierConsignmentId && (
                     <div className="mt-1 2xl:hidden">
-                      <CourierCell order={order} compact />
+                      <CourierCell order={order} compact hideSyncError={hideSync(order)} />
                     </div>
                   )}
                 </TableCell>
                 {shows("courier") && (
                   <TableCell className={cn("hidden 2xl:table-cell", pad)}>
-                    <CourierCell order={order} />
+                    <CourierCell order={order} hideSyncError={hideSync(order)} />
                   </TableCell>
                 )}
                 {shows("placed") && (
@@ -586,11 +623,13 @@ export function OrdersList(props: OrdersListProps) {
                         <span className="truncate">
                           {order.orderNumber} · {formatStoreDate(order.createdAt)}, {formatStoreTime(order.createdAt)}
                         </span>
-                        <AttentionMarker order={order} />
                       </span>
-                      <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
+                      <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" quiet />
                     </span>
                     <CardItems summary={order.itemsSummary} />
+                    <span className="mt-1.5 flex empty:hidden">
+                      <AttentionMarker order={order} hideSyncError={hideSync(order)} />
+                    </span>
                   </button>
                 </div>
 
@@ -599,8 +638,8 @@ export function OrdersList(props: OrdersListProps) {
                 <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                     <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
-                    {order.courierConsignmentId && <CourierCell order={order} compact />}
-                    {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} />}
+                    {order.courierConsignmentId && <CourierCell order={order} compact hideSyncError={hideSync(order)} />}
+                    {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} onlyIfWorrying />}
                     <OrderRiskBadge risk={risk[order.id]} />
                   </div>
                   <div className="ml-auto flex shrink-0 items-center gap-1">
