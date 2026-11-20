@@ -1,4 +1,4 @@
-import type { PickListResponse, PrintKind, PrintRunView, ProductLabelVariant } from "@clothing-brand/shared";
+import type { LabelBatchInput, LabelBatchSummary, LabelBatchView, PickListResponse, PrintKind, PrintRunView, ProductLabelVariant } from "@clothing-brand/shared";
 import { apiFetch, type FetchSignal } from "../api-client";
 
 /** Picking, packing sheets, product labels and the print log (docs/WAREHOUSE_OPERATIONS.md §3). */
@@ -44,4 +44,21 @@ export function listPrintRuns(params: { kind?: PrintKind; orderId?: string; limi
 /** One id per print attempt: a retried request is answered with the run already recorded (never a second one). */
 export function newPrintRunId() {
   return `pr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Supplier lists for product stickers: what was ordered and what arrived; stickers print from them. */
+export function listLabelBatches({ signal }: FetchSignal = {}) {
+  return apiFetch<{ batches: LabelBatchSummary[] }>("/api/warehouse/label-batches", { signal });
+}
+export function getLabelBatch(id: string, { signal }: FetchSignal = {}) {
+  return apiFetch<{ batch: LabelBatchView }>(`/api/warehouse/label-batches/${encodeURIComponent(id)}`, { signal });
+}
+export function createLabelBatch(body: LabelBatchInput) {
+  return apiFetch<{ batch: LabelBatchView }>("/api/warehouse/label-batches", { method: "POST", body });
+}
+export function updateLabelBatch(id: string, body: LabelBatchInput) {
+  return apiFetch<{ batch: LabelBatchView }>(`/api/warehouse/label-batches/${encodeURIComponent(id)}`, { method: "PUT", body });
+}
+export function deleteLabelBatch(id: string) {
+  return apiFetch<void>(`/api/warehouse/label-batches/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

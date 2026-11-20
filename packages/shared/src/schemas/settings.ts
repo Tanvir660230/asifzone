@@ -30,6 +30,8 @@ function optionalNullableDays(max: number) {
 export const updateSettingsSchema = z.object({
   storeName: z.string().min(1).max(120).optional(),
   tagline: nullableString(200),
+  /** Printed beside the logo on product stickers, e.g. "OUTERWEAR". */
+  labelTagline: nullableString(40),
   logoUrl: nullableMediaUrl(),
   logoOnDarkUrl: nullableMediaUrl(),
   faviconUrl: nullableMediaUrl(),

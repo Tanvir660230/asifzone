@@ -201,6 +201,20 @@ export function BasicsStep({ state, categories }: StepProps & { categories: Cate
         </Field>
       </FormSection>
 
+      <FormSection
+        title="Product sticker"
+        description="What the stock sticker prints (Orders › Product labels). Leave empty to print the product name."
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field htmlFor="labelName" label="Sticker name" hint="The big name, e.g. Haven Jacket" error={errors.labelName?.message}>
+            <Input id="labelName" maxLength={60} {...register("labelName")} />
+          </Field>
+          <Field htmlFor="labelTag" label="Sticker tag" hint="The dark tag under it, e.g. Sleeveless" error={errors.labelTag?.message}>
+            <Input id="labelTag" maxLength={30} {...register("labelTag")} />
+          </Field>
+        </div>
+      </FormSection>
+
       <FormSection title="Description" description="Short copy for listings; the full description for the product page.">
         <Field htmlFor="shortDescription" label="Short description" hint="One or two lines shown in listings and previews.">
           <Textarea id="shortDescription" rows={2} {...register("shortDescription")} />

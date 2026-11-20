@@ -22,6 +22,8 @@ export interface AuditSnapshot {
   brand: string | null;
   brandTier: string;
   shortDescription: string | null;
+  labelName?: string | null;
+  labelTag?: string | null;
   description: string;
   basePrice: unknown;
   compareAtPrice: unknown;
@@ -171,7 +173,7 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
     push("product.materials_updated", [{ field: "materials", from: materialSig(before).join(", ") || null, to: materialSig(after).join(", ") || null }]);
   }
 
-  push("product.details_updated", pick(before, after, ["name", "categoryId", "typeId", "brand", "brandTier", "shortDescription", "trackInventory", "freeDelivery", "markedSoldOut", "courierNoteRuleIds", "lowStockThreshold", "isFeatured", "sortOrder", "tags"]));
+  push("product.details_updated", pick(before, after, ["name", "categoryId", "typeId", "brand", "brandTier", "shortDescription", "labelName", "labelTag", "trackInventory", "freeDelivery", "markedSoldOut", "courierNoteRuleIds", "lowStockThreshold", "isFeatured", "sortOrder", "tags"]));
 
   return events;
 }

@@ -148,6 +148,57 @@ export interface ProductLabelVariant {
   price: number | null;
   /** What a scanner reads off this label: the variant's own barcode, else its SKU. */
   code: string;
+  /** The product's sticker name and tag (Product › Sticker); null = not set. */
+  labelName: string | null;
+  labelTag: string | null;
+  colorHex: string | null;
+  /** The variant's place among its product's sizes, so a supplier list sorts M, L, XL… */
+  sortOrder: number;
+}
+
+/** Supplier lists for product stickers (docs/WAREHOUSE_OPERATIONS.md §3). Labels only: no stock or money effect. */
+export const labelBatchLineSchema = z.object({
+  variantId: z.string().min(1),
+  qtyOrdered: z.number().int().min(0).max(5000),
+  /** Null: not counted in yet — stickers use the ordered quantity. */
+  qtyReceived: z.number().int().min(0).max(5000).nullable(),
+});
+export const labelBatchSchema = z.object({
+  name: z.string().trim().min(1, "Give the list a name").max(80),
+  supplier: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), z.string().trim().max(80).nullable().optional()),
+  notes: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), z.string().trim().max(500).nullable().optional()),
+  lines: z
+    .array(labelBatchLineSchema)
+    .max(1000)
+    .refine((ls) => new Set(ls.map((l) => l.variantId)).size === ls.length, "A product size appears twice"),
+});
+export type LabelBatchInput = z.infer<typeof labelBatchSchema>;
+
+export interface LabelBatchLineView {
+  variantId: string;
+  qtyOrdered: number;
+  qtyReceived: number | null;
+  variant: ProductLabelVariant;
+}
+export interface LabelBatchSummary {
+  id: string;
+  name: string;
+  supplier: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Pieces ordered, and pieces that will print (received where counted, else ordered). */
+  ordered: number;
+  toPrint: number;
+  received: boolean;
+}
+export interface LabelBatchView extends LabelBatchSummary {
+  notes: string | null;
+  lines: LabelBatchLineView[];
+}
+
+/** Stickers a supplier-list line prints: what arrived once it is counted, else what was ordered. */
+export function labelBatchPrintQty(line: { qtyOrdered: number; qtyReceived: number | null }): number {
+  return line.qtyReceived ?? line.qtyOrdered;
 }
 
 export interface PrintRunView {
