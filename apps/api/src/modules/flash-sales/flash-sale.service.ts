@@ -32,6 +32,7 @@ const PUBLIC_PRODUCT_SELECT = {
   compareAtPrice: true,
   trackInventory: true,
   fillToOrder: true,
+  stockPolicy: true,
   lowStockThreshold: true,
   restockDate: true,
   isActive: true,

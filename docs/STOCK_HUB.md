@@ -402,3 +402,25 @@ carry because the purchase is already in the books (the owner's capital). `POST 
   recent fills and, below, production runs in progress, producers and planned vs final (the former Overview — its old URL
   redirects). Shown only to admins with permission on stores with production capability (Q-G).
 - **Bubble rolls** stay under Stock › More › Stock check (owner).
+
+## 14. Bought to order (2026-11-21)
+
+Tahafi's jackets are fetched from the supplier (YG Fashion) after they sell, and the owner wants every size always on sale.
+Until now that meant stock counting off (D5), so nothing — purchases, goods receipts, the supplier's balance, reorder —
+could work for them. A **stock-tracked product sold from the shelf** may now take the same selling rule fill to order has
+(`Product.stockPolicy`, set in Stock › item › Selling rule):
+
+| Rule | Shop | Stock |
+|---|---|---|
+| Stop at zero (TRACKED, default) | sold out at zero | never below zero |
+| Keep selling (UNLIMITED) | never sold out | below zero = sold, not yet bought ("owed") |
+| A few extra (BACKORDER) | sells the shelf + N per size | at most −N |
+
+- One rule for the whole product (per-size rules stay with fill to order); refused for untracked products and materials.
+- What is owed is a costing deficit: an order exit beyond valued stock is unbooked at the moving average, or — never valued
+  yet — at the owner's cost price (variant, else product: the supplier price). The goods receipt that covers it posts
+  actual − provisional, so the books match without anyone entering a correction.
+- A count may find fewer on the shelf than orders are waiting for (its floor is −waiting), like fill to order.
+- Reorder and "lasts N days" treat it as any bought item; the shop treats it as unlimited.
+- One predicate: shared `sellsPastShelf` / `boughtToOrder`, database twin `SELLS_PAST_SHELF_WHERE` (fill-capacity.service).
+  Plan: docs/superpowers/plans/2026-11-21-bought-to-order.md. Tests: bought-to-order.integration.test.ts.

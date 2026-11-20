@@ -29,8 +29,7 @@ import {
   type ResolvedAttributeField,
   type ResolvedTypeConfig,
   variantStockState,
-  sellable,
-} from "@clothing-brand/shared";
+  sellable, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { getSearchExpander } from "./search-synonyms.service";
@@ -587,16 +586,16 @@ export async function listProducts(query: ProductListQuery) {
   const completeness = await completenessForPage(result.items.map((p) => p.id));
   // Fill to order: the state follows what the product sells (filled bottles + what can still be made); the total stays the
   // filled bottles on the shelf.
-  const filling = result.items.filter((p) => p.fillToOrder && p.trackInventory);
+  const filling = result.items.filter((p) => sellsPastShelf(p));
   const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
   const stockState = (p: (typeof result.items)[number]) => {
     const own = productStockState(p);
-    return made && p.fillToOrder && p.trackInventory ? { ...own, stockState: productStockState({ ...p, variants: applyCapacity(made, p.variants) }).stockState } : own;
+    return made && sellsPastShelf(p) ? { ...own, stockState: productStockState({ ...p, variants: applyCapacity(made, p.variants) }).stockState } : own;
   };
   // Each fill-to-order variant also carries what it can sell (filled bottles + what can still be made), uncapped — the
   // phone-order picker offers it like the shop does, without the shop's per-line cap. `stock` stays the filled bottles.
   const withSellable = (p: (typeof result.items)[number]) =>
-    made && p.fillToOrder && p.trackInventory ? p.variants.map((v) => ({ ...v, sellable: sellable(v.stock, made.get(v.id) ?? 0) })) : p.variants;
+    made && sellsPastShelf(p) ? p.variants.map((v) => ({ ...v, sellable: sellable(v.stock, made.get(v.id) ?? 0) })) : p.variants;
   return {
     ...result,
     items: result.items.map((p) => ({ ...p, variants: withSellable(p), ...stockState(p), completeness: completeness.get(p.id) ?? null })),

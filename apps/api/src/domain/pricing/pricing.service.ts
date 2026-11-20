@@ -21,8 +21,7 @@ import {
   type Quote,
   type QuoteDto,
   type ShippingAddress,
-  type TaxConfig,
-} from "@clothing-brand/shared";
+  type TaxConfig, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { loadShippingZones, loadTaxConfig } from "./pricing-config";
 import { getCurrency } from "../config/commerce-settings";
@@ -187,6 +186,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
           deletedAt: true,
           trackInventory: true,
           fillToOrder: true,
+          stockPolicy: true,
           lowStockThreshold: true,
           freeDelivery: true,
         },
@@ -196,7 +196,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
   const offers = await loadFlashOffers([...new Set(rows.map((r) => r.productId))], now, db);
   // Fill to order (docs/STOCK_HUB.md §3): such a variant sells its filled bottles plus what the recipe can still make —
   // read only when the cart holds one. The checkout re-checks it under the materials' locks (fillToOrderFloors).
-  const filling = rows.filter((r) => r.product.fillToOrder && r.product.trackInventory);
+  const filling = rows.filter((r) => sellsPastShelf(r.product));
   const made = filling.length ? await fillCapacity(db, { variantIds: filling.map((r) => r.id) }) : null;
   const catalog = new Map<string, CatalogVariant>();
   for (const r of rows) {
@@ -216,7 +216,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       // "Show as sold out" is enforced here too (after fill to order, so it wins), so a stale cart or an old link can't buy
       // what the shop took off sale.
       ...(() => {
-        const forSale = withMarkedSoldOut(r.product.trackInventory, r.product.markedSoldOut, made && r.product.fillToOrder ? applyCapacity(made, [r]) : [r]);
+        const forSale = withMarkedSoldOut(r.product.trackInventory, r.product.markedSoldOut, made && sellsPastShelf(r.product) ? applyCapacity(made, [r]) : [r]);
         return { trackInventory: forSale.trackInventory, stock: forSale.variants[0]!.stock };
       })(),
       offers: offers.get(r.productId) ?? [],

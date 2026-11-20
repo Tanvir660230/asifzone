@@ -176,9 +176,25 @@ export type StockValueCorrectionInput = z.input<typeof stockValueCorrectionSchem
 /** How a fill-to-order product sells past what is filled and makeable (inventory recovery phase 2): TRACKED — only what
  * is filled plus what the free materials can make; UNLIMITED — never blocks, each unit sold past the bottles is a costed
  * deficit filled later; BACKORDER — up to `backorderLimit` units per variant beyond that. Caps, clothing and every other
- * product that is not filled to order stay TRACKED. */
+ * product that is not filled to order stay TRACKED — unless it is bought to order (Tahafi's jackets, 2026-11-21): a
+ * stock-tracked READY product on UNLIMITED / BACKORDER sells past its shelf the same way, and a goods receipt covers it. */
 export const STOCK_POLICIES = ["TRACKED", "UNLIMITED", "BACKORDER"] as const;
 export type StockPolicy = (typeof STOCK_POLICIES)[number];
+
+/** Whether a product sells past its shelf — stock may go below zero (sold, not yet filled or bought) by what its selling
+ * rule allows: every stock-tracked fill-to-order product (its recipe can make more), and a stock-tracked READY product whose
+ * policy is UNLIMITED / BACKORDER — bought to order (Tahafi's jackets: fetched from the supplier after they sell; a goods
+ * receipt covers what is owed). A READY product's rule is product-wide (per-size overrides are for fill to order).
+ * Untracked products never block anyway (D5) and are not this. Database twin: fill-capacity.service SELLS_PAST_SHELF_WHERE. */
+export function sellsPastShelf(p: { trackInventory: boolean; fillToOrder?: boolean | null; stockPolicy?: StockPolicy | string | null }): boolean {
+  if (!p.trackInventory) return false;
+  return p.fillToOrder === true || (p.stockPolicy ?? "TRACKED") !== "TRACKED";
+}
+
+/** A stock-tracked READY product whose policy sells past the shelf: bought to order (see sellsPastShelf). */
+export function boughtToOrder(p: { trackInventory: boolean; fillToOrder?: boolean | null; stockPolicy?: StockPolicy | string | null }): boolean {
+  return p.trackInventory && p.fillToOrder !== true && (p.stockPolicy ?? "TRACKED") !== "TRACKED";
+}
 
 export const stockPolicySchema = z
   .object({
