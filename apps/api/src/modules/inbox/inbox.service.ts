@@ -11,6 +11,7 @@ import {
   type ConversationReply,
   type CreateFeedbackInput,
   type MessageDelivery,
+  type ConversationConversion,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -112,6 +113,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
       assignedTo: { select: { id: true, name: true } },
       messages: { orderBy: { createdAt: "asc" }, include: { admin: { select: { name: true } } } },
       draft: { select: { body: true, intent: true, savedAnswerId: true } },
+      orders: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
     },
   });
   if (!c) throw AppError.notFound("Conversation not found");
@@ -155,7 +157,37 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
       c.channel === "FB_COMMENT" && !(await privateReplyOpen(prisma, c.id, new Date()))
         ? replyChannelsFor(c).filter((ch) => ch !== "MESSENGER")
         : replyChannelsFor(c),
+    orders: c.orders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, total: Number(o.total), createdAt: o.createdAt.toISOString() })),
   };
+}
+
+/** Chats → orders (chat to order, 2026-11-20): of the conversations started in the last `days`, per channel — how many,
+ * how many became at least one order, the orders made from them, and how many of those were delivered. Only orders staff
+ * linked to a chat count; an order the customer placed on the website after chatting isn't linked. */
+export async function chatConversion(days: number): Promise<ConversationConversion> {
+  const since = new Date(Date.now() - days * 86_400_000);
+  const [chats, orders] = await Promise.all([
+    prisma.conversation.groupBy({ by: ["channel"], where: { createdAt: { gte: since } }, _count: true }),
+    prisma.order.findMany({
+      where: { deletedAt: null, conversation: { createdAt: { gte: since } } },
+      select: { conversationId: true, status: true, conversation: { select: { channel: true } } },
+    }),
+  ]);
+  const rows = new Map<string, { channel: string; chats: number; chatsWithOrder: number; orders: number; delivered: number }>();
+  for (const g of chats) rows.set(g.channel, { channel: g.channel, chats: g._count, chatsWithOrder: 0, orders: 0, delivered: 0 });
+  const withOrder = new Map<string, Set<string>>();
+  for (const o of orders) {
+    const channel = o.conversation!.channel;
+    const row = rows.get(channel) ?? { channel, chats: 0, chatsWithOrder: 0, orders: 0, delivered: 0 };
+    row.orders += 1;
+    if (o.status === "DELIVERED" || o.status === "PARTIALLY_DELIVERED") row.delivered += 1;
+    const set = withOrder.get(channel) ?? new Set<string>();
+    set.add(o.conversationId!);
+    withOrder.set(channel, set);
+    rows.set(channel, row);
+  }
+  for (const [channel, set] of withOrder) rows.get(channel)!.chatsWithOrder = set.size;
+  return { days, channels: [...rows.values()].sort((a, b) => b.chats - a.chats) };
 }
 
 /** Records a reply and its send intent in one transaction; replying marks the conversation handled. */

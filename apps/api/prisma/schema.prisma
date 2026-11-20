@@ -1233,6 +1233,9 @@ model Order {
   orderNumber   String        @unique
   customerId    String?
   customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  /// The Inbox conversation staff made this order from (chat to order, 2026-11-20); null for checkout and phone orders.
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   status        OrderStatus   @default(PENDING)
   paymentMethod PaymentMethod
   paymentStatus PaymentStatus @default(UNPAID)
@@ -1461,6 +1464,7 @@ model Order {
   @@index([courierTrackingLink])
   @@index([followUpAt])
   @@index([updatedAt])
+  @@index([conversationId])
 }
 
 /// One customer-confirmation call and its outcome (Order Operations phase 3). Append-only: a database trigger refuses
@@ -2552,6 +2556,8 @@ model Conversation {
   postId           String?
   messages         ConversationMessage[]
   draft            ConversationDraft?
+  /// Orders staff made from this chat.
+  orders           Order[]
 
   @@unique([channel, externalThreadId])
   @@index([status, lastMessageAt])

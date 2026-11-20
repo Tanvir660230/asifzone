@@ -112,4 +112,20 @@ export interface ConversationDetail extends Omit<ConversationListRow, "preview" 
   replyWindow: ReplyWindow;
   /** Where a reply can go (shared replyChannelsFor). */
   replyChannels: ReplyChannel[];
+  /** Orders staff made from this chat, newest first. */
+  orders: ConversationOrder[];
+}
+
+export interface ConversationOrder {
+  id: string;
+  orderNumber: string;
+  status: string;
+  total: number;
+  createdAt: string;
+}
+
+/** Chats → orders for the Inbox's summary line: conversations started in the last `days`, per channel. */
+export interface ConversationConversion {
+  days: number;
+  channels: Array<{ channel: string; chats: number; chatsWithOrder: number; orders: number; delivered: number }>;
 }
