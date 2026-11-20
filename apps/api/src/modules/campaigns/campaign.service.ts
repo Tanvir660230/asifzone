@@ -30,11 +30,28 @@ const SEGMENT_LABELS: Record<SegmentType, string> = {
   NEWSLETTER_SUBSCRIBERS: "Newsletter subscribers",
   CUSTOMERS_WITH_ORDERS: "Customers with at least one order",
   CUSTOMERS_NO_ORDER_30D: "No order in the last 30 days",
+  WIN_BACK: "Bought before, quiet for 60 days",
+  REPEAT_BUYERS: "Repeat buyers (2+ delivered)",
+  SECOND_ORDER_NUDGE: "One order 14–60 days ago, none since",
 };
+
+const DAY_MS = 86_400_000;
+/** "Bought" in the retention audiences: the parcel reached the customer (fully or in part). */
+const BOUGHT = { status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] as Array<"DELIVERED" | "PARTIALLY_DELIVERED"> }, deletedAt: null };
+
+/** Customers with at least `min` (and at most `max`) delivered orders; with `placed`, only orders placed in that window. */
+async function customersByBought(min: number, max: number | null, placed?: { gte?: Date; lte?: Date }) {
+  const groups = await prisma.order.groupBy({
+    by: ["customerId"],
+    where: { ...BOUGHT, customerId: { not: null }, ...(placed ? { createdAt: placed } : {}) },
+    _count: { _all: true },
+  });
+  return groups.filter((g) => g._count._all >= min && (max === null || g._count._all <= max)).map((g) => g.customerId!);
+}
 
 /** Every segment type maps to a Customer account — a guest-only newsletter subscriber (email with
  * no Customer row) can't be a CampaignRecipient, since that FK requires a real customerId. */
-async function resolveSegmentCustomers(type: SegmentType): Promise<Customer[]> {
+export async function resolveSegmentCustomers(type: SegmentType): Promise<Customer[]> {
   switch (type) {
     case "ALL_CUSTOMERS":
       return prisma.customer.findMany();
@@ -49,7 +66,40 @@ async function resolveSegmentCustomers(type: SegmentType): Promise<Customer[]> {
       const cutoff = new Date(Date.now() - NO_ORDER_WINDOW_MS);
       return prisma.customer.findMany({ where: { orders: { none: { createdAt: { gt: cutoff } } } } });
     }
+    case "WIN_BACK": {
+      const quietSince = new Date(Date.now() - 60 * DAY_MS);
+      return prisma.customer.findMany({
+        where: { AND: [{ orders: { some: BOUGHT } }, { orders: { none: { createdAt: { gt: quietSince }, deletedAt: null } } }] },
+      });
+    }
+    case "REPEAT_BUYERS": {
+      const ids = await customersByBought(2, null);
+      return ids.length ? prisma.customer.findMany({ where: { id: { in: ids } } }) : [];
+    }
+    case "SECOND_ORDER_NUDGE": {
+      const now = Date.now();
+      const exactlyOne = new Set(await customersByBought(1, 1));
+      const inWindow = (await customersByBought(1, 1, { gte: new Date(now - 60 * DAY_MS), lte: new Date(now - 14 * DAY_MS) })).filter((id) => exactlyOne.has(id));
+      if (!inWindow.length) return [];
+      // ...and nothing ordered since (any status) in the last 14 days.
+      return prisma.customer.findMany({ where: { id: { in: inWindow }, orders: { none: { createdAt: { gt: new Date(now - 14 * DAY_MS) }, deletedAt: null } } } });
+    }
   }
+}
+
+/** Who a campaign would reach: the segment's customers, and how many of them the channel may contact — SMS and email need
+ * the customer's marketing consent and a number / address, push a subscription (the same rules dispatch applies). */
+export async function campaignAudience(type: SegmentType, channel: "EMAIL" | "SMS" | "PUSH") {
+  const people = await resolveSegmentCustomers(type);
+  let reachableIds: string[];
+  if (channel === "SMS") reachableIds = people.filter((c) => c.phone && c.smsMarketingOptIn).map((c) => c.id);
+  else if (channel === "EMAIL") reachableIds = people.filter((c) => c.email && c.emailMarketingOptIn).map((c) => c.id);
+  else {
+    const subs = people.length ? await prisma.pushSubscription.findMany({ where: { customerId: { in: people.map((c) => c.id) } }, select: { customerId: true } }) : [];
+    const withSub = new Set(subs.map((sub) => sub.customerId));
+    reachableIds = people.filter((c) => withSub.has(c.id)).map((c) => c.id);
+  }
+  return { customers: people.length, reachable: reachableIds.length, reachableIds };
 }
 
 async function dispatchToRecipient(campaign: Campaign, customer: Customer): Promise<void> {
