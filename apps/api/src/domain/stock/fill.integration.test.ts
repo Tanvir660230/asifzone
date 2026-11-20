@@ -380,8 +380,8 @@ describe("caps: each size and colour on its own", () => {
     expect(await stocks(caps.variants)).toEqual([before[0], before[1], before[2]! - 1, before[3]]);
     await receiveReturnedParcel(shipped.id, admin, {});
     expect(await stocks(caps.variants)).toEqual(before);
-    // a cap can't be put on unlimited sales
-    await expect(setStockPolicy(caps.id, { policy: "UNLIMITED", reason: "not for caps" }, OWNER)).rejects.toMatchObject({ details: { code: "STOCK_POLICY_NEEDS_FILL" } });
+    // a cap sold from the shelf takes one rule for all its sizes (bought to order, 2026-11-21) — never one per size
+    await expect(setStockPolicy(caps.id, { policy: "TRACKED", variants: [{ variantId: caps.variants[0]!, policy: "UNLIMITED" }], reason: "not per size" }, OWNER)).rejects.toMatchObject({ details: { code: "STOCK_POLICY_PER_SIZE" } });
     for (const v of caps.variants) await assertInventoryInvariants(v);
   });
 

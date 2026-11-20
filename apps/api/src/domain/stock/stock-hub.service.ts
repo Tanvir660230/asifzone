@@ -114,7 +114,14 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
       stock: v.stock, reserved: waiting, expectedOnShelf: expectedOnShelf(v.stock, waiting), makeable,
       materialKind: key === "MATERIAL" ? materialRole(unitOf(v.product)) : null,
       purchaseUnits: key === "MATERIAL" ? v.product.purchaseUnits.map((u) => ({ id: u.id, label: u.label, factor: Number(u.factor) })) : [],
-      policy: key === "FILL_TO_ORDER" ? { policy: v.stockPolicy ?? v.product.stockPolicy, overridden: v.stockPolicy !== null, backorderLimit: v.product.backorderLimit, owed: Math.max(0, -v.stock) } : null,
+      // Fill to order per size; a finished product (sold from the shelf) by one product-wide rule — bought to order when it
+      // sells past the shelf, and what it owes is covered by the next goods receipt.
+      policy:
+        key === "FILL_TO_ORDER"
+          ? { policy: v.stockPolicy ?? v.product.stockPolicy, overridden: v.stockPolicy !== null, backorderLimit: v.product.backorderLimit, owed: Math.max(0, -v.stock) }
+          : key === "FINISHED"
+            ? { policy: v.product.stockPolicy, overridden: false, backorderLimit: v.product.backorderLimit, owed: Math.max(0, -v.stock) }
+            : null,
       avgCost: viewer.canSeeCost && v.costState?.avgUnitCost != null ? Number(v.costState.avgUnitCost) : null,
       value: valueMinor === null ? null : toMajorNumber(valueMinor, cur),
       usedPerDay: used > 0 ? Math.round((used / window) * 100) / 100 : null,
@@ -137,18 +144,24 @@ export async function stockHub(viewer: { canSeeCost: boolean }) {
 export type StockHub = Awaited<ReturnType<typeof stockHub>>;
 
 /**
- * Sets how a fill-to-order product sells past its filled bottles (inventory recovery phase 2). Only the policy changes:
- * no stock, movement or valuation is written, and history is untouched. A product that is not filled to order (caps,
- * clothing) is refused — it sells only what is on the shelf. UNLIMITED / BACKORDER sales still leave stock (it goes below
- * zero = bottles owed) and are costed when filled, so they are never free stock.
+ * Sets how a product sells past its shelf (inventory recovery phase 2; bought to order 2026-11-21). Only the policy
+ * changes: no stock, movement or valuation is written, and history is untouched. A fill-to-order product (attar) sells past
+ * its filled bottles; a stock-tracked READY product (Tahafi's jackets) past what is on the shelf, covered by the next goods
+ * receipt. UNLIMITED / BACKORDER sales still leave stock (below zero = owed) as a costed deficit, so they are never free
+ * stock. Untracked products and materials are refused.
  */
 export async function setStockPolicy(productId: string, raw: StockPolicyInput, actor: FinanceActor) {
   const input = stockPolicySchema.parse(raw);
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, name: true, fillToOrder: true, trackInventory: true, deletedAt: true, stockPolicy: true, backorderLimit: true, variants: { select: { id: true, sku: true, stockPolicy: true } } } });
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, name: true, kind: true, fillToOrder: true, trackInventory: true, deletedAt: true, stockPolicy: true, backorderLimit: true, variants: { select: { id: true, sku: true, stockPolicy: true } } } });
   if (!product || product.deletedAt) throw financeError(404, "PRODUCT_NOT_FOUND", "Product not found");
-  if (!product.fillToOrder || !product.trackInventory) {
-    if (input.policy !== "TRACKED" || (input.variants ?? []).some((v) => v.policy && v.policy !== "TRACKED")) {
-      throw financeError(400, "STOCK_POLICY_NEEDS_FILL", `${product.name} sells only what is on the shelf — unlimited or backorder selling is for products filled to order (attar)`);
+  const pastShelf = input.policy !== "TRACKED" || (input.variants ?? []).some((v) => v.policy && v.policy !== "TRACKED");
+  if (pastShelf) {
+    if (product.kind === "MATERIAL") throw financeError(400, "STOCK_POLICY_MATERIAL", `${product.name} is a material — it is never sold`);
+    // Owed units are counted against stock: an untracked product has no count to go below zero on.
+    if (!product.trackInventory) throw financeError(400, "STOCK_POLICY_NEEDS_TRACKING", `Turn stock counting on for ${product.name} first — selling past the shelf counts what is owed`);
+    // Bought to order (a READY product) has one rule for every size; per-size overrides are for fill to order.
+    if (!product.fillToOrder && (input.variants ?? []).some((v) => v.policy !== null)) {
+      throw financeError(400, "STOCK_POLICY_PER_SIZE", "Sizes follow the product's rule unless it is filled to order");
     }
   }
   const own = new Map(product.variants.map((v) => [v.id, v]));

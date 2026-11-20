@@ -20,7 +20,7 @@
  * waits for the owner (count-approval.service), in the same transaction, so a retry finds it.
  */
 import type { Prisma } from "@prisma/client";
-import { stockCountsSchema, type StockCountReason, type StockCountsInput } from "@clothing-brand/shared";
+import { stockCountsSchema, type StockCountReason, type StockCountsInput, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma, type Db } from "../../config/prisma";
 import { adjustVariantStockInTx, afterAdjustment, lockVariantStock } from "../../modules/inventory/inventory.service";
 import type { FinanceActor } from "../finance/finance-audit";
@@ -128,7 +128,7 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
   }
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: ids } },
-    select: { id: true, stock: true, size: true, color: true, product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, fillToOrder: true, deletedAt: true } } },
+    select: { id: true, stock: true, size: true, color: true, product: { select: { name: true, kind: true, stockUnit: true, trackInventory: true, fillToOrder: true, stockPolicy: true, deletedAt: true } } },
   });
   const byId = new Map(variants.map((v) => [v.id, v]));
   const reserved = await reservedNotDispatched(prisma, ids);
@@ -138,8 +138,9 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
     if (!v || v.product.deletedAt) throw financeError(400, "VARIANT_NOT_FOUND", `Line ${i + 1}: item not found`);
     if (!v.product.trackInventory) throw financeError(400, "COUNT_UNTRACKED", `Line ${i + 1}: ${variantLabel(v)} isn't stock-tracked`);
     const waiting = reserved.get(v.id) ?? 0;
-    // Fewer on the shelf than orders are waiting for: stock would go below zero — only a fill-to-order variant may.
-    if (!v.product.fillToOrder && l.counted < waiting) {
+    // Fewer on the shelf than orders are waiting for: stock would go below zero — only a variant that sells past its shelf
+    // (fill to order, bought to order) may.
+    if (!sellsPastShelf(v.product) && l.counted < waiting) {
       throw financeError(409, "COUNT_BELOW_ORDERS", `${variantLabel(v)}: ${l.counted} on the shelf but ${waiting} on orders waiting to be packed — check those orders first`);
     }
     const problem = reasonProblem(variantLabel(v), l.counted - expectedOnShelf(v.stock, waiting), l.reason);
@@ -160,7 +161,7 @@ export async function recordCounts(raw: StockCountsInput, actor: FinanceActor, k
     ...(input.fullCount ? { fullCount: true } : {}),
     lines: input.lines.map((l) => {
       const v = byId.get(l.variantId)!;
-      return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), counted: l.counted, reason: l.reason ?? null, note: l.note, fillToOrder: v.product.fillToOrder };
+      return { variantId: l.variantId, name: variantLabel(v), unit: unitOf(v.product), counted: l.counted, reason: l.reason ?? null, note: l.note, fillToOrder: sellsPastShelf(v.product) };
     }),
   };
   const { entry, done, lease } = await claimEntry({ businessId: business.id, kind: "COUNT", key, fingerprint: fingerprintOf(input), entryDate: input.date ?? today, steps: initial as never, actor });

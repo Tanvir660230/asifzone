@@ -59,7 +59,7 @@ export function StockHub() {
   const purchasesQ = useQuery({ queryKey: stockApi.stockKeys.purchases(), queryFn: () => stockApi.listStockPurchases(20), enabled: allowed && can("purchasing.view") });
   const [sheet, setSheet] = useState<Sheet>(null);
   const [finishing, setFinishing] = useState<StockPurchase | null>(null);
-  const [policyFor, setPolicyFor] = useState<ProductGroup | null>(null);
+  const [policyFor, setPolicyFor] = useState<{ product: ProductGroup; filled: boolean } | null>(null);
   const [traceOf, setTraceOf] = useState<stockApi.StockItem | null>(null);
   const [itemOf, setItemOf] = useState<StockListItem | null>(null);
   const [approvalOf, setApprovalOf] = useState<string | null>(null);
@@ -141,8 +141,9 @@ export function StockHub() {
   const itemActions = (i: StockListItem): ItemActions => ({
     onTrace: () => { setTraceOf(i); if (!wide) setItemOf(null); },
     onPolicy: can("inventory.adjust") ? () => {
-      const product = byProduct(groupOf("FILL_TO_ORDER")).find((p) => p.productId === i.productId);
-      if (product) { setPolicyFor(product); if (!wide) setItemOf(null); }
+      const filled = byProduct(groupOf("FILL_TO_ORDER")).find((p) => p.productId === i.productId);
+      const product = filled ?? byProduct(groupOf("FINISHED")).find((p) => p.productId === i.productId);
+      if (product) { setPolicyFor({ product, filled: Boolean(filled) }); if (!wide) setItemOf(null); }
     } : undefined,
     onFill: live && can("manufacturing.view") ? () => doAction(i, "fill") : undefined,
     onReorder: can("purchasing.receive") ? () => doAction(i, "reorder") : undefined,
@@ -264,7 +265,7 @@ export function StockHub() {
       {data && sheet === "guided-count" && (countFor ?? today.data?.count?.due.map((d) => d.variantId)) && (
         <GuidedCount overview={data} due={countFor ?? today.data!.count!.due.map((d) => d.variantId)} showCost={showCost} onClose={() => { setSheet(null); setCountFor(null); }} />
       )}
-      {policyFor && <PolicySheet product={policyFor} onClose={() => setPolicyFor(null)} />}
+      {policyFor && <PolicySheet product={policyFor.product} filled={policyFor.filled} onClose={() => setPolicyFor(null)} />}
       {traceOf && <TraceSheet item={traceOf} showCost={showCost} onClose={() => setTraceOf(null)} />}
       {itemOf && !wide && <ItemPanel item={itemOf} showCost={showCost} canAdjust={can("inventory.adjust")} actions={itemActions(itemOf)} onClose={() => setItemOf(null)} />}
       {approvalOf && <ApprovalSheet id={approvalOf} canDecide={can("inventory.approve")} onClose={() => setApprovalOf(null)} />}

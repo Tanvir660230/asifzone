@@ -17,7 +17,7 @@
  * same guard, and a full rebuild + drift report exist for reconciliation.
  */
 import { Prisma } from "@prisma/client";
-import { MAX_LINE_QUANTITY, PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
@@ -250,7 +250,7 @@ export interface StorefrontPresentable extends PriceableProduct {
 
 /** `fillToOrder` is read to present the product but never leaves the API: whether a product is made to order is the shop's
  * business, not the shopper's (docs/STOCK_HUB.md §3). */
-export type StorefrontProduct<T> = Omit<T, "fillToOrder"> & {
+export type StorefrontProduct<T> = Omit<T, "fillToOrder" | "stockPolicy"> & {
   pricing: ProductPricingDto;
   availability: ProductAvailability;
   activeFlashSale: {
@@ -269,7 +269,7 @@ export type StorefrontProduct<T> = Omit<T, "fillToOrder"> & {
 export async function presentStorefrontProducts<T extends StorefrontPresentable>(products: T[], now: Date = new Date()): Promise<StorefrontProduct<T>[]> {
   const pricing = await priceProductsForDisplay(products, now);
   // Fill to order: one capacity read for the whole batch, and only when it holds a fill-to-order product.
-  const filling = products.filter((p) => p.fillToOrder === true && p.trackInventory);
+  const filling = products.filter((p) => sellsPastShelf(p));
   const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)), cached: true }) : null;
   return products.map((raw) => {
     const p = pricing.get(raw.id)!;
@@ -278,13 +278,14 @@ export async function presentStorefrontProducts<T extends StorefrontPresentable>
     // checkout keep the exact limit. Then a product or variant the shop marked sold out reaches every shopper-facing
     // reader with no stock to sell (marked wins) — its real stock stays in the database and in the admin.
     const variants =
-      made && raw.fillToOrder === true && raw.trackInventory
+      made && sellsPastShelf(raw)
         ? applyCapacity(made, raw.variants).map((v) => (v.stock > MAX_LINE_QUANTITY ? { ...v, stock: MAX_LINE_QUANTITY } : v))
         : raw.variants;
     const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, variants);
     const product = forSale.variants === raw.variants ? raw : { ...raw, trackInventory: forSale.trackInventory, variants: forSale.variants };
-    const { fillToOrder: _fillToOrder, ...shown } = product;
+    const { fillToOrder: _fillToOrder, stockPolicy: _stockPolicy, ...shown } = product as typeof product & { stockPolicy?: unknown };
     void _fillToOrder;
+    void _stockPolicy;
     return {
       ...shown,
       pricing: p,

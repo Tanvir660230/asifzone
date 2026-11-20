@@ -8,7 +8,7 @@ import type {
   CategoryStockOverview,
   CategoryStockStat,
 } from "@clothing-brand/shared";
-import { slugify } from "@clothing-brand/shared";
+import { slugify, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
@@ -199,13 +199,13 @@ export async function getCategoryStockMap(): Promise<Record<string, CategoryStoc
     prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, parentId: true } }),
     prisma.product.findMany({
       where: { isActive: true, deletedAt: null },
-      select: { categoryId: true, fillToOrder: true, trackInventory: true, variants: { select: { id: true, stock: true, isActive: true } } },
+      select: { categoryId: true, fillToOrder: true, stockPolicy: true, trackInventory: true, variants: { select: { id: true, stock: true, isActive: true } } },
     }),
   ]);
   // Fill to order: a product without filled bottles is in stock while an active variant can still be made.
-  const filling = products.filter((p) => p.fillToOrder && p.trackInventory);
+  const filling = products.filter((p) => sellsPastShelf(p));
   const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.flatMap((p) => p.variants.map((v) => v.id)) }) : null;
-  const canMake = (p: (typeof products)[number]) => made !== null && p.fillToOrder && p.trackInventory && applyCapacity(made, p.variants.filter((v) => v.isActive)).some((v) => v.stock > 0);
+  const canMake = (p: (typeof products)[number]) => made !== null && sellsPastShelf(p) && applyCapacity(made, p.variants.filter((v) => v.isActive)).some((v) => v.stock > 0);
 
   const own = new Map<string, CategoryStockStat>();
   for (const cat of categories) own.set(cat.id, { totalProducts: 0, inStockProducts: 0, totalStock: 0 });

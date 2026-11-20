@@ -120,10 +120,12 @@ describe("TRACKED (the default): sells only what the materials make", () => {
 });
 
 describe("UNLIMITED: on sale without restocking, never free", () => {
-  it("U-2: refused for a product that is not filled to order (caps stay tracked)", async () => {
-    const r = await setPolicy(caps.id, { policy: "UNLIMITED" });
+  it("U-2: a product sold from the shelf (caps) takes one rule for every size — a per-size override is refused", async () => {
+    // Since 2026-11-21 a counted READY product may sell past its shelf (bought to order, bought-to-order.integration.test.ts);
+    // per-size rules stay with fill to order.
+    const r = await setPolicy(caps.id, { policy: "TRACKED", variants: [{ variantId: caps.variant, policy: "UNLIMITED" }] });
     expect(r.status).toBe(400);
-    expect(r.body.details?.code).toBe("STOCK_POLICY_NEEDS_FILL");
+    expect(r.body.details?.code).toBe("STOCK_POLICY_PER_SIZE");
     expect((await prisma.product.findUniqueOrThrow({ where: { id: caps.id } })).stockPolicy).toBe("TRACKED");
   });
 

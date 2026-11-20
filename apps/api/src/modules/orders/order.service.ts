@@ -26,8 +26,7 @@ import {
   clampNonNegative,
   subtract,
   transitionNeedsReason,
-  transitionReasonMissing,
-} from "@clothing-brand/shared";
+  transitionReasonMissing, sellsPastShelf } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -428,7 +427,7 @@ export async function insertOrderRecord(
     // serialize. Only when the order holds a fill-to-order variant.
     const filling = [...perVariant].filter(([variantId]) => {
       const row = pricing.rows?.get(variantId);
-      return row?.product.fillToOrder && !untracked.has(variantId);
+      return row !== undefined && sellsPastShelf(row.product) && !untracked.has(variantId);
     });
     // The cart's other variants are locked in the same statement: one id order for every lock this order takes.
     const fill = filling.length ? await fillToOrderFloors(tx, filling.map(([variantId, quantity]) => ({ variantId, quantity })), [...perVariant.keys()]) : null;
@@ -756,6 +755,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
           compareAtPrice: true,
           trackInventory: true,
           fillToOrder: true,
+          stockPolicy: true,
           markedSoldOut: true,
           isActive: true,
           deletedAt: true,
@@ -765,9 +765,9 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
     },
   });
   // Fill to order: such a variant sells its filled bottles plus what can still be made (one read, only when present).
-  const filling = variants.filter((v) => v.product.fillToOrder && v.product.trackInventory);
+  const filling = variants.filter((v) => sellsPastShelf(v.product));
   const made = filling.length ? await fillCapacity(prisma, { variantIds: filling.map((v) => v.id), cached: true }) : null;
-  const variantById = new Map(variants.map((v) => [v.id, made && v.product.fillToOrder ? applyCapacity(made, [v])[0]! : v]));
+  const variantById = new Map(variants.map((v) => [v.id, made && sellsPastShelf(v.product) ? applyCapacity(made, [v])[0]! : v]));
   // The reorder price is the current server-resolved selling price (flash included) — a display cache for the cart,
   // re-quoted at checkout like any other cart line (PRICING_INVARIANTS §7).
   const byProduct = new Map<string, PriceableProduct>();

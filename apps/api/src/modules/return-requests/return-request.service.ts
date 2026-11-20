@@ -10,8 +10,7 @@ import {
   multiply,
   subtract,
   toMajor,
-  zero,
-} from "@clothing-brand/shared";
+  zero, sellsPastShelf } from "@clothing-brand/shared";
 import type { CreateReturnRequestInput, ReturnCompensation, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -393,7 +392,7 @@ async function createExchangeOrder(
   // replacement may take its stock below zero by what can still be made: the checkout's floors, under the materials' locks.
   const replacementLines = await tx.orderItem.findMany({ where: { orderId: exchangeOrder.id }, select: { id: true } });
   const fill =
-    requestedVariant.product.fillToOrder && requestedVariant.product.trackInventory
+    sellsPastShelf(requestedVariant.product)
       ? await fillToOrderFloors(tx, [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], [originalItem.variantId]) // + the original coming back: one id order
       : null;
   try {

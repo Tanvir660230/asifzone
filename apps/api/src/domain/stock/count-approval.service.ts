@@ -9,7 +9,7 @@
  * A decision is made once: the same decision again replays (200), the other one is refused (409 APPROVAL_DECIDED).
  */
 import type { StockApprovalDecisionInput, StockCountReason } from "@clothing-brand/shared";
-import { stockApprovalDecisionSchema } from "@clothing-brand/shared";
+import { stockApprovalDecisionSchema, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { adjustVariantStockInTx, afterAdjustment, type AdjustResult } from "../../modules/inventory/inventory.service";
 import type { FinanceActor } from "../finance/finance-audit";
@@ -107,7 +107,7 @@ export async function decideApproval(id: string, raw: StockApprovalDecisionInput
   const result = await financeTransaction(async (tx) => {
     const row = await tx.stockCountApproval.findFirst({
       where: { id, businessId: business.id },
-      select: { id: true, status: true, variantId: true, difference: true, reason: true, note: true, stockCount: { select: { countDate: true } }, variant: { select: { product: { select: { fillToOrder: true } } } } },
+      select: { id: true, status: true, variantId: true, difference: true, reason: true, note: true, stockCount: { select: { countDate: true } }, variant: { select: { product: { select: { fillToOrder: true, trackInventory: true, stockPolicy: true } } } } },
     });
     if (!row) throw financeError(404, "APPROVAL_NOT_FOUND", "This count is no longer waiting");
     if (row.status !== "PENDING") {
@@ -122,7 +122,7 @@ export async function decideApproval(id: string, raw: StockApprovalDecisionInput
       const date = row.stockCount.countDate.toISOString().slice(0, 10);
       const note = `Stock count ${date}: ${REASON_WORD[reason] ?? reason}${row.note ? ` — ${row.note}` : ""} (approved)`.slice(0, 300);
       const source = { type: "StockCountApproval", id: row.id };
-      const waiting = row.variant.product.fillToOrder ? (await reservedNotDispatched(tx, [row.variantId])).get(row.variantId) ?? 0 : 0;
+      const waiting = sellsPastShelf(row.variant.product) ? (await reservedNotDispatched(tx, [row.variantId])).get(row.variantId) ?? 0 : 0;
       adjusted = await adjustVariantStockInTx(tx, row.variantId, row.difference, MOVEMENT_REASON[reason] ?? "ADJUSTMENT", actor.adminId, note, { source, floor: waiting });
       const mv = await tx.stockMovement.findFirstOrThrow({ where: { variantId: row.variantId, sourceType: source.type, sourceId: source.id }, select: { id: true } });
       await tx.stockCountApproval.update({ where: { id }, data: { movementId: mv.id } });

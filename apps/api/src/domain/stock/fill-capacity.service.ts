@@ -16,9 +16,15 @@
  * `fillToOrder = false` (every product of an installation without attar) never reach a capacity query here.
  */
 import { Prisma } from "@prisma/client";
-import { MAX_LINE_QUANTITY, makeableUnits, sellable, type RecipeLine } from "@clothing-brand/shared";
+import { MAX_LINE_QUANTITY, makeableUnits, sellable, sellsPastShelf, type RecipeLine, type StockPolicy } from "@clothing-brand/shared";
 import type { Db } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
+
+/** Products that sell past their shelf (shared `sellsPastShelf`): fill to order (tracked or not, as before), or bought to
+ * order — a stock-tracked READY product on UNLIMITED / BACKORDER, which has no recipe (makeable 0) and sells by its rule. */
+export const SELLS_PAST_SHELF_WHERE = {
+  OR: [{ fillToOrder: true }, { trackInventory: true, stockPolicy: { not: "TRACKED" as const } }],
+} satisfies Prisma.ProductWhereInput;
 
 export interface FillFloors {
   /** Per fill-to-order variant: how far below zero its stock may go (recordSale `floors`). */
@@ -74,7 +80,7 @@ function sellableBeyondFilled(inputs: CapacityInputs): Map<string, number> {
 /** Every fill-to-order product's recipe lines, expanded per variant. Pure read; no stock. */
 async function loadRecipes(db: Db): Promise<{ recipes: RecipeLine[]; variantIds: string[]; extra: Map<string, number> }> {
   const products = await db.product.findMany({
-    where: { fillToOrder: true },
+    where: SELLS_PAST_SHELF_WHERE,
     select: {
       stockPolicy: true,
       backorderLimit: true,
@@ -182,8 +188,8 @@ export async function fillCapacity(db: Db, opts: { variantIds?: string[]; lockMa
 /** Variants as the shop sells them: for a fill-to-order product each variant's stock becomes `sellable(stock, makeable)`;
  * any other product (or an untracked one, already unlimited) is returned as is, without a query. Apply before
  * withMarkedSoldOut, so "show as sold out" still wins. */
-export async function withFillToOrder<V extends { id: string; stock: number }>(db: Db, product: { fillToOrder?: boolean | null; trackInventory?: boolean }, variants: V[]): Promise<V[]> {
-  if (product.fillToOrder !== true || product.trackInventory === false || !variants.length) return variants;
+export async function withFillToOrder<V extends { id: string; stock: number }>(db: Db, product: { fillToOrder?: boolean | null; trackInventory?: boolean; stockPolicy?: StockPolicy | string | null }, variants: V[]): Promise<V[]> {
+  if (!sellsPastShelf({ trackInventory: product.trackInventory !== false, fillToOrder: product.fillToOrder, stockPolicy: product.stockPolicy }) || !variants.length) return variants;
   const made = await fillCapacity(db, { variantIds: variants.map((v) => v.id) });
   return applyCapacity(made, variants);
 }
@@ -207,7 +213,8 @@ export async function fillToOrderInStock(db: Db, where: Prisma.ProductWhereInput
     where: {
       AND: [
         where,
-        { fillToOrder: true, trackInventory: true, ...(opts.storefront ? { markedSoldOut: false } : {}), variants: { none: { ...variantWhere, stock: { gt: 0 } } } },
+        SELLS_PAST_SHELF_WHERE,
+        { trackInventory: true, ...(opts.storefront ? { markedSoldOut: false } : {}), variants: { none: { ...variantWhere, stock: { gt: 0 } } } },
       ],
     },
     select: { id: true, categoryId: true, alsoListedIn: { select: { categoryId: true } }, variants: { where: variantWhere, select: { id: true, stock: true } } },
@@ -271,7 +278,7 @@ export async function fillToOrderFloors(tx: Db, lines: Array<{ variantId: string
 export async function fillToOrderFloorsFor(tx: Db, lines: Array<{ variantId: string; quantity: number }>, lockAlso: string[] = []): Promise<FillFloors | null> {
   const ids = [...new Set(lines.map((l) => l.variantId))];
   if (!ids.length) return null;
-  const filling = await tx.productVariant.findMany({ where: { id: { in: ids }, product: { fillToOrder: true, trackInventory: true } }, select: { id: true } });
+  const filling = await tx.productVariant.findMany({ where: { id: { in: ids }, product: { AND: [SELLS_PAST_SHELF_WHERE, { trackInventory: true }] } }, select: { id: true } });
   if (!filling.length) return null;
   const wanted = new Set(filling.map((v) => v.id));
   const summed = new Map<string, number>();

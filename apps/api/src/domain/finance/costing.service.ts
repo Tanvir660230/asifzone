@@ -571,6 +571,20 @@ export interface VariantCosting {
   position: StoredPosition | null;
   /** The product is filled to order (docs/STOCK_HUB.md §3): its order exits beyond stock are unbooked deficits. */
   fillToOrder: boolean;
+  /** Bought to order (a stock-tracked READY product on UNLIMITED / BACKORDER, shared `boughtToOrder`): sold before it is
+   * bought, so its order exits beyond stock are unbooked deficits too, covered by the goods receipt. */
+  boughtToOrder?: boolean;
+  /** Bought to order only: the owner-entered cost price (variant, else product) in major units — the provisional cost of a
+   * unit sold before any was ever valued. Null = none entered. */
+  standardCost?: Prisma.Decimal | string | null;
+}
+
+/** The facts columns both costing reads select (readVariantCosting, inventory.service recordSale). */
+export const COSTING_FACT_COLUMNS = Prisma.sql`p."trackInventory", p."fillToOrder", (p."trackInventory" AND NOT p."fillToOrder" AND p."stockPolicy" <> 'TRACKED') AS "boughtToOrder", COALESCE(v."costPrice", p."costPrice") AS "standardCost"`;
+
+/** A facts row (as COSTING_FACT_COLUMNS selects it) → VariantCosting. */
+export function variantCostingOf(r: { trackInventory: boolean; variantCreatedAt: Date; hasState: boolean; fillToOrder: boolean; boughtToOrder: boolean; standardCost: Prisma.Decimal | string | null } & StoredPosition): VariantCosting {
+  return { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null, fillToOrder: r.fillToOrder, boughtToOrder: r.boughtToOrder, standardCost: r.standardCost };
 }
 
 /**
@@ -587,12 +601,12 @@ function inScope(v: VariantCosting, scope: CostingScope): boolean {
 async function readVariantCosting(tx: AppTransactionClient, variantIds: string[]): Promise<Map<string, VariantCosting>> {
   const ids = [...new Set(variantIds)].sort();
   if (!ids.length) return new Map();
-  const rows = await tx.$queryRaw<Array<{ id: string; variantCreatedAt: Date; trackInventory: boolean; fillToOrder: boolean; hasState: boolean } & StoredPosition>>`
-    SELECT v.id, v."createdAt" AS "variantCreatedAt", p."trackInventory", p."fillToOrder", s."variantId" IS NOT NULL AS "hasState",
+  const rows = await tx.$queryRaw<Array<{ id: string; variantCreatedAt: Date; trackInventory: boolean; fillToOrder: boolean; boughtToOrder: boolean; standardCost: Prisma.Decimal | null; hasState: boolean } & StoredPosition>>`
+    SELECT v.id, v."createdAt" AS "variantCreatedAt", ${COSTING_FACT_COLUMNS}, s."variantId" IS NOT NULL AS "hasState",
            s."valuedQty", s.value, s."avgUnitCost", s."unvaluedQty", s."deficitQty", s."deficitLayers"
     FROM "ProductVariant" v JOIN "Product" p ON p.id = v."productId" LEFT JOIN "InventoryCostState" s ON s."variantId" = v.id
     WHERE v.id IN (${Prisma.join(ids)}) ORDER BY v.id FOR UPDATE OF v`;
-  return new Map(rows.map((r) => [r.id, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null, fillToOrder: r.fillToOrder }]));
+  return new Map(rows.map((r) => [r.id, variantCostingOf(r)]));
 }
 
 /**
@@ -601,7 +615,7 @@ async function readVariantCosting(tx: AppTransactionClient, variantIds: string[]
  * INVENTORY_PROVISIONAL when some leave beyond valued stock (a provisional cost, trued up through 5150 later), NONE when no
  * cost was ever known (never zero, never the catalog).
  *
- * A fill-to-order variant (`fillToOrder` given) sells beyond its filled bottles as its normal path, so EVERY unit it issues
+ * A fill-to-order or bought-to-order variant (`fillToOrder` given) sells beyond its stock as its normal path, so EVERY unit it issues
  * beyond stock is an unbooked deficit (the fill that covers it posts only actual − provisional; nothing moves 5150 at the
  * sale, so a period end between sale and fill shifts no profit): at the moving average when it has one, else — never
  * valued — at its recipe's standard cost, else no cost. Units covered by valued stock leave as any exit does.
@@ -765,11 +779,17 @@ export async function valueStockMovementsInTx(
   const cur = scope.business.baseCurrency;
   const positions = new Map<string, CostPosition>();
   for (const [id, v] of facts) if (inScope(v, scope)) positions.set(id, positionOf(v.position, cur));
-  // Order exits of fill-to-order variants: their deficits are unbooked; one with no average takes its recipe's standard cost.
+  // Order exits of variants that sell past their shelf: their deficits are unbooked. One with no average yet takes a standard
+  // cost — fill to order its recipe's, bought to order the owner's cost price (the supplier price).
   const fillToOrder = new Set([...new Set(movements.filter((m) => m.basis.kind === "ORDER_EXIT" && m.movement.change < 0).map((m) => m.movement.variantId))]
-    .filter((id) => positions.has(id) && facts.get(id)!.fillToOrder));
+    .filter((id) => positions.has(id) && (facts.get(id)!.fillToOrder || facts.get(id)!.boughtToOrder === true)));
   const neverValued = [...fillToOrder].filter((id) => positions.get(id)!.avgScaled === null);
-  const recipe = neverValued.length ? await recipeCostsAtAverage(tx, neverValued.sort(), cur) : new Map<string, number | null>();
+  const recipe = neverValued.length ? await recipeCostsAtAverage(tx, neverValued.filter((id) => facts.get(id)!.fillToOrder).sort(), cur) : new Map<string, number | null>();
+  for (const id of neverValued) {
+    const f = facts.get(id)!;
+    if (f.fillToOrder || f.standardCost === null || f.standardCost === undefined) continue;
+    recipe.set(id, new Prisma.Decimal(f.standardCost).mul(new Prisma.Decimal(10).pow(minorDigits(cur))).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_EVEN).toNumber());
+  }
 
   // A variant appears at most once per persisted batch (its next movement needs the position this one produces).
   let batch: Array<{ m: MovementToValue; input: ValuationInput }> = [];

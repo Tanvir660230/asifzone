@@ -17,6 +17,7 @@ import { listSuppliers, purchasingKeys } from "@/lib/api/purchasing";
 import { setItemSettings, type StockListItem } from "@/lib/api/stock-smart";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { ItemThumb } from "./item-thumb";
+import { BOUGHT_POLICY_WORDS } from "./policy-sheet";
 import { num, spacedUnit, variantWords } from "./stock-shared";
 
 /**
@@ -101,7 +102,18 @@ function ItemDetail({ item, showCost, canAdjust, actions }: { item: StockListIte
             </div>
           </div>
         ) : (
-          <ReorderSettings item={item} canAdjust={canAdjust} unit={unit} />
+          <div className="space-y-4">
+            {/* Bought to order: sold at zero, covered when the goods are received. */}
+            {item.group === "FINISHED" && (item.policy?.owed ?? 0) > 0 && (
+              <p className="text-sm text-fg">{num(item.policy!.owed)} sold and owed — receiving the goods covers {item.policy!.owed === 1 ? "it" : "them"}.</p>
+            )}
+            <ReorderSettings item={item} canAdjust={canAdjust} unit={unit} />
+            {item.group === "FINISHED" && onPolicy && (
+              <Button variant="ghost" onClick={onPolicy} data-testid="stock-item-policy">
+                Selling rule · {BOUGHT_POLICY_WORDS[item.policy?.policy ?? "TRACKED"].label}
+              </Button>
+            )}
+          </div>
         )}
 
         <Link href={`/admin/inventory?variantId=${item.variantId}`} className="inline-block text-sm font-medium text-fg underline underline-offset-4" data-testid="stock-item-movements">Every stock movement</Link>
