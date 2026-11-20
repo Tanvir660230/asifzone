@@ -1,5 +1,5 @@
 import request from "supertest";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { CheckoutInput, OrderStatus } from "@clothing-brand/shared";
 import { app } from "./app";
 import { prisma } from "./config/prisma";
@@ -130,7 +130,14 @@ export async function cleanupFixtures() {
   }
   if (made.productIds.length) {
     await prisma.flashSaleItem.deleteMany({ where: { productId: { in: made.productIds } } });
-    await prisma.product.deleteMany({ where: { id: { in: made.productIds } } });
+    try {
+      await prisma.product.deleteMany({ where: { id: { in: made.productIds } } });
+    } catch (err) {
+      // A suite that ran with inventory costing on leaves valuation history on the variants (finance rows, never deleted);
+      // those products go to Trash instead, so the suite still finishes cleanly. Any other error is a real failure.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003")) throw err;
+      await prisma.product.updateMany({ where: { id: { in: made.productIds } }, data: { deletedAt: new Date(), isActive: false } });
+    }
   }
 }
 

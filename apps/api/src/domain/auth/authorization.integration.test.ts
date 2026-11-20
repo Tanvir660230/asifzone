@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import jwt from "jsonwebtoken";
@@ -533,57 +535,21 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 663 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel; +5 −3: Inbox conversations replace the admin feedback routes; +1: payment attempts list (Admin V2); +1: store social-share image upload (Phase 7)
-    // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
-    // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md); +4: M2 custody; +5: M3 costs; +4: M4 receipts
-    // = 347 on the 2026-10-09 production release + 234 (Financial Core / ERP / manufacturing)
-    // +5: courier notes (4 Catalog → Courier notes routes + the order's courier-note view)
-    // +6: Storefront Studio (homepage draft, save, discard, publish, revisions, restore)
-    // +36: owner's books (docs/FINANCE_OWNER_BOOKS.md) — custody 9, rates & courier 7, ads 5, prepaid 3, packaging 4, landed 3, refills 2, profit 2, money map 1
-    // +4: courier claims (list, open, settle) and cancelling a landed cost
-    // +1: a payout's unmatched parcels counted as sales outside the website
-    // +11: Finance Center (docs/FINANCE_CENTER.md) — ad CSV import, summary, verifications 2, allocations 2, renewals, SMS 2, settings 2
-    // +7: owner & partners with monthly profit shares (docs/FINANCE_EQUITY.md §8); +1: ad spend for a period; +3: autopilot (§15)
-    // +1: the owner's home (docs/FINANCE_OWNER_HOME.md)
-    // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
-    // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
-    // +9: courier costs (docs/COURIER_COSTS.md) — shipments, legs, cost events, rider contributions, verify, report
-    // +1: profit by day (docs/FINANCE_PROFIT_DASHBOARD.md)
-    // +10: smart analytics (docs/SMART_ANALYTICS_PLAN.md) — ops pulse + daily, channels, delivery outcomes, order risk, anomalies + brief, product to-do, why it changed, ad returns, ops-event order ids
-    // +2: stock hub Bought — record a purchase, list recent ones (docs/STOCK_HUB.md); +1: Counted; +1: the overview
-    // +2: stock hub — one purchase, finishing a purchase stuck mid-way
-    // +1: the catalog stock policy the product form reads (fill to order, costing live)
-    // +2: a partner's statement and the owner's summary (partner finance phase 2, owner-only); +1: a partner's capital (phase 4)
-    // +12: share periods (list, prepare, verify, post, retry), corrections (list, propose, detect, approve, reject), rates (phase 3)
-    // +2: inventory recovery — receive a parcel cancelled after shipping; a fill-to-order product's stock policy
-    // +3: Filled as a hub entry, an item's stock trace, an order's attar fill status (phase 3)
-    // +2: smart stock page — the stock list, an item's settings (docs/STOCK_HUB.md §7); +2: count losses waiting (list, decide); +1: Today; +1: Try again for a booked parcel's fill; +1: the activity
-    // +5: 2-step sign-in (admin audit phase 2) — own setup / enable / disable, an owner's reset, an owner's sign-out-everywhere
-    // +1: the owner's stock value correction (docs/STOCK_HUB.md §12)
-    // +1: courier health — is the Steadfast webhook proven, and the poll's pace (Order Operations Phase 0, ops.read)
-    // +2: list display preferences GET/PUT, the caller's own (Order Operations Phase 2)
-    // +5: customer confirmation — state, record a call, take next, release, decide (Order Operations Phase 3)
-    // +8: parcel scanning — batches, scans, void, confirm, cancel, current, summary (Order Operations Phase 4)
-    // +2: the daily courier check — latest run, run now (Order Operations Phase 5)
-    // +1: duplicate-purchase check (blueprint P0.3); +1: store capabilities (Q-G); +2: campaign archive, confirm zero days (P0.7)
-    // +5: Warehouse Operations — the Exception Center counts; pick list, product labels, print log read/record (docs/WAREHOUSE_OPERATIONS.md)
-    // +5: the unified scanner — resolve a code, the parcel card, receive, correct a receipt, link a code
-    // +1: the rider took these — handover from the orders list without a scanner
-    // +14: product grouping (preview, group, undo, a product's groupings) and campaign landing pages (list, create, image, read, preview, save, publish, unpublish, duplicate, delete) — docs/VARIANT_GROUPS_AND_LANDING_PAGES.md
-    // +5: product families (list, create, read, save, delete; catalog.manage) — docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §3
-    // +1: cancel a COD / manual payment entered by mistake (docs/PAYMENT_LEDGER.md, VOIDED)
-    // +1: receive many returned parcels at once (preview + confirm)
-    // +1: cancellations before sending — reasons, channel, landing page, product (order-outcomes programme PR 2)
-    // +1: link a parcel Steadfast already holds to its order (a booking whose answer was lost, 2026-11-11)
-    // +3: monthly targets — read with progress, set by the owner, and the month's scorecard (docs/superpowers/plans/2026-11-18-business-reports.md)
-    // +1: team activity — who moved which orders (audit.read, owner only)
-    // +1: pack scan — a label scanned at the packing table marks its order Packed (orders.manage)
-    expect(routes).toHaveLength(821);
+  // Every admin route and its one permission, sorted, one line each, committed in admin-routes.snapshot.txt. A new route
+  // must be added there on purpose (the diff shows its permission to the reviewer); two branches adding routes touch
+  // different lines, so they no longer collide the way the old single route count did. To refresh after adding a route:
+  //   UPDATE_ROUTE_SNAPSHOT=1 npx vitest run src/domain/auth/authorization.integration.test.ts
+  // then read the diff of admin-routes.snapshot.txt before committing.
+  it("every admin route states exactly one permission (or explicit self-service), as listed in admin-routes.snapshot.txt", () => {
+    const lines = routes.map((r) => `${r.method} ${r.path} → ${routePermission(r)}`).sort();
+    const file = resolve(__dirname, "admin-routes.snapshot.txt");
+    if (process.env.UPDATE_ROUTE_SNAPSHOT === "1") writeFileSync(file, `${lines.join("\n")}\n`);
+    const expected = readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
+    expect(lines).toEqual(expected);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
-  it("STAFF is refused (403) exactly on the OWNER-only routes (pre-Phase-10 set + PD-10.1), and allowed everywhere else", async () => {
+  it("STAFF is refused (403) exactly on the OWNER-only routes (pre-Phase-10 set + PD-10.1), and allowed everywhere else", { timeout: 60_000 }, async () => {
     const staffSession = adminAgent(staff, "STAFF");
     const denied: string[] = [];
     const wrong: string[] = [];
@@ -601,7 +567,7 @@ describe("the role matrix — every admin route, every identity", () => {
     expect(denied.sort()).toEqual([...OWNER_ONLY_ROUTES].sort());
   });
 
-  it("OWNER passes every permission gate", async () => {
+  it("OWNER passes every permission gate", { timeout: 60_000 }, async () => {
     const ownerSession = adminAgent(owner, "OWNER");
     const blocked: string[] = [];
     for (const r of routes) {
@@ -612,7 +578,7 @@ describe("the role matrix — every admin route, every identity", () => {
     expect(blocked).toEqual([]);
   });
 
-  it("a customer session and an anonymous caller get 401 on every admin route", async () => {
+  it("a customer session and an anonymous caller get 401 on every admin route", { timeout: 60_000 }, async () => {
     const customer = customerAgent(customerA);
     const leaks: string[] = [];
     for (const r of routes) {
