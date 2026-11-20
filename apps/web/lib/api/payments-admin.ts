@@ -104,7 +104,7 @@ export function listPaymentLinks(orderId: string) {
   return apiFetch<{ links: PaymentLinkDto[] }>(`/api/orders/${orderId}/payment-links`);
 }
 
-export function createPaymentLink(orderId: string, input: { expiresInHours: number; send: PaymentLinkChannel[]; modificationId?: string }) {
+export function createPaymentLink(orderId: string, input: { expiresInHours: number; send: PaymentLinkChannel[]; modificationId?: string; purpose?: "DELIVERY_ADVANCE" }) {
   return apiFetch<{ link: PaymentLinkDto }>(`/api/orders/${orderId}/payment-links`, { method: "POST", body: input });
 }
 

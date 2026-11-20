@@ -75,7 +75,9 @@ export const createPaymentLinkSchema = z.object({
   send: z.array(paymentLinkChannelEnum).max(2).default([]),
   /** A modification waiting for its price difference — the link then collects exactly that difference. */
   modificationId: z.string().cuid().optional(),
-});
+  /** DELIVERY_ADVANCE: only the order's delivery charge, before booking (a customer who refused parcels before). */
+  purpose: z.enum(["DELIVERY_ADVANCE"]).optional(),
+}).refine((v) => !(v.purpose && v.modificationId), { message: "An advance can't be combined with an order change", path: ["purpose"] });
 
 export const sendPaymentLinkSchema = z.object({
   channels: z.array(paymentLinkChannelEnum).min(1).max(2),

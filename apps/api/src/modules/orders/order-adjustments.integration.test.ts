@@ -16,6 +16,7 @@ vi.mock("../settings/settings.service", async (orig) => {
 });
 
 import request from "supertest";
+import { createPaymentLinkSchema } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -646,6 +647,40 @@ describe("payment links (§11 / payment-link spec)", () => {
     expect((await prisma.paymentLink.findUniqueOrThrow({ where: { id: link.id } })).status).toBe("USED");
     await refused(startPaymentLink(token, "EPS_PG"), 409, "PAYMENT_LINK_INACTIVE");
     await refused(createPaymentLink(order.id, { expiresInHours: 24, send: [] }, admin), 409, "PAYMENT_LINK_NOT_ALLOWED");
+  });
+
+  it("delivery-charge advance: a risky COD order pays only the delivery charge first; the courier then collects the rest", async () => {
+    const c = await newCustomer();
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 2940 });
+    const order = await orderFor(c.id, [{ variantId: variants[0]!.id, quantity: 1 }]); // COD 3000 = 2940 + 60 delivery
+    const link = await createPaymentLink(order.id, { expiresInHours: 24, send: [], purpose: "DELIVERY_ADVANCE" }, admin);
+    expect(link).toMatchObject({ amount: 60, status: "ACTIVE", purpose: "DELIVERY_ADVANCE" });
+    const token = new URL(link.url!).pathname.split("/").pop()!;
+    expect(await viewPaymentLink(token)).toMatchObject({ status: "ACTIVE", amount: 60, purpose: "DELIVERY_ADVANCE" });
+
+    const { sessionId } = await startPaymentLink(token, "EPS_PG");
+    const session = await prisma.paymentSession.findUniqueOrThrow({ where: { id: sessionId } });
+    expect(Number(session.amount)).toBe(60);
+    await settlePaymentSession(session.gatewayTransactionRef, `eps_adv_${order.id}`, 60);
+    // The advance is on the books; the courier's COD is what's left.
+    expect(await getOrderPaymentSummary(order.id)).toMatchObject({ paid: 60, amountDue: 2940, codToCollect: 2940 });
+    expect((await prisma.paymentLink.findUniqueOrThrow({ where: { id: link.id } })).status).toBe("USED");
+    // Paid once: a second advance link is refused (the balance link stays available).
+    await refused(createPaymentLink(order.id, { expiresInHours: 24, send: [], purpose: "DELIVERY_ADVANCE" }, admin), 409, "PAYMENT_LINK_NOT_ALLOWED");
+  });
+
+  it("delivery-charge advance: not on a booked parcel, nor on free delivery, nor together with an order change", async () => {
+    const c = await newCustomer();
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 2940 });
+    const booked = await orderFor(c.id, [{ variantId: variants[0]!.id, quantity: 1 }]);
+    await prisma.order.update({ where: { id: booked.id }, data: { courierConsignmentId: `adv-${booked.id}` } });
+    await refused(createPaymentLink(booked.id, { expiresInHours: 24, send: [], purpose: "DELIVERY_ADVANCE" }, admin), 409, "PAYMENT_LINK_NOT_ALLOWED");
+
+    const free = await orderFor(c.id, [{ variantId: variants[0]!.id, quantity: 1 }]);
+    await prisma.order.update({ where: { id: free.id }, data: { shippingWaived: true } });
+    await refused(createPaymentLink(free.id, { expiresInHours: 24, send: [], purpose: "DELIVERY_ADVANCE" }, admin), 409, "PAYMENT_LINK_NOT_ALLOWED");
+
+    expect(createPaymentLinkSchema.safeParse({ purpose: "DELIVERY_ADVANCE", modificationId: "ckz0000000000000000000000" }).success).toBe(false);
   });
 
   it("the order changes after the link was made: the stale link can't collect the old amount", async () => {
