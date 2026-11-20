@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { orderAttentionItems, primaryOrderAction, suggestedNextOrderStatus, type OrderAttentionFacts } from "@clothing-brand/shared";
+import { addressLooksShort, orderAttentionItems, primaryOrderAction, suggestedNextOrderStatus, type OrderAttentionFacts } from "@clothing-brand/shared";
 
 // Blueprint V2 P0: one definition of "what needs attention on this order" and "the obvious next step", shared by the
 // order screens and the AI assistant.
@@ -14,6 +14,13 @@ const base: OrderAttentionFacts = {
   followUpAt: null,
   partialDeliveryReconciledAt: null,
 };
+
+describe("addressLooksShort", () => {
+  it("one or two words, or under 12 characters, is short; a real address is not (Bangla too)", () => {
+    for (const a of ["Mirpur", "Uttara 10", "  ", "Dhaka bazar"]) expect(addressLooksShort(a), a).toBe(true);
+    for (const a of ["House 12, Road 5, Mirpur 10", "বাসা ১২, রোড ৫, মিরপুর ১০", "Village Kalia, Post office Kalia, near the school"]) expect(addressLooksShort(a), a).toBe(false);
+  });
+});
 
 describe("suggestedNextOrderStatus", () => {
   it("follows the happy path while the state machine allows it", () => {
@@ -30,6 +37,18 @@ describe("suggestedNextOrderStatus", () => {
 describe("orderAttentionItems", () => {
   it("nothing for a healthy order", () => {
     expect(orderAttentionItems(base, fmt)).toEqual([]);
+    expect(orderAttentionItems({ ...base, shippingAddressLine: "House 12, Road 5, Sector 7, near the water tank" }, fmt)).toEqual([]);
+  });
+
+  it("a possible duplicate (same phone, another open order within 48 h) is flagged until it ships", () => {
+    const dup = { ...base, possibleDuplicateOf: { id: "o2", orderNumber: "ORD-2" } };
+    expect(orderAttentionItems(dup, fmt)).toEqual([expect.objectContaining({ key: "possible-duplicate", tone: "warning", label: "Possible duplicate · 2", detail: expect.stringContaining("ORD-2 ") })]);
+    expect(orderAttentionItems({ ...dup, status: "SHIPPED" }, fmt)).toEqual([]);
+  });
+
+  it("a short address is flagged before booking, not after", () => {
+    expect(orderAttentionItems({ ...base, shippingAddressLine: "Mirpur" }, fmt)).toEqual([expect.objectContaining({ key: "address-short", tone: "warning" })]);
+    expect(orderAttentionItems({ ...base, shippingAddressLine: "Mirpur", courierConsignmentId: "c1" }, fmt)).toEqual([]);
   });
 
   it("cancelled with money held is the most urgent item, with the amount owed", () => {

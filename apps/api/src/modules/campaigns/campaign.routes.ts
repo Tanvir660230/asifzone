@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  campaignAudienceQuerySchema,
   createCampaignSchema,
   updateCampaignSchema,
   campaignListQuerySchema,
@@ -14,6 +15,8 @@ export const campaignRouter = Router();
 campaignRouter.use(requireAdmin);
 
 campaignRouter.get("/", requirePermission("campaigns.manage"), validate(campaignListQuerySchema, "query"), campaignController.list);
+// Before "/:id": how many a segment holds and how many the channel can reach.
+campaignRouter.get("/audience", requirePermission("campaigns.manage"), validate(campaignAudienceQuerySchema, "query"), campaignController.audience);
 campaignRouter.get("/:id", requirePermission("campaigns.manage"), campaignController.getOne);
 campaignRouter.post("/", requirePermission("campaigns.manage"), validate(createCampaignSchema), campaignController.create);
 campaignRouter.patch("/:id", requirePermission("campaigns.manage"), validate(updateCampaignSchema), campaignController.update);

@@ -77,6 +77,18 @@ export interface OrderAttentionFacts {
   /** The ledger summary — present on the detail, absent on list rows. */
   payment?: { refundDue: number; refundPending: number } | null;
   returnRequests?: ReadonlyArray<{ status: string; type: string }> | null;
+  /** Another open order from the same phone placed within 48 hours (the API's duplicate check), if any. */
+  possibleDuplicateOf?: { id: string; orderNumber: string } | null;
+  /** The delivery address line, for the short-address check (left out → no check). */
+  shippingAddressLine?: string | null;
+}
+
+/** An address a rider can't find a house from: under 12 characters, or fewer than three words ("Mirpur", "Uttara 10").
+ * Advisory only — it asks staff to check before booking; nothing is blocked. */
+export function addressLooksShort(line: string | null | undefined): boolean {
+  const text = (line ?? "").trim();
+  if (text.length < 12) return true;
+  return text.split(/[\s,]+/).filter(Boolean).length < 3;
 }
 
 export interface OrderAttentionItem {
@@ -128,6 +140,19 @@ export function orderAttentionItems(order: OrderAttentionFacts, fmt: AttentionFo
   if (order.status === "PENDING" && order.followUpAt) {
     const due = new Date(order.followUpAt) <= now;
     items.push({ key: "follow-up", tone: due ? "warning" : "info", label: due ? "Follow-up call due" : "Follow-up scheduled", detail: fmt.dateTime(order.followUpAt) });
+  }
+  const beforeShipping = PRE_SHIPMENT_STATUSES.includes(order.status);
+  if (beforeShipping && order.possibleDuplicateOf) {
+    items.push({
+      key: "possible-duplicate",
+      tone: "warning",
+      // The order number's own code (ORD-20261119-O7XUQW → O7XUQW) fits a list chip; the detail names it in full.
+      label: `Possible duplicate · ${order.possibleDuplicateOf.orderNumber.split("-").pop()}`,
+      detail: `The same phone placed ${order.possibleDuplicateOf.orderNumber} within 48 hours — check with the customer before confirming or booking both.`,
+    });
+  }
+  if (beforeShipping && !order.courierConsignmentId && order.shippingAddressLine !== undefined && addressLooksShort(order.shippingAddressLine)) {
+    items.push({ key: "address-short", tone: "warning", label: "Address looks short", detail: "Ask for the house, road and a landmark before booking — the rider needs them." });
   }
   const pendingRequests = order.returnRequests?.filter((r) => r.status === "PENDING") ?? [];
   if (pendingRequests.length > 0) {

@@ -11,7 +11,21 @@ export const segmentTypeEnum = z.enum([
   "NEWSLETTER_SUBSCRIBERS",
   "CUSTOMERS_WITH_ORDERS",
   "CUSTOMERS_NO_ORDER_30D",
+  // Retention (2026-11-20). "Bought" = a delivered (or part-delivered) order.
+  /** Bought before, and no order at all in the last 60 days. */
+  "WIN_BACK",
+  /** Two or more delivered orders. */
+  "REPEAT_BUYERS",
+  /** Exactly one delivered order, placed 14–60 days ago, and nothing ordered since. */
+  "SECOND_ORDER_NUDGE",
 ]);
+
+/** GET /api/campaigns/audience — who a segment holds and how many the channel can reach (marketing consent kept). */
+export const campaignAudienceQuerySchema = z.object({ segmentType: segmentTypeEnum, channel: campaignChannelEnum });
+export interface CampaignAudience {
+  customers: number;
+  reachable: number;
+}
 
 export const createCampaignSchema = z.object({
   name: z.string().min(1).max(200),
