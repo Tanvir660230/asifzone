@@ -73,7 +73,7 @@ async function decodeSticker(page: Page, url: string) {
     const img = new Image();
     img.src = src;
     await img.decode();
-    const k = 4, pad = 40;
+    const k = 2, pad = 24;
     const c = document.createElement("canvas");
     c.width = img.width * k + 2 * pad;
     c.height = img.height * k + 2 * pad;
@@ -83,11 +83,12 @@ async function decodeSticker(page: Page, url: string) {
     g.imageSmoothingEnabled = false;
     g.drawImage(img, pad, pad, img.width * k, img.height * k);
     const d = g.getImageData(0, 0, c.width, c.height).data;
-    const lum: number[] = [];
-    for (let i = 0; i < d.length; i += 4) lum.push(d[i]!);
-    return { w: c.width, h: c.height, lum };
+    // One byte a pixel, sent as base64 — a JSON array of millions of numbers is what made this slow.
+    let bin = "";
+    for (let i = 0; i < d.length; i += 4) bin += String.fromCharCode(d[i]!);
+    return { w: c.width, h: c.height, lum: btoa(bin) };
   }, url);
-  const source = new zx.RGBLuminanceSource(new Uint8ClampedArray(lum), w, h);
+  const source = new zx.RGBLuminanceSource(new Uint8ClampedArray(Buffer.from(lum, "base64")), w, h);
   const read = (fmt: number) => {
     const r = new zx.MultiFormatReader();
     r.setHints(new Map<number, unknown>([[zx.DecodeHintType.POSSIBLE_FORMATS, [fmt]], [zx.DecodeHintType.TRY_HARDER, true]]));
@@ -112,6 +113,7 @@ test.describe("product stickers", () => {
 
   for (const dpi of [203, 300] as const) {
     test(`50 × 25 at ${dpi} dpi: dot-exact black-and-white stickers whose barcode and QR read back`, async ({ page }) => {
+      test.slow(); // decodes every sticker's barcode and QR
       await page.getByRole("searchbox", { name: "Search products to label" }).fill("haven");
       await page.getByRole("button", { name: "Add all" }).click();
       await page.getByRole("button", { name: "50 × 25 mm" }).click();
