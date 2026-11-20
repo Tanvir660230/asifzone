@@ -108,7 +108,11 @@ test.describe("customer account journey", () => {
     // The PDP also renders several "you might also like" carousels below the fold, each with its
     // own per-card wishlist button sharing this same accessible name — `.first()` targets the
     // main product's own button, which always renders above those carousels in DOM order.
+    // Wait for the save itself: going to the list while the POST is still in flight (or before the session cookie is
+    // ready) showed "Nothing saved yet" now and then.
+    const saved = page.waitForResponse((r) => r.url().includes("/api/wishlist") && r.request().method() === "POST" && r.ok());
     await page.getByRole("button", { name: /add to wishlist/i }).first().click();
+    await saved;
 
     // A signed-in customer's wishlist lives in the account.
     await page.goto("/wishlist");
