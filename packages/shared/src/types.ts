@@ -698,6 +698,8 @@ export interface Order {
   deliveryScore?: DeliveryScore | null;
   /** Admin order detail only — finished, nothing left to do: listed in Order history, not the daily work list. */
   inHistory?: boolean;
+  /** Admin list + detail — another open order from the same phone within 48 hours, if any (findPossibleDuplicates). */
+  possibleDuplicateOf?: { id: string; orderNumber: string } | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -752,6 +754,8 @@ export interface DeliveryScore {
 export interface AdminOrderListItem extends Order {
   itemsSummary: OrderListItemSummary;
   deliveryScore: DeliveryScore | null;
+  /** Another open order from the same phone within 48 hours (findPossibleDuplicates), if any. */
+  possibleDuplicateOf: { id: string; orderNumber: string } | null;
 }
 
 export interface FlashSaleItem {
