@@ -808,7 +808,7 @@ export async function getOrderById(id: string) {
  * exchange replacement, and the customer's cached delivery score. Read-only, and only for the admin detail view (not every
  * internal getOrderById caller). */
 export async function getAdminOrderContext(order: { id: string; customerId: string | null }) {
-  const [returnRequests, courierLosses, exchangeSource, deliveryScores, inHistory] = await Promise.all([
+  const [returnRequests, courierLosses, exchangeSource, deliveryScores, inHistory, duplicates] = await Promise.all([
     prisma.returnRequest.findMany({
       where: { orderId: order.id },
       orderBy: { createdAt: "desc" },
@@ -818,9 +818,11 @@ export async function getAdminOrderContext(order: { id: string; customerId: stri
     prisma.returnRequest.findFirst({ where: { exchangeOrderId: order.id }, select: { id: true, order: { select: { id: true, orderNumber: true } } } }),
     order.customerId ? buildDeliveryScoreByCustomerId([order.customerId]) : Promise.resolve(new Map<string, DeliveryScore>()),
     isOrderFinished(order.id),
+    findPossibleDuplicates([order.id]),
   ]);
   return {
     returnRequests,
+    possibleDuplicateOf: duplicates.get(order.id) ?? null,
     courierLosses,
     exchangeOf: exchangeSource ? { returnRequestId: exchangeSource.id, order: exchangeSource.order } : null,
     deliveryScore: order.customerId ? (deliveryScores.get(order.customerId) ?? null) : null,
@@ -1071,9 +1073,10 @@ export async function listOrders(query: OrderListQuery) {
   );
 
   // Independent per-page lookups — run together rather than one after the other.
-  const [itemsSummaryByOrderId, deliveryScoreByCustomerId] = await Promise.all([
+  const [itemsSummaryByOrderId, deliveryScoreByCustomerId, duplicates] = await Promise.all([
     buildItemsSummary(result.items.map((o) => o.id)),
     buildDeliveryScoreByCustomerId(result.items.map((o) => o.customerId).filter((id): id is string => id !== null)),
+    findPossibleDuplicates(result.items.map((o) => o.id)),
   ]);
 
   return {
@@ -1084,8 +1087,39 @@ export async function listOrders(query: OrderListQuery) {
       statusHistory: [],
       itemsSummary: itemsSummaryByOrderId.get(order.id) ?? { totalItems: 0, firstItem: null },
       deliveryScore: order.customerId ? (deliveryScoreByCustomerId.get(order.customerId) ?? null) : null,
+      possibleDuplicateOf: duplicates.get(order.id) ?? null,
     })),
   };
+}
+
+/** How close two orders from one phone must be to look like a double submit (2026-11-20). */
+export const DUPLICATE_WINDOW_HOURS = 48;
+
+/**
+ * Possible duplicates: for each order still before shipping, another live order (not cancelled, returned or refunded, not
+ * in Trash) from the same phone — last 11 digits, so +880 / 880 / 01… match — placed within 48 hours either side. The
+ * closest one is named. Exchange replacements don't count (same customer by design). One query per page, bounded by
+ * the createdAt window; advisory only — nothing is blocked or changed.
+ */
+export async function findPossibleDuplicates(orderIds: string[]): Promise<Map<string, { id: string; orderNumber: string }>> {
+  if (!orderIds.length) return new Map();
+  const rows = await prisma.$queryRaw<Array<{ target: string; id: string; orderNumber: string }>>`
+    WITH t AS (
+      SELECT o.id, o."createdAt", right(regexp_replace(o."customerPhone", '[^0-9]', '', 'g'), 11) AS phone
+      FROM "Order" o
+      WHERE o.id = ANY(${orderIds}) AND o."deletedAt" IS NULL AND o.status IN ('PENDING', 'CONFIRMED', 'PROCESSING', 'PACKED')
+    )
+    SELECT DISTINCT ON (t.id) t.id AS target, e.id, e."orderNumber"
+    FROM t
+    JOIN "Order" e
+      ON e."createdAt" BETWEEN t."createdAt" - (${DUPLICATE_WINDOW_HOURS}::int * interval '1 hour') AND t."createdAt" + (${DUPLICATE_WINDOW_HOURS}::int * interval '1 hour')
+      AND e.id <> t.id
+      AND right(regexp_replace(e."customerPhone", '[^0-9]', '', 'g'), 11) = t.phone
+    WHERE t.phone <> '' AND e."deletedAt" IS NULL AND e.status NOT IN ('CANCELLED', 'RETURNED', 'REFUNDED')
+      AND NOT EXISTS (SELECT 1 FROM "ReturnRequest" rr WHERE rr."exchangeOrderId" IN (e.id, t.id))
+    ORDER BY t.id, abs(extract(epoch FROM e."createdAt" - t."createdAt"))
+  `;
+  return new Map(rows.map((r) => [r.target, { id: r.id, orderNumber: r.orderNumber }]));
 }
 
 /** Batched lookup backing the admin orders list's delivery-score badge — one Customer query for the
