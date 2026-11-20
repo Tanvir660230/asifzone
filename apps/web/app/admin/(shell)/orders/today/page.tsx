@@ -42,6 +42,7 @@ function hrefFor(ref: OperationsItemRef): string {
 const STAGE_ACTION: Record<OperationsStageId, { label: string; href?: string; icon: typeof ArrowRight; hint: string }> = {
   confirm: { label: "Call next", icon: PhoneCall, hint: "Opens the next customer to call, with the call buttons." },
   prepare: { label: "Open", href: "/admin/orders?queue=readyToBook", icon: Truck, hint: "Select all, then Book courier and Pick list." },
+  pack: { label: "Open", href: "/admin/orders?queue=toPack", icon: PackageCheck, hint: "Pack each parcel, then tap Packed — or select them all and Mark packed." },
   dispatch: { label: "Open", href: "/admin/orders?queue=handoverPending", icon: PackageCheck, hint: "Select what the rider took, then “Rider took these” — or scan them." },
   delivery: { label: "Open", href: "/admin/orders?queue=stuckInTransit", icon: ArrowRight, hint: "Call the customer or check the parcel in Steadfast." },
   returns: { label: "Receive", href: "/admin/orders/returns-in", icon: PackageOpen, hint: "Scan the parcel, say what came back, confirm." },
@@ -49,7 +50,7 @@ const STAGE_ACTION: Record<OperationsStageId, { label: string; href?: string; ic
 
 /**
  * Today (docs/WAREHOUSE_OPERATIONS.md §5): the day's order work as one short list in the order it happens — call, book,
- * hand over, with the courier, returns — each with its count and the one shortcut that does it. Zeros stay quiet. Below,
+ * pack, hand over, with the courier, returns — each with its count and the one shortcut that does it. Zeros stay quiet. Below,
  * the Exception Center: facts that disagree. Every number is the server's count of exactly the list it opens.
  */
 export default function TodayOperationsPage() {

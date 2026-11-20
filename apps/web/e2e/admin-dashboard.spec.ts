@@ -33,8 +33,10 @@ test.describe("admin dashboard", () => {
   test("'To confirm' tile opens Orders filtered to pending + confirmed", async ({ page }) => {
     await page.getByRole("link", { name: /^To confirm:/ }).click();
     await expect(page).toHaveURL(/\/admin\/orders\?status=PENDING,CONFIRMED/, NAV);
-    await expect(page.getByText("Status: Pending")).toBeVisible();
-    await expect(page.getByText("Status: Confirmed")).toBeVisible();
+    // The two statuses show as pressed pills (the list no longer repeats them as chips).
+    const statuses = page.getByRole("group", { name: /Filter by status/ });
+    await expect(statuses.getByRole("button", { name: /^Pending/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(statuses.getByRole("button", { name: /^Confirmed/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   test("Ctrl+K palette jumps to a page", async ({ page }) => {

@@ -47,19 +47,21 @@ test.describe("orders workspace", () => {
     const moreViews = page.getByRole("menu", { name: "More views" });
     await expect(moreViews.getByRole("menuitem", { name: /Returns to review/ }).or(quick.getByRole("link", { name: /Returns to review/ }))).toBeVisible();
 
-    // A quick filter becomes a removable chip and is reflected as pressed.
+    // A quick filter shows as its pressed pill (no second chip repeating it — the pill turns it off).
     await moreViews.getByRole("menuitem", { name: /^COD/ }).click();
     await expect(quick.getByRole("button", { name: /^COD/ })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("button", { name: "Remove filter COD" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove filter COD" })).toHaveCount(0);
 
-    // Multi-status: two status toggles → two chips (the list sends statusIn).
+    // Multi-status: two status toggles, both pressed (the list sends statusIn).
     const statuses = page.getByRole("group", { name: /Filter by status/ });
     await statuses.getByRole("button", { name: /^Delivered/ }).click();
     await statuses.getByRole("button", { name: /^Packed/ }).click();
-    await expect(page.getByRole("button", { name: "Remove filter Status: Delivered" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Remove filter Status: Packed" })).toBeVisible();
+    await expect(statuses.getByRole("button", { name: /^Delivered/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(statuses.getByRole("button", { name: /^Packed/ })).toHaveAttribute("aria-pressed", "true");
 
-    await page.getByRole("button", { name: "Clear all", exact: true }).click();
+    // "All" clears the statuses and the view.
+    await statuses.getByRole("button", { name: /^All/ }).click();
+    await expect(statuses.getByRole("button", { name: /^All/ })).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("searchbox", { name: "Search orders" }).fill("zzz-no-such-order-zzz");
     await expect(page.locator(":text('No orders match these filters'):visible").first()).toBeVisible();
   });

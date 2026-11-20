@@ -9,15 +9,22 @@ import { IconButton } from "./icon-button";
 
 type ToastVariant = "success" | "error" | "info" | "warning";
 
+/** One button on the toast — "Undo" after a quick change. Clicking it dismisses the toast. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastItem {
   id: string;
   message: string;
   variant: ToastVariant;
+  action?: ToastAction;
 }
 
 interface ToastState {
   toasts: ToastItem[];
-  push: (message: string, variant: ToastVariant) => void;
+  push: (message: string, variant: ToastVariant, action?: ToastAction) => void;
   dismiss: (id: string) => void;
 }
 
@@ -26,10 +33,11 @@ const DURATION_MS: Record<ToastVariant, number> = { success: 4000, info: 4000, w
 
 const useToastStore = create<ToastState>()((set) => ({
   toasts: [],
-  push: (message, variant) => {
+  push: (message, variant, action) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    set((state) => ({ toasts: [...state.toasts, { id, message, variant }] }));
-    setTimeout(() => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })), DURATION_MS[variant]);
+    set((state) => ({ toasts: [...state.toasts, { id, message, variant, action }] }));
+    // A toast with an action stays long enough to reach it.
+    setTimeout(() => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })), action ? Math.max(DURATION_MS[variant], 8000) : DURATION_MS[variant]);
   },
   dismiss: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));
@@ -37,7 +45,7 @@ const useToastStore = create<ToastState>()((set) => ({
 /** Imperative feedback for the action that was just taken. For persistent, contextual messages use
  * <Alert>; for system notifications use the admin notification bell. */
 export const toast = {
-  success: (message: string) => useToastStore.getState().push(message, "success"),
+  success: (message: string, options?: { action?: ToastAction }) => useToastStore.getState().push(message, "success", options?.action),
   error: (message: string) => useToastStore.getState().push(message, "error"),
   info: (message: string) => useToastStore.getState().push(message, "info"),
   warning: (message: string) => useToastStore.getState().push(message, "warning"),
@@ -75,6 +83,18 @@ export function Toaster() {
             >
               <Icon size={18} className={cn("mt-0.5 shrink-0", className)} aria-hidden="true" />
               <p className="flex-1 text-sm text-ink-800">{t.message}</p>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismiss(t.id);
+                    t.action!.onClick();
+                  }}
+                  className="-my-1 shrink-0 rounded-md px-2 py-1 text-sm font-semibold text-accent transition-colors duration-fast hover:bg-accent/10"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <IconButton size="sm" onClick={() => dismiss(t.id)} aria-label="Dismiss" className="-my-1 -mr-1.5">
                 <X size={15} />
               </IconButton>

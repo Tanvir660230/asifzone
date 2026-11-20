@@ -578,7 +578,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // +1: link a parcel Steadfast already holds to its order (a booking whose answer was lost, 2026-11-11)
     // +3: monthly targets — read with progress, set by the owner, and the month's scorecard (docs/superpowers/plans/2026-11-18-business-reports.md)
     // +1: team activity — who moved which orders (audit.read, owner only)
-    expect(routes).toHaveLength(820);
+    // +1: pack scan — a label scanned at the packing table marks its order Packed (orders.manage)
+    expect(routes).toHaveLength(821);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

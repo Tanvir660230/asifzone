@@ -157,6 +157,7 @@ export const ORDER_QUEUE_IDS = [
   "followUpDue",
   "codPendingStale",
   "readyToBook",
+  "toPack",
   "unpaid",
   "cod",
   "courierIssue",
@@ -194,6 +195,8 @@ export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter
   followUpDue: { followUpDue: "true" },
   codPendingStale: { codPendingStale: "true" },
   readyToBook: { statusIn: [...READY_TO_BOOK_STATUSES], courierBooked: "false" },
+  // Being prepared (booking puts a confirmed order here, D-OF1): the packing table's list. Packed takes it out.
+  toPack: { statusIn: ["PROCESSING"] },
   unpaid: { paymentStatus: "UNPAID" },
   cod: { paymentMethod: "COD" },
   courierIssue: { courierIssue: "true" },
