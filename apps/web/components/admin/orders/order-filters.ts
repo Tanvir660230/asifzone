@@ -33,6 +33,7 @@ export const ORDER_QUEUE_LABELS: Record<OrderQueueId, string> = {
   followUpDue: "Follow-up due",
   codPendingStale: "Pending COD > 48 h",
   readyToBook: "Ready to book",
+  toPack: "To pack",
   unpaid: "Unpaid",
   cod: "COD",
   courierIssue: "Courier issues",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, ClipboardList, MoreHorizontal, PackageCheck, PackageOpen, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
+import { ChevronDown, ClipboardList, MoreHorizontal, Package, PackageCheck, PackageOpen, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
 import type { AdminOrderListItem, OrderStatus } from "@clothing-brand/shared";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-me
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { orderStatusLabel } from "@/lib/format";
 import { ORDER_STATUSES, nextStatusesFor, type OrderPermissions } from "./order-domain";
-import type { OrderCommands } from "./use-order-commands";
+import { canMarkPacked, type OrderCommands } from "./use-order-commands";
 import { BulkReceiveDialog } from "./bulk-receive-dialog";
 
 /** Orders whose parcel may be on its way back to the shop (the customer refused it, or it was cancelled after booking). */
@@ -37,6 +37,7 @@ export function OrdersBulkBar({
   // must stay to show what happened.
   const [receiving, setReceiving] = useState<string[] | null>(null);
   const comingBack = orders.filter((o) => o.courierConsignmentId && MAY_COME_BACK.has(o.status));
+  const packable = orders.filter(canMarkPacked);
   const statusRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
 
@@ -84,6 +85,12 @@ export function OrdersBulkBar({
                   ))}
                 </Popover>
               </>
+            )}
+            {perms.manage && packable.length > 0 && (
+              <Button variant="outline" size="sm" loading={commands.pending.pack} onClick={() => commands.markPacked(packable)} data-testid="bulk-mark-packed">
+                {!commands.pending.pack && <Package size={14} />} Mark packed
+                {packable.length < orders.length && <span className="text-xs tabular-nums text-fg-subtle">{packable.length} of {orders.length}</span>}
+              </Button>
             )}
             {(perms.courier || perms.courierNotConnected) && (
               <Button

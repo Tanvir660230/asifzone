@@ -18,11 +18,23 @@ import { Skeleton } from "./skeleton";
 type Align = "left" | "right" | "center";
 
 /** Rounded, bordered frame with horizontal scroll (and edge fades) on narrow screens. `scrollClassName` adds to the
- * scrolling element — e.g. a max height so a long table scrolls inside the frame under a sticky header. */
-export function TableContainer({ children, className, scrollClassName }: { children: ReactNode; className?: string; scrollClassName?: string }) {
+ * scrolling element — e.g. a max height so a long table scrolls inside the frame under a sticky header.
+ * `wrapperClassName` adds to the element between the frame and the scroller: with flex classes on all three, the frame
+ * can fill a fixed-height page and only the rows scroll (Orders). */
+export function TableContainer({
+  children,
+  className,
+  scrollClassName,
+  wrapperClassName,
+}: {
+  children: ReactNode;
+  className?: string;
+  scrollClassName?: string;
+  wrapperClassName?: string;
+}) {
   return (
     <div className={cn("ui-table-container", className)}>
-      <HScrollShadow className={cn("overflow-x-auto", scrollClassName)} edgeFrom="from-surface">
+      <HScrollShadow className={cn("overflow-x-auto", scrollClassName)} wrapperClassName={wrapperClassName} edgeFrom="from-surface">
         {children}
       </HScrollShadow>
     </div>

@@ -16,6 +16,7 @@ import {
   FileText,
   MoreHorizontal,
   Package,
+  PackageCheck,
   Phone,
   Printer,
   RefreshCw,
@@ -32,13 +33,13 @@ import { Popover } from "@/components/ui/popover";
 import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
-import { formatCount, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
+import { formatCount, formatPrice, formatStoreDate, formatStoreTime, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CourierCell, DeliveryScoreBadge, OrderRiskBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
 import { useOrderRisk } from "./use-order-risk";
 import type { OrderRisk } from "@/lib/api/admin-analytics";
 import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
-import type { OrderCommands } from "./use-order-commands";
+import { canMarkPacked, type OrderCommands } from "./use-order-commands";
 import type { OrderOptionalColumn, SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
 import { useShortcut } from "@/hooks/use-shortcut";
@@ -106,8 +107,11 @@ function ProductCell({ summary, compact = false }: { summary: OrderListItemSumma
   if (!summary.firstItem) return <span className="text-xs text-ink-400">—</span>;
   const { name, size, color, imageUrl, productSlug } = summary.firstItem;
   const extra = summary.totalItems - 1;
-  const variant = [size, color].filter(Boolean).join(" / ");
-  const subtitle = extra > 0 ? `${variant ? `${variant} · ` : ""}+${extra} more item${extra > 1 ? "s" : ""}` : variant;
+  // Size and colour lead: a page of one product (every row "Haven Sleeveless Jacket – …") differs only there.
+  const variant = [size, color].filter(Boolean).join(" · ");
+  const more = extra > 0 ? `+${extra} more item${extra > 1 ? "s" : ""}` : "";
+  const lead = compact ? [variant, name].filter(Boolean).join(" · ") : variant || name;
+  const subtitle = compact ? "" : [variant ? name : "", more].filter(Boolean).join(" · ");
   const content = (
     <>
       <span
@@ -120,8 +124,8 @@ function ProductCell({ summary, compact = false }: { summary: OrderListItemSumma
         )}
       </span>
       <span className="min-w-0">
-        <span className="block max-w-[180px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline">{name}</span>
-        {subtitle && !compact && <span className="block max-w-[180px] truncate text-xs text-ink-400">{subtitle}</span>}
+        <span className={cn("block max-w-[170px] truncate text-ink-800 group-hover/product:text-info-700 group-hover/product:underline", variant && "font-medium")}>{lead}</span>
+        {subtitle && <span className="block max-w-[170px] truncate text-xs text-fg-muted">{subtitle}</span>}
       </span>
     </>
   );
@@ -145,7 +149,7 @@ function CardItems({ summary }: { summary: OrderListItemSummary }) {
   if (!summary.firstItem) return null;
   const { name, size, color, imageUrl } = summary.firstItem;
   const extra = summary.totalItems - 1;
-  const detail = [[size, color].filter(Boolean).join(" / "), extra > 0 ? `+${extra} more` : ""].filter(Boolean).join(" · ");
+  const variant = [size, color].filter(Boolean).join(" · ");
   return (
     <span className="mt-2 flex items-center gap-2.5">
       <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50">
@@ -156,8 +160,9 @@ function CardItems({ summary }: { summary: OrderListItemSummary }) {
         )}
       </span>
       <span className="min-w-0 truncate text-sm text-ink-700">
+        {variant && <span className="font-semibold text-fg">{variant} · </span>}
         {name}
-        {detail && <span className="text-fg-subtle"> · {detail}</span>}
+        {extra > 0 && <span className="text-fg-subtle"> · +{extra} more</span>}
       </span>
     </span>
   );
@@ -266,7 +271,6 @@ function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<
   );
 }
 
-/** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
 /** Whether the order changed status after it was placed. The same transaction as the order itself (a phone order
  * confirmed on creation) is no separate move. */
 function hasMoved(order: AdminOrderListItem): boolean {
@@ -274,6 +278,7 @@ function hasMoved(order: AdminOrderListItem): boolean {
   return Boolean(moved) && new Date(moved!).getTime() - new Date(order.createdAt).getTime() >= 1_000;
 }
 
+/** "Packed 29 Oct · 4:10 pm" — when the order moved to its current status, if that was after it was placed. */
 function MovedLine({ order }: { order: AdminOrderListItem }) {
   const moved = order.statusChangedAt;
   if (!moved || !hasMoved(order)) return null;
@@ -284,26 +289,45 @@ function MovedLine({ order }: { order: AdminOrderListItem }) {
   );
 }
 
-/** A small marker next to the order number when something about it needs attention (full list in the detail view). */
-function AttentionMarker({ order }: { order: AdminOrderListItem }) {
-  const items = orderAttention(order).filter((i) => i.tone !== "info");
+/** What about the order needs attention, in words (the first item, "+n" for more; the full list is in the detail view).
+ * A tooltip-only icon said nothing on a phone and, on every row, nothing at all. `hideSyncError`: the list's banner
+ * already covers a sync failure shared by many orders. */
+function AttentionMarker({ order, hideSyncError = false }: { order: AdminOrderListItem; hideSyncError?: boolean }) {
+  const items = orderAttention(order).filter((i) => i.tone !== "info" && !(hideSyncError && i.key === "courier-sync"));
   if (items.length === 0) return null;
   const urgent = items.some((i) => i.tone === "danger");
+  const first = items.find((i) => i.tone === "danger") ?? items[0]!;
   const text = items.map((i) => i.label).join(" · ");
   return (
-    <span className={cn("inline-flex", urgent ? "text-danger-600" : "text-warning-600")} title={text}>
-      <AlertCircle size={14} aria-hidden="true" />
+    <span
+      className={cn(
+        "inline-flex min-w-0 max-w-[210px] items-center gap-1 rounded-md px-1.5 py-px text-xs font-medium",
+        urgent ? "bg-danger-100 text-danger-700" : "bg-warning-100 text-warning-700",
+      )}
+      title={text}
+      data-testid="order-attention"
+    >
+      <AlertCircle size={11} className="shrink-0" aria-hidden="true" />
       <span className="sr-only">Needs attention: {text}</span>
+      <span className="truncate" aria-hidden="true">{first.label}</span>
+      {items.length > 1 && <span className="shrink-0" aria-hidden="true">+{items.length - 1}</span>}
     </span>
   );
 }
 
+/** One courier sync error shared by 3+ orders on the page is a key or connection problem, not 3 parcel problems: the
+ * list says it once (above the rows) and the rows stop repeating it. */
+function sharedCourierSyncError(items: AdminOrderListItem[]): { message: string; count: number } | null {
+  const counts = new Map<string, number>();
+  for (const o of items) if (o.courierSyncError) counts.set(o.courierSyncError, (counts.get(o.courierSyncError) ?? 0) + 1);
+  let top: { message: string; count: number } | null = null;
+  for (const [message, count] of counts) if (count >= 3 && (!top || count > top.count)) top = { message, count };
+  return top;
+}
+
 function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListItem; risk?: OrderRisk } & Pick<OrdersListProps, "commands" | "perms">) {
   return (
-    <span className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700" aria-hidden="true">
-        {initials(order.customerName)}
-      </span>
+    <span className="flex items-center">
       <span className="min-w-0">
         <span className="block max-w-[180px] truncate text-ink-800" title={order.customerName}>
           {order.customerName}
@@ -321,6 +345,7 @@ function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListI
             score={order.deliveryScore}
             onCheck={perms.manage && perms.courierConfigured ? () => commands.checkDeliveryScore([order], true) : undefined}
             checking={commands.pending.scoreOrderId === order.id}
+            onlyIfWorrying
           />
           <OrderRiskBadge risk={risk} />
         </span>
@@ -352,30 +377,62 @@ export function OrdersList(props: OrdersListProps) {
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
   // COD risk of the undecided orders on this page — one batched lookup (§4.8).
   const risk = useOrderRisk(items);
+  const syncProblem = readOnly ? null : sharedCourierSyncError(items);
+  const hideSync = (o: AdminOrderListItem) => Boolean(syncProblem && o.courierSyncError === syncProblem.message);
 
   // Keyboard (the registry's list shortcuts): J/K move the highlighted row, Enter opens it, X selects it. Bound only while
   // focus is inside the table, like DataTable, so nothing else on the page competes for the keys.
   const [focused, setFocused] = useState(false);
   // Enter/X only while the table itself has focus: on a button inside a row, Enter must stay that button's.
   const [onTable, setOnTable] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  // The highlight follows the ORDER, not the row number: the 30 s refresh hands over a new list, and the row the admin
+  // was on must stay highlighted (it clears only when that order leaves the view).
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeIndex = activeId ? items.findIndex((o) => o.id === activeId) : -1;
   const active = activeIndex >= 0 ? items[activeIndex] : undefined;
-  useEffect(() => setActiveIndex(-1), [items]);
   useEffect(() => {
-    if (!active) return;
-    prefetchOrder(queryClient, active.id);
-    document.querySelector<HTMLElement>(`[data-testid="order-row"][data-row-index="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [active, activeIndex, queryClient]);
+    if (!activeId) return;
+    prefetchOrder(queryClient, activeId);
+    document.querySelector<HTMLElement>(`[data-testid="order-row"][data-order-id="${activeId}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [activeId, queryClient]);
   const keys = { enabled: focused && items.length > 0 };
-  useShortcut("list.next", () => setActiveIndex((i) => Math.min(i + 1, items.length - 1)), keys);
-  useShortcut("list.prev", () => setActiveIndex((i) => Math.max(i - 1, 0)), keys);
+  const moveActive = (step: number) => {
+    const from = activeIndex === -1 ? (step > 0 ? -1 : items.length) : activeIndex;
+    const next = items[Math.min(Math.max(from + step, 0), items.length - 1)];
+    if (next) setActiveId(next.id);
+  };
+  useShortcut("list.next", () => moveActive(1), keys);
+  useShortcut("list.prev", () => moveActive(-1), keys);
   useShortcut("list.open", () => active && onOpen(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
   useShortcut("list.select", () => active && onToggle(active.id), { enabled: keys.enabled && onTable && Boolean(active) && !readOnly });
+  // P / B / L on the highlighted row: the packing table's and the booking desk's repeat jobs without the mouse.
+  const rowKeys = { enabled: keys.enabled && onTable && Boolean(active) && !readOnly };
+  useShortcut("orders.markPacked", () => active && perms.manage && canMarkPacked(active) && commands.markPacked([active]), rowKeys);
+  useShortcut(
+    "orders.book",
+    () => active && !courierBookingBlocker(active) && (perms.courier ? commands.bookCourier(active) : perms.courierNotConnected && commands.explainCourierNotConnected()),
+    rowKeys,
+  );
+  useShortcut("orders.printLabel", () => active && !active.deletedAt && commands.printLabels([active.id]), rowKeys);
 
   return (
     <>
-      {/* Long pages (up to 200 rows) scroll inside the frame, so the column titles stay in view. */}
-      <TableContainer className="mt-3 hidden xl:block" scrollClassName="xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
+      {syncProblem && (
+        <p role="status" data-testid="courier-sync-banner" className="mt-3 flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-3.5 py-2.5 text-sm text-warning-700">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">
+            Courier sync failing on {formatCount(syncProblem.count)} orders: “<span className="break-all">{syncProblem.message}</span>”. Usually the courier key.{" "}
+            <Link href="/admin/settings?pane=integrations" className="whitespace-nowrap font-medium underline underline-offset-2">
+              Check Integrations
+            </Link>
+          </span>
+        </p>
+      )}
+      {/* One scroller — the page. Scrolling moves the title up out of the way; the filter bar stays pinned under the top bar
+          and the column titles pin right under the filter bar, at its measured height (use-sticky-toolbar.ts). The frame
+          doesn't clip (overflow visible), or the titles couldn't stick to the page. The 2026-11-19 overlap came from a
+          second, inner scroller and a guessed toolbar height. */}
+      <TableContainer className="mt-3 hidden xl:block xl:overflow-visible" scrollClassName="xl:overflow-visible">
         <Table
           aria-label="Orders"
           aria-busy={props.isFetching || undefined}
@@ -391,7 +448,7 @@ export function OrdersList(props: OrdersListProps) {
             setOnTable(false);
           }}
         >
-          <TableHead className="sticky top-0 z-raised">
+          <TableHead className="sticky top-[calc(var(--density-chrome)+var(--orders-toolbar-h,0px))] z-raised">
             <tr>
               {!readOnly && (
                 <TableHeaderCell className="w-10 px-3 py-2.5">
@@ -421,6 +478,7 @@ export function OrdersList(props: OrdersListProps) {
                 className={cn(selected.has(order.id) && "bg-accent/[0.05]", index === activeIndex && "bg-ink-50 outline outline-1 -outline-offset-1 outline-ink-300")}
                 data-testid="order-row"
                 data-row-index={index}
+                data-order-id={order.id}
                 data-active={index === activeIndex || undefined}
                 {...warm(order.id)}
               >
@@ -434,7 +492,6 @@ export function OrdersList(props: OrdersListProps) {
                     <button type="button" onClick={() => onOpen(order.id)} className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline">
                       {order.orderNumber}
                     </button>
-                    <AttentionMarker order={order} />
                   </span>
                   {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. A row is two
                       lines at most: once the order has moved, the line says when (its tooltip keeps the placed time). */}
@@ -445,6 +502,10 @@ export function OrdersList(props: OrdersListProps) {
                   )}
                   {/* Sorted by latest activity, an order placed days ago can sit at the top — say when it last moved. */}
                   {density !== "compact" && <MovedLine order={order} />}
+                  {/* A problem gets its own line, so the words never widen the column (rows without one stay two lines). */}
+                  <span className="mt-1 flex empty:hidden">
+                    <AttentionMarker order={order} hideSyncError={hideSync(order)} />
+                  </span>
                 </TableCell>
                 {shows("product") && (
                   <TableCell className={pad}>
@@ -456,7 +517,7 @@ export function OrdersList(props: OrdersListProps) {
                 </TableCell>
                 {shows("payment") && (
                   <TableCell className={cn("hidden 2xl:table-cell", pad)}>
-                    <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
+                    <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} quiet />
                   </TableCell>
                 )}
                 {shows("total") && (
@@ -465,22 +526,40 @@ export function OrdersList(props: OrdersListProps) {
                     {/* On a 1280 laptop how it's paid sits under the amount; the Payment column fits from 2xl. */}
                     {shows("payment") && (
                       <div className="mt-1 flex justify-end font-normal 2xl:hidden">
-                        <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
+                        <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" quiet />
                       </div>
                     )}
                   </TableCell>
                 )}
                 <TableCell className={pad}>
-                  <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                  {/* Pill, then the Packed button under it: side by side they made the column too wide for a laptop. */}
+                  <span className="flex flex-col items-start gap-1">
+                    <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                    {/* The packing table's one job: being prepared → Packed, one click (Undo in the toast). */}
+                    {perms.manage && order.status === "PROCESSING" && canMarkPacked(order) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 whitespace-nowrap"
+                        disabled={commands.pending.pack}
+                        onClick={() => commands.markPacked([order])}
+                        aria-label={`Mark ${order.orderNumber} packed`}
+                        title="Mark packed (P on the highlighted row)"
+                        data-testid="row-mark-packed"
+                      >
+                        <PackageCheck size={13} /> Packed
+                      </Button>
+                    )}
+                  </span>
                   {shows("courier") && order.courierConsignmentId && (
                     <div className="mt-1 2xl:hidden">
-                      <CourierCell order={order} compact />
+                      <CourierCell order={order} compact hideSyncError={hideSync(order)} />
                     </div>
                   )}
                 </TableCell>
                 {shows("courier") && (
                   <TableCell className={cn("hidden 2xl:table-cell", pad)}>
-                    <CourierCell order={order} />
+                    <CourierCell order={order} hideSyncError={hideSync(order)} />
                   </TableCell>
                 )}
                 {shows("placed") && (
@@ -520,6 +599,8 @@ export function OrdersList(props: OrdersListProps) {
             const canBook = (perms.courier || perms.courierNotConnected) && !courierBookingBlocker(order);
             // A pending order's first job is the confirmation call, so Confirm leads the card while it is a legal move.
             const canConfirm = perms.manage && !order.deletedAt && order.status === "PENDING" && allowedNextOrderStatuses(order.status).includes("CONFIRMED");
+            // Booked and being prepared: the next job is packing it.
+            const canPack = perms.manage && order.status === "PROCESSING" && canMarkPacked(order);
             return (
               <article
                 key={order.id}
@@ -549,11 +630,13 @@ export function OrdersList(props: OrdersListProps) {
                         <span className="truncate">
                           {order.orderNumber} · {formatStoreDate(order.createdAt)}, {formatStoreTime(order.createdAt)}
                         </span>
-                        <AttentionMarker order={order} />
                       </span>
-                      <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
+                      <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" quiet />
                     </span>
                     <CardItems summary={order.itemsSummary} />
+                    <span className="mt-1.5 flex empty:hidden">
+                      <AttentionMarker order={order} hideSyncError={hideSync(order)} />
+                    </span>
                   </button>
                 </div>
 
@@ -562,8 +645,8 @@ export function OrdersList(props: OrdersListProps) {
                 <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                     <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
-                    {order.courierConsignmentId && <CourierCell order={order} compact />}
-                    {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} />}
+                    {order.courierConsignmentId && <CourierCell order={order} compact hideSyncError={hideSync(order)} />}
+                    {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} onlyIfWorrying />}
                     <OrderRiskBadge risk={risk[order.id]} />
                   </div>
                   <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -588,6 +671,10 @@ export function OrdersList(props: OrdersListProps) {
                     // confirms without one).
                     <Button variant="outline" size="sm" onClick={() => onOpen(order.id)}>
                       <Check size={13} /> Confirm
+                    </Button>
+                  ) : canPack ? (
+                    <Button variant="outline" size="sm" disabled={commands.pending.pack} onClick={() => commands.markPacked([order])} data-testid="card-mark-packed">
+                      <PackageCheck size={13} /> Packed
                     </Button>
                   ) : canBook ? (
                     <Button

@@ -82,7 +82,7 @@ append-only trigger. No existing row changes. Rollback = drop both tables and th
 
 ## 5. Today's Operations and the Exception Center
 
-`/admin/orders/today`. Five stages with the existing queue counts (`/api/orders/stats`) — Confirm, Prepare & book, Hand over,
+`/admin/orders/today`. Six stages with the existing queue counts (`/api/orders/stats`) — Confirm, Prepare & book, Pack (`toPack`: Processing orders; one-tap Packed with Undo on the list, 2026-11-20), Hand over,
 Out for delivery, Returns — and an Exception Center from `GET /api/orders/exceptions`. Each exception is one server predicate;
 the orders list filters `?exception=<id>` by exactly the ids the count counted (cap 2,000).
 
