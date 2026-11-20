@@ -159,6 +159,7 @@ GET /api/bundles/ → promotions.manage
 GET /api/bundles/:id → promotions.manage
 GET /api/campaigns/ → campaigns.manage
 GET /api/campaigns/:id → campaigns.manage
+GET /api/campaigns/audience → campaigns.manage
 GET /api/catalog/attributes → catalog.read
 GET /api/catalog/care-guides → catalog.read
 GET /api/catalog/courier-notes → catalog.read

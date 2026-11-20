@@ -6,6 +6,13 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
   res.json(await campaignService.listCampaigns(req.query as never));
 });
 
+/** The audience preview: counts only (never the customers themselves). */
+export const audience = asyncHandler(async (req: Request, res: Response) => {
+  const q = req.query as unknown as { segmentType: Parameters<typeof campaignService.campaignAudience>[0]; channel: "EMAIL" | "SMS" | "PUSH" };
+  const { customers, reachable } = await campaignService.campaignAudience(q.segmentType, q.channel);
+  res.json({ customers, reachable });
+});
+
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
   res.json({ campaign: await campaignService.getCampaignById(req.params.id!) });
 });

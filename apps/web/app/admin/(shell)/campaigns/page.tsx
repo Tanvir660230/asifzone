@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ListPage } from "@/components/admin/patterns/list-page";
 import { DataTable, type DataTableColumn, type DataTableRowAction } from "@/components/admin/data-table";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
-import { formatStoreDateTime } from "@/lib/format";
+import { formatCount, formatStoreDateTime } from "@/lib/format";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { ApiError } from "@/lib/api-client";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
@@ -45,6 +45,10 @@ const SEGMENT_OPTIONS: Array<{ value: CreateCampaignInput["segmentType"]; label:
   { value: "NEWSLETTER_SUBSCRIBERS", label: "Newsletter subscribers" },
   { value: "CUSTOMERS_WITH_ORDERS", label: "Customers with at least one order" },
   { value: "CUSTOMERS_NO_ORDER_30D", label: "No order in the last 30 days" },
+  // Retention (bought = delivered): bring back the quiet ones, thank the loyal ones, turn a first order into a second.
+  { value: "WIN_BACK", label: "Win back — bought before, quiet 60 days" },
+  { value: "REPEAT_BUYERS", label: "Repeat buyers — 2+ delivered orders" },
+  { value: "SECOND_ORDER_NUDGE", label: "Second order — one order 14–60 days ago" },
 ];
 
 export default function CampaignsPage() {
@@ -100,6 +104,14 @@ export default function CampaignsPage() {
     defaultValues: { channel: "EMAIL", segmentType: "ALL_CUSTOMERS" },
   });
   const channel = watch("channel");
+  const segmentType = watch("segmentType");
+  // Before sending: how many are in the audience, and how many this channel may reach (consent, number, subscription).
+  const audience = useQuery({
+    queryKey: ["campaign-audience", segmentType, channel],
+    queryFn: () => campaignsApi.getCampaignAudience(segmentType, channel),
+    enabled: Boolean(segmentType && channel),
+    staleTime: 60_000,
+  });
 
   function openCreate() {
     setEditing(null);
@@ -214,6 +226,17 @@ export default function CampaignsPage() {
               </Select>
             </div>
           </div>
+          <p className="-mt-2 text-sm text-fg-muted" aria-live="polite" data-testid="campaign-audience">
+            {audience.isLoading
+              ? "Counting the audience…"
+              : audience.isError
+                ? "Couldn't count the audience right now."
+                : audience.data
+                  ? audience.data.customers === 0
+                    ? "Nobody is in this audience yet."
+                    : `${formatCount(audience.data.customers)} ${audience.data.customers === 1 ? "customer" : "customers"} — ${formatCount(audience.data.reachable)} can get this ${channel === "SMS" ? "SMS (agreed to offers by SMS)" : channel === "EMAIL" ? "email (agreed to offers by email)" : "push notification"}.`
+                  : null}
+          </p>
 
           <div>
             <Label htmlFor="subject">Subject / title</Label>

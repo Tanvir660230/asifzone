@@ -1,4 +1,5 @@
 import type {
+  CampaignAudience,
   Campaign,
   CampaignDetail,
   CampaignStatus,
@@ -14,6 +15,11 @@ export function listCampaigns(params: { page?: number; pageSize?: number; status
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
   if (params.status) query.set("status", params.status);
   return apiFetch<PaginatedResult<Campaign>>(`/api/campaigns?${query.toString()}`);
+}
+
+/** How many customers an audience holds and how many the channel can reach (marketing consent). */
+export function getCampaignAudience(segmentType: CreateCampaignInput["segmentType"], channel: CreateCampaignInput["channel"]) {
+  return apiFetch<CampaignAudience>(`/api/campaigns/audience?segmentType=${segmentType}&channel=${channel}`);
 }
 
 export function getCampaign(id: string) {
