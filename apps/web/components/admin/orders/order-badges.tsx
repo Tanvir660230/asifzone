@@ -121,15 +121,12 @@ export function DeliveryScoreBadge({
   score,
   onCheck,
   checking = false,
-  onlyIfWorrying = false,
 }: {
   score: DeliveryScore | null | undefined;
   onCheck?: () => void;
   checking?: boolean;
-  /** Lists: a good score (80%+) is the normal case and says nothing — show only a low one, "No history", or the check. */
-  onlyIfWorrying?: boolean;
 }) {
-  if (onlyIfWorrying && score && score.successRate !== null && score.successRate >= 80) return null;
+  // Every order shows its score, good ones included: hiding the 80%+ ones made a checked customer look unchecked.
   if (!score) {
     if (!onCheck) return <span className="whitespace-nowrap text-xs text-fg-subtle">No score yet</span>;
     return (
