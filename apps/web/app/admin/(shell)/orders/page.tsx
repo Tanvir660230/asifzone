@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveX, Download, PhoneCall, Plus, RefreshCw, SearchX, ShoppingBag } from "lucide-react";
+import { ArchiveX, ArrowUp, Download, PhoneCall, Plus, RefreshCw, SearchX, ShoppingBag } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
@@ -56,14 +56,38 @@ export default function OrdersPage() {
   // Pages reached from here (Print labels, an order's page, Create order) return to this exact list.
   const searchParams = useSearchParams().toString();
   useEffect(() => rememberOrdersListUrl(`/admin/orders${searchParams ? `?${searchParams}` : ""}`), [searchParams]);
+  // Calm refresh: while the admin is down the list, has rows selected or an order open, the rows hold still — a new order
+  // arriving would otherwise push the row they are reading. A one-row count keeps polling and offers "N new — show".
+  const [scrolledDown, setScrolledDown] = useState(false);
+  useEffect(() => {
+    const root = document.getElementById("main-content")?.parentElement;
+    if (!root) return;
+    const onScroll = () => setScrolledDown(root.scrollTop > 240);
+    onScroll();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => root.removeEventListener("scroll", onScroll);
+  }, []);
+  const holdRows = scrolledDown || selected.size > 0 || Boolean(drawerOrderId);
   const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: [...orderKeys.list, { page, pageSize, ...filterParams }],
     queryFn: ({ signal }) => adminOrdersApi.listOrders({ page, pageSize, ...filterParams }, { signal }),
     placeholderData: (prev) => prev,
     enabled: state.pageSizeReady,
-    // Courier statuses change server-side (webhook, sync cron) — poll so the list stays current. Paused in background tabs.
+    // Courier statuses change server-side (webhook, sync cron) — poll so the list stays current. Paused in background tabs,
+    // and while the rows are held (above).
+    refetchInterval: holdRows ? false : 30_000,
+  });
+  const { data: peek } = useQuery({
+    queryKey: [...orderKeys.list, "peek", filterParams],
+    queryFn: ({ signal }) => adminOrdersApi.listOrders({ page: 1, pageSize: 1, ...filterParams }, { signal }),
+    enabled: holdRows && Boolean(data),
     refetchInterval: 30_000,
   });
+  const newInView = holdRows && peek && data ? Math.max(0, peek.total - data.total) : 0;
+  function showNew() {
+    document.getElementById("main-content")?.parentElement?.scrollTo({ top: 0, behavior: "smooth" });
+    void refetch();
+  }
   const { data: stats, isError: statsError } = useQuery({ queryKey: orderKeys.stats, queryFn: adminOrdersApi.getOrderStats, refetchInterval: 60_000 });
   const [exporting, setExporting] = useState(false);
   const [takingNext, setTakingNext] = useState(false);
@@ -245,6 +269,21 @@ export default function OrdersPage() {
         <p role="status" data-testid="orders-page-moved" className="mt-4 rounded-xl border border-line-subtle bg-surface px-3.5 py-2.5 text-sm text-fg-muted">
           Page {movedFrom.from} has no orders left in this view — showing page {movedFrom.to}, the last one.
         </p>
+      )}
+
+      {/* "N new — show": floats under the sticky filter bar without moving the rows. */}
+      {newInView > 0 && (
+        <div className="pointer-events-none sticky top-[calc(var(--density-chrome)+var(--orders-toolbar-h,0px)+0.5rem)] z-sticky flex h-0 justify-center">
+          <button
+            type="button"
+            onClick={showNew}
+            data-testid="orders-new-pill"
+            className="pointer-events-auto mt-1 inline-flex h-9 items-center gap-1.5 rounded-full bg-fg px-4 text-sm font-medium text-surface shadow-float transition-transform duration-fast active:scale-[0.97]"
+          >
+            <ArrowUp size={14} aria-hidden="true" />
+            {formatCount(newInView)} new {newInView === 1 ? "order" : "orders"} in this view — show
+          </button>
+        </div>
       )}
 
       <OrdersList
