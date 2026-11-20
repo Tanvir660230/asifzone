@@ -345,13 +345,19 @@ function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListI
             score={order.deliveryScore}
             onCheck={perms.manage && perms.courierConfigured ? () => commands.checkDeliveryScore([order], true) : undefined}
             checking={commands.pending.scoreOrderId === order.id}
-            onlyIfWorrying
           />
           <OrderRiskBadge risk={risk} />
         </span>
       </span>
     </span>
   );
+}
+
+/** A finished order's courier chip under the status pill only repeats it ("Delivered" twice) — leave it to the courier
+ * column and the order page. A sync problem still shows. */
+function courierEchoesStatus(order: AdminOrderListItem): boolean {
+  if (order.courierSyncError) return false;
+  return ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "RETURNED"].includes(order.status);
 }
 
 /** ≥xl: the data table. Below xl: cards — a compressed table on a touch tablet reads worse than fewer, larger cards. */
@@ -551,7 +557,7 @@ export function OrdersList(props: OrdersListProps) {
                       </Button>
                     )}
                   </span>
-                  {shows("courier") && order.courierConsignmentId && (
+                  {shows("courier") && order.courierConsignmentId && !courierEchoesStatus(order) && (
                     <div className="mt-1 2xl:hidden">
                       <CourierCell order={order} compact hideSyncError={hideSync(order)} />
                     </div>
@@ -645,8 +651,15 @@ export function OrdersList(props: OrdersListProps) {
                 <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                     <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
-                    {order.courierConsignmentId && <CourierCell order={order} compact hideSyncError={hideSync(order)} />}
-                    {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} onlyIfWorrying />}
+                    {order.courierConsignmentId && !courierEchoesStatus(order) && <CourierCell order={order} compact hideSyncError={hideSync(order)} />}
+                    {/* Every card shows the score (or the check); nothing only when no courier is connected and it was never checked. */}
+                    {(order.deliveryScore || (perms.manage && perms.courierConfigured)) && (
+                      <DeliveryScoreBadge
+                        score={order.deliveryScore}
+                        onCheck={perms.manage && perms.courierConfigured ? () => commands.checkDeliveryScore([order], true) : undefined}
+                        checking={commands.pending.scoreOrderId === order.id}
+                      />
+                    )}
                     <OrderRiskBadge risk={risk[order.id]} />
                   </div>
                   <div className="ml-auto flex shrink-0 items-center gap-1">
