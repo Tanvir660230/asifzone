@@ -284,6 +284,21 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     },
     onError: (err) => toast.error(errorText(err, "Bulk courier sync failed")),
   });
+  // Parcels booked on another courier account (YG's Steadfast before Tahafi had its own): stop checking them, or start again.
+  const externalMutation = useMutation({
+    mutationFn: ({ orders, external }: { orders: OrderRef[]; external: boolean }) =>
+      adminOrdersApi.setCourierExternal(
+        orders.map((o) => o.id),
+        external,
+      ),
+    onSettled: () => refresh(),
+    onSuccess: (r, { orders, external }) =>
+      reportBulk(external ? "Booked on another courier account" : "Check on our courier account", external ? "Marked" : "Checking again", orders, {
+        succeeded: r.updated,
+        failed: r.skipped.map((s) => ({ id: s.orderId, orderNumber: s.orderNumber, reason: s.reason })),
+      }),
+    onError: (err) => toast.error(errorText(err, "Couldn't change the courier account")),
+  });
   // "The rider took these" — handover without a scanner, through a dispatch batch on the server (same checks and audit).
   const handOverMutation = useMutation({
     mutationFn: (orders: OrderRef[]) => parcelScansApi.handOverFromList(orders.map((o) => o.id)),
@@ -411,6 +426,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     explainCourierNotConnected,
     syncCourier: (order: OrderRef) => syncMutation.mutate(order),
     bulkSync: (orders: OrderRef[]) => bulkSyncMutation.mutate(orders),
+    setCourierExternal: (orders: OrderRef[], external: boolean) => externalMutation.mutate({ orders, external }),
     unlinkCourier,
     linkCourier: (order: OrderRef, consignmentId: string, trackingCode: string, trackingLink?: string) =>
       linkMutation.mutate({ order, consignmentId, trackingCode, trackingLink }),
@@ -427,6 +443,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
       purge: purgeMutation.isPending || bulkPurgeMutation.isPending,
       book: bookMutation.isPending || bulkBookMutation.isPending,
       sync: syncMutation.isPending || bulkSyncMutation.isPending,
+      external: externalMutation.isPending,
       unlink: unlinkMutation.isPending,
       link: linkMutation.isPending,
       score: scoreMutation.isPending,

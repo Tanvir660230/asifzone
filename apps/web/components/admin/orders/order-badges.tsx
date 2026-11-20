@@ -74,7 +74,7 @@ export function PaymentBadges({
   );
 }
 
-type CourierFacts = Pick<Order, "courierConsignmentId" | "courierStatus" | "courierTrackingLink" | "courierSyncError" | "courierStatusSyncedAt">;
+type CourierFacts = Pick<Order, "courierConsignmentId" | "courierStatus" | "courierTrackingLink" | "courierSyncError" | "courierStatusSyncedAt" | "courierExternal">;
 
 /** Courier booking state for a row/card: provider-neutral wording, labels from lib/format. */
 /** `hideSyncError`: the list already says the courier sync is failing for many orders at once (a key or connection
@@ -85,10 +85,16 @@ export function CourierCell({ order, compact = false, hideSyncError = false }: {
     <span className="flex flex-col gap-0.5">
       <span className="flex items-center gap-1.5">
         <span
-          className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", courierStatusBadgeClass(order.courierStatus ?? ""))}
-          title={order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked — status not yet reported"}
+          className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", order.courierExternal ? "bg-ink-100 text-ink-700" : courierStatusBadgeClass(order.courierStatus ?? ""))}
+          title={
+            order.courierExternal
+              ? "Booked on another courier account — its status isn't checked here; set the order's status by hand"
+              : order.courierStatus
+                ? courierStatusDescription(order.courierStatus)
+                : "Booked — status not yet reported"
+          }
         >
-          {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
+          {order.courierExternal ? "Other account" : order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
         </span>
         {order.courierTrackingLink && (
           <a
@@ -110,7 +116,9 @@ export function CourierCell({ order, compact = false, hideSyncError = false }: {
         )}
       </span>
       {!compact && (
-        <span className="text-xs text-fg-subtle">{order.courierStatusSyncedAt ? `Synced ${timeAgo(order.courierStatusSyncedAt)}` : "Never synced"}</span>
+        <span className="text-xs text-fg-subtle">
+          {order.courierExternal ? "Updated by hand" : order.courierStatusSyncedAt ? `Synced ${timeAgo(order.courierStatusSyncedAt)}` : "Never synced"}
+        </span>
       )}
     </span>
   );

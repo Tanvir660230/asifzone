@@ -1,6 +1,7 @@
 import { canTransitionOrder, COURIER_UNBOOKABLE_STATUSES, normalizeBdPhone, type OrderStatus } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
+import { recordAudit } from "../../lib/audit";
 import { notify } from "../../lib/notify";
 import { applyOrderTransition, changeOrderStatus, getOrderById, runTransitionSideEffects, type OrderTransitionOutcome } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
@@ -567,6 +568,45 @@ function syncErrorMessage(err: unknown): string {
   return err instanceof AppError || err instanceof Error ? err.message : "Could not reach Steadfast";
 }
 
+/** Why a parcel booked on a courier account this store can't read (Order.courierExternal) is never checked. */
+export const EXTERNAL_COURIER_REASON = "Booked on another courier account — its status can't be checked from here; update it by hand";
+
+export interface CourierExternalResult {
+  updated: string[];
+  skipped: Array<{ orderId: string; orderNumber: string | null; reason: string }>;
+}
+
+/** Marks booked parcels as being on another courier account (or back on ours). On another account: never polled,
+ * auto-synced or marked "sync failed" again, and its old sync error goes — it was the 401 of a key that can't see it.
+ * Back on ours: due for a status check straight away. Orders that aren't booked are skipped and said so. */
+export async function setCourierExternal(orderIds: string[], external: boolean, adminId: string, ip?: string): Promise<CourierExternalResult> {
+  const found = await prisma.order.findMany({ where: { id: { in: orderIds }, deletedAt: null }, select: { id: true, orderNumber: true, courierConsignmentId: true } });
+  const byId = new Map(found.map((o) => [o.id, o]));
+  const updated: string[] = [];
+  const skipped: CourierExternalResult["skipped"] = [];
+  for (const id of new Set(orderIds)) {
+    const order = byId.get(id);
+    if (!order) skipped.push({ orderId: id, orderNumber: null, reason: "Order not found" });
+    else if (!order.courierConsignmentId) skipped.push({ orderId: id, orderNumber: order.orderNumber, reason: "Not booked with a courier" });
+    else updated.push(id);
+  }
+  if (updated.length) {
+    await prisma.order.updateMany({
+      where: { id: { in: updated } },
+      data: external ? { courierExternal: true, courierSyncError: null } : { courierExternal: false, courierNextPollAt: null },
+    });
+    recordAudit({
+      adminId,
+      action: external ? "order.courier_external_set" : "order.courier_external_cleared",
+      entityType: "orders",
+      entityId: updated.length === 1 ? updated[0]! : null,
+      ipAddress: ip ?? null,
+      metadata: { orderIds: updated },
+    });
+  }
+  return { updated, skipped };
+}
+
 async function recordCourierSyncError(orderId: string, message: string) {
   await prisma.order.update({ where: { id: orderId }, data: { courierSyncError: message } });
 }
@@ -574,6 +614,7 @@ async function recordCourierSyncError(orderId: string, message: string) {
 export async function refreshSteadfastStatus(orderId: string) {
   const order = await getOrderById(orderId);
   if (!order.courierConsignmentId) throw AppError.badRequest("This order has not been booked with a courier yet");
+  if (order.courierExternal) throw AppError.badRequest(EXTERNAL_COURIER_REASON);
 
   try {
     const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId);
@@ -610,6 +651,10 @@ export async function bulkSyncCourierStatuses(orderIds: string[], opts: { budget
   for (const order of orders) {
     if (!order.courierConsignmentId) {
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not booked with a courier" });
+      continue;
+    }
+    if (order.courierExternal) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: EXTERNAL_COURIER_REASON });
       continue;
     }
     if (rateLimited) {
@@ -721,7 +766,7 @@ export async function getOrderByIdWithAutoSync(orderId: string) {
   const isStale = !order.courierStatusSyncedAt || Date.now() - new Date(order.courierStatusSyncedAt).getTime() > AUTO_SYNC_STALE_MS;
   const isTerminal = order.courierStatus ? TERMINAL_COURIER_STATUSES.includes(order.courierStatus) : false;
 
-  if (!order.courierConsignmentId || isTerminal || !isStale) return order;
+  if (!order.courierConsignmentId || order.courierExternal || isTerminal || !isStale) return order;
 
   try {
     return await refreshSteadfastStatus(orderId);
