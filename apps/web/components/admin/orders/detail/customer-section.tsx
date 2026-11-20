@@ -140,7 +140,7 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
                 {order.customerEmail && <p className="truncate text-sm text-ink-500">{order.customerEmail}</p>}
               </div>
             </div>
-            {!order.deletedAt && <StoreHistory orderId={order.id} />}
+            {!order.deletedAt && <StoreHistory orderId={order.id} advance={perms.recordPayment ? order : null} />}
             <div className="flex flex-wrap items-center gap-1.5">
               <a href={`tel:${order.customerPhone}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
                 <Phone size={13} /> Call

@@ -121,6 +121,8 @@ export const adminCreateOrderSchema = z.object({
   finalTotal: z.coerce.number().min(0).max(10_000_000).optional(),
   /** Why (shown on the order timeline), e.g. "regular customer". */
   pricingNote: nullableString(300),
+  /** Made from this Inbox conversation (chat to order): the order and the chat are linked. */
+  conversationId: z.string().cuid().optional(),
 });
 
 function csvToStatusArray(value: unknown) {

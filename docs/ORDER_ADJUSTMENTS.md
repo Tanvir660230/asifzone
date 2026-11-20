@@ -222,6 +222,11 @@ can copy/re-send it); status `ACTIVE | USED | EXPIRED | CANCELLED`; amount, curr
 `MODIFICATION`), the **order revision** it was priced against, expiry (1 h – 30 days, default 3 days), creator/canceller.
 One ACTIVE link per order (partial unique index); regenerating cancels the previous one.
 
+**Delivery-charge advance (`DELIVERY_ADVANCE`, 2026-11-20).** For a COD order whose phone refused a parcel before, the
+customer panel's history box offers "Send ৳<delivery charge> link" (payments.record). The link is for the delivery charge
+only, while nothing is paid, the parcel isn't booked and delivery isn't free; it stays payable only while that holds.
+Paid, the courier collects the rest (`codToCollect` = total − advance). Staff decide per order — there is no automatic rule.
+
 - **Amount authority:** the ledger's balance due, or the waiting modification's difference — never a browser number.
   With store credit or partial payments, only the remainder is requested.
 - **Stale links:** any applied change, cancellation or payment closes ACTIVE links in the same transaction; opening a link

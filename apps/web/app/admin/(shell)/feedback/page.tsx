@@ -4,7 +4,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft, Check, Clock, Inbox, Loader2, MessageCircle, Phone, RotateCcw, Sparkles, Trash2, UserCheck, UserRound } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Clock, Inbox, Loader2, MessageCircle, Phone, Plus, RotateCcw, ShoppingBag, Sparkles, Trash2, UserCheck, UserRound } from "lucide-react";
 import {
   CONVERSATION_CHANNELS,
   isBdMobileLocal,
@@ -18,7 +18,7 @@ import {
 import { CHANNEL_FILTERS, CHANNEL_META, ChannelIcon, INTENT_LABEL, replyChannelLabel, timeUntil } from "@/components/admin/inbox/channel";
 import { Select } from "@/components/ui/select";
 import { TemplatePicker } from "@/components/admin/inbox/template-picker";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
@@ -34,7 +34,9 @@ import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { describeApiError } from "@/lib/api-client";
 import { attentionKeys } from "@/lib/query-keys";
-import { formatCount, formatStoreDateTime, timeAgo } from "@/lib/format";
+import { formatCount, formatPrice, formatStoreDateTime, orderStatusShortLabel, timeAgo } from "@/lib/format";
+import { useOrderPermissions } from "@/components/admin/orders/order-domain";
+import type { OrderStatus } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 30;
@@ -277,6 +279,7 @@ function Composer({ thread }: { thread: ConversationDetail }) {
 }
 
 function Thread({ id, onBack }: { id: string; onBack: () => void }) {
+  const canOrder = useOrderPermissions().manage;
   const queryClient = useQueryClient();
   const { data: currentAdmin } = useCurrentAdmin();
   const { confirm, dialog } = useConfirmDialog();
@@ -323,6 +326,8 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   if (isLoading || !thread) return <div className="m-6 h-40 animate-pulse rounded-2xl bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading" />;
 
   const me = currentAdmin?.admin.id;
+  // Chat to order: the new-order form opens with this chat's name and number, and the order stays linked to the chat.
+  const newOrderHref = `/admin/orders/new?${new URLSearchParams({ conversation: thread.id, name: thread.contactName, ...(thread.phone ? { phone: thread.phone } : {}) }).toString()}`;
   const mobile = thread.phone && isBdMobileLocal(normalizeBdPhone(thread.phone)) ? toBdInternationalDigits(thread.phone) : null;
   const handled = thread.status === "HANDLED";
 
@@ -361,7 +366,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               </Link>
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {mobile && (
               <a href={`https://wa.me/${mobile}`} target="_blank" rel="noreferrer" aria-label="Open WhatsApp" title="WhatsApp" className="rounded-full p-2 text-fg-muted transition-colors hover:bg-ink-900/[0.05] hover:text-fg">
                 <MessageCircle size={17} aria-hidden="true" />
@@ -371,6 +376,11 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               <a href={`tel:${thread.phone}`} aria-label="Call" title="Call" className="rounded-full p-2 text-fg-muted transition-colors hover:bg-ink-900/[0.05] hover:text-fg">
                 <Phone size={17} aria-hidden="true" />
               </a>
+            )}
+            {canOrder && (
+              <Link href={newOrderHref} className={buttonVariants({ size: "sm" })} data-testid="chat-create-order">
+                <Plus size={14} aria-hidden="true" /> Create order
+              </Link>
             )}
             <Button size="sm" variant="outline" disabled={status.isPending} onClick={() => status.mutate(handled ? "OPEN" : "HANDLED")}>
               {handled ? (
@@ -395,6 +405,25 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         </div>
       </header>
+      {thread.orders.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-6 py-2.5 text-sm" data-testid="chat-orders">
+          <span className="flex items-center gap-1.5 text-fg-muted">
+            <ShoppingBag size={14} aria-hidden="true" /> {thread.orders.length === 1 ? "Order from this chat:" : `${thread.orders.length} orders from this chat:`}
+          </span>
+          {thread.orders.map((o) => (
+            <Link
+              key={o.id}
+              href={`/admin/orders/${o.id}`}
+              className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-xl border border-line bg-surface px-2.5 py-0.5 text-sm text-fg transition-colors duration-fast hover:border-line-strong"
+            >
+              <span className="whitespace-nowrap font-medium tabular-nums">{o.orderNumber}</span>
+              <span className="whitespace-nowrap text-fg-muted">
+                {orderStatusShortLabel(o.status as OrderStatus)} · {formatPrice(o.total)}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
       <ol className="flex-1 space-y-3 overflow-y-auto px-6 py-5" aria-label="Messages">
         {thread.messages.map((m) => (
           <MessageBlock key={m.id} message={m} contactName={thread.contactName} thread={thread.channel} />
@@ -440,9 +469,21 @@ export default function InboxPage() {
   });
   const items = data?.items ?? [];
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  // How many chats became orders (only orders made from a chat with Create order count).
+  const { data: conversion } = useQuery({ queryKey: [...inboxKeys.list, "conversion"], queryFn: () => inboxApi.getChatConversion(30), staleTime: 5 * 60_000 });
+  const conv = conversion?.channels.reduce((a, r) => ({ chats: a.chats + r.chats, withOrder: a.withOrder + r.chatsWithOrder, orders: a.orders + r.orders, delivered: a.delivered + r.delivered }), { chats: 0, withOrder: 0, orders: 0, delivered: 0 });
+  const description =
+    conv && conv.chats > 0 ? (
+      <span data-testid="chat-conversion">
+        Last 30 days: {formatCount(conv.chats)} new {conv.chats === 1 ? "chat" : "chats"} → {formatCount(conv.orders)} {conv.orders === 1 ? "order" : "orders"} from {formatCount(conv.withOrder)} of them (
+        {Math.round((conv.withOrder / conv.chats) * 100)}%) · {formatCount(conv.delivered)} delivered
+      </span>
+    ) : (
+      "WhatsApp, Messenger, Instagram, post comments and the website form in one place. Every reply shows whether it arrived."
+    );
 
   return (
-    <ListPage title="Inbox" description="WhatsApp, Messenger, Instagram, post comments and the website form in one place. Every reply shows whether it arrived.">
+    <ListPage title="Inbox" description={description} descriptionOnPhone>
       <div className="grid overflow-hidden rounded-2xl border border-line bg-surface shadow-xs lg:h-[calc(100dvh-15rem)] lg:min-h-[520px] lg:grid-cols-[380px_1fr]">
         <section aria-label="Conversations" className={cn("flex min-h-0 flex-col border-line-subtle lg:border-r", openId && "hidden lg:flex")}>
           <div className="space-y-2 border-b border-line-subtle p-3">
