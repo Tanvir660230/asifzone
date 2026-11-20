@@ -21,6 +21,11 @@ type TrashableOrder = OrderRef & Pick<Order, "status">;
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
+/** Statuses an order can be marked Packed from in one tap. Confirmed/Processing → Packed is a pre-shipment move (state
+ * machine T1): no stock, payment or customer SMS effect, so it needs no confirmation dialog — an Undo puts it back. */
+export const PACKABLE_STATUSES: readonly OrderStatus[] = ["CONFIRMED", "PROCESSING"];
+export const canMarkPacked = (o: Pick<Order, "status" | "deletedAt">) => !o.deletedAt && PACKABLE_STATUSES.includes(o.status);
+
 /**
  * Every order command the list, the drawer and the detail page share — one implementation of each mutation, its
  * confirmation, its toast and its cache invalidation (previously duplicated between orders/page.tsx and the detail panel).
@@ -77,9 +82,51 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     onError: (err) => toast.error(errorText(err, "Bulk status update failed")),
   });
 
+  // ── packed: one tap, Undo instead of a dialog ────────────────────────────────
+  const packMutation = useMutation({
+    mutationFn: async ({ orders }: { orders: StatusChangeOrder[]; undo?: boolean; to: OrderStatus }) => {
+      return orders.length === 1
+        ? adminOrdersApi.updateOrderStatus(orders[0]!.id, "PACKED").then(() => ({ updated: [orders[0]!.id], unchanged: [] as string[], failed: [] as BulkOrderOutcome["failed"] }))
+        : adminOrdersApi.bulkUpdateOrderStatus(orders.map((o) => o.id), "PACKED");
+    },
+    onSettled: () => refresh(),
+    onSuccess: (result, { orders }) => {
+      const moved = orders.filter((o) => result.updated.includes(o.id));
+      if (result.failed.length > 0) {
+        reportBulk("Mark packed", "Packed", orders, { succeeded: [...result.updated, ...result.unchanged], failed: result.failed });
+        return;
+      }
+      const label = moved.length === 1 ? `${moved[0]!.orderNumber} packed` : `${moved.length || orders.length} orders packed`;
+      toast.success(label, moved.length > 0 ? { action: { label: "Undo", onClick: () => undoPacked(moved) } } : undefined);
+    },
+    onError: (err) => toast.error(errorText(err, "Couldn't mark the order packed")),
+  });
+
+  /** Puts each order back to the status it had before Packed (grouped, one call per status). */
+  async function undoPacked(orders: StatusChangeOrder[]) {
+    const byStatus = new Map<OrderStatus, string[]>();
+    for (const o of orders) byStatus.set(o.status, [...(byStatus.get(o.status) ?? []), o.id]);
+    try {
+      for (const [status, ids] of byStatus) await adminOrdersApi.bulkUpdateOrderStatus(ids, status, "Undo: not packed yet");
+      toast.info(orders.length === 1 ? `${orders[0]!.orderNumber} is back in ${orderStatusLabel(orders[0]!.status)}` : `${orders.length} orders put back`);
+    } catch (err) {
+      toast.error(errorText(err, "Couldn't undo — change the status on the order"));
+    } finally {
+      refresh();
+    }
+  }
+
+  function markPacked(orders: StatusChangeOrder[]) {
+    const packable = orders.filter(canMarkPacked);
+    if (packable.length === 0) return;
+    packMutation.mutate({ orders: packable, to: "PACKED" });
+  }
+
   function requestStatusChange(orders: StatusChangeOrder[], to: OrderStatus) {
     if (orders.length === 0) return;
     if (orders.length === 1 && orders[0]!.status === to) return;
+    // Packed from Confirmed/Processing has no effects to preview: do it now, with Undo.
+    if (to === "PACKED" && orders.every(canMarkPacked)) return markPacked(orders);
     setStatusRequest({ orders, to });
   }
 
@@ -352,6 +399,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     dialogs,
     confirm,
     requestStatusChange,
+    markPacked,
     trash,
     restore,
     purge,
@@ -372,6 +420,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     handOver,
     pending: {
       handOver: handOverMutation.isPending,
+      pack: packMutation.isPending,
       status: statusMutation.isPending || bulkStatusMutation.isPending,
       trash: trashMutation.isPending || bulkTrashMutation.isPending,
       restore: restoreMutation.isPending || bulkRestoreMutation.isPending,

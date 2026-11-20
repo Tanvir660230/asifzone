@@ -34,10 +34,11 @@ import { cn } from "@/lib/utils";
 import { ORDER_STATUSES } from "./order-domain";
 import { type OrdersListState } from "./use-orders-list-state";
 import { OrdersDisplayMenu } from "./orders-display-menu";
+import { useStickyToolbarHeight } from "./use-sticky-toolbar";
 import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
 /** Queues that mean "a person has to act" — the rest (COD, cancelled/returned) are only slices of the list. */
-const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "callNow", "confirmEscalated", "inspectionPending", "scanDiscrepancy", "stuckInTransit", "returnOverdue", "followUpDue", "codPendingStale", "readyToBook", "courierIssue", "cancelledButPaid", "refundDue", "unpaid"]);
+const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "callNow", "confirmEscalated", "inspectionPending", "scanDiscrepancy", "stuckInTransit", "returnOverdue", "followUpDue", "codPendingStale", "readyToBook", "toPack", "handoverPending", "courierIssue", "cancelledButPaid", "refundDue"]);
 
 export function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
   if (value === undefined) return null;
@@ -46,12 +47,12 @@ export function CountBadge({ value, inverted }: { value: number | undefined; inv
 
 /** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */
 // Focus uses the global :focus-visible outline (DESIGN_SYSTEM §5.4) — a 40% ring was too faint to see (2.6:1).
-export const tabBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
+export const tabBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
 export const tabOn = "bg-ink-900/[0.08] text-fg";
 export const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
 /** Views (work queues): white capsules; a queue that needs a person and has work in it shows an amber dot. */
-const viewBase = "flex h-8 lg:h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
+const viewBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors duration-fast ease-smooth";
 const viewOff = "border-line bg-surface text-fg hover:border-line-strong";
 const viewOn = "border-accent bg-accent text-accent-fg";
 
@@ -59,6 +60,7 @@ const viewOn = "border-accent bg-accent text-accent-fg";
 export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListState; stats: OrderStats | undefined; canSeeTrash: boolean }>(
   function OrdersFilterBar({ state, stats, canSeeTrash }, searchRef) {
     const [moreOpen, setMoreOpen] = useState(false);
+    const barRef = useStickyToolbarHeight<HTMLDivElement>();
     const [viewsOpen, setViewsOpen] = useState(false);
     const viewsRef = useRef<HTMLButtonElement>(null);
     // Saved views (DR-18): a named Orders URL. `view` (active/trash) is part of what a view saves here.
@@ -76,11 +78,14 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
     const shownQueues = ORDER_QUEUE_IDS.filter((id) => state.queue === id || (QUEUE_NEEDS_PERSON.has(id) && (queueCount(id) ?? 0) > 0));
     const moreQueues = ORDER_QUEUE_IDS.filter((id) => !shownQueues.includes(id));
     const returnsPending = stats?.returnRequestsPending ?? 0;
+    // On the active list the status pills and the views row already show (pressed) what these chips would say.
+    const chips = active ? state.chips.filter((c) => !c.key.startsWith("f.status:") && !c.key.startsWith("f.queue:")) : state.chips;
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
-      // Sticky from sm up only: on a phone the two pill rows would pin ~40% of the screen, so there it scrolls away.
-      <div className="z-raised -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
+      // Sticky from sm up (on a phone the pill rows would pin ~40% of the screen, so there it scrolls away). Its measured
+      // height places the table's sticky column titles right under it (use-sticky-toolbar.ts).
+      <div ref={barRef} className="z-sticky -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-2 sm:pb-2.5 sm:pt-1 sm:top-chrome sm:-mx-page sm:px-page">
         <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           {canSeeTrash && (
             <div className="hidden sm:block">
@@ -346,9 +351,9 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
           </>
         )}
 
-        {state.chips.length > 0 && (
+        {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5" aria-label="Active filters">
-            {state.chips.map((chip) => (
+            {chips.map((chip) => (
               <button
                 key={chip.key}
                 type="button"

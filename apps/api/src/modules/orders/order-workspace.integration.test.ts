@@ -35,6 +35,31 @@ describe("orders workspace — queues", () => {
     }
   });
 
+  it("to pack: orders being prepared (Processing) — not confirmed, packed or shipped ones; Packed and its undo move them", async () => {
+    const owner = await asOwner();
+    const admin = await ownerId();
+    const { variants } = await createStockedProduct({ stocks: [10] });
+    const place = () => placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
+    const [processing, confirmed, packed] = [await place(), await place(), await place()];
+    await updateOrderStatus(confirmed.id, { status: "CONFIRMED" }, admin);
+    for (const s of ["CONFIRMED", "PROCESSING"] as const) await updateOrderStatus(processing.id, { status: s }, admin);
+    for (const s of ["CONFIRMED", "PROCESSING", "PACKED"] as const) await updateOrderStatus(packed.id, { status: s }, admin);
+
+    const ids = async () => (await owner.get(`/api/orders?pageSize=200&${queryOf(ORDER_QUEUE_FILTERS.toPack)}`)).body.items.map((o: { id: string }) => o.id);
+    expect(await ids()).toContain(processing.id);
+    expect(await ids()).not.toContain(confirmed.id);
+    expect(await ids()).not.toContain(packed.id);
+
+    // The list's one-tap Packed is the bulk status endpoint; its Undo moves the order back the same way.
+    const pack = await owner.post("/api/orders/bulk/status", { ids: [processing.id], status: "PACKED", note: null });
+    expect(pack.status).toBe(200);
+    expect(pack.body.updated).toEqual([processing.id]);
+    expect(await ids()).not.toContain(processing.id);
+    const undo = await owner.post("/api/orders/bulk/status", { ids: [processing.id], status: "PROCESSING", note: "Undo: not packed yet" });
+    expect(undo.body.updated).toEqual([processing.id]);
+    expect(await ids()).toContain(processing.id);
+  });
+
   it("courier issues: booked orders on courier hold or with a failed sync, combinable with search", async () => {
     const owner = await asOwner();
     const { variants } = await createStockedProduct({ stocks: [5] });

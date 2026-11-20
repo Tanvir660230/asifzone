@@ -18,6 +18,7 @@ import type {
   ConfirmationDecisionInput,
   ConfirmationOutcome,
   OrderConfirmationState,
+  PackScanResponse,
 } from "@clothing-brand/shared";
 import { apiDownload, apiFetch, type FetchSignal } from "../api-client";
 
@@ -218,6 +219,11 @@ export function permanentlyDeleteOrder(id: string) {
 
 export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, note?: string) {
   return apiFetch<BulkOrderStatusResult>("/api/orders/bulk/status", { method: "POST", body: { ids, status, note: note || null } });
+}
+
+/** Pack scan: the scanned label's confirmed / processing order becomes Packed (pack-scan.service.ts). */
+export function packByScan(code: string) {
+  return apiFetch<PackScanResponse>("/api/orders/pack-scan", { method: "POST", body: { code } });
 }
 
 export function bulkDeleteOrders(ids: string[]) {

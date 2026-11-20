@@ -42,11 +42,22 @@ export function PaymentBadges({
   method,
   status,
   layout = "stack",
+  quiet = false,
 }: {
   method: Order["paymentMethod"];
   status: Order["paymentStatus"];
   layout?: "stack" | "inline";
+  /** Lists: the everyday case — cash on delivery, not collected yet — is one quiet word, so Paid, Partial or a refund
+   * stand out instead of hiding among a column of identical "COD · Unpaid" badges. */
+  quiet?: boolean;
 }) {
+  if (quiet && method === "COD" && status === "UNPAID") {
+    return (
+      <span className="text-xs text-fg-subtle" title="Cash on delivery — not collected yet">
+        COD
+      </span>
+    );
+  }
   return (
     <span className={cn("flex", layout === "stack" ? "flex-col items-start gap-1" : "items-center gap-1.5")}>
       <span
@@ -66,13 +77,15 @@ export function PaymentBadges({
 type CourierFacts = Pick<Order, "courierConsignmentId" | "courierStatus" | "courierTrackingLink" | "courierSyncError" | "courierStatusSyncedAt">;
 
 /** Courier booking state for a row/card: provider-neutral wording, labels from lib/format. */
-export function CourierCell({ order, compact = false }: { order: CourierFacts; compact?: boolean }) {
+/** `hideSyncError`: the list already says the courier sync is failing for many orders at once (a key or connection
+ * problem, one banner) — the same red mark on every row would only repeat it. */
+export function CourierCell({ order, compact = false, hideSyncError = false }: { order: CourierFacts; compact?: boolean; hideSyncError?: boolean }) {
   if (!order.courierConsignmentId) return <span className="whitespace-nowrap text-xs text-fg-subtle">Not booked</span>;
   return (
     <span className="flex flex-col gap-0.5">
       <span className="flex items-center gap-1.5">
         <span
-          className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", courierStatusBadgeClass(order.courierStatus ?? ""))}
+          className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", courierStatusBadgeClass(order.courierStatus ?? ""))}
           title={order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked — status not yet reported"}
         >
           {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
@@ -89,7 +102,7 @@ export function CourierCell({ order, compact = false }: { order: CourierFacts; c
             <ExternalLink size={13} />
           </a>
         )}
-        {order.courierSyncError && (
+        {order.courierSyncError && !hideSyncError && (
           <span className="inline-flex items-center text-danger-600" title={`Sync failed: ${order.courierSyncError}`}>
             <AlertTriangle size={13} aria-hidden="true" />
             <span className="sr-only">Courier sync failed: {order.courierSyncError}</span>
@@ -108,11 +121,15 @@ export function DeliveryScoreBadge({
   score,
   onCheck,
   checking = false,
+  onlyIfWorrying = false,
 }: {
   score: DeliveryScore | null | undefined;
   onCheck?: () => void;
   checking?: boolean;
+  /** Lists: a good score (80%+) is the normal case and says nothing — show only a low one, "No history", or the check. */
+  onlyIfWorrying?: boolean;
 }) {
+  if (onlyIfWorrying && score && score.successRate !== null && score.successRate >= 80) return null;
   if (!score) {
     if (!onCheck) return <span className="whitespace-nowrap text-xs text-fg-subtle">No score yet</span>;
     return (

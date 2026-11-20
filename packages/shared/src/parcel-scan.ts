@@ -127,6 +127,19 @@ export interface ParcelResolveResult {
 
 export const resolveParcelCodeSchema = z.object({ code: z.string().min(1).max(500), mode: z.enum(PARCEL_SCAN_KINDS) });
 
+/** Pack scan (POST /api/orders/pack-scan): a label scanned at the packing table marks its order Packed. */
+export const packScanSchema = z.object({ code: z.string().trim().min(1).max(500) });
+export type PackScanInput = z.infer<typeof packScanSchema>;
+export interface PackScanResponse {
+  result: ParcelScanResult;
+  message: string;
+  orderId?: string;
+  orderNumber?: string;
+  customerName?: string;
+  /** ACCEPTED: the status it was packed from — the Undo target. */
+  previousStatus?: "CONFIRMED" | "PROCESSING";
+}
+
 /** Where a parcel stands, in the words the scanner shows (one badge). */
 export const PARCEL_STATES = [
   "READY_FOR_DISPATCH",
