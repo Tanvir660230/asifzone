@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  packScanSchema,
   checkoutSchema,
   adminCreateOrderSchema,
   orderListQuerySchema,
@@ -35,6 +36,8 @@ import { requireAdmin, requirePermission } from "../../middlewares/require-admin
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { orderCreateRateLimit, orderTrackRateLimit, retryPaymentRateLimit } from "../../middlewares/rate-limit";
 import * as orderController from "./order.controller";
+import { packByScan } from "./pack-scan.service";
+import { asyncHandler } from "../../lib/async-handler";
 import * as confirmationController from "./confirmation.controller";
 import * as adjustments from "./order-adjustments.controller";
 
@@ -66,6 +69,13 @@ orderRouter.post("/confirmation/next", requireAdmin, requirePermission("orders.m
 // Blueprint P1.5: parcels cancelled after shipping that haven't come back yet (receive them with POST /:id/receive-return)
 orderRouter.get("/export/csv", requireAdmin, requirePermission("orders.export"), validate(orderListQuerySchema, "query"), orderController.exportCsv);
 orderRouter.post("/bulk/status", requireAdmin, requirePermission("orders.manage"), validate(bulkOrderStatusSchema), orderController.bulkStatus);
+// Pack scan: a label scanned at the packing table marks its confirmed / processing order Packed (pack-scan.service.ts).
+orderRouter.post(
+  "/pack-scan", requireAdmin, requirePermission("orders.manage"), validate(packScanSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await packByScan(req.body.code, req.admin!.adminId));
+  }),
+);
 orderRouter.post("/bulk/delete", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkDelete);
 orderRouter.post("/bulk/restore", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkRestore);
 orderRouter.post(

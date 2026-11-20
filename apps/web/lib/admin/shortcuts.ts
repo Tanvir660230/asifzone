@@ -39,6 +39,10 @@ export const SHORTCUTS = {
   "list.open": { keys: "enter", display: "Enter", description: "Open the row", scope: "list", group: "Lists" },
   "list.select": { keys: "x", display: "X", description: "Select / deselect the row", scope: "list", group: "Lists" },
   "list.actions": { keys: ".", display: ".", description: "Row actions", scope: "list", group: "Lists" },
+  // Orders list (the highlighted row): the day's three repeat jobs, one key each.
+  "orders.markPacked": { keys: "p", display: "P", description: "Orders: mark the highlighted order Packed", scope: "list", group: "Lists" },
+  "orders.book": { keys: "b", display: "B", description: "Orders: book the highlighted order with the courier", scope: "list", group: "Lists" },
+  "orders.printLabel": { keys: "l", display: "L", description: "Orders: print the highlighted order's label", scope: "list", group: "Lists" },
   "drawer.prev": { keys: "arrowup", display: "↑", description: "Previous item in the drawer", scope: "drawer", group: "Drawers", handledBy: "components/ui/drawer.tsx" },
   "drawer.next": { keys: "arrowdown", display: "↓", description: "Next item in the drawer", scope: "drawer", group: "Drawers", handledBy: "components/ui/drawer.tsx" },
   "form.save": { keys: "mod+s", display: "Ctrl/⌘ S", description: "Save", scope: "form", group: "Forms", allowInInputs: true },

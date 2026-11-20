@@ -9,6 +9,9 @@ interface HScrollShadowProps {
   /** Tailwind `from-*` color matching the scrolling element's own background, so the fade blends
    * in instead of showing a visible seam. */
   edgeFrom?: string;
+  /** Applied to the positioning wrapper around the scroller — e.g. flex classes so the scroller can fill a fixed-height
+   * parent. */
+  wrapperClassName?: string;
 }
 
 /** Wraps a horizontally-scrollable region (data tables, tab bars) with fade shadows on whichever
@@ -16,7 +19,7 @@ interface HScrollShadowProps {
  * more" instead of looking like content was simply cut off. Shadows track real scroll position via
  * a ref + scroll/resize listeners, so they're absent entirely once nothing is clipped (e.g. once a
  * container switches to a non-scrolling layout at a wider breakpoint). */
-export function HScrollShadow({ children, className, edgeFrom = "from-cream-50" }: HScrollShadowProps) {
+export function HScrollShadow({ children, className, edgeFrom = "from-cream-50", wrapperClassName }: HScrollShadowProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -44,7 +47,7 @@ export function HScrollShadow({ children, className, edgeFrom = "from-cream-50" 
   }, []);
 
   return (
-    <div className="relative">
+    <div className={wrapperClassName ? `relative ${wrapperClassName}` : "relative"}>
       <div ref={ref} className={className}>
         {children}
       </div>

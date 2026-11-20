@@ -172,7 +172,7 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   { id: "orders.all", label: "All orders", title: term("order"), kind: "page", parent: "orders", domain: "operate", route: "/admin/orders", capability: "orders.view", order: 0 },
   // Blueprint P1.5 / tab 2 §2: a saved view of All orders — the Order Operations "Ready to book" queue.
-  { id: "orders.ready", label: "Ready to ship", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/ready", capability: "orders.view", order: 0.5, keywords: ["packed", "to ship", "to book", "courier pickup"] },
+  { id: "orders.ready", label: "Ready to book", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/ready", capability: "orders.view", order: 0.5, keywords: ["packed", "to ship", "to book", "courier pickup"] },
   {
     id: "orders.returns",
     label: term("returnRequest"),

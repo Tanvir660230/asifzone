@@ -86,7 +86,7 @@ export const ORDER_EXCEPTION_INFO: Readonly<Record<OrderExceptionId, { label: st
   },
 };
 
-export type OperationsStageId = "confirm" | "prepare" | "dispatch" | "delivery" | "returns";
+export type OperationsStageId = "confirm" | "prepare" | "pack" | "dispatch" | "delivery" | "returns";
 
 export type OperationsItemRef = { queue: OrderQueueId } | { exception: OrderExceptionId };
 
@@ -110,6 +110,7 @@ export const OPERATIONS_STAGES: readonly OperationsStageDef[] = [
     ],
   },
   { id: "prepare", label: "Book", primary: { queue: "readyToBook", label: "confirmed, not booked" }, more: [] },
+  { id: "pack", label: "Pack", primary: { queue: "toPack", label: "waiting to be packed" }, more: [] },
   {
     id: "dispatch",
     label: "Hand over",
