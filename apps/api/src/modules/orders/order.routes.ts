@@ -22,6 +22,7 @@ import {
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
   bulkDeliveryScoreCheckSchema,
+  bulkCourierExternalSchema,
   orderModificationSchema,
   recordItemReturnSchema,
   itemReturnPreviewSchema,
@@ -37,6 +38,7 @@ import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { orderCreateRateLimit, orderTrackRateLimit, retryPaymentRateLimit } from "../../middlewares/rate-limit";
 import * as orderController from "./order.controller";
 import { packByScan } from "./pack-scan.service";
+import { setCourierExternal } from "../courier/courier.service";
 import { asyncHandler } from "../../lib/async-handler";
 import * as confirmationController from "./confirmation.controller";
 import * as adjustments from "./order-adjustments.controller";
@@ -98,6 +100,16 @@ orderRouter.post(
   requirePermission("courier.manage"),
   validate(bulkOrderIdsSchema),
   orderController.bulkSyncCourier,
+);
+// Parcels booked on a courier account this store can't read: stop checking them (or start again).
+orderRouter.post(
+  "/bulk/courier/external",
+  requireAdmin,
+  requirePermission("courier.manage"),
+  validate(bulkCourierExternalSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await setCourierExternal(req.body.ids, req.body.external, req.admin!.adminId, req.ip));
+  }),
 );
 orderRouter.post(
   "/bulk/delivery-score",

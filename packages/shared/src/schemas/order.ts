@@ -235,6 +235,9 @@ export const linkCourierConsignmentSchema = z.object({
 export type LinkCourierConsignmentInput = z.infer<typeof linkCourierConsignmentSchema>;
 export const bulkDeliveryScoreCheckSchema = bulkOrderIdsSchema;
 
+/** Mark booked parcels as on another courier account (Order.courierExternal), or back on ours. */
+export const bulkCourierExternalSchema = bulkOrderIdsSchema.extend({ external: z.boolean() });
+
 export const updateOrderStatusSchema = z
   .object({
     status: orderStatusEnum,

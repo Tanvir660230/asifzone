@@ -677,6 +677,8 @@ export interface Order {
   courierBookedAt: string | null;
   courierStatusSyncedAt: string | null;
   courierSyncError: string | null;
+  /** Booked on a courier account this store can't read: never checked automatically, its status is set by hand. */
+  courierExternal?: boolean;
   /** Admin reads only: what Steadfast reported the rider collected on a partial delivery (PAYMENT_LEDGER §5b). */
   courierCollectedAmount?: string | null;
   courierCollectedAt?: string | null;

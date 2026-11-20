@@ -364,26 +364,39 @@ export function DeliverySection({
               )}
               {perms.courier && !deleted && (
                 <div className="ml-auto flex flex-wrap gap-1.5">
-                  <Button variant="outline" size="sm" loading={commands.pending.sync} onClick={() => commands.syncCourier(order)}>
-                    <RefreshCw size={13} /> Sync now
-                  </Button>
+                  {order.courierExternal ? (
+                    <Button variant="outline" size="sm" loading={commands.pending.external} onClick={() => commands.setCourierExternal([order], false)}>
+                      <RefreshCw size={13} /> Check on our account
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" loading={commands.pending.sync} onClick={() => commands.syncCourier(order)}>
+                      <RefreshCw size={13} /> Sync now
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" loading={commands.pending.unlink} onClick={() => commands.unlinkCourier(order)}>
                     <Unlink size={13} /> Unlink
                   </Button>
                 </div>
               )}
             </div>
-            <p className="text-xs text-ink-500">
-              {order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked — the courier hasn't reported a status yet."} ·{" "}
-              {order.courierStatusSyncedAt ? `last synced ${timeAgo(order.courierStatusSyncedAt)}` : "never synced"}
-            </p>
+            {order.courierExternal ? (
+              <p className="text-xs text-ink-500">
+                Booked on another courier account — this store can&apos;t check its status, so nothing updates on its own. Set the
+                order&apos;s status by hand when it&apos;s delivered or comes back.
+              </p>
+            ) : (
+              <p className="text-xs text-ink-500">
+                {order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked — the courier hasn't reported a status yet."} ·{" "}
+                {order.courierStatusSyncedAt ? `last synced ${timeAgo(order.courierStatusSyncedAt)}` : "never synced"}
+              </p>
+            )}
             {order.courierSyncError && (
               <p className="flex items-start gap-1.5 text-xs text-danger-700">
                 <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
                 Sync failed: {order.courierSyncError} — showing the last known status. If the consignment was cancelled in the courier panel, unlink it.
               </p>
             )}
-            {open && (
+            {open && !order.courierExternal && (
               <p className="text-xs text-ink-500">
                 The order moves to Delivered, Partially delivered or Cancelled automatically when the courier reports a final outcome.
               </p>

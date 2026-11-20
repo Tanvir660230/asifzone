@@ -273,6 +273,16 @@ export function bulkSyncCourier(ids: string[]) {
   return apiFetch<BulkCourierSyncResult>("/api/orders/bulk/courier/sync", { method: "POST", body: { ids } });
 }
 
+export interface CourierExternalResult {
+  updated: string[];
+  skipped: Array<{ orderId: string; orderNumber: string | null; reason: string }>;
+}
+
+/** Parcels booked on a courier account this store can't read: stop checking them (external) or start again. */
+export function setCourierExternal(ids: string[], external: boolean) {
+  return apiFetch<CourierExternalResult>("/api/orders/bulk/courier/external", { method: "POST", body: { ids, external } });
+}
+
 export interface BulkDeliveryScoreResult {
   checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number; volumeRange: string | null }>;
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;

@@ -14,6 +14,8 @@ export const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "can
 /** A booked parcel the courier hasn't finished with — the set the poll sweeps. */
 export const OPEN_PARCEL_WHERE = {
   courierConsignmentId: { not: null },
+  // A parcel on another courier account (Order.courierExternal) can't be checked, so it is never "open" to the poll.
+  courierExternal: false,
   deletedAt: null,
   OR: [{ courierStatus: null }, { courierStatus: { notIn: TERMINAL_COURIER_STATUSES } }],
 };

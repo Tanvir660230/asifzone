@@ -20,6 +20,7 @@ import {
   Phone,
   Printer,
   RefreshCw,
+  Unlink,
   RotateCcw,
   ShieldCheck,
   Trash2,
@@ -239,7 +240,14 @@ function rowActions(
   if (readOnly) return items;
   if (perms.courier) {
     if (!courierBookingBlocker(order)) items.push({ label: `Book with ${COURIER_PROVIDER_LABEL}`, icon: Truck, onClick: () => commands.bookCourier(order) });
-    else if (order.courierConsignmentId) items.push({ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.syncCourier(order) });
+    else if (order.courierConsignmentId && !order.courierExternal) items.push({ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.syncCourier(order) });
+    if (order.courierConsignmentId) {
+      items.push(
+        order.courierExternal
+          ? { label: "Check on our courier account", icon: RefreshCw, onClick: () => commands.setCourierExternal([order], false) }
+          : { label: "Booked on another account", icon: Unlink, onClick: () => commands.setCourierExternal([order], true) },
+      );
+    }
   } else if (perms.courierNotConnected && !courierBookingBlocker(order)) {
     items.push({ label: `Book with ${COURIER_PROVIDER_LABEL}`, icon: Truck, onClick: commands.explainCourierNotConnected });
   }
@@ -317,6 +325,12 @@ function AttentionMarker({ order, hideSyncError = false }: { order: AdminOrderLi
 
 /** One courier sync error shared by 3+ orders on the page is a key or connection problem, not 3 parcel problems: the
  * list says it once (above the rows) and the rows stop repeating it. */
+/** The courier refused this key for these parcels (401/403): wrong key, or parcels booked on someone else's account. Only
+ * then is "another account" a sensible answer — not for timeouts, outages or a blocked request. */
+function notAllowedToRead(message: string): boolean {
+  return /HTTP 40[13]\b/.test(message);
+}
+
 function sharedCourierSyncError(items: AdminOrderListItem[]): { message: string; count: number } | null {
   const counts = new Map<string, number>();
   for (const o of items) if (o.courierSyncError) counts.set(o.courierSyncError, (counts.get(o.courierSyncError) ?? 0) + 1);
@@ -431,6 +445,20 @@ export function OrdersList(props: OrdersListProps) {
             <Link href="/admin/settings?pane=integrations" className="whitespace-nowrap font-medium underline underline-offset-2">
               Check Integrations
             </Link>
+            {perms.courier && notAllowedToRead(syncProblem.message) && (
+              <>
+                {" "}— or, if these parcels were booked on another courier account (they will never sync here),{" "}
+                <button
+                  type="button"
+                  disabled={commands.pending.external}
+                  onClick={() => commands.setCourierExternal(items.filter((o) => o.courierSyncError === syncProblem.message), true)}
+                  className="whitespace-nowrap font-medium underline underline-offset-2 disabled:opacity-50"
+                >
+                  mark these {formatCount(syncProblem.count)} as another account
+                </button>
+                .
+              </>
+            )}
           </span>
         </p>
       )}

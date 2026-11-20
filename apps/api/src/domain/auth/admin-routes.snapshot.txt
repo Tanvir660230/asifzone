@@ -563,6 +563,7 @@ POST /api/orders/:id/returns/preview → returns.manage
 POST /api/orders/:id/store-credit → refunds.manage
 POST /api/orders/admin → orders.manage
 POST /api/orders/bulk/courier/book → courier.manage
+POST /api/orders/bulk/courier/external → courier.manage
 POST /api/orders/bulk/courier/sync → courier.manage
 POST /api/orders/bulk/delete → orders.delete
 POST /api/orders/bulk/delivery-score → orders.manage

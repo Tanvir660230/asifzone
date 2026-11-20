@@ -1343,6 +1343,10 @@ model Order {
   /// Order Operations Phase 0: when the courier-status poll should next re-check this parcel (NULL = due now). Set from the
   /// parcel's age and the poll level (modules/courier/courier-sync-policy.ts); a webhook that verified the status pushes it on.
   courierNextPollAt       DateTime?
+  /// Booked on a courier account this store's key can't read (Tahafi's parcels booked through YG Fashion's Steadfast
+  /// before 2026-11-18 — every status check is an HTTP 401). Never polled or auto-synced and never marked "sync failed";
+  /// its status is updated by hand. Set and cleared from the orders list (POST /api/orders/bulk/courier/external).
+  courierExternal         Boolean   @default(false)
 
   // ── Pricing snapshot (Phase 2, docs/PRICING_INVARIANTS.md §8). Immutable historical facts written once at order
   // creation by the canonical pricing pipeline; never recomputed from current products, promotions or settings.
