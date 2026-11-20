@@ -71,9 +71,29 @@ rider's word. Only our own handover scan proves the parcel left; only the return
   tables are append-only (trigger). Printing changes nothing else.
 - `GET /api/warehouse/print-runs?orderId|kind` — history.
 
-UI: Orders → select → **Pick list** (`/admin/orders/pick-list`); **Product labels** (`/admin/orders/product-labels`, 50×30
-or 38×25 mm stickers, one label per page); the courier-label page logs each print and asks why on a reprint. The packing
+UI: Orders → select → **Pick list** (`/admin/orders/pick-list`); **Product labels** (`/admin/orders/product-labels`, 50×25
+(default), 50×30 or 38×25 mm stickers, one label per page, size remembered per device); the courier-label page logs each print and asks why on a reprint. The packing
 sheet's tick boxes are an on-screen aid only; packing verification by scan belongs to the scanner branch.
+
+**The 50 × 25 sticker** (`lib/sticker-layout.ts` geometry, `lib/sticker-canvas.ts` drawing) is a bitmap at the printer's
+own dots — 400 × 200 at 203 dpi, 591 × 295 at 300 dpi (the page's Printer choice, remembered per device), pure black and
+white, printed at exactly 50 × 25 mm with no resampling. Layout: frame; store logo (Settings) + the **Text beside the
+logo** (`StoreSetting.labelTagline`, e.g. OUTERWEAR); the product's **Sticker name** and **Sticker tag**
+(`Product.labelName` / `labelTag`, product form › Basics; empty = product name minus a trailing colour, no tag); SIZE
+(white on black) and COLOR cells; Code 128 of the code (variant barcode, else SKU) with its text, centred; a QR of the
+same code. Bars are whole dots, at least 0.125 mm (1 dot at 203, 2 at 300), 10-module quiet zones; QR squares are 3 dots
+(203) / 4 dots (300) with a 4-module quiet zone clear of every mark. A code too long for that is refused per sticker,
+never squeezed. `e2e/product-labels.spec.ts` decodes every printed bitmap with zxing (both codes) at both resolutions.
+The 50 × 30 and 38 × 25 sizes keep the classic layout (`components/admin/product-labels/classic-label.tsx`).
+
+**Supplier lists** (Product labels › Supplier lists; `LabelBatch` / `LabelBatchLine`, `/api/warehouse/label-batches`,
+read orders.read, write orders.manage): a list per purchase — name, supplier, and per size the **ordered** count and,
+once the goods are in, the **received** count. One table per sticker name + tag, a row per colour, a column per size.
+**Print stickers** sends the list to Print with the received count where counted, else the ordered one. Labels only:
+no stock, purchase-order or money effect (Tahafi's products are untracked and can't use purchase orders).
+
+Search → **Add all** adds every size and colour found (one each). The admin shell turns into plain blocks when printing
+(`print:block`), so a multi-page print (stickers, pick lists, packing sheets) gets every page, not one screen's worth.
 
 ## 4. Data changes
 

@@ -56,6 +56,7 @@ DELETE /api/v1/purchasing/goods-receipts/:id → purchasing.receive
 DELETE /api/v1/purchasing/purchase-orders/:id → purchasing.manage
 DELETE /api/v1/purchasing/returns/:id → purchasing.manage
 DELETE /api/v1/purchasing/supplier-invoices/:id → ap.manage
+DELETE /api/warehouse/label-batches/:id → orders.manage
 GET /api/ai/status → catalog.read
 GET /api/analytics/abandoned-carts → customers.read
 GET /api/analytics/active-visitors → analytics.read
@@ -405,6 +406,8 @@ GET /api/v1/purchasing/suppliers/:id/account → ap.read
 GET /api/v1/purchasing/tax-codes → purchasing.read
 GET /api/v1/purchasing/variants → purchasing.read
 GET /api/v1/storefront/read-model/drift → ops.read
+GET /api/warehouse/label-batches → orders.read
+GET /api/warehouse/label-batches/:id → orders.read
 GET /api/warehouse/print-runs → orders.read
 GET /api/warehouse/product-labels → orders.read
 PATCH /api/attributes/:id → catalog.manage
@@ -788,6 +791,7 @@ POST /api/v1/purchasing/suppliers → suppliers.manage
 POST /api/v1/purchasing/suppliers/:id/status → suppliers.manage
 POST /api/v1/purchasing/tax-codes → finance.configure
 POST /api/v1/storefront/read-model/rebuild → ops.repair
+POST /api/warehouse/label-batches → orders.manage
 POST /api/warehouse/pick-list → orders.read
 POST /api/warehouse/print-runs → orders.manage
 PUT /api/catalog/care-guides/:id → catalog.configure
@@ -820,3 +824,4 @@ PUT /api/v1/finance/stock/items/:id/settings → inventory.adjust
 PUT /api/v1/finance/stock/products/:id/policy → inventory.adjust
 PUT /api/v1/finance/stock/products/:id/stocking → inventory.adjust
 PUT /api/v1/manufacturing/production-orders/:id/material-usage → manufacturing.manage
+PUT /api/warehouse/label-batches/:id → orders.manage

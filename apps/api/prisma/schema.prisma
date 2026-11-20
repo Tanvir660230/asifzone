@@ -495,6 +495,10 @@ model Product {
   slug               String                   @unique
   description        String                   @default("")
   shortDescription   String?
+  /// Product sticker (Orders › Product labels): the big name and the dark tag, e.g. "Haven Jacket" + "Sleeveless".
+  /// Empty: the sticker prints the product name (minus a trailing colour) and no tag.
+  labelName          String?                  @db.VarChar(60)
+  labelTag           String?                  @db.VarChar(30)
   sortOrder          Int                      @default(0)
   categoryId         String
   category           Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -772,6 +776,7 @@ model ProductVariant {
   /// Phase 4D purchasing documents — Restrict: a variant that was bought keeps its history.
   purchaseOrderLines        PurchaseOrderLine[]
   goodsReceiptLines         GoodsReceiptLine[]
+  labelBatchLines           LabelBatchLine[]
   purchaseReturnLines       PurchaseReturnLine[]
   /// Manufacturing — Restrict: a variant used in a BOM or a production order keeps its history.
   bomMaterialLines          BillOfMaterialsLine[]      @relation("BomMaterial")
@@ -2755,6 +2760,8 @@ model StoreSetting {
   id                           String   @id @default("singleton")
   storeName                    String   @default("Store")
   tagline                      String?
+  /// The short line printed beside the logo on product stickers, e.g. "OUTERWEAR". Empty: none.
+  labelTagline                 String?  @db.VarChar(40)
   logoUrl                      String?
   logoOnDarkUrl                String?
   faviconUrl                   String?
@@ -7042,4 +7049,34 @@ model MonthlyTarget {
   updatedAt        DateTime   @updatedAt
   updatedByAdminId String?
   updatedByAdmin   AdminUser? @relation("MonthlyTargetUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+}
+
+/// A supplier list for product stickers (docs/WAREHOUSE_OPERATIONS.md §3): what was ordered from a supplier, size by
+/// size, and what actually arrived. Stickers print from the received quantities. Labels only: no stock, money or
+/// purchase-order effect.
+model LabelBatch {
+  id               String           @id @default(cuid())
+  name             String           @db.VarChar(80)
+  supplier         String?          @db.VarChar(80)
+  notes            String?          @db.VarChar(500)
+  createdByAdminId String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  lines            LabelBatchLine[]
+
+  @@index([createdAt])
+}
+
+model LabelBatchLine {
+  id          String         @id @default(cuid())
+  batchId     String
+  batch       LabelBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  qtyOrdered  Int            @default(0)
+  /// Null until the goods are counted in: stickers then print the ordered quantity.
+  qtyReceived Int?
+
+  @@unique([batchId, variantId])
+  @@index([variantId])
 }

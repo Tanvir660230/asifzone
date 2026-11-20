@@ -124,6 +124,8 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
     slug: initial.slug,
     description: initial.description,
     shortDescription: initial.shortDescription,
+    labelName: initial.labelName ?? null,
+    labelTag: initial.labelTag ?? null,
     sortOrder: initial.sortOrder,
     categoryId: initial.categoryId,
     additionalCategoryIds: initial.additionalCategoryIds ?? [],

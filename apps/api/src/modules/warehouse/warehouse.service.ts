@@ -420,22 +420,7 @@ export async function listProductLabelVariants(q: {
   };
   const rows = await prisma.productVariant.findMany({
     where,
-    select: {
-      id: true,
-      sku: true,
-      barcode: true,
-      size: true,
-      color: true,
-      price: true,
-      product: {
-        select: {
-          id: true,
-          name: true,
-          basePrice: true,
-          category: { select: { name: true } },
-        },
-      },
-    },
+    select: LABEL_VARIANT_SELECT,
     orderBy: [
       { product: { name: "asc" } },
       { sortOrder: "asc" },
@@ -443,7 +428,33 @@ export async function listProductLabelVariants(q: {
     ],
     take: q.limit,
   });
-  return rows.map((v) => ({
+  return rows.map(toLabelVariant);
+}
+
+/** What a product sticker needs from a variant (also used by supplier lists). */
+export const LABEL_VARIANT_SELECT = {
+  id: true,
+  sku: true,
+  barcode: true,
+  size: true,
+  color: true,
+  colorHex: true,
+  price: true,
+  sortOrder: true,
+  product: {
+    select: {
+      id: true,
+      name: true,
+      basePrice: true,
+      labelName: true,
+      labelTag: true,
+      category: { select: { name: true } },
+    },
+  },
+} satisfies Prisma.ProductVariantSelect;
+
+export function toLabelVariant(v: Prisma.ProductVariantGetPayload<{ select: typeof LABEL_VARIANT_SELECT }>): ProductLabelVariant {
+  return {
     variantId: v.id,
     productId: v.product.id,
     productName: v.product.name,
@@ -454,5 +465,9 @@ export async function listProductLabelVariants(q: {
     color: v.color,
     price: v.price != null ? Number(v.price) : Number(v.product.basePrice),
     code: v.barcode?.trim() || v.sku,
-  }));
+    labelName: v.product.labelName?.trim() || null,
+    labelTag: v.product.labelTag?.trim() || null,
+    colorHex: v.colorHex ?? null,
+    sortOrder: v.sortOrder,
+  };
 }

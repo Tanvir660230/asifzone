@@ -184,6 +184,8 @@ export interface Product {
   slug: string;
   description: string;
   shortDescription: string | null;
+  labelName?: string | null;
+  labelTag?: string | null;
   sortOrder: number;
   categoryId: string;
   category: Category;
@@ -1050,6 +1052,7 @@ export interface StoreSettings {
   id: string;
   storeName: string;
   tagline: string | null;
+  labelTagline?: string | null;
   logoUrl: string | null;
   logoOnDarkUrl: string | null;
   faviconUrl: string | null;

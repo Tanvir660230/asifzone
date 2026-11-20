@@ -95,7 +95,9 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
       data-nav-back={mobileBack ? "" : undefined}
       // h-dvh, not h-screen: on phones 100vh is the height with the browser's toolbars hidden, so a 100vh shell runs
       // under Safari's and Chrome's bottom toolbar — taking the tab bar with it. The dynamic viewport is what's visible.
-      className="relative flex h-dvh overflow-hidden bg-canvas font-sans text-fg"
+      // Printing: the shell and its scroll column become plain full-height blocks. Otherwise a print gets one screen of
+      // the page (a screen-tall box that scrolls), and forced page breaks inside flex items are dropped.
+      className="relative flex h-dvh overflow-hidden bg-canvas font-sans text-fg print:block print:h-auto print:overflow-visible"
     >
       {/* First stop for keyboard users: past the sidebar and toolbar straight to the page. */}
       <a
@@ -120,8 +122,8 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
 
           Below lg the mobile bottom bar sits UNDER that scrolling box, in normal flow — not fixed over it — so the
           scroll viewport ends above the bar and no content (or a page's own sticky toolbar) can be hidden behind it. */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={setScrollRoot} className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-w-0 flex-1 flex-col print:block">
+        <div ref={setScrollRoot} className="relative flex min-w-0 flex-1 flex-col overflow-y-auto print:block print:overflow-visible">
           {/* The toolbar (macOS-style): where you are on the left, one search for everything in the middle, actions on the
               right — three columns so the search stays centred whatever the breadcrumb's length. */}
           {/* Toolbar and section bar share one pinned, translucent layer — one material, one bottom edge. */}

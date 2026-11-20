@@ -119,6 +119,9 @@ export const baseProductSchema = z.object({
   slug: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
   description: z.string().max(20_000).default(""),
   shortDescription: nullableString(300),
+  /** Product sticker: the big name ("Haven Jacket") and the dark tag ("Sleeveless"). Empty: the product name, no tag. */
+  labelName: nullableString(60),
+  labelTag: nullableString(30),
   sortOrder: z.number().int().default(0),
   categoryId: z.string().cuid(),
   /** "Also show in": extra categories the product is listed in besides its home `categoryId` (a unisex item under both
