@@ -593,7 +593,7 @@ export type PaymentLinkStatus = "ACTIVE" | "USED" | "EXPIRED" | "CANCELLED";
 export interface PaymentLinkDto {
   id: string;
   orderId: string;
-  purpose: "ORDER_BALANCE" | "MODIFICATION";
+  purpose: "ORDER_BALANCE" | "MODIFICATION" | "DELIVERY_ADVANCE";
   amount: number;
   currency: string;
   status: PaymentLinkStatus;
@@ -617,7 +617,7 @@ export interface PublicPaymentLinkView {
   amount: number;
   orderTotal: number;
   expiresAt: string;
-  purpose: "ORDER_BALANCE" | "MODIFICATION";
+  purpose: "ORDER_BALANCE" | "MODIFICATION" | "DELIVERY_ADVANCE";
   items: Array<{ name: string; size: string; color: string; quantity: number }>;
   providers: Array<"SSLCOMMERZ" | "EPS_PG">;
 }

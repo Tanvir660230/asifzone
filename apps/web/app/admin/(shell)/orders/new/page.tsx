@@ -1,8 +1,8 @@
 "use client";
 
-import { formatVariantLabel, isAvailable, maxSellableQuantity } from "@clothing-brand/shared";
+import { formatVariantLabel, isAvailable, isBdMobileLocal, maxSellableQuantity, normalizeBdPhone } from "@clothing-brand/shared";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Search, User, MapPin, Package, X, CheckCircle2 } from "lucide-react";
@@ -72,6 +72,16 @@ export default function NewOrderPage() {
   const [backHref, setBackHref] = useState("/admin/orders");
   useEffect(() => setBackHref(ordersListHref()), []);
   const perms = useOrderPermissions();
+  // Chat to order (Inbox › Create order): the chat's name and number fill in, and the order is linked to the chat.
+  const fromChat = useSearchParams();
+  const conversationId = fromChat.get("conversation") ?? undefined;
+  const chatName = fromChat.get("name") ?? "";
+  const chatPhone = (() => {
+    const raw = fromChat.get("phone");
+    if (!raw) return "";
+    const local = normalizeBdPhone(raw);
+    return isBdMobileLocal(local) ? local : "";
+  })();
 
   // --- link to an existing customer (optional) — clearing it falls back to the same phone/email
   // guest-matching the storefront checkout uses, so a repeat customer still gets recognized even
@@ -114,6 +124,8 @@ export default function NewOrderPage() {
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      ...(chatName ? { customerName: chatName } : {}),
+      ...(chatPhone ? { customerPhone: chatPhone } : {}),
       paymentMethod: "COD",
       shippingDivision: "" as FormValues["shippingDivision"],
       shippingDistrict: "",
@@ -278,6 +290,7 @@ export default function NewOrderPage() {
       items: baseRequest.items,
       // The quote staff are looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
+      ...(conversationId ? { conversationId } : {}),
       ...(staffPricing ? { freeDelivery, finalTotal: agreedValid ? agreed : undefined, pricingNote: pricingNote.trim() || null } : {}),
     };
     try {
@@ -299,6 +312,12 @@ export default function NewOrderPage() {
         description="For phone, Facebook or walk-in orders — stock and pricing sync the same way a storefront checkout does."
         action={<BackLink href={backHref} label="Back to Orders" />}
       />
+
+      {conversationId && (
+        <Alert variant="info" title="From an Inbox chat" className="mb-5">
+          {chatName ? `${chatName}'s` : "The"} name{chatPhone ? " and number are" : " is"} filled in. The order will be linked to the chat, and the chat will show it.
+        </Alert>
+      )}
 
       {perms.ready && !perms.manage && (
         <Alert variant="warning" title="You can't create orders" className="mb-5">

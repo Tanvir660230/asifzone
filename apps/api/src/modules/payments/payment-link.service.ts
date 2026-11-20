@@ -92,6 +92,16 @@ export async function createPaymentLink(orderId: string, input: CreatePaymentLin
       if (order.deletedAt || ["CANCELLED", "RETURNED", "REFUNDED"].includes(order.status)) {
         throw new AppError(409, `Can't collect a payment on an order that is ${order.status.toLowerCase()}`, { code: "PAYMENT_LINK_NOT_ALLOWED" });
       }
+    } else if (input.purpose === "DELIVERY_ADVANCE") {
+      // Only the delivery charge, and only while nothing has been paid yet: a second advance (or one after a payment) would
+      // collect the charge twice. Same guards as a balance link — never on a booked COD parcel (the courier has the amount).
+      const summary = await getOrderPaymentSummary(orderId);
+      const blocker = paymentLinkBlocker(order, summary.amountDue);
+      if (blocker) throw new AppError(409, blocker, { code: "PAYMENT_LINK_NOT_ALLOWED" });
+      if (summary.paid > 0) throw new AppError(409, "Something is already paid on this order — send a balance link instead", { code: "PAYMENT_LINK_NOT_ALLOWED" });
+      const charge = order.shippingWaived ? 0 : Number(order.shippingFee);
+      if (!(charge > 0)) throw new AppError(409, "This order has free delivery — there's no delivery charge to ask for", { code: "PAYMENT_LINK_NOT_ALLOWED" });
+      amount = Math.min(charge, summary.amountDue);
     } else {
       amount = (await getOrderPaymentSummary(orderId)).amountDue;
       const blocker = paymentLinkBlocker(order, amount);
@@ -109,7 +119,7 @@ export async function createPaymentLink(orderId: string, input: CreatePaymentLin
         tokenHash: hashToken(token),
         tokenCiphertext: seal(token),
         orderId,
-        purpose: modificationId ? "MODIFICATION" : "ORDER_BALANCE",
+        purpose: modificationId ? "MODIFICATION" : input.purpose === "DELIVERY_ADVANCE" ? "DELIVERY_ADVANCE" : "ORDER_BALANCE",
         orderModificationId: modificationId,
         amount,
         currency,
@@ -119,7 +129,7 @@ export async function createPaymentLink(orderId: string, input: CreatePaymentLin
       },
     });
     await tx.orderStatusHistory.create({
-      data: { orderId, status: order.status, changedByAdminId: adminId, note: `Payment link created for ${currency} ${amount.toFixed(2)} (valid ${input.expiresInHours}h)` },
+      data: { orderId, status: order.status, changedByAdminId: adminId, note: `${input.purpose === "DELIVERY_ADVANCE" ? "Delivery-charge advance link" : "Payment link"} created for ${currency} ${amount.toFixed(2)} (valid ${input.expiresInHours}h)` },
     });
     if (input.send.length) await recordOutboxEvents(tx as AppTransactionClient, sendIntents(created.id, orderId, input.send, "created"));
     return tx.paymentLink.findUniqueOrThrow({ where: { id: created.id }, include: linkInclude });
@@ -182,6 +192,12 @@ async function resolvePayable(token: string) {
   if (order.revision !== link.orderRevision) return expire("CANCELLED", "The order changed after this link was created");
   if (link.purpose === "MODIFICATION") {
     if (!link.orderModification || link.orderModification.status !== "AWAITING_PAYMENT") return expire("CANCELLED", "The change is no longer waiting for payment");
+  } else if (link.purpose === "DELIVERY_ADVANCE") {
+    // The advance stays payable while it is still owed in full: nothing paid since, and the parcel not booked yet.
+    const summary = await getOrderPaymentSummary(order.id);
+    if (summary.paid > 0) return expire("CANCELLED", "A payment was made on the order after this link was created");
+    if (summary.amountDue + 0.001 < Number(link.amount)) return expire("CANCELLED", "The amount due changed after this link was created");
+    if (order.paymentMethod === "COD" && order.courierConsignmentId) return expire("CANCELLED", "The parcel was booked with the courier");
   } else {
     const due = (await getOrderPaymentSummary(order.id)).amountDue;
     if (due <= 0) return expire("CANCELLED", "Nothing is due on the order any more");

@@ -4,7 +4,8 @@ import { requireAdmin, requirePermission } from "../../middlewares/require-admin
 import { validate } from "../../middlewares/validate";
 import { asyncHandler } from "../../lib/async-handler";
 import { listTemplates } from "../social-inbox/templates.service";
-import { deleteConversation, discardDraft, getConversation, listConversations, replyToConversation, updateConversation } from "./inbox.service";
+import { z } from "zod";
+import { chatConversion, deleteConversation, discardDraft, getConversation, listConversations, replyToConversation, updateConversation } from "./inbox.service";
 
 /** /api/v1/admin/conversations — Messages › Inbox (R2). Reading and triage: content.manage (as the contact form was);
  * replying to a customer: customers.message. */
@@ -22,6 +23,13 @@ inboxRouter.get(
   "/whatsapp-templates", requirePermission("customers.message"),
   asyncHandler(async (_req, res) => {
     res.json({ templates: await listTemplates() });
+  }),
+);
+// Chats → orders, per channel, for the Inbox's summary line (before "/:id").
+inboxRouter.get(
+  "/conversion", requirePermission("content.manage"), validate(z.object({ days: z.coerce.number().int().min(1).max(365).default(30) }), "query"),
+  asyncHandler(async (req, res) => {
+    res.json(await chatConversion(Number((req.query as { days?: number }).days ?? 30)));
   }),
 );
 inboxRouter.get(

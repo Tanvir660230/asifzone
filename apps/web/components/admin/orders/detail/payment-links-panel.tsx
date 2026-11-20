@@ -106,7 +106,7 @@ export function PaymentLinksPanel({
         <div className="space-y-2 rounded-lg bg-surface-muted p-3 text-sm">
           <p className="text-ink-700">
             Collects <span className="font-semibold text-ink-900">{formatPrice(active.amount)}</span>
-            {active.purpose === "MODIFICATION" ? " for the order change" : " (balance due)"} · valid until {formatStoreDateTime(active.expiresAt)}
+            {active.purpose === "MODIFICATION" ? " for the order change" : active.purpose === "DELIVERY_ADVANCE" ? " (delivery charge, in advance)" : " (balance due)"} · valid until {formatStoreDateTime(active.expiresAt)}
           </p>
           {active.url && <p className="break-all font-mono text-xs text-ink-600">{active.url}</p>}
           {canManage && (
@@ -169,7 +169,7 @@ export function PaymentLinksPanel({
               <li key={l.id} className="rounded-lg border border-line-subtle px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <span>
-                    {formatPrice(l.amount)} · {l.purpose === "MODIFICATION" ? "order change" : "balance due"}
+                    {formatPrice(l.amount)} · {l.purpose === "MODIFICATION" ? "order change" : l.purpose === "DELIVERY_ADVANCE" ? "delivery advance" : "balance due"}
                   </span>
                   <Badge variant={STATUS_VARIANT[l.status]}>{l.status.toLowerCase()}</Badge>
                 </div>

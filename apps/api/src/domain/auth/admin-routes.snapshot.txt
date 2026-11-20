@@ -252,6 +252,7 @@ GET /api/targets/:month/scorecard → analytics.read
 GET /api/v1/admin/attention → (self)
 GET /api/v1/admin/conversations/ → content.manage
 GET /api/v1/admin/conversations/:id → content.manage
+GET /api/v1/admin/conversations/conversion → content.manage
 GET /api/v1/admin/conversations/whatsapp-templates → customers.message
 GET /api/v1/admin/list-preferences/:list → (self)
 GET /api/v1/admin/saved-answers/ → content.manage
