@@ -12,6 +12,7 @@ import { parseSteadfastWebhook } from "./steadfast-webhook";
 import { codChangeOf } from "./cod-fact";
 import { recordCodChange } from "./cod-fact.service";
 import { recordCourierCharge } from "../../domain/shipments/courier-charge";
+import { applyDoorCollection } from "../../domain/payments/door-collection.service";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { getSettings } from "../settings/settings.service";
 import { logger } from "../../lib/observability/logger";
@@ -812,6 +813,7 @@ export async function unlinkCourierBooking(orderId: string) {
       courierCodNow: null,
       courierCodSource: null,
       courierCodAt: null,
+      doorShortfallAt: null,
     },
   });
   // The unlinked consignment's leg is kept as history, no longer tracked (docs/COURIER_COSTS.md).
@@ -901,7 +903,15 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     const status = await getProviders().courier.statusByConsignment(event.consignmentId);
     // Kept beside the body's own claim (event.status): the health report counts how often the two disagree.
     verifiedStatus = status;
+    // A delivery push whose amount is below the booked COD is the changed COD, told late (7 of 7 posted payouts agreed);
+    // one equal to it proves nothing and is not kept. Before the status is applied, so delivery books what was collected.
+    if (!codChange && event.notificationType === "delivery_status" && event.status === "delivered" && event.codAmount !== null && DELIVERED_COURIER_STATUSES.includes(status)) {
+      const { courierCodNow } = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, select: { courierCodNow: true } });
+      if (courierCodNow === null && event.codAmount < (await bookedCod(order))) await recordCodChange(order.id, { from: null, to: event.codAmount, source: "COURIER", at: null });
+    }
     await applyCourierStatus(order, status, "WEBHOOK");
+    // The status check may have delivered it, booked in full, before the amount was told (§5d).
+    await applyDoorCollection(order.id);
     // The delivery charge Steadfast states with a delivery status (domain/shipments/courier-charge.ts).
     if (event.notificationType === "delivery_status" && event.deliveryCharge !== null) {
       await recordCourierCharge(event.consignmentId, event.deliveryCharge).catch((err) => captureError(err, { msg: "[steadfast-webhook] could not keep the delivery charge:" }));
@@ -929,6 +939,7 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
   }
 }
 
+const DELIVERED_COURIER_STATUSES = ["delivered", "delivered_approval_pending"];
 /** Steadfast's words for a partly delivered parcel: agreed, or waiting for its own approval. */
 const PARTIAL_COURIER_STATUSES = ["partial_delivered", "partial_delivered_approval_pending"];
 

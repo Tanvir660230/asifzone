@@ -279,6 +279,15 @@ export const adjustOrderPriceSchema = z.object({
   note: nullableString(500),
 });
 
+/** A delivered COD order whose courier collected less than the order says: what it was (docs/PAYMENT_LEDGER.md §5d).
+ * `collected` is only used when Steadfast never said an amount. */
+export const DOOR_DECISIONS = ["AGREED_PRICE", "STILL_OWED", "COLLECTED_IN_FULL"] as const;
+export const doorShortfallSchema = z.object({
+  decision: z.enum(DOOR_DECISIONS),
+  collected: z.coerce.number().min(0).max(1_000_000).optional().nullable(),
+  note: z.string().trim().min(3, "Say why, in a few words").max(300),
+});
+
 /** Admin resolves a PARTIALLY_DELIVERED order (Steadfast "partial_delivered") by declaring how
  * many units of each line item actually came back — anything not listed (or listed as 0) is
  * assumed kept by the customer. `damaged`: how many of the returned units can't be sold again (written off).
@@ -350,6 +359,7 @@ export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
 export type HoldOrderInput = z.infer<typeof holdOrderSchema>;
 export type AdjustOrderPriceInput = z.infer<typeof adjustOrderPriceSchema>;
+export type DoorShortfallInput = z.infer<typeof doorShortfallSchema>;
 export type ReconcilePartialDeliveryInput = z.infer<typeof reconcilePartialDeliverySchema>;
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;

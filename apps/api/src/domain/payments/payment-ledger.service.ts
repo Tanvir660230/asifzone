@@ -250,7 +250,60 @@ async function settleBalance(tx: Db, order: LockedOrder, provider: "COD" | "MANU
 export async function recordCodCollection(tx: Db, orderId: string, actor: { adminId?: string | null } = {}) {
   const order = await lockOrder(tx, orderId);
   if (order.paymentMethod !== "COD") return null;
-  return settleBalance(tx, order, "COD", "Cash collected on delivery (D1)", actor.adminId);
+  // §5d: Steadfast says the parcel's cash is less than the balance due — that is what was collected; the rest waits for a
+  // person. A person marking the order delivered changes nothing about what the courier says it collected.
+  const { courierCodNow } = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { courierCodNow: true } });
+  const currency = await storeCurrency();
+  const before = await loadPosition(tx, order, currency);
+  const due = new Prisma.Decimal(toMajor(before.amountDue));
+  if (courierCodNow !== null && courierCodNow.lt(due)) {
+    const payment = courierCodNow.gt(0)
+      ? await tx.payment.create({ data: { orderId, provider: "COD", status: "SUCCEEDED", amount: courierCodNow, note: `${COD_COLLECTED_NOTE} — Steadfast's figure` } })
+      : null;
+    await markDoorShortfall(tx, order, due, courierCodNow, currency);
+    return { payment, position: await refreshPaymentStatus(tx, orderId, currency) };
+  }
+  return settleBalance(tx, order, "COD", COD_COLLECTED_NOTE, actor.adminId);
+}
+
+// ─── Courier cash that differs from the order (docs/PAYMENT_LEDGER.md §5d) ──────────────────────────────────────────
+
+/** The note of the row recordCodCollection writes; with no person on it, it is the system's own. */
+export const COD_COLLECTED_NOTE = "Cash collected on delivery (D1)";
+
+/** Makes the order's courier cash equal `collected`: the system's own rows are voided and one row of that amount written.
+ * False when a person recorded courier cash (theirs stands) or it is already so. The caller holds the order's lock. */
+export async function setSystemCourierCash(tx: Db, orderId: string, collected: Prisma.Decimal, why: string): Promise<boolean> {
+  const rows = await tx.payment.findMany({ where: { orderId, provider: "COD", status: "SUCCEEDED", purpose: "ORDER" } });
+  if (rows.some((r) => r.recordedByAdminId !== null)) return false;
+  const have = rows.reduce((s, r) => s.plus(r.amount), new Prisma.Decimal(0));
+  if (have.equals(collected)) return false;
+  for (const r of rows) await tx.payment.update({ where: { id: r.id }, data: { status: "VOIDED", voidedAt: new Date(), voidReason: why } });
+  if (collected.gt(0)) {
+    await tx.payment.create({ data: { orderId, provider: "COD", status: "SUCCEEDED", amount: collected, note: `${COD_COLLECTED_NOTE} — Steadfast's figure` } });
+  }
+  return true;
+}
+
+/** Puts the order on the decision list, with one timeline line. The caller holds the lock. */
+export async function markDoorShortfall(tx: Db, order: { id: string; status: string }, expected: Prisma.Decimal, collected: Prisma.Decimal, currency: string) {
+  await tx.order.update({
+    where: { id: order.id },
+    data: {
+      doorShortfallAt: new Date(),
+      statusHistory: {
+        create: {
+          status: order.status as never,
+          note: `The courier collected ${currency} ${collected.toFixed(2)} of ${currency} ${expected.toFixed(2)} — say why on the order (agreed price, still owed…)`,
+        },
+      },
+    },
+  });
+}
+
+/** Courier cash a person says came in (a shortfall decided as "collected in full"). The caller holds the order's lock. */
+export async function recordCourierCashByStaff(tx: Db, orderId: string, amount: Prisma.Decimal, adminId: string) {
+  await tx.payment.create({ data: { orderId, provider: "COD", status: "SUCCEEDED", amount, note: "Courier cash — collected in full", recordedByAdminId: adminId } });
 }
 
 /** The admin "mark paid" of a manually entered order — inside that order's own insert transaction. */
