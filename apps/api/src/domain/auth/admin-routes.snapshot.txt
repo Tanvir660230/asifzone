@@ -343,6 +343,7 @@ GET /api/v1/finance/reconciliation/checks → finance.read
 GET /api/v1/finance/reconciliation/runs → finance.read
 GET /api/v1/finance/settlements → finance.read
 GET /api/v1/finance/settlements/:id → finance.read
+GET /api/v1/finance/spending → finance.read
 GET /api/v1/finance/statement-imports → finance.read
 GET /api/v1/finance/statements/balance-sheet → finance.read
 GET /api/v1/finance/statements/cash-flow → finance.read

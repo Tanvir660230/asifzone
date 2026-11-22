@@ -337,3 +337,32 @@ export interface ProfitMonth {
   status: "OPEN" | "SOFT_CLOSED" | "CLOSED"; readyToClose: boolean;
 }
 export const getProfitByMonth = () => apiFetch<{ currency: string; booksStartedOn: string | null; months: ProfitMonth[] }>(`${BASE}/profit/monthly`);
+
+// ── Spending (docs/FINANCE_SPENDING.md) ────────────────────────────────────────────────────────────────────────────────
+
+export type SpendingKind = "GOODS" | "ADS" | "DELIVERY" | "PACKAGING" | "FEES" | "SALARIES" | "OTHER";
+export interface SpendingRow {
+  kind: SpendingKind;
+  title: string;
+  detail: string | null;
+  amount: number;
+  href: string | null;
+  lines?: Array<{ name: string; quantity: number; unit: string | null; amount: number }>;
+}
+export interface SpendingDay {
+  date: string;
+  total: number;
+  rows: SpendingRow[];
+}
+export interface SpendingReport {
+  currency: string;
+  today: string;
+  booksStartedOn: string | null;
+  period: { from: string; to: string };
+  total: number;
+  kinds: Array<{ kind: SpendingKind; total: number }>;
+  days: SpendingDay[];
+  adsMissingAfter: string | null;
+}
+export const spendingKey = (p: { from: string; to: string }) => ["finance", "spending", p.from, p.to] as const;
+export const getSpending = (p: { from: string; to: string }) => apiFetch<SpendingReport>(`/api/v1/finance/spending?from=${p.from}&to=${p.to}`);
