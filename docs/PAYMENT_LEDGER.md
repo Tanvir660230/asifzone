@@ -164,8 +164,9 @@ checked against what Steadfast actually sends.
   retry) is unique: a retry is answered and not processed again (`DUPLICATE`).
 - **Auth**: the shared token in the query string (`?token=`, as before) or Steadfast's panel "Auth token", which arrives
   as `Authorization: Bearer <token>`. Both are compared in constant time.
-- **The amount is trusted only when two sources agree**: the body says `partial_delivered` and Steadfast's own status API
-  says `partial_delivered`. Then `Order.courierCollectedAmount` / `courierCollectedAt` are stored, and a line goes on
+- **The amount is trusted only when two sources agree**: Steadfast's own status API also says partly delivered
+  (`partial_delivered`, or `partial_delivered_approval_pending` since 2026-11-22). A changed cash-on-delivery amount (§5c)
+  says it best, else the push's `cod_amount` when it is below the booked COD. Then `Order.courierCollectedAmount` / `courierCollectedAt` are stored, and a line goes on
   the timeline (staff-only). A `cancelled` push's `cod_amount` is the booked COD, not money collected, so it is ignored.
 - **`settleCourierCollected(orderId)`** (payment ledger) records it as the return charge (a `COD` row, purpose
   `RETURN_CHARGE`, idempotencyKey `courier-collected:<orderId>`, one per order). This happens only once the customer
@@ -215,6 +216,22 @@ whole total as "Still due".
   `node dist/cli/partial-returns-backfill.js [--apply]` inside the api container — values the return records
   reconciled before this release, then refreshes their payment projection. Orders whose customer kept nothing but are
   still Partly delivered are listed for staff to mark Returned.
+
+### 5c. What the parcel's cash on delivery is now (2026-11-22)
+
+A parcel's COD changes after booking: the owner edits it in Steadfast's panel (a price agreed at the door), or the hub or
+rider changes it (a refused parcel, an exchange). Steadfast pushes every change:
+
+- `consignment_update` with `changed: ["cod_amount"]` and `values.cod_amount` (the panel);
+- `tracking_update` with "Amount has been changed  from "1510" to "120"" (hub or rider), or "Changes: COD '1510' to '1200'".
+
+`modules/courier/cod-fact.ts` reads them; a rider's words ("Cod 120 tk hbe") are not a change. The order keeps
+`courierCodBooked` (what we sent), `courierCodNow`, `courierCodSource` and `courierCodAt` (Steadfast's own time, so a
+late older push never wins), with one timeline line per real change. They are cleared when the booking is unlinked.
+
+These are **facts only**: no total, payment or status changes because of them. A `delivery_status` push's `cod_amount`
+is weaker: on 22 Nov one still carried 1,710 after the rider had collected 50. A figure equal to the booked COD proves
+nothing; a lower one agreed with all 7 posted payouts it could be checked against.
 
 ## 6. The order state machine
 

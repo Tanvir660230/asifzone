@@ -44,6 +44,12 @@ parcel order; one RETURN leg per request. CHECK constraints: money ≥ 0; a non-
 
 Backfill: one OUTBOUND / REPLACEMENT leg for every consignment already booked, charge `MISSING` — nothing assumed.
 
+**Charges Steadfast pushes (2026-11-22).** A `delivery_status` webhook carries `delivery_charge` for that parcel; it
+equalled the merchant panel's export on 43 of 43 parcels. `domain/shipments/courier-charge.ts` keeps it on the leg as
+`ENTERED` with source `COURIER_WEBHOOK`: provisional, so not a confirmed expense, until a payout whose total it adds up
+to makes it `COURIER_CONFIRMED` (the rule above) or an admin verifies it. A charge a person entered, a confirmed one and a
+reconciled leg are never overwritten; 0 is not a charge. The 15-minute job fills legs whose charge was pushed before.
+
 ## 3. Calculation rules (`packages/shared/src/courier-costs.ts`, used by the API and the drawer's live preview)
 
 - A contribution applies to RETURN and REPLACEMENT legs and to an OUTBOUND parcel that came back or was partly delivered —

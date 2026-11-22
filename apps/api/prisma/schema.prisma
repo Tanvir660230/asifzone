@@ -1340,6 +1340,13 @@ model Order {
   /// settleCourierCollected (docs/PAYMENT_LEDGER.md §5b).
   courierCollectedAmount  Decimal?  @db.Decimal(10, 2)
   courierCollectedAt      DateTime?
+  /// The cash on delivery the parcel was booked with, and what Steadfast last said it is (its pushes: the panel, the hub
+  /// or the rider changed it — modules/courier/cod-fact.ts). Facts only, never money by themselves. Null = not known /
+  /// never changed. Cleared when the booking is unlinked.
+  courierCodBooked        Decimal?  @db.Decimal(10, 2)
+  courierCodNow           Decimal?  @db.Decimal(10, 2)
+  courierCodSource        String?
+  courierCodAt            DateTime?
   /// Order Operations Phase 0: when the courier-status poll should next re-check this parcel (NULL = due now). Set from the
   /// parcel's age and the poll level (modules/courier/courier-sync-policy.ts); a webhook that verified the status pushes it on.
   courierNextPollAt       DateTime?
