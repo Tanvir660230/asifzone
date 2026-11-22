@@ -350,6 +350,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/v1/finance/profit",
   "GET /api/v1/finance/profit/daily",
   "GET /api/v1/finance/profit/monthly",
+  "GET /api/v1/finance/spending",
   "GET /api/v1/finance/profit/launch",
   // Cost & profit planning (docs/COST_SHEET.md): costing.read / costing.adjust, OWNER-only like every cost
   "GET /api/v1/finance/cost-sheets/products",

@@ -19,6 +19,9 @@ import { createSupplier } from "./suppliers.service";
 import { processFinancialEvent } from "./events.service";
 import { runReconciliation } from "./reconciliation.service";
 import { createMaterial } from "../manufacturing/materials.service";
+import { recordExpense } from "./expenses.service";
+import { profitByDay } from "./profit.service";
+import { spending } from "./spending.service";
 
 // Owner's books §5–§6 (docs/FINANCE_OWNER_BOOKS.md): ad spend booked day by day (budget until the actual is known, Meta's
 // figures replacing it), a year of hosting shared month by month, and packaging leaving stock with each parcel at its real
@@ -285,5 +288,88 @@ describe("packaging", () => {
     expect(Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]))).toEqual({
       "inventory.valuation_vs_ledger": "MATCHED", "inventory.quantity_vs_valuation": "MATCHED", "inventory.valuation_postings": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED",
     });
+  });
+});
+
+describe("spending (docs/FINANCE_SPENDING.md)", () => {
+  type Report = Awaited<ReturnType<typeof spending>>;
+  const of = (r: Report, kind: string) => r.kinds.find((k) => k.kind === kind)!.total;
+  const rows = (r: Report) => r.days.flatMap((d) => d.rows.map((x) => ({ date: d.date, ...x })));
+  const dayStart = "2026-09-01";
+
+  it("goods count when bought, at the bill's price — not when used or sold", async () => {
+    await postPending();
+    const r = await spending({ from: dayStart, to: today });
+    expect(of(r, "GOODS")).toBe(200);
+    expect(rows(r).find((x) => x.kind === "GOODS")).toMatchObject({ title: "Vitest Poly bag 10x14", detail: "Vitest Packaging Co", amount: 200, lines: [{ name: "Vitest Poly bag 10x14", quantity: 100, unit: null, amount: 200 }] });
+    expect(rows(r).some((x) => /fulfilment/i.test(x.title))).toBe(false); // the bag used on a parcel
+  });
+
+  it("a prepaid cost counts whole on the day it was paid, never by its monthly shares", async () => {
+    const r = await spending({ from: dayStart, to: today });
+    const paid = rows(r).filter((x) => x.detail === "Paid in advance");
+    expect(paid).toHaveLength(1);
+    expect(paid[0]!.amount).toBe(12000);
+    expect(of(r, "OTHER")).toBe(12000);
+  });
+
+  it("ads, courier and fees are exactly what the books took; the kinds and the days both add up to the total", async () => {
+    const r = await spending({ from: dayStart, to: today });
+    const p = await profitByDay({ from: dayStart, to: today });
+    expect(of(r, "ADS")).toBe(p.totals.ads);
+    expect(of(r, "DELIVERY")).toBe(p.totals.delivery);
+    expect(of(r, "FEES")).toBe(p.totals.paymentFees);
+    const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
+    expect(sum(r.kinds.map((k) => k.total))).toBe(r.total);
+    expect(sum(r.days.map((d) => d.total))).toBe(r.total);
+  });
+
+  it("an expense is listed once, in its own words; an undone one is gone", async () => {
+    const before = (await spending({ from: dayStart, to: today })).total;
+    const e = await recordExpense({ fromFinancialAccountId: bank, expenseAccountId: acc["6800"]!, amount: 220, expenseDate: today, description: "Packing tape", payee: "Local market" }, OWNER, `sp-tape-${RUN}`);
+    let r = await spending({ from: dayStart, to: today });
+    expect(Math.round((r.total - before) * 100) / 100).toBe(220);
+    expect(rows(r).filter((x) => x.title === "Packing tape")).toEqual([expect.objectContaining({ kind: "PACKAGING", detail: "Local market", amount: 220, date: today })]);
+    const movementId = (await prisma.expense.findUniqueOrThrow({ where: { id: (e as { expense: { id: string } }).expense.id } })).movementId;
+    const undo = await api().post(`/movements/${movementId}/reverse`, { reason: "entered twice" }, `sp-undo-${RUN}`);
+    expect(undo.status, JSON.stringify(undo.body)).toBeLessThan(300);
+    r = await spending({ from: dayStart, to: today });
+    expect(r.total).toBe(before);
+    expect(rows(r).some((x) => x.title === "Packing tape")).toBe(false);
+  });
+
+  it("a purchase saved before stock costing is live counts too; one that became a receipt is not counted twice", async () => {
+    const { business } = await getFinanceContext();
+    const before = await spending({ from: dayStart, to: today });
+    const request = { supplierName: "Local market", reference: null, note: null, lines: [{ variantId: "v1", name: "Courier poly", unit: "pcs", quantity: 2000, amount: 2900 }, { variantId: "v2", name: "Attar oil", unit: "ml", quantity: 810, amount: 19440 }], extras: [], paidFrom: { kind: "OWNER" } };
+    const receipt = await prisma.goodsReceipt.findFirstOrThrow({ where: { businessId: business.id, status: "POSTED" } });
+    const base = { businessId: business.id, kind: "PURCHASE" as const, entryDate: new Date(`${today}T00:00:00Z`), fingerprint: "x", completedAt: new Date() };
+    const simple = await prisma.stockHubEntry.create({ data: { ...base, idempotencyKey: `sp-simple-${RUN}`, steps: { mode: "SIMPLE", request, goods: 22340, extras: 0, total: 22340, money: { status: "PENDING" } } } as never });
+    const full = await prisma.stockHubEntry.create({ data: { ...base, idempotencyKey: `sp-full-${RUN}`, steps: { request, goods: 22340, extras: 0, total: 22340, receiptId: receipt.id } } as never });
+    const unfinished = await prisma.stockHubEntry.create({ data: { ...base, completedAt: null, idempotencyKey: `sp-open-${RUN}`, steps: { mode: "SIMPLE", request, goods: 1, extras: 0, total: 1 } } as never });
+    const r = await spending({ from: dayStart, to: today });
+    expect(Math.round((r.total - before.total) * 100) / 100).toBe(22340);
+    expect(rows(r).find((x) => x.amount === 22340)).toMatchObject({ kind: "GOODS", title: "Courier poly and 1 more", detail: "Local market", date: today, lines: [{ name: "Courier poly", quantity: 2000, unit: "pcs", amount: 2900 }, { name: "Attar oil", quantity: 810, unit: "ml", amount: 19440 }] });
+    await prisma.stockHubEntry.deleteMany({ where: { id: { in: [simple.id, full.id, unfinished.id] } } });
+  });
+
+  it("covers only its period, the newest day first, and refuses a backwards or endless one", async () => {
+    const r = await spending({ from: "2026-10-01", to: "2026-10-31" });
+    expect(r.days.every((d) => d.date >= "2026-10-01" && d.date <= "2026-10-31")).toBe(true);
+    expect([...r.days].sort((a, b) => b.date.localeCompare(a.date))).toEqual(r.days);
+    await expect(spending({ from: "2026-10-31", to: "2026-10-01" })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(spending({ from: "2020-01-01", to: "2026-10-01" })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("says when ads stop before the period does", async () => {
+    const campaigns = await prisma.adSpendDay.aggregate({ _max: { date: true } });
+    const last = campaigns._max.date!.toISOString().slice(0, 10);
+    expect((await spending({ from: addDays(last, -3), to: last })).adsMissingAfter).toBeNull();
+  });
+
+  it("is for people who see the books", async () => {
+    const res = await api().get(`/spending?from=2026-10-01&to=2026-10-31`);
+    expect(res.status).toBe(200);
+    expect(res.body.period).toEqual({ from: "2026-10-01", to: "2026-10-31" });
   });
 });

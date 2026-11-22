@@ -80,6 +80,7 @@ import { syncOwnerBooks } from "../../domain/finance/owner-books-sync";
 import * as landed from "../../domain/finance/landed-costs.service";
 import * as refill from "../../domain/manufacturing/quick-refill.service";
 import * as profit from "../../domain/finance/profit.service";
+import { spending } from "../../domain/finance/spending.service";
 import * as claims from "../../domain/finance/courier-claims.service";
 import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
 import * as stockPurchases from "../../domain/stock/purchase.service";
@@ -203,6 +204,8 @@ ownerBooksRouter.post("/quick-refills", requirePermission("manufacturing.approve
 // ── profit (§8) and the launch weeks before the books (§9) ──────────────────────────────────────────────────────────
 ownerBooksRouter.get("/profit", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitReport(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/profit/daily", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitByDay(req.query as never))));
+// Everything spent in a period, by day (docs/FINANCE_SPENDING.md).
+ownerBooksRouter.get("/spending", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await spending(req.query as never))));
 ownerBooksRouter.get("/profit/monthly", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await profit.profitByMonth())));
 ownerBooksRouter.get("/profit/launch", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.launchReport(req.query as never))));
 

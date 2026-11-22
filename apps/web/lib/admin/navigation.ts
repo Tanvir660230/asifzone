@@ -495,6 +495,19 @@ export const NAV_NODES: readonly NavNode[] = [
     keywords: ["cash", "bank", "bkash", "nagad", "wallet", "transfer", "deposit", "withdrawal"],
   },
   { id: "finance.account-detail", label: "Money account", kind: "detail", parent: "finance.money", domain: "manage", route: "/admin/finance/accounts/[id]", capability: "finance.view", order: 0, visibility: "hidden" },
+  // How much was spent and when, in one list (docs/FINANCE_SPENDING.md).
+  {
+    id: "finance.spending",
+    label: "Spending",
+    kind: "page",
+    parent: "finance",
+    domain: "manage",
+    route: "/admin/finance/spending",
+    capability: "finance.view",
+    order: 0.5,
+    description: "How much you spent and when: goods, ads, delivery and every expense, by month and day.",
+    keywords: ["spending", "spent", "khoroch", "cost", "how much", "by day", "by month", "total cost"],
+  },
   {
     id: "finance.expenses",
     label: "Expenses",
