@@ -3,6 +3,7 @@ import { createQueue, queueConnection } from "../lib/queue";
 import { syncPendingCourierStatuses } from "../modules/courier/courier.service";
 import { logger } from "../lib/observability/logger";
 import { fillMissingReferences, syncRecentShipments } from "../domain/shipments/shipment-sync";
+import { fillMissingCourierCharges } from "../domain/shipments/courier-charge";
 
 const QUEUE_NAME = "courier-status-sync";
 
@@ -24,6 +25,8 @@ export async function startCourierStatusCron() {
       // Courier costs (docs/COURIER_COSTS.md): legs of recently touched orders (status changes by staff, manual carriers).
       await syncRecentShipments();
       await fillMissingReferences();
+      // Delivery charges Steadfast pushed before they were kept on the leg (or while the leg did not exist yet).
+      await fillMissingCourierCharges();
     },
     { connection: queueConnection },
   );

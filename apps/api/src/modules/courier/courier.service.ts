@@ -11,6 +11,7 @@ import { buildCourierNotes, effectiveCourierNote } from "./courier-note";
 import { parseSteadfastWebhook } from "./steadfast-webhook";
 import { codChangeOf } from "./cod-fact";
 import { recordCodChange } from "./cod-fact.service";
+import { recordCourierCharge } from "../../domain/shipments/courier-charge";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { getSettings } from "../settings/settings.service";
 import { logger } from "../../lib/observability/logger";
@@ -901,12 +902,18 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     // Kept beside the body's own claim (event.status): the health report counts how often the two disagree.
     verifiedStatus = status;
     await applyCourierStatus(order, status, "WEBHOOK");
-    // What the rider collected on a partial delivery (PAYMENT_LEDGER §5b) — the body's cod_amount is accepted only when
-    // Steadfast's own status API also says partial_delivered, so a mistyped or replayed body can't put money on an order.
-    // Steadfast often leaves cod_amount at the booked COD on these pushes (2026-11-06: 999 pushed, 100 collected), so that
-    // figure is never taken as money; the payout line is what says what was collected.
-    if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null && event.codAmount < (await bookedCod(order))) {
-      await recordCourierCollected(order, event.codAmount);
+    // The delivery charge Steadfast states with a delivery status (domain/shipments/courier-charge.ts).
+    if (event.notificationType === "delivery_status" && event.deliveryCharge !== null) {
+      await recordCourierCharge(event.consignmentId, event.deliveryCharge).catch((err) => captureError(err, { msg: "[steadfast-webhook] could not keep the delivery charge:" }));
+    }
+    // What the rider collected on a partial delivery (PAYMENT_LEDGER §5b) — accepted only when Steadfast's own status API
+    // also says partly delivered (its approval may still be pending), so a mistyped or replayed body can't put money on an
+    // order. A changed cash-on-delivery amount (§5c) says it best; else the push's cod_amount, when it is below the booked
+    // COD: Steadfast often leaves it at the booked amount (2026-11-06: 999 pushed, 100 collected), which is never money.
+    if (PARTIAL_COURIER_STATUSES.includes(status)) {
+      const fact = (await prisma.order.findUniqueOrThrow({ where: { id: order.id }, select: { courierCodNow: true } })).courierCodNow;
+      const said = fact !== null ? Number(fact) : event.status === "partial_delivered" ? event.codAmount : null;
+      if (said !== null && said < (await bookedCod(order))) await recordCourierCollected(order, said);
     }
     outcome = "APPLIED";
     return outcome;
@@ -921,6 +928,9 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     }
   }
 }
+
+/** Steadfast's words for a partly delivered parcel: agreed, or waiting for its own approval. */
+const PARTIAL_COURIER_STATUSES = ["partial_delivered", "partial_delivered_approval_pending"];
 
 /** The COD Steadfast was booked for: the order total less what was prepaid other than through the courier. */
 async function bookedCod(order: { id: string; total: Prisma.Decimal }) {
