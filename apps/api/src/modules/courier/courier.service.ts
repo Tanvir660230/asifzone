@@ -9,6 +9,8 @@ import type { Prisma } from "@prisma/client";
 import { codToCollectFor, settleCourierCollected } from "../../domain/payments/payment-ledger.service";
 import { buildCourierNotes, effectiveCourierNote } from "./courier-note";
 import { parseSteadfastWebhook } from "./steadfast-webhook";
+import { codChangeOf } from "./cod-fact";
+import { recordCodChange } from "./cod-fact.service";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { getSettings } from "../settings/settings.service";
 import { logger } from "../../lib/observability/logger";
@@ -365,6 +367,9 @@ async function planAutoFillSafely(orderIds: string[]): Promise<AutoFillPlan> {
   }
 }
 
+/** A new consignment starts with the cash it was booked for; a change Steadfast reported on an earlier one is not its. */
+const bookedCodFact = (codAmount: number) => ({ courierCodBooked: codAmount, courierCodNow: null, courierCodSource: null, courierCodAt: null });
+
 export async function bookOrderWithSteadfast(orderId: string) {
   const order = await getOrderById(orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before booking a courier");
@@ -422,6 +427,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
       courierBookingStartedAt: null,
       courierSyncError: null,
       courierNoteSent: courierNote,
+      ...bookedCodFact(codAmount),
     },
   });
 
@@ -541,6 +547,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierBookingStartedAt: null,
         courierSyncError: null,
         courierNoteSent: courierNotes.get(order.id) ?? null,
+        ...bookedCodFact(codAmounts.get(order.id) ?? 0),
       },
     });
     await moveOnBooking(order.id, order.status);
@@ -799,6 +806,11 @@ export async function unlinkCourierBooking(orderId: string) {
       courierBookingStartedAt: null,
       courierStatusSyncedAt: null,
       courierSyncError: null,
+      // The facts belong to that consignment, not to the next one.
+      courierCodBooked: null,
+      courierCodNow: null,
+      courierCodSource: null,
+      courierCodAt: null,
     },
   });
   // The unlinked consignment's leg is kept as history, no longer tracked (docs/COURIER_COSTS.md).
@@ -880,6 +892,10 @@ export async function handleSteadfastWebhook(payload: unknown, meta: { idempoten
     outcome = "NO_ORDER";
     if (!order) return outcome;
     orderId = order.id;
+
+    // A changed cash-on-delivery amount (cod-fact.ts): kept first, so it is not lost when the status can't be asked below.
+    const codChange = codChangeOf(payload);
+    if (codChange) await recordCodChange(order.id, codChange);
 
     const status = await getProviders().courier.statusByConsignment(event.consignmentId);
     // Kept beside the body's own claim (event.status): the health report counts how often the two disagree.
