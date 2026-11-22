@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PiggyBank, Receipt, Truck, Undo2, Wallet } from "lucide-react";
 import { manualPaymentBlocker, manualPaymentKindFor, RETURN_CHARGE_ORDER_STATUSES, type Order, type OrderPaymentSummary } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
@@ -13,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatPrice, formatStoreDateTime, PAYMENT_PROVIDER_LABEL } from "@/lib/format";
 import type { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { OrderPermissions } from "../order-domain";
+import { DoorShortfallCard } from "../door-shortfall-card";
+import { invalidateOrderQueries } from "../order-domain";
 import { BlockedHint, DetailSection, Fact } from "./detail-section";
 import { payoutCovers, type OrderDetailCommands } from "./use-order-detail-commands";
 import { PaymentLinksPanel } from "./payment-links-panel";
@@ -37,6 +40,7 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
     setVoiding(null);
   }, [order.id]);
 
+  const queryClient = useQueryClient();
   const { data: modsData } = useOrderModifications(order.id);
   const waitingChange = modsData?.modifications.find((m) => m.status === "AWAITING_PAYMENT") ?? null;
   const ledger = order.payment;
@@ -62,6 +66,8 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
   // the customer kept nothing; otherwise it is what staff record as courier-collected cash.
   const courierCollected = order.courierCollectedAmount ? Number(order.courierCollectedAmount) : null;
   const courierCashRecorded = succeeded.some((p) => p.provider === "COD");
+  // What was paid other than through the courier: the courier was to collect the rest (§5d).
+  const otherPaid = succeeded.filter((p) => p.provider !== "COD" && p.purpose === "ORDER").reduce((s, p) => s + p.amount, 0);
   const collectedHint =
     courierCollected === null || courierCashRecorded
       ? null
@@ -154,6 +160,25 @@ export function PaymentsSection({ order, detail, perms, confirm }: { order: Orde
           <p className="text-sm text-ink-600">
             Steadfast: the rider collected <span className="font-semibold text-ink-900">{formatPrice(courierCollected)}</span>
             {order.courierCollectedAt ? ` (${formatStoreDateTime(order.courierCollectedAt)})` : ""}.{collectedHint && ` ${collectedHint}`}
+          </p>
+        )}
+        {order.doorShortfallAt && order.courierCodNow != null && (
+          <Alert variant="warning" title="The courier collected less than this order says">
+            <div className="mt-2">
+              <DoorShortfallCard
+                orderId={order.id}
+                expected={ledger.total - otherPaid}
+                collected={Number(order.courierCodNow)}
+                paidOut={null}
+                canDecide={perms.adjustPrice && perms.recordPayment}
+                onDone={() => void invalidateOrderQueries(queryClient, order.id)}
+              />
+            </div>
+          </Alert>
+        )}
+        {order.courierCodNow != null && !order.doorShortfallAt && order.status === "SHIPPED" && Number(order.courierCodNow) !== Number(order.courierCodBooked ?? order.courierCodNow) && (
+          <p className="text-sm text-ink-600">
+            Steadfast now says the cash on delivery is <span className="font-semibold text-ink-900">{formatPrice(Number(order.courierCodNow))}</span> (booked {formatPrice(Number(order.courierCodBooked))}).
           </p>
         )}
         {ledger.codToCollect > 0 && (

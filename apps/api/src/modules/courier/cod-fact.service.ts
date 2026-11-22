@@ -5,7 +5,7 @@
  */
 import { prisma } from "../../config/prisma";
 import { getCurrency } from "../../domain/config/commerce-settings";
-import type { CodChange } from "./cod-fact";
+import { codChangeOf, type CodChange } from "./cod-fact";
 
 /** Steadfast writes its times in Dhaka time (UTC+6, no daylight saving) without saying so. */
 const changeTime = (at: string | null, now: Date) => (at ? new Date(`${at.replace(" ", "T")}+06:00`) : now);
@@ -47,4 +47,21 @@ export async function recordCodChange(orderId: string, change: CodChange, now: D
     });
     return true;
   });
+}
+
+/** Parcels still on the way whose COD change is in the webhook log from before it was kept (or before the order was linked to
+ * its parcel): read again, oldest first. Delivered and closed orders are left alone. Bounded; safe to call again. */
+export async function fillMissingCodFacts(limit = 500): Promise<number> {
+  const events = await prisma.$queryRaw<Array<{ orderId: string; payload: unknown; receivedAt: Date }>>`
+    SELECT o.id AS "orderId", e.payload, e."receivedAt"
+    FROM "CourierWebhookEvent" e JOIN "Order" o ON o."courierConsignmentId" = e."consignmentId"
+    WHERE o.status = 'SHIPPED' AND o."courierCodAt" IS NULL AND o."deletedAt" IS NULL
+      AND (e."notificationType" = 'consignment_update' OR (e."notificationType" = 'tracking_update' AND (e."trackingMessage" LIKE 'Amount has been changed%' OR e."trackingMessage" LIKE 'Changes:%')))
+    ORDER BY e."receivedAt" ASC LIMIT ${limit}`;
+  let filled = 0;
+  for (const e of events) {
+    const change = codChangeOf(e.payload);
+    if (change && (await recordCodChange(e.orderId, change, e.receivedAt))) filled += 1;
+  }
+  return filled;
 }

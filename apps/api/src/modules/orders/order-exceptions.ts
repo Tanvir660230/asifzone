@@ -58,6 +58,8 @@ function exceptionWhere(id: Exclude<OrderExceptionId, "deliveryConfirmOverdue">,
       return { receivedBackAt: { lt: hoursAgo(now, t.inspectOverdueHours) }, returnInspectedAt: null };
     case "partialToReconcile":
       return { status: "PARTIALLY_DELIVERED", partialDeliveryReconciledAt: null };
+    case "collectedLess":
+      return { status: "DELIVERED", doorShortfallAt: { not: null } };
     case "bookedButPacked":
       return { ...booked, status: { in: [...PRE_SHIPMENT_STATUSES] } };
     case "deliveredButCourierPartial":

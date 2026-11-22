@@ -4,6 +4,7 @@ import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
 import { getOrderExceptionsBoard } from "./order-exceptions";
 import { toCustomerOrder } from "./customer-order-view";
+import * as doorCollection from "../../domain/payments/door-collection.service";
 import { courierNotesForLabels, getCourierNoteView } from "../courier/courier-note";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
@@ -153,6 +154,15 @@ export const adjustPrice = asyncHandler(async (req: Request, res: Response) => {
 
 export const reconcilePartialDelivery = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.reconcilePartialDelivery(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+export const doorShortfalls = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ items: await doorCollection.doorShortfalls() });
+});
+
+export const decideDoorShortfall = asyncHandler(async (req: Request, res: Response) => {
+  await doorCollection.decideDoorShortfall(req.params.id!, req.body, req.admin!);
+  res.json({ order: await orderService.getOrderById(req.params.id!) });
 });
 
 /** Attar lines on the shelf: filled and ready, partly filled, or awaiting filling (inventory recovery phase 3). */

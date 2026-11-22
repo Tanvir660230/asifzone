@@ -23,7 +23,7 @@ const REFUND_ALL_STATUSES = new Set(["CANCELLED", "RETURNED"]);
 /** Closed orders: the customer owes nothing more, and nothing is collected at the door. */
 const CLOSED_STATUSES = new Set(["CANCELLED", "RETURNED", "REFUNDED"]);
 /** The courier has finished with the parcel: whatever it collected is recorded, it collects nothing more. */
-const COURIER_DONE_STATUSES = new Set(["PARTIALLY_DELIVERED"]);
+const COURIER_DONE_STATUSES = new Set(["DELIVERED", "PARTIALLY_DELIVERED"]);
 
 export interface PaymentLedgerInput {
   currency: string;
@@ -64,7 +64,7 @@ export interface PaymentPosition {
    * total collects it again). A closed order (cancelled / returned / refunded) owes nothing: 0. */
   amountDue: Money;
   /** Cash the courier collects on delivery: the balance due of a COD order the courier still has, else 0 (closed, or a
-   * partial delivery — the courier is done; what the customer kept is recorded by staff). */
+   * delivered or partly delivered parcel — the courier is done; anything still owed is between staff and the customer). */
   codToCollect: Money;
   /** The most a new refund (or credit) may be: paid − refunded − requested − credited, floored at 0. */
   refundable: Money;

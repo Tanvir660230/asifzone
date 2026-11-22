@@ -10,6 +10,7 @@ import type {
   UpdateOrderDetailsInput,
   AdminCreateOrderInput,
   AdjustOrderPriceInput,
+  DoorShortfallInput,
   ReconcilePartialDeliveryInput,
   ReceiveReturnedParcelInput,
   OrderQueueId,
@@ -203,6 +204,27 @@ export function getOrderFillStatus(id: string, { signal }: FetchSignal = {}) {
  * back so they can be restocked. See OrderDetailPanel's "Partial delivery" card. */
 export function reconcilePartialDelivery(id: string, input: ReconcilePartialDeliveryInput) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/reconcile-partial-delivery`, { method: "PATCH", body: input });
+}
+
+export interface DoorShortfall {
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  deliveredAt: string;
+  expected: number;
+  collected: number;
+  shortfall: number;
+  recorded: boolean;
+  paidOut: number | null;
+}
+
+/** Delivered parcels whose courier collected less than the order says (docs/PAYMENT_LEDGER.md §5d). */
+export function listDoorShortfalls(opts: { signal?: AbortSignal } = {}) {
+  return apiFetch<{ items: DoorShortfall[] }>("/api/orders/door-shortfalls", opts);
+}
+
+export function decideDoorShortfall(id: string, input: DoorShortfallInput) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/door-shortfall`, { method: "POST", body: input });
 }
 
 export function deleteOrder(id: string) {

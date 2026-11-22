@@ -1347,6 +1347,12 @@ model Order {
   courierCodNow           Decimal?  @db.Decimal(10, 2)
   courierCodSource        String?
   courierCodAt            DateTime?
+  /// Delivered for less than the order says (domain/payments/door-collection.service.ts): since when it waits for a
+  /// decision, then the decision (AGREED_PRICE | STILL_OWED | COLLECTED_IN_FULL), who and when.
+  doorShortfallAt         DateTime?
+  doorDecision            String?
+  doorDecidedAt           DateTime?
+  doorDecidedByAdminId    String?
   /// Order Operations Phase 0: when the courier-status poll should next re-check this parcel (NULL = due now). Set from the
   /// parcel's age and the poll level (modules/courier/courier-sync-policy.ts); a webhook that verified the status pushes it on.
   courierNextPollAt       DateTime?

@@ -16,6 +16,7 @@ export const ORDER_EXCEPTION_IDS = [
   "cancelInCourierPanel",
   "inspectionOverdue",
   "partialToReconcile",
+  "collectedLess",
   "bookedButPacked",
   "deliveredButCourierPartial",
   "deliveredButCourierCancelled",
@@ -63,6 +64,11 @@ export const ORDER_EXCEPTION_INFO: Readonly<Record<OrderExceptionId, { label: st
     label: "Partial delivery to reconcile",
     meaning: "The customer kept part of the order. Until someone says which units came back, they are neither sold nor in stock.",
     action: "Open it and say what the customer kept — or receive the parcel on Returns in, which asks the same.",
+  },
+  collectedLess: {
+    label: "Collected less",
+    meaning: "Delivered, but the courier collected less than the order says. Only what came in is booked.",
+    action: "Open Orders › Collected less and say why: a price agreed at the door, or still owed.",
   },
   bookedButPacked: {
     label: "Booked but still Packed",
@@ -145,6 +151,7 @@ export const OPERATIONS_STAGES: readonly OperationsStageDef[] = [
 export const EXCEPTION_CENTER_IDS: readonly OrderExceptionId[] = [
   "cancelInCourierPanel",
   "inspectionOverdue",
+  "collectedLess",
   "deliveredButCourierPartial",
   "deliveredButCourierCancelled",
   "bookedButPacked",

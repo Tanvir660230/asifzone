@@ -104,6 +104,8 @@ describe("order command guards", () => {
     expect(manualPaymentBlocker(order({ status: "PARTIALLY_DELIVERED" }), "COD_COLLECTED")).toBeNull();
     expect(manualPaymentBlocker(order(), "MANUAL")).toBeNull();
     expect(manualPaymentBlocker(order({ courierConsignmentId: "x" }), "MANUAL")).toMatch(/unlink the booking/);
+    // Delivered: the courier is done, so what the customer still owes can be received directly.
+    expect(manualPaymentBlocker(order({ courierConsignmentId: "x", status: "DELIVERED" }), "MANUAL")).toBeNull();
     expect(manualPaymentBlocker(order({ status: "CANCELLED" }), "MANUAL")).toMatch(/cancelled/);
   });
 });

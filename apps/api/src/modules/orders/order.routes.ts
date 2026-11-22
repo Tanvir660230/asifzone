@@ -9,6 +9,7 @@ import {
   holdOrderSchema,
   adjustOrderPriceSchema,
   reconcilePartialDeliverySchema,
+  doorShortfallSchema,
   trackOrderSchema,
   retryPaymentSchema,
   recordRefundSchema,
@@ -119,6 +120,8 @@ orderRouter.post(
   orderController.bulkCheckDeliveryScore,
 );
 orderRouter.post("/bulk/get", requireAdmin, requirePermission("orders.read"), validate(bulkOrderIdsSchema), orderController.bulkGet);
+// Collected less (docs/PAYMENT_LEDGER.md §5d): delivered parcels whose courier collected less than the order says.
+orderRouter.get("/door-shortfalls", requireAdmin, requirePermission("orders.read"), orderController.doorShortfalls);
 orderRouter.get("/:id", requireAdmin, requirePermission("orders.read"), orderController.getOne);
 orderRouter.patch("/:id/status", requireAdmin, requirePermission("orders.manage"), validate(updateOrderStatusSchema), orderController.updateStatus);
 orderRouter.get("/:id/courier-note", requireAdmin, requirePermission("orders.read"), orderController.getCourierNote);
@@ -138,6 +141,8 @@ orderRouter.patch(
   validate(reconcilePartialDeliverySchema),
   orderController.reconcilePartialDelivery,
 );
+// It changes the order's total and its payments: the service also requires payments.record.
+orderRouter.post("/:id/door-shortfall", requireAdmin, requirePermission("orders.adjust_price"), validate(doorShortfallSchema), orderController.decideDoorShortfall);
 orderRouter.get("/:id/fill-status", requireAdmin, requirePermission("orders.read"), orderController.fillStatus);
 // Receiving a parcel back is the inspection that makes returned or refused units stock again (owner decision D-OO1) — the
 // returns permission, not the general order one (least privilege: a role that edits orders need not restock goods).
