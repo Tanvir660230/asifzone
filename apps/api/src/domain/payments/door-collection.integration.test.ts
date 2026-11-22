@@ -19,6 +19,7 @@ import { decideDoorShortfall, doorShortfalls } from "./door-collection.service";
 // docs/PAYMENT_LEDGER.md §5d — a parcel delivered for less than the order says.
 
 let admin: string;
+const viewer = () => ({ adminId: admin, permissions: ["orders.adjust_price", "payments.record"] });
 let seq = Math.floor(Date.now() / 1000) * 1000 + 300;
 const orders: string[] = [];
 beforeAll(async () => {
@@ -170,7 +171,7 @@ describe("the decision", () => {
 
   it("agreed price: the sale is 1200, paid, with the reason on the timeline", async () => {
     const { id } = await short();
-    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "Customer bargained at the door" }, admin);
+    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "Customer bargained at the door" }, viewer());
     expect(await money(id)).toEqual({ status: "PAID", paid: 1200, due: 0, cod: 0, total: 1200, waiting: false });
     const o = await row(id);
     expect([o.priceAdjustment.toNumber(), o.doorDecision, o.doorDecidedByAdminId]).toEqual([-310, "AGREED_PRICE", admin]);
@@ -183,20 +184,45 @@ describe("the decision", () => {
     await prisma.order.update({ where: { id: o.id }, data: { priceAdjustment: -160, total: 1350 } });
     await handleSteadfastWebhook(edit(o.cid, 1300));
     await handleSteadfastWebhook(delivered(o.cid, 1300));
-    await decideDoorShortfall(o.id, { decision: "AGREED_PRICE", note: "bargain" }, admin);
+    await decideDoorShortfall(o.id, { decision: "AGREED_PRICE", note: "bargain" }, viewer());
     const r = await row(o.id);
     expect([r.priceAdjustment.toNumber(), r.total.toNumber()]).toEqual([-210, 1300]);
   });
 
   it("still owed: the total stays and the balance is due", async () => {
     const { id } = await short();
-    await decideDoorShortfall(id, { decision: "STILL_OWED", note: "Will send by bKash" }, admin);
+    await decideDoorShortfall(id, { decision: "STILL_OWED", note: "Will send by bKash" }, viewer());
     expect(await money(id)).toMatchObject({ status: "PARTIALLY_PAID", paid: 1200, due: 310, total: 1510, waiting: false });
+  });
+
+  it("what is still owed can be received, and only that much", async () => {
+    const { id } = await short();
+    await decideDoorShortfall(id, { decision: "STILL_OWED", note: "Will send by bKash" }, viewer());
+    await expect(recordManualPayment(id, { amount: 311, kind: "MANUAL" }, admin)).rejects.toMatchObject({ statusCode: 400 });
+    await recordManualPayment(id, { amount: 310, kind: "MANUAL", method: "bKash" }, admin);
+    expect(await money(id)).toMatchObject({ status: "PAID", paid: 1510, due: 0, waiting: false });
+  });
+
+  it("received before anyone decided: it was owed, so it no longer waits", async () => {
+    const { id } = await short();
+    await recordManualPayment(id, { amount: 100, kind: "MANUAL" }, admin);
+    expect(await money(id)).toMatchObject({ due: 210, waiting: true });
+    await recordManualPayment(id, { amount: 210, kind: "MANUAL" }, admin);
+    expect(await money(id)).toMatchObject({ status: "PAID", paid: 1510, waiting: false });
+    expect((await row(id)).doorDecision).toBe("STILL_OWED");
+    expect(await waitingIds()).not.toContain(id);
+  });
+
+  it("part received, then the rest forgiven: the sale is what came in", async () => {
+    const { id } = await short();
+    await recordManualPayment(id, { amount: 100, kind: "MANUAL" }, admin);
+    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "left the rest" }, viewer());
+    expect(await money(id)).toMatchObject({ status: "PAID", paid: 1300, total: 1300, waiting: false });
   });
 
   it("collected in full after all: the rest is recorded by that person", async () => {
     const { id } = await short();
-    await decideDoorShortfall(id, { decision: "COLLECTED_IN_FULL", note: "Panel shows 1510" }, admin);
+    await decideDoorShortfall(id, { decision: "COLLECTED_IN_FULL", note: "Panel shows 1510" }, viewer());
     expect(await money(id)).toMatchObject({ status: "PAID", paid: 1510, waiting: false });
     expect(await prisma.payment.count({ where: { orderId: id, recordedByAdminId: admin, amount: 310 } })).toBe(1);
   });
@@ -204,24 +230,38 @@ describe("the decision", () => {
   it("is made once, even when two people press at the same time", async () => {
     const { id } = await short();
     const r = await Promise.allSettled([
-      decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, admin),
-      decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, admin),
+      decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, viewer()),
+      decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, viewer()),
     ]);
     expect(r.map((x) => x.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect((await row(id)).total.toNumber()).toBe(1200);
-    await expect(decideDoorShortfall(id, { decision: "STILL_OWED", note: "again" }, admin)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(decideDoorShortfall(id, { decision: "STILL_OWED", note: "again" }, viewer())).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("is refused on an order that isn't delivered, and without a reason", async () => {
     const o = await shipped();
-    await expect(decideDoorShortfall(o.id, { decision: "AGREED_PRICE", collected: 1200, note: "bargain" }, admin)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(decideDoorShortfall(o.id, { decision: "AGREED_PRICE", collected: 1200, note: "bargain" }, viewer())).rejects.toMatchObject({ statusCode: 409 });
     const s = await short();
-    await expect(decideDoorShortfall(s.id, { decision: "AGREED_PRICE", note: " " }, admin)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(decideDoorShortfall(s.id, { decision: "AGREED_PRICE", note: " " }, viewer())).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("nothing collected can't be called a lower price", async () => {
+    const o = await shipped();
+    await handleSteadfastWebhook(edit(o.cid, 0));
+    await handleSteadfastWebhook(delivered(o.cid, 0));
+    await expect(decideDoorShortfall(o.id, { decision: "AGREED_PRICE", note: "bargain" }, viewer())).rejects.toMatchObject({ statusCode: 409 });
+    expect(await money(o.id)).toMatchObject({ total: 1510, waiting: true });
+  });
+
+  it("needs the payments permission as well as the price one", async () => {
+    const { id } = await short();
+    await expect(decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, { adminId: admin, permissions: ["orders.adjust_price"] })).rejects.toMatchObject({ statusCode: 403 });
+    expect((await money(id)).waiting).toBe(true);
   });
 
   it("a webhook after the decision changes nothing", async () => {
     const { id, cid } = await short();
-    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, admin);
+    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, viewer());
     await handleSteadfastWebhook(delivered(cid, 1200));
     await handleSteadfastWebhook(edit(cid, 1100, "2026-11-22 14:00:00"));
     expect(await money(id)).toMatchObject({ status: "PAID", paid: 1200, total: 1200, waiting: false });
@@ -240,7 +280,7 @@ describe("parcels delivered before this existed", () => {
     expect(listed).toMatchObject({ expected: 1510, collected: 1200, shortfall: 310, recorded: false });
     expect(await money(id)).toMatchObject({ status: "PAID", paid: 1510 });
 
-    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, admin);
+    await decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, viewer());
     expect(await money(id)).toMatchObject({ status: "PAID", paid: 1200, total: 1200 });
     expect(await codRows(id)).toEqual(["VOIDED 1510", "SUCCEEDED 1200"]);
     expect(await waitingIds()).not.toContain(id);
@@ -250,14 +290,14 @@ describe("parcels delivered before this existed", () => {
     const { id } = await shipped();
     await updateOrderStatus(id, { status: "DELIVERED" }, admin);
     await prisma.payment.updateMany({ where: { orderId: id, provider: "COD" }, data: { recordedByAdminId: null } });
-    await expect(decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, admin)).rejects.toMatchObject({ statusCode: 409 });
-    await decideDoorShortfall(id, { decision: "AGREED_PRICE", collected: 1500, note: "Steadfast page says 1500" }, admin);
+    await expect(decideDoorShortfall(id, { decision: "AGREED_PRICE", note: "bargain" }, viewer())).rejects.toMatchObject({ statusCode: 409 });
+    await decideDoorShortfall(id, { decision: "AGREED_PRICE", collected: 1500, note: "Steadfast page says 1500" }, viewer());
     expect(await money(id)).toMatchObject({ status: "PAID", paid: 1500, total: 1500 });
   });
 
   it("a figure that isn't lower is refused", async () => {
     const { id } = await shipped();
     await updateOrderStatus(id, { status: "DELIVERED" }, admin);
-    await expect(decideDoorShortfall(id, { decision: "AGREED_PRICE", collected: 1510, note: "bargain" }, admin)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(decideDoorShortfall(id, { decision: "AGREED_PRICE", collected: 1510, note: "bargain" }, viewer())).rejects.toMatchObject({ statusCode: 409 });
   });
 });

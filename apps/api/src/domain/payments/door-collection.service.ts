@@ -140,7 +140,10 @@ async function collectedFor(tx: Tx, order: Locked, said: number | null | undefin
   return said === null || said === undefined ? null : new D(said);
 }
 
-export async function decideDoorShortfall(orderId: string, input: DoorShortfallInput, adminId: string) {
+export async function decideDoorShortfall(orderId: string, input: DoorShortfallInput, viewer: { adminId: string; permissions: readonly string[] }) {
+  const { adminId } = viewer;
+  // The route requires orders.adjust_price; the payment rows this writes need the payments permission too.
+  if (!viewer.permissions.includes("payments.record")) throw new AppError(403, "Deciding this needs the Payments permission", { code: "MONEY_PERMISSION" });
   const note = input.note.trim();
   if (note.length < 3) throw AppError.badRequest("Say why, in a few words");
   const currency = await getCurrency();
@@ -152,6 +155,7 @@ export async function decideDoorShortfall(orderId: string, input: DoorShortfallI
     const expected = await expectedCod(tx, order);
     const collected = await collectedFor(tx, order, input.collected);
     if (collected === null || collected.gte(expected)) throw new AppError(409, "Nothing says the courier collected less on this order", { code: "NOT_SHORT" });
+    if (input.decision === "AGREED_PRICE" && collected.lte(0)) throw new AppError(409, "Nothing was collected on this parcel, so it isn't a lower price", { code: "NOTHING_COLLECTED" });
     const shortfall = expected.minus(collected);
     const t = (v: Prisma.Decimal) => `${currency} ${v.toFixed(2)}`;
 

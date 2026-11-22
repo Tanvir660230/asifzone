@@ -233,6 +233,26 @@ These are **facts only**: no total, payment or status changes because of them. A
 is weaker: on 22 Nov one still carried 1,710 after the rider had collected 50. A figure equal to the booked COD proves
 nothing; a lower one agreed with all 7 posted payouts it could be checked against.
 
+### 5d. Delivered for less than the order says (2026-11-23)
+
+Until now "delivered" booked the whole balance, so a price cut agreed at the door stayed on the order as money received (22
+Nov: 11 such orders on Asif Zone, ৳3,139; every one a posted payout names agreed with Steadfast's lower figure).
+
+- **Booking.** `recordCodCollection` books what Steadfast says was collected (§5c) when that is below the balance due, and
+  puts the order on **Collected less** (`Order.doorShortfallAt`). When the status arrived first and the figure after,
+  `applyDoorCollection` replaces the system's own COD row (VOIDED, kept). A figure put back up books the full amount again.
+  A `delivered` push below the booked COD counts as the changed COD; one equal to it proves nothing.
+- **A person decides, once** (`decideDoorShortfall`, `POST /api/orders/:id/door-shortfall`, orders.adjust_price **and**
+  payments.record): `AGREED_PRICE` lowers the total by the shortfall through the price adjustment, so the sale is what came
+  in (the books supersede the sale by themselves; loyalty points never counted the adjustment); `STILL_OWED` keeps the
+  total; `COLLECTED_IN_FULL` records the rest as courier cash by that person. Nothing collected can't be a lower price, and
+  a posted payout naming another amount refuses the decision (409 `PAYOUT_DISAGREES`).
+- **Never touched:** money a person recorded, a decided order, an order in Trash, a prepaid order.
+- **Older orders** are listed from the webhook log, still booked in full, and change only by a decision. Where Steadfast
+  never said an amount, `collected` in the request says it.
+- A delivered COD order's balance may now be received directly (it could not be recorded while a booking was linked);
+  receiving all of it settles the shortfall as `STILL_OWED`. A delivered order has no cash left for the courier to collect.
+
 ## 6. The order state machine
 
 | Transition | Before Phase 4 | Phase 4 |

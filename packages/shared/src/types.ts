@@ -682,6 +682,12 @@ export interface Order {
   /** Admin reads only: what Steadfast reported the rider collected on a partial delivery (PAYMENT_LEDGER §5b). */
   courierCollectedAmount?: string | null;
   courierCollectedAt?: string | null;
+  /** Admin reads only (PAYMENT_LEDGER §5c–§5d): the COD the parcel was booked with, what Steadfast last said it is, and a
+   * delivered order waiting for someone to say why less was collected. */
+  courierCodBooked?: string | null;
+  courierCodNow?: string | null;
+  doorShortfallAt?: string | null;
+  doorDecision?: string | null;
   partialDeliveryReconciledAt: string | null;
   /** Physical facts (Order Operations phase 4): handed to the courier, back with us, inspected. Admin reads. */
   handedOverAt?: string | null;

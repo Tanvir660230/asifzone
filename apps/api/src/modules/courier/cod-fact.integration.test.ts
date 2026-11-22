@@ -19,6 +19,7 @@ import { prisma } from "../../config/prisma";
 import { getSteadfastStatusByConsignmentId } from "../../providers/courier/steadfast";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { updateOrderStatus } from "../orders/order.service";
+import { fillMissingCodFacts } from "./cod-fact.service";
 import { bookOrderWithSteadfast, bookOrdersWithSteadfastBulk, handleSteadfastWebhook, unlinkCourierBooking } from "./courier.service";
 
 // docs/PAYMENT_LEDGER.md §5c — the cash-on-delivery amount as Steadfast last said it is: a fact on the order, never money.
@@ -122,6 +123,26 @@ describe("a COD change is kept as a fact", () => {
     await handleSteadfastWebhook(panelEdit(consignmentId, 120, "2026-11-20 12:00:00"));
     await handleSteadfastWebhook({ ...panelEdit(consignmentId, 200, ""), updated_at: undefined });
     expect((await fact(order.id)).now).toBe(200);
+  });
+});
+
+describe("changes logged before they were kept", () => {
+  it("are taken for parcels still on the way, in order, once; closed and foreign parcels are left alone", async () => {
+    const { order, consignmentId } = await shipped();
+    const done = await shipped();
+    await updateOrderStatus(done.order.id, { status: "DELIVERED" }, admin);
+    const log = (o: { order: { id: string }; consignmentId: string }, body: object) =>
+      prisma.courierWebhookEvent.create({
+        data: { notificationType: (body as { notification_type: string }).notification_type, consignmentId: o.consignmentId, orderId: o.order.id, trackingMessage: (body as { tracking_message?: string }).tracking_message ?? null, payload: body as never, outcome: "APPLIED" },
+      });
+    await log({ order, consignmentId }, panelEdit(consignmentId, 120, "2026-11-21 10:00:00"));
+    await log({ order, consignmentId }, hubEdit(consignmentId, 120, 1400, "2026-11-21 11:00:00"));
+    await log(done, panelEdit(done.consignmentId, 120, "2026-11-21 10:00:00"));
+    await fillMissingCodFacts();
+    expect(await fact(order.id)).toMatchObject({ now: 1400, total: 1510, pay: "UNPAID" });
+    expect((await fact(done.order.id)).now).toBeNull();
+    await fillMissingCodFacts();
+    expect(await codLines(order.id)).toBe(2);
   });
 });
 

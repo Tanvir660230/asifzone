@@ -71,7 +71,8 @@ export function manualPaymentBlocker(order: OrderGuardFacts, kind: ManualPayment
     return null;
   }
   if (CLOSED_ORDER_STATUSES.includes(order.status)) return `Can't record a payment on an order that is ${order.status.toLowerCase()}`;
-  if (order.paymentMethod === "COD" && order.courierConsignmentId) {
+  // Delivered: the courier is done — what the customer still owes may be received directly.
+  if (order.paymentMethod === "COD" && order.courierConsignmentId && order.status !== "DELIVERED") {
     return "The courier already has this parcel's COD amount — unlink the booking before recording a prepayment";
   }
   return null;

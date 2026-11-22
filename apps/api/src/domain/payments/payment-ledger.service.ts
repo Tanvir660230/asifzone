@@ -397,7 +397,7 @@ export async function recordManualPaymentInTx(tx: Db, orderId: string, input: Re
     }
   } else {
     if (CLOSED.has(order.status)) throw AppError.badRequest(`Can't record a payment on an order that is ${order.status.toLowerCase()}`, { code: "PAYMENT_NOT_ALLOWED" });
-    if (order.paymentMethod === "COD" && order.courierConsignmentId) {
+    if (order.paymentMethod === "COD" && order.courierConsignmentId && order.status !== "DELIVERED") {
       throw AppError.badRequest("The courier already has this parcel's COD amount — unlink the booking before recording a prepayment", { code: "PAYMENT_NOT_ALLOWED" });
     }
   }
@@ -422,7 +422,14 @@ export async function recordManualPaymentInTx(tx: Db, orderId: string, input: Re
     },
   });
   await timelineNote(tx, orderId, order.status, `Payment recorded: ${noteMoney(amount)}${note ? ` (${note})` : ""}`, adminId);
-  await refreshPaymentStatus(tx, orderId, currency);
+  const after = await refreshPaymentStatus(tx, orderId, currency);
+  // §5d: the shortfall came in, so it was owed — nothing is left to decide.
+  if (after.amountDue.amount === 0) {
+    await tx.order.updateMany({
+      where: { id: orderId, doorShortfallAt: { not: null } },
+      data: { doorShortfallAt: null, doorDecision: "STILL_OWED", doorDecidedAt: new Date(), doorDecidedByAdminId: adminId },
+    });
+  }
   return created;
 }
 

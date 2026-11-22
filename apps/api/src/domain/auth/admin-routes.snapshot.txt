@@ -207,6 +207,7 @@ GET /api/orders/:id/payment → orders.read
 GET /api/orders/:id/payment-links → orders.read
 GET /api/orders/:id/refunds → orders.read
 GET /api/orders/:id/returns → orders.read
+GET /api/orders/door-shortfalls → orders.read
 GET /api/orders/exceptions → orders.read
 GET /api/orders/export/csv → orders.export
 GET /api/orders/stats → orders.read
@@ -545,6 +546,7 @@ POST /api/orders/:id/courier/book → courier.manage
 POST /api/orders/:id/courier/link → courier.manage
 POST /api/orders/:id/courier/refresh → courier.manage
 POST /api/orders/:id/courier/unlink → courier.manage
+POST /api/orders/:id/door-shortfall → orders.adjust_price
 POST /api/orders/:id/hold → orders.manage
 POST /api/orders/:id/hold/clear → orders.manage
 POST /api/orders/:id/modifications → orders.manage

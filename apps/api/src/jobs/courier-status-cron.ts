@@ -4,6 +4,7 @@ import { syncPendingCourierStatuses } from "../modules/courier/courier.service";
 import { logger } from "../lib/observability/logger";
 import { fillMissingReferences, syncRecentShipments } from "../domain/shipments/shipment-sync";
 import { fillMissingCourierCharges } from "../domain/shipments/courier-charge";
+import { fillMissingCodFacts } from "../modules/courier/cod-fact.service";
 
 const QUEUE_NAME = "courier-status-sync";
 
@@ -27,6 +28,7 @@ export async function startCourierStatusCron() {
       await fillMissingReferences();
       // Delivery charges Steadfast pushed before they were kept on the leg (or while the leg did not exist yet).
       await fillMissingCourierCharges();
+      await fillMissingCodFacts();
     },
     { connection: queueConnection },
   );

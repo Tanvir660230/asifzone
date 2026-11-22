@@ -360,6 +360,7 @@ export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
 export type HoldOrderInput = z.infer<typeof holdOrderSchema>;
 export type AdjustOrderPriceInput = z.infer<typeof adjustOrderPriceSchema>;
 export type DoorShortfallInput = z.infer<typeof doorShortfallSchema>;
+export type DoorDecision = (typeof DOOR_DECISIONS)[number];
 export type ReconcilePartialDeliveryInput = z.infer<typeof reconcilePartialDeliverySchema>;
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
