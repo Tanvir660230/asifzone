@@ -7,10 +7,10 @@
  * and inventory equals the valuation. Needs inventory costing (the valuation cutover).
  */
 import type { LandedCostMethod, Prisma } from "@prisma/client";
-import { prisma } from "../../config/prisma";
+import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
-import { businessToday, getFinanceContext } from "./finance-context";
+import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { resolveMappedAccount } from "./chart.service";
@@ -66,7 +66,16 @@ export async function createLandedCost(input: LandedCostInput, actor: FinanceAct
   const cur = business.baseCurrency;
   const costDate = input.costDate ?? businessToday(business);
   if (business.openingDate && costDate < business.openingDate) throw financeError(400, "BEFORE_OPENING_DATE", `The books start on ${business.openingDate}`);
-  const result = await financeTransaction(async (tx) => {
+  const result = await financeTransaction((tx) => createLandedCostInTx(tx, business, input, actor, idempotencyKey));
+  if (result.eventId) await processFinancialEvent(result.eventId);
+  return { landedCost: dto(result.row, cur), replayed: result.replayed };
+}
+
+/** createLandedCost in the caller's transaction; the caller processes `eventId` after the commit. */
+export async function createLandedCostInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: LandedCostInput, actor: FinanceActor, idempotencyKey: string) {
+  const cur = business.baseCurrency;
+  const costDate = input.costDate ?? businessToday(business);
+  {
     const prior = await tx.treasuryMovement.findUnique({ where: { businessId_idempotencyKey: { businessId: business.id, idempotencyKey: `landed:${idempotencyKey}` } }, select: { id: true } });
     if (prior) {
       const existing = await tx.landedCost.findUnique({ where: { movementId: prior.id }, include: INCLUDE });
@@ -116,10 +125,8 @@ export async function createLandedCost(input: LandedCostInput, actor: FinanceAct
       payload: { landedCostId: row.id, number: landedNumber(number), amount },
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "landed_cost.create", entityType: "LandedCost", entityId: row.id, after: { ...dto(row, cur), payment: movementDto(movement).status } });
-    return { row, eventId: event.id, replayed: false };
-  });
-  if (result.eventId) await processFinancialEvent(result.eventId);
-  return { landedCost: dto(result.row, cur), replayed: result.replayed };
+    return { row, eventId: event.id as string | null, replayed: false };
+  }
 }
 
 export async function listLandedCosts() {

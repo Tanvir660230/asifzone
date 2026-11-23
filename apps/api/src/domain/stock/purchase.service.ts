@@ -215,7 +215,7 @@ const pocketName = (owner: string | null) => `${owner ?? "Owner"} — own money`
 
 /** The owner's own money: his "<owner> — own money" cash account (the owner's history), or null when not made yet. Never
  * another cash box. */
-async function findOwnerPocket(businessId: string) {
+export async function findOwnerPocket(businessId: string) {
   const owner = await prisma.partner.findFirst({ where: { businessId, role: "OWNER" }, select: { name: true } });
   const name = pocketName(owner?.name ?? null);
   const fa = await prisma.financialAccount.findFirst({ where: { businessId, name }, select: { id: true, name: true, kind: true, isActive: true } });
@@ -224,7 +224,7 @@ async function findOwnerPocket(businessId: string) {
 }
 
 /** The owner's own-money account, made the first time (as the owner's history script does). */
-async function ensureOwnerPocket(businessId: string, actor: FinanceActor): Promise<PaidFrom> {
+export async function ensureOwnerPocket(businessId: string, actor: FinanceActor): Promise<PaidFrom> {
   const { name, account } = await findOwnerPocket(businessId);
   if (account) return { kind: "OWNER", financialAccountId: account.id, name: account.name };
   try {

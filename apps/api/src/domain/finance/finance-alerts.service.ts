@@ -190,6 +190,23 @@ export async function financeAlerts() {
         action: "Record ad spend",
       });
     }
+    // No campaign is marked running, yet ads were being recorded and then stopped (campaigns are made by an import and
+    // not kept up to date): the last day with spend is more than 3 days back after a month with spend.
+    else {
+      const last = await prisma.adSpendDay.aggregate({ where: { campaign: { businessId: business.id }, amount: { gt: 0 } }, _max: { date: true } });
+      const lastDay = last._max.date ? businessDateOf(last._max.date) : null;
+      if (lastDay && lastDay < addDays(today, -3) && lastDay >= addDays(today, -45)) {
+        add({
+          key: "ads.behind",
+          severity: "warning",
+          title: "Ad spend not recorded lately — profit looks higher than it is",
+          detail: `The last day with ad spend is ${lastDay}. Import the Ads Manager file (Money › Ads) for the days since, or confirm the ads were off.`,
+          count: 1,
+          href: "/admin/finance/ads",
+          action: "Record ad spend",
+        });
+      }
+    }
   }
   add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
   // The courier holds the cash for delivered COD parcels until it pays out — money the owner should chase.

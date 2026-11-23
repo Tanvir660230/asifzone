@@ -291,6 +291,7 @@ GET /api/v1/finance/commitments → finance.read
 GET /api/v1/finance/cost-sheets/defaults → costing.read
 GET /api/v1/finance/cost-sheets/products → costing.read
 GET /api/v1/finance/cost-sheets/products/:id → costing.read
+GET /api/v1/finance/costs/options → finance.read
 GET /api/v1/finance/courier/claims → finance.read
 GET /api/v1/finance/courier/reconciliation → finance.read
 GET /api/v1/finance/custody/cash-counts → finance.custody
@@ -652,6 +653,8 @@ POST /api/v1/finance/commerce/orders/:id/sync → finance.reconcile
 POST /api/v1/finance/commerce/setup → finance.configure
 POST /api/v1/finance/commerce/sync → finance.reconcile
 POST /api/v1/finance/commitments → finance.transact
+POST /api/v1/finance/costs → finance.transact
+POST /api/v1/finance/costs/undo → finance.transact
 POST /api/v1/finance/courier/claims → finance.transact
 POST /api/v1/finance/courier/claims/:id/settle → finance.transact
 POST /api/v1/finance/courier/payouts/import → finance.transact

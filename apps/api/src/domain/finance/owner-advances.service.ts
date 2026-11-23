@@ -20,7 +20,7 @@ import { resolveMappedAccount } from "./chart.service";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 import { movementDto, requestMovementInTx } from "./treasury.service";
 
-export type OwnerAdvanceSource = "StockPurchase" | "Expense";
+export type OwnerAdvanceSource = "StockPurchase" | "Expense" | "PrepaidCost" | "LandedCost" | "FixedAsset" | "AdTopUp";
 const LIVE_REPAYMENT = ["PENDING_APPROVAL", "POSTED"] as const;
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 

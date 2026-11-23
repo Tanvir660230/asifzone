@@ -161,8 +161,13 @@ async function assetAccount(tx: AppTransactionClient, businessId: string, id: st
 
 export async function createAsset(input: AssetInput, actor: FinanceActor) {
   const { business } = await getFinanceContext();
+  return financeTransaction((tx) => createAssetInTx(tx, business, input, actor));
+}
+
+/** createAsset in the caller's transaction (Add cost: bought and registered in one step). */
+export async function createAssetInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: AssetInput, actor: FinanceActor) {
   const cur = business.baseCurrency;
-  return financeTransaction(async (tx) => {
+  {
     await ensureSetup(tx, business, actor);
     const account = await assetAccount(tx, business.id, input.assetAccountId);
     const method = input.method ?? "STRAIGHT_LINE";
@@ -201,7 +206,7 @@ export async function createAsset(input: AssetInput, actor: FinanceActor) {
     const today = businessToday(business);
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "fixed_asset.create", entityType: "FixedAsset", entityId: row.id, after: assetDto(row, cur, today) });
     return assetDto(row, cur, today);
-  });
+  }
 }
 
 export async function updateAsset(id: string, input: Partial<Pick<AssetInput, "name" | "category" | "location" | "custodian" | "serialNumber" | "notes" | "residualValue" | "usefulLifeMonths">>, actor: FinanceActor) {

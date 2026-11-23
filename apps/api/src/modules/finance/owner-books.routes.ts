@@ -8,6 +8,8 @@ import {
   handoverRejectSchema,
   moneyMapQuerySchema,
   ownerPaidExpenseSchema,
+  addCostSchema,
+  undoCostSchema,
   courierPayoutImportSchema,
   courierRateCardSchema,
   courierReconciliationQuerySchema,
@@ -96,6 +98,7 @@ import { productionHome } from "../../domain/stock/production-home.service";
 import { productKit } from "../../domain/stock/kit.service";
 import * as costSheets from "../../domain/finance/cost-sheet.service";
 import { stockTrace } from "../../domain/stock/trace.service";
+import * as addCost from "../../domain/finance/add-cost.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -205,6 +208,13 @@ ownerBooksRouter.post("/quick-refills", requirePermission("manufacturing.approve
 ownerBooksRouter.get("/profit", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitReport(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/profit/daily", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitByDay(req.query as never))));
 // Everything spent in a period, by day (docs/FINANCE_SPENDING.md).
+// Add cost (docs/FINANCE_ADD_COST.md): one form for anything paid for, and taking one back out.
+ownerBooksRouter.get("/costs/options", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await addCost.addCostOptions(await actorOf(req)))));
+ownerBooksRouter.post("/costs", requirePermission("finance.transact"), validate(addCostSchema), asyncHandler(async (req, res) => {
+  const r = await addCost.addCost(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+ownerBooksRouter.post("/costs/undo", requirePermission("finance.transact"), validate(undoCostSchema), asyncHandler(async (req, res) => res.json(await addCost.undoCost(req.body, await actorOf(req)))));
 ownerBooksRouter.get("/spending", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await spending(req.query as never))));
 ownerBooksRouter.get("/profit/monthly", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await profit.profitByMonth())));
 ownerBooksRouter.get("/profit/launch", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.launchReport(req.query as never))));

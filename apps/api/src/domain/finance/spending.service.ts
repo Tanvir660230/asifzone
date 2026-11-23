@@ -29,6 +29,10 @@ export interface SpendingRow {
   href: string | null;
   /** The items of a purchase. */
   lines?: SpendingItem[];
+  /** The record behind the row, when one can be opened or taken back (Add cost undo). */
+  source?: { type: "Expense" | "PrepaidCost" | "LandedCost" | "GoodsReceipt"; id: string; reversible: boolean } | null;
+  /** Whose money paid it. */
+  paidFrom?: string | null;
 }
 
 export interface SpendingItem {
@@ -60,9 +64,9 @@ export async function spending(q: { from?: string; to?: string }) {
       include: { supplier: { select: { displayName: true, legalName: true } }, lines: { include: { variant: { select: { size: true, color: true, product: { select: { name: true } } } } }, orderBy: { lineNo: "asc" } } },
       orderBy: { number: "desc" },
     }),
-    prisma.landedCost.findMany({ where: { businessId: business.id, reversedAt: null, costDate: range } }),
-    prisma.expense.findMany({ where: { businessId: business.id, expenseDate: range, movement: { status: "POSTED" } }, include: { expenseAccount: { select: { id: true, name: true } } }, orderBy: { number: "desc" } }),
-    prisma.prepaidCost.findMany({ where: { businessId: business.id, movement: { status: "POSTED", movementDate: range } }, include: { movement: { select: { movementDate: true } }, expenseAccount: { select: { id: true, name: true } } } }),
+    prisma.landedCost.findMany({ where: { businessId: business.id, reversedAt: null, costDate: range }, include: { movement: { select: { fromAccount: { select: { name: true } } } } } }),
+    prisma.expense.findMany({ where: { businessId: business.id, expenseDate: range, movement: { status: "POSTED" } }, include: { expenseAccount: { select: { id: true, name: true } }, movement: { select: { fromAccount: { select: { name: true } } } } }, orderBy: { number: "desc" } }),
+    prisma.prepaidCost.findMany({ where: { businessId: business.id, movement: { status: "POSTED", movementDate: range } }, include: { movement: { select: { movementDate: true, fromAccount: { select: { name: true } } } }, expenseAccount: { select: { id: true, name: true } } } }),
     prisma.accountMapping.findMany({ where: { businessId: business.id }, select: { key: true, accountId: true } }),
     prisma.adSpendDay.aggregate({ where: { campaign: { businessId: business.id } }, _max: { date: true } }),
     prisma.stockHubEntry.findMany({ where: { businessId: business.id, kind: "PURCHASE", entryDate: range, completedAt: { not: null } } }),
@@ -129,6 +133,7 @@ export async function spending(q: { from?: string; to?: string }) {
       minor: r.lines.reduce((s, l) => s + toMinor(l.value, cur), 0),
       href: "/admin/stock/purchases",
       lines: items,
+      source: { type: "GoodsReceipt", id: r.id, reversible: false },
     });
   }
   for (const b of bought) {
@@ -136,12 +141,12 @@ export async function spending(q: { from?: string; to?: string }) {
     const items = itemsOf(b.steps);
     add(b.date, { kind: "GOODS", title: titleOf(items), detail: b.steps.request.supplierName, minor: toMinor(b.steps.total, cur), href: "/admin/stock/purchases", lines: items });
   }
-  for (const l of landed) add(businessDateOf(l.costDate), { kind: "GOODS", title: l.description, detail: "Cost of bringing goods", minor: toMinor(l.amount, cur), href: "/admin/finance/landed-costs" });
+  for (const l of landed) add(businessDateOf(l.costDate), { kind: "GOODS", title: l.description, detail: "Cost of bringing goods", minor: toMinor(l.amount, cur), href: "/admin/finance/landed-costs", source: { type: "LandedCost", id: l.id, reversible: true }, paidFrom: l.movement.fromAccount?.name ?? null });
   for (const e of expenses) {
-    add(businessDateOf(e.expenseDate), { kind: kindOf(e.expenseAccount.id, e.expenseAccount.name), title: e.description, detail: e.payee ?? e.expenseAccount.name, minor: toMinor(e.amount, cur), href: "/admin/finance/expenses" });
+    add(businessDateOf(e.expenseDate), { kind: kindOf(e.expenseAccount.id, e.expenseAccount.name), title: e.description, detail: e.payee ?? e.expenseAccount.name, minor: toMinor(e.amount, cur), href: "/admin/finance/expenses", source: { type: "Expense", id: e.id, reversible: true }, paidFrom: e.movement.fromAccount?.name ?? null });
   }
   for (const p of prepaid) {
-    add(businessDateOf(p.movement.movementDate), { kind: kindOf(p.expenseAccount.id, p.expenseAccount.name), title: p.name, detail: "Paid in advance", minor: toMinor(p.amount, cur), href: "/admin/finance/prepaid" });
+    add(businessDateOf(p.movement.movementDate), { kind: kindOf(p.expenseAccount.id, p.expenseAccount.name), title: p.name, detail: "Paid in advance", minor: toMinor(p.amount, cur), href: "/admin/finance/prepaid", source: { type: "PrepaidCost", id: p.id, reversible: true }, paidFrom: p.movement.fromAccount?.name ?? null });
   }
 
   // The rest, one row per kind and day (a typed journal keeps its own words).

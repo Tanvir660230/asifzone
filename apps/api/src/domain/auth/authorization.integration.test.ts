@@ -336,6 +336,8 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/ads/import-meta",
   "GET /api/v1/finance/prepaid",
   "POST /api/v1/finance/prepaid",
+  "POST /api/v1/finance/costs",
+  "POST /api/v1/finance/costs/undo",
   "PATCH /api/v1/finance/prepaid/:id",
   "GET /api/v1/finance/packaging",
   "POST /api/v1/finance/packaging/rules",
@@ -351,6 +353,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/v1/finance/profit/daily",
   "GET /api/v1/finance/profit/monthly",
   "GET /api/v1/finance/spending",
+  "GET /api/v1/finance/costs/options",
   "GET /api/v1/finance/profit/launch",
   // Cost & profit planning (docs/COST_SHEET.md): costing.read / costing.adjust, OWNER-only like every cost
   "GET /api/v1/finance/cost-sheets/products",
