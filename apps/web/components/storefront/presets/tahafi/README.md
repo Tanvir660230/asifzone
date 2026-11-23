@@ -27,12 +27,17 @@ Homepage (`home/home-section.tsx` switches):
   (IMAGE_GALLERY as rounded photo cards with the caption on glass).
 
 Elsewhere:
-- `product-card.tsx`: a white card, the photo square, the name and a firm price, a tag only for a live discount, a
-  round glass "+".
+- `product-card.tsx`: a white card, the photo square, the name and a firm price, a tag only for a live discount (low on
+  the photo, level with the "+", so it never sits on the model's face), a round glass "+" at the 44px touch size, and a
+  rating line that keeps its height on every card, so a row of cards ends level.
 - `info-card.tsx`: the product page's delivery dates and promises on one white card (`product-showcase.tsx`, which on
   phones also runs the photograph edge to edge and raises the details over it on a sheet).
 - `order-tag.tsx`: the placed order on one success card at the top of the confirmation page.
 - `loader.tsx` (the logo's two diamonds taking turns), `styles.ts`.
+
+Touch sizes and the smallest type come from tokens (`--tap`, `--tap-sm`, `--tap-min`, `--fine-print-size`; globals.css
+`.ui-tap*`, `.ui-tap-min`, `.ui-fine-print`): Tahafi sets 44px and 12px, other stores keep their old sizes. Each colour
+is its own product, joined by a product family ("Colour"), so the product page shows every colour as photo tiles.
 
 Sections not listed render the classic components, styled by the `tahafi` tokens. Brand rules:
 docs/brand/tahafi/THEME_BLUEPRINT.md.

@@ -27,7 +27,7 @@ export function LandingHeader({ settings, tel }: { settings: Pick<StoreSettings,
           )}
         </Link>
         {tel && (
-          <a href={tel} className="inline-flex h-10 items-center gap-2 rounded-[var(--control-radius)] bg-surface-muted px-4 text-sm font-semibold text-fg" lang="bn">
+          <a href={tel} className="ui-tap-min inline-flex h-10 items-center gap-2 rounded-[var(--control-radius)] bg-surface-muted px-4 text-sm font-semibold text-fg" lang="bn">
             <Phone size={16} aria-hidden="true" />
             কল করুন
           </a>

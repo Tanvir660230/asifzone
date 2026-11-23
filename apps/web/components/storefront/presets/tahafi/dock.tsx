@@ -50,7 +50,7 @@ export function TahafiDock() {
 
   const tab = (active: boolean) =>
     cn(
-      "my-1.5 flex flex-col items-center justify-center gap-0.5 rounded-full text-[0.6875rem] leading-none transition-colors duration-150 ease-smooth",
+      "my-1.5 flex flex-col items-center justify-center gap-0.5 rounded-full text-xs leading-none transition-colors duration-150 ease-smooth",
       active ? "bg-ink-900/[0.08] font-semibold text-fg" : "font-medium text-fg-muted",
     );
 

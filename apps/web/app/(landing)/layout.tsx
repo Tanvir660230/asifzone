@@ -16,7 +16,7 @@ const notoSansBengali = Noto_Sans_Bengali({
 // provides the theme, fonts, consent banner and ad pixels.
 export default function LandingLayout({ children }: { children: ReactNode }) {
   return (
-    <div className={`flex min-h-screen flex-col bg-canvas ${notoSansBengali.variable}`}>
+    <div data-landing className={`flex min-h-screen flex-col bg-canvas ${notoSansBengali.variable}`}>
       {children}
       <Toaster />
     </div>

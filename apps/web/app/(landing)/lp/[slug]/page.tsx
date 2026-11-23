@@ -134,7 +134,7 @@ async function AutomaticLandingView({ product }: { product: Product }) {
                 <li key={title} className="flex flex-col items-center gap-1 px-2 py-3 text-center">
                   <Icon size={20} className="text-fg" aria-hidden="true" />
                   <span className="text-xs font-semibold leading-tight text-fg sm:text-sm">{title}</span>
-                  <span className="text-[11px] leading-tight text-fg-muted sm:text-xs">{text}</span>
+                  <span className="ui-fine-print leading-tight text-fg-muted sm:text-xs">{text}</span>
                 </li>
               ))}
             </ul>
@@ -150,7 +150,7 @@ async function AutomaticLandingView({ product }: { product: Product }) {
             {(tel || whatsapp) && (
               <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                 {tel && (
-                  <a href={tel} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg">
+                  <a href={tel} className="flex h-12 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg sm:flex-1">
                     <Phone size={16} aria-hidden="true" />
                     ফোনে অর্ডার দিন
                   </a>
@@ -160,7 +160,7 @@ async function AutomaticLandingView({ product }: { product: Product }) {
                     href={whatsapp}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg"
+                    className="flex h-12 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg sm:flex-1"
                   >
                     <MessageCircle size={16} aria-hidden="true" />
                     WhatsApp-এ মেসেজ দিন
