@@ -120,6 +120,10 @@ export default function AdSpendPage() {
     onError: (e) => toast.error(getErrorMessage(e, "The campaign couldn't be changed")),
   });
   const settings = useQuery({ queryKey: booksApi.centerKeys.settings(), queryFn: booksApi.getCenterSettings, enabled: allowed });
+  // How far the ad spend is recorded (docs/FINANCE_ADD_COST.md §4): the same check the Spending page makes.
+  const thisMonth = { from: `${t.slice(0, 7)}-01`, to: t };
+  const recorded = useQuery({ queryKey: booksApi.spendingKey(thisMonth), queryFn: () => booksApi.getSpending(thisMonth), enabled: allowed });
+  const behind = recorded.data?.adsMissingAfter ?? null;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
   const meta = useMutation({
     mutationFn: () => booksApi.importMetaSpend({ days: 7 }),
@@ -141,7 +145,7 @@ export default function AdSpendPage() {
       action={can("finance.transact") && (
         <div className="flex flex-wrap gap-2" data-phone-row>
           {d?.meta.connected && <Button size="sm" variant="outline" loading={meta.isPending} onClick={() => meta.mutate()} data-testid="import-meta"><Download className="h-4 w-4" /> Bring in Meta spend</Button>}
-          <Button size="sm" variant="outline" onClick={() => setImporting(true)} disabled={!adAccounts.length} data-testid="import-ad-csv"><FileUp className="h-4 w-4" /> Import CSV</Button>
+          <Button size="sm" variant="outline" onClick={() => setImporting(true)} disabled={!adAccounts.length} data-testid="import-ad-csv"><FileUp className="h-4 w-4" /> Import Ads Manager file</Button>
           <Button size="sm" onClick={() => setEditing("new")} disabled={!adAccounts.length} data-testid="new-campaign"><Plus className="h-4 w-4" /> Campaign</Button>
         </div>
       )}
@@ -150,6 +154,15 @@ export default function AdSpendPage() {
       {accounts.data && adAccounts.length === 0 && (
         <Alert variant="info" title="Add your ad account first">
           Create a money account of type <strong>Ad account</strong> in <Link href="/admin/finance/accounts?new=account" className="text-accent hover:underline">Money accounts</Link> (for Meta, its reference is the ad account id, act_…). Top it up with a transfer from bKash or the bank; spend is taken out of it day by day.
+        </Alert>
+      )}
+      {behind && (
+        <Alert
+          variant="warning"
+          title={`Ad spend is recorded up to ${formatBookDate(behind)}`}
+        >
+          Profit counts the days after it at no ad cost. In Ads Manager, export the days since with Day, Campaign name, Campaign ID and Amount spent, then import that file here.
+          {can("finance.transact") && adAccounts.length > 0 && <Button size="sm" className="mt-3 flex" onClick={() => setImporting(true)} data-testid="ads-behind-import"><FileUp className="h-4 w-4" /> Import the file</Button>}
         </Alert>
       )}
       {d && !d.meta.connected && (

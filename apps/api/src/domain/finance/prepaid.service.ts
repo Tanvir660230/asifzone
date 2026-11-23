@@ -7,9 +7,9 @@
  */
 import type { Prisma } from "@prisma/client";
 import { addDays, monthPeriod } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
+import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
-import { businessToday, getFinanceContext } from "./finance-context";
+import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { resolveMappedAccount } from "./chart.service";
@@ -90,7 +90,17 @@ export async function createPrepaid(input: PrepaidInput, actor: FinanceActor, id
   const cur = business.baseCurrency;
   const paidOn = input.paidOn ?? businessToday(business);
   if (business.openingDate && paidOn < business.openingDate) throw financeError(400, "BEFORE_OPENING_DATE", `The books start on ${business.openingDate}`);
-  const created = await financeTransaction(async (tx) => {
+  const created = await financeTransaction((tx) => createPrepaidInTx(tx, business, input, actor, idempotencyKey));
+  await syncPrepaid(created.row.id);
+  return { prepaid: dto(created.row, cur, businessToday(business)), replayed: created.replayed };
+}
+
+/** createPrepaid in the caller's transaction (Add cost: the owner's money comes in and pays it in one step). The caller
+ * runs syncPrepaid after the commit. */
+export async function createPrepaidInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: PrepaidInput, actor: FinanceActor, idempotencyKey: string) {
+  const cur = business.baseCurrency;
+  const paidOn = input.paidOn ?? businessToday(business);
+  {
     await ensureOwnerBooksSetupInTx(tx, business, actor);
     const account = await tx.ledgerAccount.findFirst({ where: { id: input.expenseAccountId, businessId: business.id } });
     if (!account || !account.isPostable || !["EXPENSE", "OTHER_EXPENSE"].includes(account.type)) throw financeError(400, "ACCOUNT_TYPE", "Choose the expense the cost belongs to");
@@ -117,9 +127,7 @@ export async function createPrepaid(input: PrepaidInput, actor: FinanceActor, id
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "prepaid.create", entityType: "PrepaidCost", entityId: row.id, after: { ...row, movement: movementDto(movement).status } });
     return { row, replayed: false };
-  });
-  await syncPrepaid(created.row.id);
-  return { prepaid: dto(created.row, cur, businessToday(business)), replayed: created.replayed };
+  }
 }
 
 /** Changes the name, notes or the end of service (ending early books the rest in the ending month). */

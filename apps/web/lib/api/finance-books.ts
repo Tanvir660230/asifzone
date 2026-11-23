@@ -348,6 +348,8 @@ export interface SpendingRow {
   amount: number;
   href: string | null;
   lines?: Array<{ name: string; quantity: number; unit: string | null; amount: number }>;
+  source?: { type: "Expense" | "PrepaidCost" | "LandedCost" | "GoodsReceipt"; id: string; reversible: boolean } | null;
+  paidFrom?: string | null;
 }
 export interface SpendingDay {
   date: string;
@@ -366,3 +368,39 @@ export interface SpendingReport {
 }
 export const spendingKey = (p: { from: string; to: string }) => ["finance", "spending", p.from, p.to] as const;
 export const getSpending = (p: { from: string; to: string }) => apiFetch<SpendingReport>(`/api/v1/finance/spending?from=${p.from}&to=${p.to}`);
+
+// ── Add cost (docs/FINANCE_ADD_COST.md) ───────────────────────────────────────────────────────────────────────────────
+
+export type CostKind = "PACKAGING" | "BILL" | "OTHER" | "YEARLY" | "BRINGING" | "EQUIPMENT" | "ADS";
+export interface CostOptions {
+  currency: string;
+  today: string;
+  booksStartedOn: string | null;
+  owner: { name: string; canUse: boolean };
+  accounts: Array<{ id: string; name: string; kind: string }>;
+  adAccounts: Array<{ id: string; name: string }>;
+  assetAccounts: Array<{ id: string; code: string; name: string }>;
+  expenseAccounts: Array<{ id: string; code: string; name: string }>;
+  defaults: { packagingAccountId: string | null; otherAccountId: string | null };
+  costingLive: boolean;
+  purchases: Array<{ id: string; date: string; supplier: string; amount: number }>;
+  again: Array<{ kind: CostKind; note: string; payee: string | null; amount: number; expenseAccountId: string }>;
+}
+export interface AddCostBody {
+  kind: CostKind;
+  amount: number;
+  date?: string;
+  note?: string | null;
+  payee?: string | null;
+  paidFrom: { kind: "OWNER"; funding?: "CAPITAL" | "REIMBURSE" } | { kind: "ACCOUNT"; financialAccountId: string };
+  expenseAccountId?: string | null;
+  months?: number;
+  goodsReceiptIds?: string[];
+  assetAccountId?: string | null;
+  usefulLifeMonths?: number;
+}
+export const costOptionsKey = ["finance", "costs", "options"] as const;
+export const getCostOptions = () => apiFetch<CostOptions>(`${BASE}/costs/options`);
+export const addCost = (body: AddCostBody, idempotencyKey: string) =>
+  apiFetch<{ cost: { source: string; id: string; kind: CostKind; label: string; title: string; amount: number; date: string }; replayed: boolean }>(`${BASE}/costs`, { method: "POST", body, idempotencyKey });
+export const undoCost = (body: { source: "Expense" | "PrepaidCost" | "LandedCost"; id: string; reason: string }) => apiFetch<{ undone: boolean }>(`${BASE}/costs/undo`, { method: "POST", body });

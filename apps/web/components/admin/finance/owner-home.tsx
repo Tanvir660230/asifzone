@@ -192,7 +192,7 @@ function MonthCard({ month, last, current, stockGain }: { month: OwnerMonth; las
 
 function ActionKeys({ hasPartners, onAdd }: { hasPartners: boolean; onAdd: (a: Adding) => void }) {
   const keys: Array<{ label: string; icon: LucideIcon; kind?: QuickAddKind; href?: string; testId: string }> = [
-    { label: "Expense", icon: Receipt, kind: "EXPENSE", testId: "key-expense" },
+    { label: "Add cost", icon: Receipt, kind: "EXPENSE", testId: "key-expense" },
     { label: "Put money in", icon: ArrowDownLeft, kind: "OWNER_IN", testId: "key-owner-in" },
     { label: "Take money out", icon: ArrowUpRight, kind: "OWNER_OUT", testId: "key-owner-out" },
     ...(hasPartners ? [{ label: "Pay partner", icon: HandCoins, kind: "PAY_PARTNER" as const, testId: "key-pay-partner" }] : []),

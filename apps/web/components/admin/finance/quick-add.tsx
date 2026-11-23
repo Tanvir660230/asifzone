@@ -1,27 +1,26 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, ChevronLeft, HandCoins, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { AddCostSheet } from "./add-cost-sheet";
 import { Modal } from "@/components/ui/modal";
 import { toast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { PaymentMethod } from "@/lib/api/finance";
-import * as booksApi from "@/lib/api/finance-books";
 import type { OwnerHome } from "@/lib/api/finance-books";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, partnerPaymentScope, settleIdempotencyKey } from "@/lib/idempotency";
-import { AccountChips, AmountInput, ChoiceChips, EVERYDAY_COSTS } from "./glass";
+import { AccountChips, AmountInput, ChoiceChips } from "./glass";
 import { todayLocal } from "@/lib/datetime-local";
 
 export type QuickAddKind = "EXPENSE" | "OWNER_OUT" | "OWNER_IN" | "PAY_PARTNER";
 
 const today = todayLocal;
-const OWNER_POCKET = "owner";
 const PAYING = ["CASH", "BANK", "MOBILE_WALLET"];
 const METHOD: Array<{ value: PaymentMethod; label: string }> = [
   { value: "BKASH", label: "bKash" }, { value: "CASH", label: "Cash" }, { value: "NAGAD", label: "Nagad" }, { value: "BANK", label: "Bank" }, { value: "OTHER", label: "Other" },
@@ -37,12 +36,14 @@ export function QuickAdd({ home, initial, partnerId, onClose }: { home: OwnerHom
   const owner = home.people?.owner?.name ?? "The owner";
   const partners = home.people?.partners ?? [];
   const choices: Array<{ kind: QuickAddKind; title: string; detail: string; icon: typeof Receipt }> = [
-    { kind: "EXPENSE", title: "An expense", detail: "Packaging, delivery, ads, hosting — anything you paid for", icon: Receipt },
+    { kind: "EXPENSE", title: "A cost", detail: "Packaging, bills, ads, equipment — anything you paid for", icon: Receipt },
     { kind: "OWNER_IN", title: `${owner} put money in`, detail: "Their own money added to the business", icon: ArrowDownLeft },
     { kind: "OWNER_OUT", title: `${owner} took money out`, detail: "Money taken out of the business for personal use", icon: ArrowUpRight },
     ...(partners.length ? [{ kind: "PAY_PARTNER" as const, title: "Pay a partner", detail: partners.map((p) => p.name).join(", "), icon: HandCoins }] : []),
   ];
   const title = kind ? choices.find((c) => c.kind === kind)!.title : "New";
+  // A cost is Add cost (docs/FINANCE_ADD_COST.md): one form for every kind of cost.
+  if (kind === "EXPENSE") return <AddCostSheet onClose={onClose} />;
 
   return (
     <Modal open onClose={onClose} title={title} description={kind ? undefined : "What would you like to record?"} widthClassName="max-w-lg">
@@ -61,7 +62,6 @@ export function QuickAdd({ home, initial, partnerId, onClose }: { home: OwnerHom
         ) : (
           <div className="space-y-5">
             {!initial && <button type="button" onClick={() => setKind(undefined)} className="-mt-1 inline-flex min-h-11 items-center gap-1 text-sm text-fg-muted hover:text-fg"><ChevronLeft className="h-4 w-4" aria-hidden="true" /> Back</button>}
-            {kind === "EXPENSE" && <ExpenseForm owner={owner} hasOwner={Boolean(home.people?.owner)} onDone={onClose} />}
             {(kind === "OWNER_OUT" || kind === "OWNER_IN") && <OwnerMoneyForm into={kind === "OWNER_IN"} onDone={onClose} />}
             {kind === "PAY_PARTNER" && <PayPartnerForm partners={partners} initialId={partnerId} onDone={onClose} />}
           </div>
@@ -101,57 +101,6 @@ function Actions({ onCancel, disabled, loading, label }: { onCancel: () => void;
       <Button type="button" variant="outline" className="rounded-full" onClick={onCancel}>Cancel</Button>
       <Button type="submit" size="lg" className="rounded-full sm:min-w-40" disabled={disabled} loading={loading} data-testid="quick-add-save">{label}</Button>
     </div>
-  );
-}
-
-function ExpenseForm({ owner, hasOwner, onDone }: { owner: string; hasOwner: boolean; onDone: () => void }) {
-  const money = useMoneyAccounts(PAYING);
-  const ledger = useQuery({ queryKey: financeApi.financeKeys.ledgerAccounts(), queryFn: financeApi.listLedgerAccounts });
-  const expenseAccounts = useMemo(() => (ledger.data?.accounts ?? []).filter((a) => a.isPostable && a.isActive && EVERYDAY_COSTS.includes(a.code)).sort((a, b) => EVERYDAY_COSTS.indexOf(a.code) - EVERYDAY_COSTS.indexOf(b.code)), [ledger.data]);
-  const cashBox = money.accounts.find((a) => a.kind === "CASH");
-  // Only accounts with money in them can pay; the owner's own money passes through the cash box.
-  const payFrom = money.accounts.filter((a) => a.currentBalance > 0);
-  const ownerOption = hasOwner && Boolean(cashBox);
-  const [amount, setAmount] = useState("");
-  const [account, setAccount] = useState("");
-  const [picked, setFrom] = useState("");
-  const from = picked || (ownerOption ? OWNER_POCKET : "");
-  const [date, setDate] = useState(today());
-  const [note, setNote] = useState("");
-  const done = useDone(onDone, "Expense recorded");
-  const valid = amountOk(amount) && account && from && note.trim();
-  const save = useMutation({
-    mutationFn: async () => {
-      const base = { expenseAccountId: account, amount: Number(amount), expenseDate: date, description: note.trim() };
-      if (from === OWNER_POCKET) return booksApi.ownerPaidExpense({ ...base, cashFinancialAccountId: cashBox!.id, funding: "CAPITAL" }, idempotencyKeyFor("quick-add:owner-expense", base));
-      return financeApi.recordExpense({ ...base, fromFinancialAccountId: from }, idempotencyKeyFor("quick-add:expense", { ...base, from }));
-    },
-    onSuccess: done,
-    onError: (e) => toast.error(getErrorMessage(e, "The expense couldn't be recorded")),
-  });
-  return (
-    <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate(); }}>
-      <AmountInput id="qa-amount" value={amount} onChange={setAmount} autoFocus />
-      <ChoiceChips
-        label="What kind of expense?"
-        hint="It decides where it shows in profit."
-        value={account}
-        onChange={setAccount}
-        testId="qa-kind"
-        options={expenseAccounts.map((a) => ({ value: a.id, label: a.name }))}
-      />
-      <AccountChips
-        label="Paid from"
-        accounts={payFrom}
-        value={from}
-        onChange={setFrom}
-        extra={ownerOption ? [{ value: OWNER_POCKET, label: `${owner}'s own money`, hint: "counted as money put in" }] : []}
-        empty="No account has money in it right now."
-        testId="qa-from"
-      />
-      <DateAndNote idPrefix="qa" date={date} onDate={setDate} note={note} onNote={setNote} noteLabel="What was it?" notePlaceholder="e.g. 200 bubble poly bags" noteRequired />
-      <Actions onCancel={onDone} disabled={!valid} loading={save.isPending} label="Record expense" />
-    </form>
   );
 }
 

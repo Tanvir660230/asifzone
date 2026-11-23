@@ -244,3 +244,34 @@ export const ownerHomeQuerySchema = z.object({ month: z.string().regex(/^\d{4}-(
 export const stockCountSchema = z.object({ variantId: id, counted: z.number().int().min(0).max(10_000_000), countDate: businessDate.optional(), note: optionalText(300) });
 export const materialRollOpenSchema = z.object({ materialVariantId: id, openedOn: businessDate, note: optionalText(300) });
 export const materialRollFinishSchema = z.object({ finishedOn: businessDate, parcelsCounted: z.number().int().min(1).max(1_000_000).optional().nullable(), note: optionalText(300) });
+
+// ── Add cost (docs/FINANCE_ADD_COST.md) ──────────────────────────────────────────────────────────────────────────────
+
+export const COST_KIND_VALUES = ["PACKAGING", "BILL", "OTHER", "YEARLY", "BRINGING", "EQUIPMENT", "ADS"] as const;
+
+/** One cost, whatever it is: what, how much, when and whose money. */
+export const addCostSchema = z.object({
+  kind: z.enum(COST_KIND_VALUES),
+  amount: positive,
+  date: businessDate.optional(),
+  note: optionalText(300),
+  payee: optionalText(200),
+  paidFrom: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("OWNER"), funding: z.enum(OWNER_FUNDING_KINDS).optional() }),
+    z.object({ kind: z.literal("ACCOUNT"), financialAccountId: id }),
+  ]),
+  expenseAccountId: id.optional().nullable(),
+  months: z.number().int().min(1).max(60).optional(),
+  serviceStart: businessDate.optional(),
+  goodsReceiptIds: z.array(id).max(20).optional(),
+  assetAccountId: id.optional().nullable(),
+  usefulLifeMonths: z.number().int().min(1).max(600).optional(),
+  adAccountId: id.optional().nullable(),
+});
+export type AddCostRequest = z.infer<typeof addCostSchema>;
+
+export const undoCostSchema = z.object({
+  source: z.enum(["Expense", "PrepaidCost", "LandedCost"]),
+  id,
+  reason: z.string().trim().min(3).max(500),
+});

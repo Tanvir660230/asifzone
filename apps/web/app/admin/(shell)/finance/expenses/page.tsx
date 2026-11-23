@@ -24,6 +24,7 @@ import * as booksApi from "@/lib/api/finance-books";
 import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour } from "@/lib/api/finance";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { ExpenseImportModal, NewCategoryModal } from "@/components/admin/finance/expense-import";
+import { AddCostSheet } from "@/components/admin/finance/add-cost-sheet";
 import { PermissionState } from "@/components/admin/permission-state";
 import { todayLocal } from "@/lib/datetime-local";
 import { AccountChips, AmountInput, ChoiceChips, EVERYDAY_COSTS } from "@/components/admin/finance/glass";
@@ -47,6 +48,7 @@ export default function ExpensesPage() {
   const [recording, setRecording] = useState<{ commitment?: Commitment; period?: CommitmentPeriod } | null>(null);
   const [newCommitment, setNewCommitment] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [addingCost, setAddingCost] = useState(false);
   const [newCategory, setNewCategory] = useState(false);
   useCreateParam("expense", () => setRecording({}));
   const period = { from: from || undefined, to: to || undefined };
@@ -73,7 +75,7 @@ export default function ExpensesPage() {
           <Button size="sm" variant="outline" onClick={() => setImporting(true)} data-testid="import-expenses">From a file</Button>
           {can("finance.configure") && <Button size="sm" variant="outline" onClick={() => setNewCategory(true)} data-testid="new-category">New category</Button>}
           <Button size="sm" variant="outline" onClick={() => setNewCommitment(true)} data-testid="new-commitment">Recurring cost</Button>
-          <Button size="sm" className="order-first sm:order-last" onClick={() => setRecording({})} data-testid="record-expense"><Plus className="h-4 w-4" /> Record expense</Button>
+          <Button size="sm" className="order-first sm:order-last" onClick={() => setAddingCost(true)} data-testid="record-expense"><Plus className="h-4 w-4" /> Add cost</Button>
         </div>
       )}
       className="space-y-6"
@@ -150,6 +152,7 @@ export default function ExpensesPage() {
       </section>
 
       {recording && <ExpenseModal preset={recording} onClose={() => setRecording(null)} onDone={() => { setRecording(null); refresh(); }} />}
+      {addingCost && <AddCostSheet onClose={() => setAddingCost(false)} onDone={refresh} />}
       {importing && <ExpenseImportModal onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />}
       {newCategory && <NewCategoryModal onClose={() => setNewCategory(false)} onDone={() => setNewCategory(false)} />}
       {newCommitment && <CommitmentModal onClose={() => setNewCommitment(false)} onDone={() => { setNewCommitment(false); refresh(); }} />}
