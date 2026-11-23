@@ -98,6 +98,7 @@ export async function addCostOptions(actor: FinanceActor) {
   ]);
   const seen = new Set<string>();
   const again = recent
+    .filter((e) => acc.offered.some((a) => a.id === e.expenseAccountId))
     .filter((e) => {
       const k = `${e.expenseAccountId}|${e.description.toLowerCase()}`;
       return seen.has(k) ? false : (seen.add(k), true);

@@ -406,7 +406,7 @@ export const NAV_NODES: readonly NavNode[] = [
     badge: "finance",
     keywords: ["payments", "refund", "gateway", "money", "profit", "accounts"],
     commands: [
-      { id: "create.expense", kind: "create", label: "Record expense", hint: term("finance"), route: "/admin/finance/expenses?new=expense", capability: "finance.transact" },
+      { id: "create.expense", kind: "create", label: "Add cost", hint: term("finance"), route: "/admin/finance/spending?new=cost", capability: "finance.transact", keywords: ["expense", "record expense", "khoroch", "bill", "packaging", "domain", "equipment"] },
       { id: "create.money-in", kind: "create", label: "Money in (deposit)", hint: term("finance"), route: "/admin/finance/accounts?new=deposit", capability: "finance.transact" },
       { id: "create.money-out", kind: "create", label: "Money out (withdrawal)", hint: term("finance"), route: "/admin/finance/accounts?new=withdrawal", capability: "finance.transact" },
       { id: "create.purchase-order", kind: "create", label: "New purchase order", hint: "Purchasing", route: "/admin/finance/purchase-orders?new=purchase-order", capability: "purchasing.manage" },
@@ -512,7 +512,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.expenses",
     label: "Expenses",
     kind: "page",
-    parent: "finance",
+    parent: "finance.more",
     domain: "manage",
     route: "/admin/finance/expenses",
     capability: "finance.view",
@@ -524,7 +524,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.loans",
     label: "Loans",
     kind: "page",
-    parent: "finance",
+    parent: "finance.more",
     domain: "manage",
     route: "/admin/finance/loans",
     capability: "finance.view",
@@ -536,7 +536,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.reconciliation",
     label: "Bank reconciliation",
     kind: "page",
-    parent: "finance",
+    parent: "finance.more",
     domain: "manage",
     route: "/admin/finance/reconciliation",
     capability: "finance.view",
@@ -549,7 +549,7 @@ export const NAV_NODES: readonly NavNode[] = [
     id: "finance.prepaid",
     label: "Prepaid costs",
     kind: "page",
-    parent: "finance",
+    parent: "finance.more",
     domain: "manage",
     route: "/admin/finance/prepaid",
     capability: "finance.view",
@@ -569,6 +569,9 @@ export const NAV_NODES: readonly NavNode[] = [
     description: "Every campaign's daily spend from Meta or its budget, the orders it brought and profit after ads.",
     keywords: ["facebook ads", "meta", "boost", "campaign", "budget", "roas", "marketing", "tiktok ads"],
   },
+
+  // Money › More: pages used now and then (docs/FINANCE_ADD_COST.md §3) — Add cost records into them.
+  { id: "finance.more", label: "More", title: "More money pages", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/expenses", order: 9, innerList: true, description: "Expenses, prepaid costs, loans and bank reconciliation.", keywords: ["expenses", "prepaid", "loans", "bank reconciliation", "more"] },
 
   // Bills to pay
   { id: "finance.bills", label: "Bills to pay", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/supplier-invoices", order: 3, innerList: true, description: "Supplier bills and what you owe each supplier.", keywords: ["supplier bills", "dues", "payables", "pay supplier"] },

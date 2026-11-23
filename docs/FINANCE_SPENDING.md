@@ -42,3 +42,7 @@ purchase shows more spending than cost, and both are right.
 offers **Add ad spend**.
 
 Tests: `finance-ads-prepaid-packaging.integration.test.ts`, "spending".
+
+## Opening and taking out a row (docs/FINANCE_ADD_COST.md)
+
+An expense, a prepaid cost or a carrying cost opens to what it was and whose money paid it. **Take it out** reverses it, and also the owner's money that came in for it. Each row carries `source` (the record and whether it can be taken out) and `paidFrom`.

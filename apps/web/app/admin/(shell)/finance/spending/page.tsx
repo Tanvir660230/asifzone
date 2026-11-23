@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Plus, Receipt } from "lucide-react";
 import { ListPage } from "@/components/admin/patterns/list-page";
 import { Alert } from "@/components/ui/alert";
@@ -10,7 +10,11 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
+import { AddCostSheet } from "@/components/admin/finance/add-cost-sheet";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { useCapability } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as booksApi from "@/lib/api/finance-books";
@@ -59,6 +63,9 @@ export default function SpendingPage() {
   const [month, setMonth] = useState(thisMonth);
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [kind, setKind] = useState<SpendingKind | null>(null);
+  const [adding, setAdding] = useState(false);
+  // The Create menu's "Add cost" opens it here (?new=cost).
+  useCreateParam("cost", () => setAdding(true));
 
   const lastMonths = useMemo(() => Array.from({ length: MONTHS_SHOWN }, (_, i) => shiftMonth(thisMonth, i - MONTHS_SHOWN + 1)), [thisMonth]);
   const overviewRange = { from: `${lastMonths[0]}-01`, to: monthEnd(thisMonth) };
@@ -90,9 +97,9 @@ export default function SpendingPage() {
       tabs={false}
       action={
         canRecord ? (
-          <Link href="/admin/finance/expenses?new=expense" className={buttonVariants({ className: "rounded-full" })}>
-            <Plus className="h-4 w-4" aria-hidden /> Record expense
-          </Link>
+          <Button className="rounded-full" onClick={() => setAdding(true)} data-testid="spending-add-cost">
+            <Plus className="h-4 w-4" aria-hidden /> Add cost
+          </Button>
         ) : undefined
       }
     >
@@ -144,6 +151,7 @@ export default function SpendingPage() {
           </>
         )}
       </div>
+      {adding && <AddCostSheet onClose={() => setAdding(false)} />}
     </ListPage>
   );
 }
@@ -218,6 +226,10 @@ function Summary({ report, label, kind, onKind }: { report: SpendingReport; labe
           })}
         </ul>
       )}
+      <p className="mt-4 text-xs text-fg-muted">
+        This is money spent. Profit counts the cost of what was sold —{" "}
+        <Link href="/admin/finance/profit" className="font-medium text-fg underline-offset-2 hover:underline">see profit</Link>.
+      </p>
     </section>
   );
 }
@@ -253,7 +265,7 @@ function Days({ report, kind, onClear }: { report: SpendingReport; kind: Spendin
             </header>
             <ul className="divide-y divide-line-subtle">
               {d.rows.map((r, i) => (
-                <Row key={`${r.kind}-${i}`} row={r} />
+                <Row key={`${r.kind}-${i}`} row={r} date={d.date} />
               ))}
             </ul>
           </section>
@@ -263,7 +275,8 @@ function Days({ report, kind, onClear }: { report: SpendingReport; kind: Spendin
   );
 }
 
-function Row({ row }: { row: SpendingRow }) {
+function Row({ row, date }: { row: SpendingRow; date: string }) {
+  const [open, setOpen] = useState(false);
   const body = (
     <>
       <span className="min-w-0 flex-1">
@@ -296,6 +309,18 @@ function Row({ row }: { row: SpendingRow }) {
       </li>
     );
   }
+  // A cost typed in (expense, paid in advance, bringing goods) opens to what it was and can be taken back out.
+  if (row.source?.reversible) {
+    return (
+      <li>
+        <button type="button" onClick={() => setOpen(true)} className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left outline-none hover:bg-ink-900/[0.02] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus sm:px-5" data-testid="spending-row">
+          {body}
+          <ChevronRight className="h-4 w-4 shrink-0 text-ink-300" aria-hidden />
+        </button>
+        {open && <CostDetail row={row} date={date} onClose={() => setOpen(false)} />}
+      </li>
+    );
+  }
   return (
     <li>
       {row.href ? (
@@ -307,5 +332,69 @@ function Row({ row }: { row: SpendingRow }) {
         <div className="flex min-h-12 items-center gap-3 px-4 py-2 sm:px-5">{body}</div>
       )}
     </li>
+  );
+}
+
+
+/** One cost: what, when, whose money — and taking it back out when it was a mistake (both its records reversed, kept
+ * in the history with the reason). To change it, take it out and add it again. */
+function CostDetail({ row, date, onClose }: { row: SpendingRow; date: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const canUndo = useCapability("finance.reverse");
+  const [removing, setRemoving] = useState(false);
+  const [reason, setReason] = useState("");
+  const [adding, setAdding] = useState(false);
+  const undo = useMutation({
+    mutationFn: () => booksApi.undoCost({ source: row.source!.type as "Expense" | "PrepaidCost" | "LandedCost", id: row.source!.id, reason: reason.trim() }),
+    onSuccess: () => {
+      toast.success(`${row.title} taken out`);
+      void qc.invalidateQueries({ queryKey: ["finance"] });
+      onClose();
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "It couldn't be taken out")),
+  });
+  if (adding) return <AddCostSheet onClose={onClose} />;
+  const facts: Array<[string, string]> = [
+    ["Amount", formatExact(row.amount)],
+    ["Date", dayName(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })],
+    ["Kind", KIND_LABEL[row.kind]],
+    ...(row.detail ? ([["Detail", row.detail]] as Array<[string, string]>) : []),
+    ...(row.paidFrom ? ([["Paid from", row.paidFrom]] as Array<[string, string]>) : []),
+  ];
+  return (
+    <Modal open onClose={onClose} title={row.title} widthClassName="max-w-md">
+      <div data-area="finance" className="space-y-5">
+        <dl className="divide-y divide-line-subtle rounded-2xl bg-surface ring-1 ring-inset ring-line-subtle">
+          {facts.map(([k, v]) => (
+            <div key={k} className="flex items-baseline justify-between gap-4 px-4 py-2.5">
+              <dt className="text-sm text-fg-muted">{k}</dt>
+              <dd className="min-w-0 break-words text-right text-sm text-fg">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        {removing ? (
+          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (reason.trim().length >= 3) undo.mutate(); }}>
+            <Field htmlFor="cost-undo-reason" label="Why take it out?" hint="Kept with it in the history.">
+              <Input id="cost-undo-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="Entered twice" autoFocus />
+            </Field>
+            <p className="text-xs text-fg-muted">The cost leaves the books{row.paidFrom?.endsWith("own money") ? ", and so does the owner’s money that came in for it" : ""}.</p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setRemoving(false)}>Keep it</Button>
+              <Button type="submit" variant="destructive" loading={undo.isPending} disabled={reason.trim().length < 3} data-testid="cost-undo-confirm">Take it out</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-2">
+            {canUndo && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="outline" onClick={() => setAdding(true)}>Add a corrected one</Button>
+                <Button variant="outline" onClick={() => setRemoving(true)} data-testid="cost-undo">Take it out</Button>
+              </div>
+            )}
+            {row.href && <Link href={row.href} className={buttonVariants({ variant: "ghost", className: "w-full" })}>Open the full record</Link>}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

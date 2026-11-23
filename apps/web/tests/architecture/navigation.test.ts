@@ -153,7 +153,7 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/finance")?.id).toBe("finance.home");
     expect(navNode("finance")?.label).toBe("Money");
     const owner = access("OWNER");
-    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Spending", "Accounts & cash", "Expenses", "Bills to pay", "Payments & refunds", "Courier & gateway", "Loans", "Prepaid costs", "Bank reconciliation"]);
+    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Spending", "Accounts & cash", "Bills to pay", "Payments & refunds", "Courier & gateway", "More"]);
     expect(navChildren("books", owner).map((c) => c.node.label)).toEqual(["Month-end", "Owner & partners", "Payroll", "Statements", "Ledger & journals", "Fixed assets", "Budgets & cash forecast", "Missing costs & exceptions", "Records & allocations"]);
     expect(navChildren("analytics", owner).map((c) => c.node.label)).toEqual(["Overview", "Sales", "Products", "Customers", "Marketing", "Operations", "Profit", "Product costs & price planner", "Purchasing reports", "AI assistant"]);
     expect(navNode("analytics")?.index).toBe("/admin/analytics/overview");
@@ -264,7 +264,7 @@ describe("navigation manifest — derivation", () => {
       // the everyday finance actions (deep links into the page with its dialog open)
       "create.expense", "create.money-in", "create.money-out", "create.purchase-order", "create.supplier-bill",
     ]);
-    expect(owner.find((c) => c.id === "create.expense")?.route).toBe("/admin/finance/expenses?new=expense");
+    expect(owner.find((c) => c.id === "create.expense")?.route).toBe("/admin/finance/spending?new=cost");
     // owner-only books stay out of Staff's Create menu; purchasing (a Staff job) stays in
     const staff = createCommands(access("STAFF")).map((c) => c.id);
     expect(staff).not.toContain("create.expense");
