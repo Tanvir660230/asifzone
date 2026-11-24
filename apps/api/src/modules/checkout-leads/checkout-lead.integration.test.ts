@@ -9,7 +9,7 @@ import { captureCheckoutLead, checkoutLeadSummary, listCheckoutLeads, recordChec
 import { checkoutLeadCode } from "./checkout-lead-code";
 
 // Incomplete orders (docs/INCOMPLETE_ORDERS.md). Owner decisions 2026-11-22: a valid phone typed at checkout or on a
-// landing page is saved; staff see it after 30 quiet minutes inside 10:00–21:00; at most two unanswered calls; an order
+// landing page is saved; staff see it after 15 quiet minutes inside 10:00–21:00; at most two unanswered calls; an order
 // from that phone closes it; never holds stock; open ones close after 3 days and everything goes after 30.
 
 const MIN = 60_000;
@@ -77,7 +77,7 @@ describe("capture", () => {
 });
 
 describe("the work list", () => {
-  it("shows a lead only after 30 quiet minutes, and an order from that phone converts it", async () => {
+  it("shows a lead only after 15 quiet minutes, and an order from that phone converts it", async () => {
     const variantId = await product();
     const p = phone();
     await captureCheckoutLead({ phone: p, name: "Karim", items: [{ variantId, quantity: 1 }], source: "CHECKOUT" });

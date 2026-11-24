@@ -111,7 +111,7 @@ export default function IncompleteOrdersPage() {
           title={view === "open" ? "Nobody to call right now" : "Nothing closed yet"}
           description={
             view === "open"
-              ? "When someone types their number at checkout and leaves, they show up here after 30 minutes."
+              ? "When someone types their number at checkout and leaves, they show up here after 15 minutes."
               : "Leads you close, and the ones that ordered, are listed here."
           }
         />

@@ -25,7 +25,7 @@ import { checkoutLeadCode, parseCheckoutLeadCode } from "./checkout-lead-code";
 
 /**
  * Incomplete orders (docs/INCOMPLETE_ORDERS.md). The storefront sends what the shopper has typed once the phone number is
- * valid; one OPEN lead per phone is kept up to date. Staff see it after 30 quiet minutes, inside calling hours, and call
+ * valid; one OPEN lead per phone is kept up to date. Staff see it after 15 quiet minutes, inside calling hours, and call
  * at most twice. An order from that phone (online or entered by staff) converts it in the order's own transaction.
  * Nothing here holds stock, sends a message or changes a price.
  */
@@ -201,7 +201,7 @@ async function toDtos(rows: LeadRow[]): Promise<CheckoutLeadDto[]> {
   );
 }
 
-/** The open leads staff can work: quiet for 30 minutes, not older than 3 days, and no order from that phone since.
+/** The open leads staff can work: quiet for 15 minutes, not older than 3 days, and no order from that phone since.
  * Due to call first (a lead captured at night waits for 10:00), then the ones that reached the address step, then value. */
 export async function listCheckoutLeads(view: "open" | "closed", now: Date = new Date()): Promise<CheckoutLeadDto[]> {
   if (view === "closed") {

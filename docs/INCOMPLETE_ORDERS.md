@@ -17,7 +17,8 @@ month ended without an order and left nothing to call. Owner decisions of 2026-1
 
 ## Work list (admin › Orders › Incomplete)
 
-- A lead appears after **30 quiet minutes**, only inside **calling hours 10:00–21:00** store time (a lead from the
+- A lead appears after **15 quiet minutes** (Asif Zone, 30 days: 94 % of orders came within 15 minutes of opening
+  checkout, median 2 — waiting 30 would only add about 1 %), only inside **calling hours 10:00–21:00** store time (a lead from the
   night waits for 10:00), and disappears once **any order from that phone** exists (online, staff-entered, inbox).
 - Order: due to call first, then those who reached the address step, then cart value.
 - Each card: name, phone, source, address, items (sold-out ones marked), value, earlier orders, a low courier score.
