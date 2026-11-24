@@ -9,13 +9,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Check, Loader2, Lock, Minus, Plus, Ruler } from "lucide-react";
 import {
-  BD_ALL_AREA_OPTIONS,
-  BD_ALL_DISTRICTS,
-  BD_AREAS_BY_DISTRICT,
   NO_SIZE_VALUE,
   bdPhoneSchema,
   maxSellableQuantity,
-  parseAreaDistrictOption,
   type CheckoutInput,
   type Product,
   type QuoteDto,
@@ -27,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
 import { SizeFinder } from "@/components/storefront/size-finder";
@@ -116,25 +112,10 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     "LANDING",
     { enabled: true, landingSlug: product.slug },
   );
-  const areaOptions: readonly string[] = district ? (BD_AREAS_BY_DISTRICT[district] ?? []) : BD_ALL_AREA_OPTIONS;
   // The district picked, else the one written in the address (after a pause in typing), else none: the server prices
   // the same way, so the delivery charge shown is the one charged.
   const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
   const place = checkoutDistrict({ shippingDistrict: district, shippingAddressLine: addressLine });
-
-  function handleArea(value: string) {
-    const parsed = parseAreaDistrictOption(value);
-    if (parsed) {
-      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
-      setValue("shippingArea", parsed.area, { shouldValidate: true });
-    } else setValue("shippingArea", value, { shouldValidate: true });
-  }
-
-  // A district change clears an area that isn't in it.
-  useEffect(() => {
-    if (district && area && !(BD_AREAS_BY_DISTRICT[district] ?? []).includes(area)) setValue("shippingArea", "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [district]);
 
   const quoteRequest: QuoteRequestInput | null =
     variant && !soldOut
@@ -382,58 +363,32 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             )}
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="lp-district">
-              জেলা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
-            </Label>
-            <SearchableSelect
-              id="lp-district"
-              autoComplete="address-level2"
-              aria-invalid={!!errors.shippingDistrict}
-              aria-describedby={errors.shippingDistrict ? "lp-district-error" : undefined}
-              value={district}
-              onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
-              options={BD_ALL_DISTRICTS}
-              placeholder="জেলার নাম লিখুন"
-            />
-            {fieldError("lp-district", errors.shippingDistrict?.message)}
-          </div>
-          <div>
-            <Label htmlFor="lp-area">
-              থানা / এলাকা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
-            </Label>
-            <SearchableSelect
-              id="lp-area"
-              autoComplete="address-level3"
-              aria-invalid={!!errors.shippingArea}
-              aria-describedby={errors.shippingArea ? "lp-area-error" : undefined}
-              value={area}
-              onChange={handleArea}
-              options={areaOptions}
-              placeholder="থানার নাম লিখুন"
-            />
-            {fieldError("lp-area", errors.shippingArea?.message)}
-          </div>
-        </div>
+        {/* Address first, the way people write it; the place box below reads the thana out of it. */}
         <div>
           <Label htmlFor="lp-address">পূর্ণ ঠিকানা</Label>
           <Textarea
             id="lp-address"
             rows={2}
             autoComplete="street-address"
-            placeholder="বাসা/ফ্ল্যাট নম্বর, রোড, এলাকা, পরিচিত স্থান"
+            placeholder="বাসা/ফ্ল্যাট নম্বর, রোড, এলাকা, থানা, জেলা"
             className="text-base"
             aria-invalid={!!errors.shippingAddressLine}
             aria-describedby={errors.shippingAddressLine ? "lp-address-error" : undefined}
             {...register("shippingAddressLine")}
           />
-          {errors.shippingAddressLine ? (
-            fieldError("lp-address", errors.shippingAddressLine.message)
-          ) : (
-            <p className="mt-1 text-xs text-fg-muted">সঠিক ঠিকানা দিলে ডেলিভারি সহজ হবে। জেলা ওপরে না বাছলে ঠিকানাতেই লিখে দিন।</p>
-          )}
+          {fieldError("lp-address", errors.shippingAddressLine?.message)}
         </div>
+        <DeliveryPlaceField
+          id="lp-area"
+          lang="bn"
+          addressLine={addressLine}
+          district={district}
+          area={area}
+          onChange={(p) => {
+            setValue("shippingDistrict", p.district, { shouldValidate: true });
+            setValue("shippingArea", p.area, { shouldValidate: true });
+          }}
+        />
       </div>
 
       <div className="rounded-xl bg-surface-muted p-4" data-testid="landing-summary">

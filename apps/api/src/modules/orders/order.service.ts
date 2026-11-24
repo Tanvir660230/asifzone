@@ -26,7 +26,7 @@ import {
   clampNonNegative,
   subtract,
   transitionNeedsReason,
-  transitionReasonMissing, sellsPastShelf, checkoutDistrict } from "@clothing-brand/shared";
+  transitionReasonMissing, sellsPastShelf, checkoutDistrict, readBdAddress } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -178,11 +178,15 @@ export function toItemSnapshots(quote: Quote): OrderItemSnapshot[] {
 }
 
 /** District and thana are optional on the storefront: fill the district (and its division) from the address text when
- * none was picked, so the order, its delivery charge and the courier address carry it. Thana stays as entered. */
+ * none was picked, so the order, its delivery charge and the courier address carry it. An empty thana is filled from the
+ * address too, but only when the reader is sure (one district's thana — a name several districts share is left for the
+ * confirmation call, readBdAddress). A picked thana is never changed. */
 function withCheckoutDistrict(input: CheckoutInput): CheckoutInput {
-  if (input.shippingDistrict) return input;
   const place = checkoutDistrict(input);
-  return place.unknown ? input : { ...input, shippingDistrict: place.district, shippingDivision: place.division as CheckoutInput["shippingDivision"] };
+  const withDistrict = input.shippingDistrict || place.unknown ? input : { ...input, shippingDistrict: place.district, shippingDivision: place.division as CheckoutInput["shippingDivision"] };
+  if (withDistrict.shippingArea?.trim()) return withDistrict;
+  const read = readBdAddress({ addressLine: input.shippingAddressLine, district: withDistrict.shippingDistrict });
+  return read.area && read.areaFrom === "address" ? { ...withDistrict, shippingArea: read.area } : withDistrict;
 }
 
 /** Refuses an order whose quote can't be placed, with the same messages checkout has always used. */

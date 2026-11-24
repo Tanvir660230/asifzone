@@ -10,11 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, User, MapPin, Banknote, Smartphone, Wallet } from "lucide-react";
 import {
   checkoutSchema,
-  BD_ALL_DISTRICTS,
   BD_DIVISION_BY_DISTRICT,
-  BD_AREAS_BY_DISTRICT,
-  BD_ALL_AREA_OPTIONS,
-  parseAreaDistrictOption,
   estimateDelivery,
   checkoutDistrict,
   type CheckoutInput,
@@ -26,7 +22,7 @@ import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/st
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { useCartStore } from "@/store/cart";
@@ -226,36 +222,10 @@ function CheckoutForm() {
     "CHECKOUT",
     { enabled: mounted },
   );
-  // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
-  // shopper who knows their thana but not its district can find it directly — picking one fills in
-  // both fields. Once a district is set, the list narrows to just that district as before.
-  const areaOptions: readonly string[] = shippingDistrict ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? []) : BD_ALL_AREA_OPTIONS;
-
-  function handleAreaChange(value: string) {
-    const parsed = parseAreaDistrictOption(value);
-    if (parsed) {
-      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
-      setValue("shippingArea", parsed.area, { shouldValidate: true });
-    } else {
-      setValue("shippingArea", value, { shouldValidate: true });
-    }
-  }
-
   // Division is derived from the chosen district rather than picked separately; the shipping zone (and fee) is
   // resolved by the server quote from the address.
   useEffect(() => {
     setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as CheckoutFormValues["shippingDivision"]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shippingDistrict]);
-
-  // The area/thana list narrows to the selected district — clear it if it no longer applies. Only
-  // relevant once a district is actually picked: with no district, areaOptions is the country-wide
-  // combo list (formatted "Area — District"), which a plain area value would never match.
-  useEffect(() => {
-    if (!shippingDistrict) return;
-    if (shippingArea && !areaOptions.includes(shippingArea)) {
-      setValue("shippingArea", "");
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
@@ -701,52 +671,13 @@ function CheckoutForm() {
               </div>
             )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="shippingDistrict">
-                  District <span className="font-normal text-ink-400">(optional)</span>
-                </Label>
-                <SearchableSelect
-                  id="shippingDistrict"
-                  autoComplete="address-level2"
-                  aria-invalid={!!errors.shippingDistrict}
-                  aria-describedby={errors.shippingDistrict ? "shippingDistrict-error" : undefined}
-                  value={shippingDistrict}
-                  onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
-                  options={BD_ALL_DISTRICTS}
-                  placeholder="Search district..."
-                />
-                {errors.shippingDistrict && (
-                  <p id="shippingDistrict-error" className="mt-1 text-xs text-danger-600">
-                    {errors.shippingDistrict.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="shippingArea">
-                  Area / Thana <span className="font-normal text-ink-400">(optional)</span>
-                </Label>
-                <SearchableSelect
-                  id="shippingArea"
-                  autoComplete="address-level3"
-                  aria-invalid={!!errors.shippingArea}
-                  aria-describedby={errors.shippingArea ? "shippingArea-error" : undefined}
-                  value={shippingArea}
-                  onChange={handleAreaChange}
-                  options={areaOptions}
-                  placeholder={shippingDistrict ? "Search area/thana..." : "Search area/thana (any district)..."}
-                />
-                {errors.shippingArea && (
-                  <p id="shippingArea-error" className="mt-1 text-xs text-danger-600">
-                    {errors.shippingArea.message}
-                  </p>
-                )}
-              </div>
+              {/* Address first, the way people write it; the place box below reads the thana out of it. */}
               <div className="sm:col-span-2">
-                <Label htmlFor="shippingAddressLine">House / Road / Details</Label>
+                <Label htmlFor="shippingAddressLine">Full address</Label>
                 <Textarea
                   id="shippingAddressLine"
                   rows={2}
-                  placeholder="House, road, area, thana, district"
+                  placeholder="House, road, area — e.g. House 12, Road 3, Mirpur 10, Dhaka"
                   autoComplete="street-address"
                   aria-invalid={!!errors.shippingAddressLine}
                   aria-describedby={errors.shippingAddressLine ? "shippingAddressLine-error" : undefined}
@@ -758,6 +689,18 @@ function CheckoutForm() {
                   </p>
                 )}
               </div>
+              <DeliveryPlaceField
+                id="shippingArea"
+                lang="en"
+                className="sm:col-span-2"
+                addressLine={addressLine}
+                district={shippingDistrict}
+                area={shippingArea}
+                onChange={(p) => {
+                  setValue("shippingDistrict", p.district, { shouldValidate: true });
+                  setValue("shippingArea", p.area, { shouldValidate: true });
+                }}
+              />
               <div className="sm:col-span-2">
                 <Label htmlFor="notes">Order notes (optional)</Label>
                 <Textarea id="notes" rows={2} {...register("notes")} />
