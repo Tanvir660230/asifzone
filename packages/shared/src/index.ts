@@ -54,7 +54,6 @@ export * from "./schemas/campaign";
 export * from "./schemas/push";
 export * from "./search-synonyms";
 export * from "./country/bd";
-export * from "./country/bd-guess";
 export * from "./sms-templates";
 export * from "./customer-sms-templates";
 export * from "./payment-link-messages";
