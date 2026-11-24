@@ -83,3 +83,45 @@ export function ModeToggle({ className }: { className: string }) {
     </div>
   );
 }
+
+const SEGMENTS: { value: Choice; label: string; icon: typeof Sun }[] = [
+  { value: "auto", label: "Auto", icon: Smartphone },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+];
+
+/** The same choice as a three-way switch, for the phone's Shop sheet (menu.tsx), where a pop-up menu would be a menu on a
+ * menu. Applies at once and is remembered, like ModeToggle. */
+export function ModeSegments() {
+  const [choice, setChoice] = useState<Choice>("auto");
+
+  useEffect(() => {
+    setChoice(parseColorMode(document.documentElement.dataset.mode) ?? "auto");
+  }, []);
+
+  function pick(value: Choice) {
+    setColorMode(value === "auto" ? null : value);
+    setChoice(value);
+  }
+
+  return (
+    <div role="radiogroup" aria-label="Light or dark" className="grid grid-cols-3 gap-1 rounded-full bg-ink-900/[0.06] p-1">
+      {SEGMENTS.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={choice === value}
+          onClick={() => pick(value)}
+          className={cn(
+            "flex h-11 items-center justify-center gap-2 rounded-full text-[0.9375rem] text-fg-muted transition-colors duration-150 ease-smooth",
+            choice === value && "bg-surface font-semibold text-fg shadow-[var(--panel-shadow)]",
+          )}
+        >
+          <Icon size={17} aria-hidden="true" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
