@@ -112,7 +112,9 @@ test("a product with few reviews shows no five-bar chart", async ({ page }) => {
   await expect(page.locator("#reviews").getByText("4 star")).toHaveCount(0);
 });
 
-test("card photo glides into the product page", async ({ page }) => {
+// Phase 3 of the plan, on hold: Next 15.5's `experimental.viewTransition` is documented as not for production and swaps
+// the whole app (all three stores) to React's experimental build. Kept as the acceptance test for when it is stable.
+test.fixme("card photo glides into the product page", async ({ page }) => {
   await declineTracking(page);
   await page.goto("/category/jackets", { waitUntil: "networkidle" });
   const supported = await page.evaluate(() => typeof document.startViewTransition === "function");
