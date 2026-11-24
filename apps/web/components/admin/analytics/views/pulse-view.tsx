@@ -230,7 +230,7 @@ function QueueList({ queues }: { queues: OpsPulse["queues"] }) {
   const rows: Array<{ key: string; label: string; value: number; note?: string; href: string; urgent?: boolean }> = [
     { key: "await", label: "Waiting to be confirmed", value: queues.awaitingConfirmation, href: "/admin/orders?f.status=PENDING" },
     { key: "due", label: "Call-backs due now", value: queues.holdsDue, href: "/admin/orders?f.queue=followUpDue", urgent: true },
-    { key: "hold", label: "On hold (call back later)", value: queues.onHold, href: "/admin/orders?f.status=PENDING" },
+    { key: "hold", label: "On hold (customer asked to wait)", value: queues.onHold, href: "/admin/orders?f.queue=onHold" },
     { key: "book", label: "Confirmed, not sent to courier", value: queues.readyToBook, href: "/admin/orders?f.status=CONFIRMED,PROCESSING,PACKED&f.courier=false" },
     {
       key: "courier",

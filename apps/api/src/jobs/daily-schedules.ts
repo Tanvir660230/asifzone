@@ -35,6 +35,8 @@ export const DAILY_SCHEDULES = {
   /** 04:28 and 04:46 store time — night-time purges (were 22:30 / 22:45 UTC). */
   storageTrashPurge: { pattern: "28 4 * * *", tz: "store" },
   siteHealthRetention: { pattern: "46 4 * * *", tz: "store" },
+  /** 04:34 store time — incomplete orders: open ones older than 3 days close, everything older than 30 days goes. */
+  checkoutLeadSweep: { pattern: "34 4 * * *", tz: "store" },
 } as const satisfies Record<string, DailySchedule>;
 
 /** Retry for a daily job whose run is safe to repeat: a busy minute shouldn't cost the whole day's run. */

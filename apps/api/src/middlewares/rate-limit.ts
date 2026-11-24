@@ -221,3 +221,22 @@ export const selfConfirmRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests for this link, please try again shortly" },
 });
+
+/** Incomplete-order capture (docs/INCOMPLETE_ORDERS.md): sent while a shopper types, debounced. Generous, since mobile
+ * carriers put many shoppers behind one IP; a refused capture is simply not saved and the shopper never notices. */
+export const checkoutLeadCaptureRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please slow down and try again shortly" },
+});
+
+/** Opening an incomplete order's resume link. */
+export const checkoutLeadResumeRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please slow down and try again shortly" },
+});

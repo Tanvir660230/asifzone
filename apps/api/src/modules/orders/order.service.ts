@@ -48,6 +48,8 @@ import { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
 import { opsEventOrderIds } from "../analytics/ops-pulse.service";
 import { exceptionOrderIds } from "./order-exceptions";
+import { endHoldInTx, holdTransitionEffect } from "./order-hold.service";
+import { convertLeadsForOrder, markLeadOrderedByStaff } from "../checkout-leads/checkout-lead.service";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
 import { namespace } from "../../config/installation";
@@ -457,6 +459,8 @@ export async function insertOrderRecord(
     }
 
     if (pricing.couponId) await incrementCouponUsage(tx, pricing.couponId);
+    // Incomplete orders (docs/INCOMPLETE_ORDERS.md): this phone's open lead became this order.
+    await convertLeadsForOrder(tx, { id: created.id, customerPhone: created.customerPhone }, Boolean(opts.changedByAdminId));
 
     // Payment ledger (docs/PAYMENT_LEDGER.md): the settlement that pays for this order, in the same transaction.
     if (opts.gatewaySettlement) await recordGatewaySettlement(tx, { orderId: created.id, ...opts.gatewaySettlement });
@@ -723,6 +727,8 @@ export async function createManualOrder(input: AdminCreateOrderInput, adminId: s
   });
   // A replayed create (same idempotency key) lands here again with the same order: setting the link twice is harmless.
   if (input.conversationId) await prisma.order.update({ where: { id: order.id }, data: { conversationId: input.conversationId } });
+  // Entered from an incomplete order (Orders › Incomplete › Create order): that lead is now this order.
+  if (input.checkoutLeadId) await markLeadOrderedByStaff(input.checkoutLeadId, order.id, adminId);
 
   return getOrderById(order.id);
 }
@@ -960,6 +966,8 @@ function buildOrderWhere(query: OrderListQuery, ctx: OrderWhereContext) {
     // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
     // mutually-exclusive pattern as the other quick filters).
     ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
+    // Order hold (docs/ORDER_HOLD.md): "on" = every held order (the On hold queue), "off" = none (Ready to book).
+    ...(query.hold === "on" ? { holdUntil: { not: null } } : query.hold === "off" ? { holdUntil: null } : {}),
     // Owner decision Q6: COD orders still PENDING after 48 h — listed for a person to decide; never released automatically.
     ...(query.codPendingStale === "true" ? { status: "PENDING" as const, paymentMethod: "COD" as const, createdAt: { lte: new Date(Date.now() - COD_PENDING_ALERT_HOURS * 3_600_000) } } : {}),
     // The refund-risk queue — CANCELLED orders still holding customer money (one shared predicate from the payment
@@ -1013,10 +1021,13 @@ function buildOrderWhere(query: OrderListQuery, ctx: OrderWhereContext) {
  */
 function needsActionWhere({ now, policy }: OrderWhereContext): Prisma.OrderWhereInput {
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  // A held order waits for its date; on the date it needs a person again (whatever its status).
+  const notHeld: Prisma.OrderWhereInput = { OR: [{ holdUntil: null }, { holdUntil: { lte: now } }] };
   return {
     OR: [
-      { status: "PENDING", createdAt: { lt: dayAgo } },
+      { status: "PENDING", createdAt: { lt: dayAgo }, AND: [notHeld] },
       { status: "PENDING", followUpAt: { lte: now } },
+      { holdUntil: { lte: now } },
       // An escalated confirmation (wrong number, every try used, too old) waits for an owner or manager.
       escalatedWhere(now, policy),
       { paymentStatus: "FAILED", status: { notIn: ["CANCELLED", "RETURNED", "REFUNDED"] } },
@@ -1435,11 +1446,12 @@ export async function applyOrderTransition(
   }
 
   let replenished: string[] = [];
-  let stockMoved: string[] = [];
+  // A held order: confirming ends the hold and takes its stock back, cancelling ends it, anything else is refused.
+  let stockMoved: string[] = await holdTransitionEffect(tx, orderId, to, actor.adminId);
   if (rule.stock === "release") {
     const result = await releaseOrderLines(tx, orderId, "release", { adminId: actor.adminId, note: "Stock released — order cancelled" });
     replenished = result.replenished;
-    stockMoved = result.released.map((r) => r.variantId);
+    stockMoved = [...stockMoved, ...result.released.map((r) => r.variantId)];
   } else if (rule.stock === "return") {
     // A return is a decision; its units become stock only when the parcel is received (receiveReturnedParcel).
     await recordReturnDecision(tx, orderId);
@@ -1748,6 +1760,8 @@ export async function deleteOrder(orderId: string, adminId: string) {
 
     let released: string[] = [];
     let moved: string[] = [];
+    // A hold ends with the trash; units it already gave back stay with the shelf (the release below finds them done).
+    await endHoldInTx(tx, orderId, "TRASHED", adminId);
     if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
       const result = await releaseOrderLines(tx, orderId, "release", { adminId, note: "Stock released — order moved to Trash" });
       released = result.replenished;

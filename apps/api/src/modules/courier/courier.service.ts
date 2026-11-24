@@ -1,4 +1,5 @@
 import { canTransitionOrder, COURIER_UNBOOKABLE_STATUSES, normalizeBdPhone, type OrderStatus } from "@clothing-brand/shared";
+import { COURIER_BOOKING_LEASE_MS } from "./booking-lease";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { recordAudit } from "../../lib/audit";
@@ -159,7 +160,7 @@ async function applyCourierStatusToOrder(order: BookedOrder, status: string, sou
 }
 
 /** Phase 9 (D-4): a booking holds this claim from just before the Steadfast call until the consignment is saved. */
-export const COURIER_BOOKING_LEASE_MS = 10 * 60_000;
+export { COURIER_BOOKING_LEASE_MS };
 
 /** Atomically claims the right to book `orderId` (no consignment yet, no live claim). Two concurrent bookings — a double
  * click, two admins, single + bulk — can't both win, so only one ever reaches Steadfast. */
@@ -168,6 +169,8 @@ export async function claimCourierBooking(orderId: string, now: Date = new Date(
     where: {
       id: orderId,
       courierConsignmentId: null,
+      // A held order is never booked (docs/ORDER_HOLD.md); a hold placed after the checks above loses this race here.
+      holdUntil: null,
       OR: [{ courierBookingStartedAt: null }, { courierBookingStartedAt: { lt: new Date(now.getTime() - COURIER_BOOKING_LEASE_MS) } }],
     },
     data: { courierBookingStartedAt: now },
@@ -268,6 +271,7 @@ async function attachExistingConsignment(
 export async function linkSteadfastConsignment(orderId: string, input: { consignmentId: string; trackingCode: string; trackingLink?: string }) {
   const order = await getOrderById(orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before linking a courier parcel");
+  if (order.holdUntil) throw new AppError(409, "This order is on hold — end the hold before linking a courier parcel", { code: "ON_HOLD" });
   const consignmentId = input.consignmentId.trim();
   const trackingCode = input.trackingCode.trim().toUpperCase();
   const trackingLink = input.trackingLink?.trim() || null;
@@ -379,6 +383,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
   if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
     throw AppError.badRequest(`Cannot book a courier for an order that is ${order.status.toLowerCase()}`);
   }
+  if (order.holdUntil) throw new AppError(409, "This order is on hold — end the hold before booking a courier", { code: "ON_HOLD" });
   if (!hasUsableAddress(order)) {
     throw AppError.badRequest("This order is missing customer/address details — edit the order before booking a courier");
   }
@@ -468,6 +473,8 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Already booked with a courier" });
     } else if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: `Order is ${order.status.toLowerCase()}` });
+    } else if (order.holdUntil) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Order is on hold" });
     } else if (!hasUsableAddress(order)) {
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Missing address details" });
     } else {

@@ -7,6 +7,8 @@ import {
   courierStatusLabel,
   deliveryScoreBadgeClass,
   deliveryScoreSummary,
+  formatStoreDate,
+  formatStoreDateTime,
   orderStatusBadgeClass,
   orderStatusLabel,
   orderStatusShortLabel,
@@ -18,6 +20,24 @@ import { cn } from "@/lib/utils";
 import type { OrderRisk } from "@/lib/api/admin-analytics";
 
 /** Order status pill: icon + words, so the state never depends on color alone. Colors stay centralized in lib/format. */
+/** Order hold (docs/ORDER_HOLD.md): "On hold · 26 Nov", or "Hold due" once the date has come. */
+export function HoldChip({ holdUntil }: { holdUntil?: string | null }) {
+  if (!holdUntil) return null;
+  const due = new Date(holdUntil).getTime() <= Date.now();
+  return (
+    <span
+      data-testid="hold-chip"
+      title={`On hold until ${formatStoreDateTime(holdUntil)}`}
+      className={cn(
+        "inline-flex h-6 items-center whitespace-nowrap rounded-full px-2 text-xs font-medium",
+        due ? "bg-warning-100 text-warning-700" : "bg-info-100 text-info-700",
+      )}
+    >
+      {due ? "Hold due" : `On hold · ${formatStoreDate(holdUntil, { day: "numeric", month: "short" })}`}
+    </span>
+  );
+}
+
 export function OrderStatusBadge({ status, short = false, className }: { status: OrderStatus; short?: boolean; className?: string }) {
   return (
     <span

@@ -42,6 +42,7 @@ import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLi
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn, isPaleColor } from "@/lib/utils";
 import { sessionSet } from "@/lib/safe-storage";
+import { useLeadCapture } from "@/hooks/use-lead-capture";
 
 // The landing page's own field messages, in Bangla; the server still validates the same fields with checkoutSchema.
 const formSchema = z.object({
@@ -103,6 +104,13 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
 
   const district = watch("shippingDistrict");
   const area = watch("shippingArea");
+  // Incomplete orders: a valid number and the chosen item are saved, so the shop can call if the order isn't placed.
+  useLeadCapture(
+    { phone: watch("customerPhone"), name: watch("customerName"), shippingDistrict: district, shippingArea: area, shippingAddressLine: watch("shippingAddressLine") },
+    variant && !soldOut ? [{ variantId: variant.id, quantity: qty }] : [],
+    "LANDING",
+    { enabled: true, landingSlug: product.slug },
+  );
   const areaOptions: readonly string[] = district ? (BD_AREAS_BY_DISTRICT[district] ?? []) : BD_ALL_AREA_OPTIONS;
   const division = BD_DIVISION_BY_DISTRICT[district] ?? "";
 
@@ -278,7 +286,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
               fieldError("lp-phone", errors.customerPhone.message)
             ) : (
               <p id="lp-phone-hint" className="mt-1 text-xs text-fg-muted">
-                এই নম্বরে ফোন করে অর্ডার কনফার্ম করা হবে
+                এই নম্বরে ফোন করে অর্ডার কনফার্ম করা হবে। অর্ডার শেষ না হলে সাহায্যের জন্য আমরা এই তথ্য রাখি।
               </p>
             )}
           </div>

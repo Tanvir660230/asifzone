@@ -178,6 +178,9 @@ GET /api/catalog/types/manage → catalog.read
 GET /api/categories/ → catalog.read
 GET /api/categories/:id → catalog.read
 GET /api/categories/stock-map → inventory.read
+GET /api/checkout-leads/ → orders.read
+GET /api/checkout-leads/:id → orders.read
+GET /api/checkout-leads/summary → orders.read
 GET /api/coupons/ → promotions.manage
 GET /api/coupons/:id → promotions.manage
 GET /api/courier/steadfast/balance → courier.manage
@@ -521,6 +524,7 @@ POST /api/categories/:id/restore → catalog.manage
 POST /api/categories/reorder → catalog.manage
 POST /api/categories/upload-banner → catalog.manage
 POST /api/categories/upload-image → catalog.manage
+POST /api/checkout-leads/:id/actions → orders.manage
 POST /api/coupons/ → promotions.manage
 POST /api/coupons/:id/restore → promotions.manage
 POST /api/customers/admin → customers.manage
@@ -553,6 +557,8 @@ POST /api/orders/:id/hold → orders.manage
 POST /api/orders/:id/hold/clear → orders.manage
 POST /api/orders/:id/modifications → orders.manage
 POST /api/orders/:id/modifications/preview → orders.manage
+POST /api/orders/:id/order-hold → orders.manage
+POST /api/orders/:id/order-hold/end → orders.manage
 POST /api/orders/:id/payment-links → payments.record
 POST /api/orders/:id/payment-links/:linkId/cancel → payments.record
 POST /api/orders/:id/payment-links/:linkId/send → payments.record

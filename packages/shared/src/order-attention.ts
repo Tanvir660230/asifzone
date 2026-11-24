@@ -33,9 +33,14 @@ export type PrimaryOrderAction =
 const TRANSITION_LABEL: Partial<Record<OrderStatus, string>> = { CONFIRMED: "Confirm order", PACKED: "Mark packed", SHIPPED: "Mark shipped" };
 
 export function primaryOrderAction(
-  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment"> & { courierSyncError?: string | null },
+  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment"> & {
+    courierSyncError?: string | null;
+    holdUntil?: string | Date | null;
+  },
   opts: { courierAvailable: boolean },
 ): PrimaryOrderAction | null {
+  // On hold (docs/ORDER_HOLD.md): the hold banner's "End hold" is the next step, nothing moves the order on before it.
+  if (order.holdUntil && (order.status === "PENDING" || order.status === "CONFIRMED")) return null;
   const move = (to: OrderStatus): PrimaryOrderAction | null =>
     canTransitionOrder(order.status, to) ? { kind: "transition", to, label: TRANSITION_LABEL[to] ?? `Mark ${to.toLowerCase()}` } : null;
   let action: PrimaryOrderAction | null = null;
@@ -73,6 +78,8 @@ export interface OrderAttentionFacts {
   courierStatus: string | null;
   courierSyncError: string | null;
   followUpAt: string | Date | null;
+  /** Order hold (docs/ORDER_HOLD.md): its own banner says when; the callback it sets isn't repeated here. */
+  holdUntil?: string | Date | null;
   partialDeliveryReconciledAt: string | Date | null;
   /** The ledger summary — present on the detail, absent on list rows. */
   payment?: { refundDue: number; refundPending: number } | null;
@@ -137,7 +144,7 @@ export function orderAttentionItems(order: OrderAttentionFacts, fmt: AttentionFo
     items.push({ key: "partial", tone: "warning", label: "Partial delivery to reconcile", detail: "Declare which units came back so stock is restored." });
   }
   if (order.paymentStatus === "FAILED") items.push({ key: "payment-failed", tone: "warning", label: "Payment failed" });
-  if (order.status === "PENDING" && order.followUpAt) {
+  if (order.status === "PENDING" && order.followUpAt && !order.holdUntil) {
     const due = new Date(order.followUpAt) <= now;
     items.push({ key: "follow-up", tone: due ? "warning" : "info", label: due ? "Follow-up call due" : "Follow-up scheduled", detail: fmt.dateTime(order.followUpAt) });
   }
