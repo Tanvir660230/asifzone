@@ -13,6 +13,7 @@ import {
   BD_DIVISION_BY_DISTRICT,
   estimateDelivery,
   checkoutDistrict,
+  zoneChoiceNeeded,
   type CheckoutInput,
   type QuoteDto,
   type QuoteRequestInput,
@@ -23,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
+import { DeliveryZoneChoice } from "@/components/storefront/delivery-zone-choice";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { useCartStore } from "@/store/cart";
@@ -85,6 +87,9 @@ function CheckoutForm() {
   // under React 18 Strict Mode's dev-only double-invoke (mount → cleanup → mount), which wiped the
   // item out right after "Buy Now" set it, making checkout look like an empty cart every time.
   const [mounted, setMounted] = useState(false);
+  // Inside / outside Dhaka, when the address names no place and it changes the delivery charge (DeliveryZoneChoice).
+  const [zoneKey, setZoneKey] = useState("");
+  const [zoneError, setZoneError] = useState<string | null>(null);
   useEffect(() => setMounted(true), []);
 
   // Waits for `mounted` so the persisted cart has rehydrated. pixelInitiateCheckout dedupes per cart
@@ -233,7 +238,6 @@ function CheckoutForm() {
   // pause in typing), else the default delivery charge applies. The server prices the same way, so what shows is charged.
   const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
   const place = checkoutDistrict({ shippingDistrict, shippingAddressLine: addressLine });
-  const deliveryEstimate = estimateDelivery(place.district);
 
   // The canonical server quote for exactly what will be submitted: items, applied coupon, address. Every amount on
   // this page comes from it; the page never adds, discounts or ships anything itself (PRICING_INVARIANTS §7).
@@ -244,6 +248,7 @@ function CheckoutForm() {
     shippingDivision: (shippingDistrict ? shippingDivision : place.division) || undefined,
     shippingDistrict: place.district || undefined,
     unknownUsesDefault: true,
+    shippingZoneKey: place.unknown && zoneKey ? zoneKey : undefined,
   };
   const quoteRequest: QuoteRequestInput = { ...baseRequest, couponCode: couponCode ?? undefined };
   const { data: quote, refetch: refetchQuote } = useQuote(mounted ? quoteRequest : null);
@@ -350,11 +355,17 @@ function CheckoutForm() {
   async function onSubmit(values: CheckoutFormValues) {
     setSubmitError(null);
     const at = checkoutDistrict(values);
+    if (at.unknown && zoneNeeded && !zoneKey) {
+      setZoneError("Choose inside or outside Dhaka — the delivery charge depends on it.");
+      document.getElementById("deliveryZone")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     const payload: CheckoutInput = {
       ...values,
       shippingDistrict: at.district,
       shippingDivision: (values.shippingDistrict ? values.shippingDivision : at.division) as CheckoutInput["shippingDivision"],
       couponCode: couponCode ?? undefined,
+      shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
       items: lineItems,
       sessionId: getSessionId() || undefined,
       // The quote the shopper is looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
@@ -428,6 +439,13 @@ function CheckoutForm() {
   const couponDiscount = quote?.couponDiscount ?? 0;
   const bundleDiscount = quote?.bundleDiscount ?? 0;
   const shipping = quote?.shipping;
+  // Free delivery (or a known district) asks nothing; otherwise inside / outside Dhaka must be chosen.
+  const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
+  const zoneOpen = zoneNeeded && !zoneKey;
+  // Until inside / outside Dhaka is chosen, totals leave delivery out rather than show a charge that may not apply.
+  const shownTotal = quote ? (zoneOpen && shipping?.resolved ? quote.total - shipping.charged : quote.total) : undefined;
+  // The district known, else the zone chosen (Inside Dhaka → Dhaka's 1–2 days).
+  const deliveryEstimate = estimateDelivery(place.district || (quote?.zoneChoices?.find((c) => c.key === zoneKey)?.districts[0] ?? ""));
   const stockWarnings = (quote?.warnings ?? []).filter(
     (w) => w.code === "UNKNOWN_ITEM" || w.code === "UNAVAILABLE" || w.code === "INSUFFICIENT_STOCK" || w.code === "FLASH_LIMIT_PARTIAL",
   );
@@ -465,7 +483,7 @@ function CheckoutForm() {
                     ))}
                   </span>
                 )}
-                <span className="text-sm font-medium text-ink-900">{money(quote?.total)}</span>
+                <span className="text-sm font-medium text-ink-900">{money(shownTotal)}</span>
                 <ChevronDown size={16} className={cn("text-ink-400 transition-transform duration-200", summaryOpen && "rotate-180")} />
               </span>
             </button>
@@ -532,8 +550,10 @@ function CheckoutForm() {
                   </div>
                 )}
                 <div className="flex justify-between text-ink-600">
-                  <span>Shipping{shipping?.resolved ? ` (${shipping.zoneName})` : ""}</span>
-                  {!shipping?.resolved ? (
+                  <span>Shipping{shipping?.resolved && !shipping.waived && !zoneOpen ? ` (${shipping.zoneName})` : ""}</span>
+                  {zoneOpen ? (
+                    <span className="text-ink-400">Choose inside or outside Dhaka</span>
+                  ) : !shipping?.resolved ? (
                     <span className="text-ink-400">Select district</span>
                   ) : shipping.waived ? (
                     <span>
@@ -555,7 +575,10 @@ function CheckoutForm() {
                 </p>
                 <div className="flex justify-between border-t border-ink-100 pt-1.5 text-base text-ink-900">
                   <span>Total</span>
-                  <span className="font-medium">{money(quote?.total)}</span>
+                  <span className="font-medium">
+                    {money(shownTotal)}
+                    {zoneOpen && <span className="font-normal text-ink-400"> + delivery</span>}
+                  </span>
                 </div>
                 {quote && quote.tax.inclusive && quote.tax.taxAmount > 0 && (
                   <p className="text-xs text-ink-400">Includes VAT <Money value={quote.tax.taxAmount} /></p>
@@ -701,6 +724,21 @@ function CheckoutForm() {
                   setValue("shippingArea", p.area, { shouldValidate: true });
                 }}
               />
+              {zoneNeeded && quote?.zoneChoices && (
+                <div className="sm:col-span-2">
+                  <DeliveryZoneChoice
+                    id="deliveryZone"
+                    lang="en"
+                    choices={quote.zoneChoices}
+                    value={zoneKey}
+                    onChange={(k) => {
+                      setZoneKey(k);
+                      setZoneError(null);
+                    }}
+                    error={zoneError}
+                  />
+                </div>
+              )}
               <div className="sm:col-span-2">
                 <Label htmlFor="notes">Order notes (optional)</Label>
                 <Textarea id="notes" rows={2} {...register("notes")} />
@@ -816,7 +854,7 @@ function CheckoutForm() {
               ? "Placing order…"
               : useStoreCredit && storeBalance > 0 && quote
                 ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
-                : `Place Order — ${money(quote?.total)}`}
+                : `Place Order — ${money(shownTotal)}`}
           </Button>
         </form>
       </div>

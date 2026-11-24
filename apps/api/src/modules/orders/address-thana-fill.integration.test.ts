@@ -10,7 +10,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-async function order(overrides: { shippingDistrict?: string; shippingArea?: string; shippingAddressLine: string }) {
+async function order(overrides: { shippingDistrict?: string; shippingArea?: string; shippingAddressLine: string; shippingZoneKey?: string }) {
   const { variants } = await createStockedProduct({ stocks: [5] });
   return placeOrder([{ variantId: variants[0]!.id, quantity: 1 }], { shippingDivision: "", shippingDistrict: "", shippingArea: "", ...overrides } as never);
 }
@@ -28,5 +28,17 @@ describe("an order's empty thana is read from the address", () => {
     expect(shared.shippingArea).toBe("");
     const picked = await order({ shippingDistrict: "Dhaka", shippingArea: "Adabor", shippingAddressLine: "House 7, Road 2, Matuail, Demra" });
     expect(picked.shippingArea).toBe("Adabor");
+  });
+});
+
+describe("inside / outside Dhaka chosen when the address names no place", () => {
+  it("charges the chosen zone; a place in the address still decides", async () => {
+    const inside = await order({ shippingAddressLine: "House 4, Road 9, near the big mosque", shippingZoneKey: "dhaka-district" } as never);
+    const outside = await order({ shippingAddressLine: "House 4, Road 9, near the big mosque", shippingZoneKey: "default" } as never);
+    expect(inside.shippingZoneKey).toBe("dhaka-district");
+    expect(outside.shippingZoneKey).toBe("default");
+    expect(Number(inside.shippingFee)).toBeLessThan(Number(outside.shippingFee));
+    const placeWins = await order({ shippingAddressLine: "Station road, Kaliakair, Gazipur", shippingZoneKey: "dhaka-district" } as never);
+    expect(placeWins).toMatchObject({ shippingDistrict: "Gazipur", shippingZoneKey: "default" });
   });
 });

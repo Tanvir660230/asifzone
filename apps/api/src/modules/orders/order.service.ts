@@ -239,7 +239,7 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
       items: input.items,
       couponCode: input.couponCode ?? null,
       // District is optional on the storefront: none picked or written in the address means the default zone.
-      address: input.shippingDistrict ? { district: input.shippingDistrict, division: input.shippingDivision } : { unknownUsesDefault: true },
+      address: input.shippingDistrict ? { district: input.shippingDistrict, division: input.shippingDivision } : { unknownUsesDefault: true, zoneKey: input.shippingZoneKey ?? null },
       customerId,
     },
     db,

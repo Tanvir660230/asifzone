@@ -18,12 +18,14 @@ import {
   type QuoteRequestInput,
   variantShipsFree,
   checkoutDistrict,
+  zoneChoiceNeeded,
   type SizeAssist,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
+import { DeliveryZoneChoice } from "@/components/storefront/delivery-zone-choice";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
 import { SizeFinder } from "@/components/storefront/size-finder";
@@ -77,6 +79,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
   const { product, options, size, color, setSize, setColor, sellable, quantity, setQuantity, setQuotedTotal } = useLandingSelection();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ঢাকার ভেতরে / বাইরে — asked only when the address names no place and it changes the delivery charge.
+  const [zoneKey, setZoneKey] = useState("");
+  const [zoneError, setZoneError] = useState<string | null>(null);
 
   // The type's own labels when it names them in Bangla; otherwise the plain Bangla words.
   const sizeLabel = isBangla(options.sizeLabel) ? options.sizeLabel : "সাইজ";
@@ -119,12 +124,14 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
 
   const quoteRequest: QuoteRequestInput | null =
     variant && !soldOut
-      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true }
+      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true, shippingZoneKey: place.unknown && zoneKey ? zoneKey : undefined }
       : null;
   const { data: quote, isFetching: quoting, refetch: refetchQuote } = useQuote(quoteRequest);
   const shipping = quote?.shipping;
+  const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
+  const zoneOpen = zoneNeeded && !zoneKey;
   // The sticky bar shows the same total as the summary, once the server has quoted it with delivery.
-  const quotedTotal = quote && shipping?.resolved ? Number(quote.total) : null;
+  const quotedTotal = quote && shipping?.resolved && !zoneOpen ? Number(quote.total) : null;
   useEffect(() => setQuotedTotal(quotedTotal), [quotedTotal, setQuotedTotal]);
 
   // The size finder's answers, kept with the order (recommended vs chosen) when the shopper used it.
@@ -205,6 +212,11 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     if (!variant) return setPickerOpen(true);
     if (soldOut) return;
     const at = checkoutDistrict(values);
+    if (at.unknown && zoneNeeded && !zoneKey) {
+      setZoneError("ডেলিভারি চার্জের জন্য ঢাকার ভেতরে না বাইরে, বেছে নিন।");
+      document.getElementById("lp-zone")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     const payload: CheckoutInput = {
       items: [{ variantId: variant.id, quantity: qty }],
       customerName: values.customerName,
@@ -214,6 +226,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       shippingDistrict: at.district,
       shippingArea: values.shippingArea,
       shippingAddressLine: values.shippingAddressLine,
+      shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
       paymentMethod: "COD",
       notes: null,
       sessionId: getSessionId() || undefined,
@@ -389,6 +402,19 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             setValue("shippingArea", p.area, { shouldValidate: true });
           }}
         />
+        {zoneNeeded && quote?.zoneChoices && (
+          <DeliveryZoneChoice
+            id="lp-zone"
+            lang="bn"
+            choices={quote.zoneChoices}
+            value={zoneKey}
+            onChange={(k) => {
+              setZoneKey(k);
+              setZoneError(null);
+            }}
+            error={zoneError}
+          />
+        )}
       </div>
 
       <div className="rounded-xl bg-surface-muted p-4" data-testid="landing-summary">
@@ -415,14 +441,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
           <div className="flex justify-between gap-4">
             <dt className="text-fg-muted">ডেলিভারি চার্জ</dt>
             <dd className="tabular-nums text-fg">
-              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
+              {zoneOpen ? <span className="text-fg-muted">ঢাকার ভেতরে না বাইরে বাছুন</span> : !shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
             </dd>
           </div>
-          {place.unknown && addressLine.trim().length >= 4 && shipping?.resolved && !shipping.waived && (
-            <p className="text-xs text-fg-muted" data-testid="landing-default-delivery">
-              ঠিকানায় জেলা পাওয়া যায়নি, তাই সাধারণ ডেলিভারি চার্জ ধরা হয়েছে। জেলা বেছে নিলে ঠিক চার্জ দেখাবে।
-            </p>
-          )}
           {savings > 0 && (
             <div className="flex justify-between gap-4 text-success-700">
               <dt>আপনার সাশ্রয়</dt>
@@ -431,7 +452,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
           )}
           <div className="flex items-baseline justify-between gap-4 pt-2 text-fg">
             <dt className="text-base font-semibold">সর্বমোট</dt>
-            {quote && shipping?.resolved ? (
+            {quote && shipping?.resolved && !zoneOpen ? (
               <dd className={cn("text-xl font-bold tabular-nums transition-opacity duration-base", quoting && "opacity-50")} data-testid="landing-total">
                 {formatPrice(quote.total)}
               </dd>
@@ -439,7 +460,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
               // Until the district is known: the products' price and that delivery comes on top — not a bare dash.
               <dd className="text-sm tabular-nums text-fg-muted">
                 {formatPrice(quote ? quote.subtotal : Number(shown.price) * qty)}
-                {!shipsFree && " + ডেলিভারি"}
+                  {!shipsFree && " + ডেলিভারি"}
               </dd>
             )}
           </div>

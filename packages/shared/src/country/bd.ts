@@ -968,7 +968,7 @@ export type AddressIssue =
   | { code: "AREA_MISMATCH"; picked: BdPlace; written: BdPlace }
   /** The picked district is not the one written in the address. */
   | { code: "DISTRICT_MISMATCH"; picked: string; written: string }
-  /** Too little to find the door: under two words / twelve letters once the thana and district are taken out. */
+  /** Too little to find the door: under two words / ten characters once the thana and district are taken out. */
   | { code: "ADDRESS_SHORT" };
 
 export interface AddressReading {
@@ -1088,8 +1088,9 @@ export function readBdAddress(input: { addressLine?: string | null; district?: s
   let rest = ` ${bn} `;
   for (const h of areaHits(en, bn)) rest = rest.split(/[ঀ-৿]/.test(h.key) ? h.key : normBn(h.key)).join(" ");
   for (const [p] of [...EN_PATTERNS, ...BN_PATTERNS]) rest = rest.split(normBn(p)).join(" ");
-  const words = rest.trim().split(/\s+/).filter((w) => w.length > 1);
-  if (words.length < 2 || words.join("").length < 12) issues.push({ code: "ADDRESS_SHORT" });
+  // House and road numbers count ("House 4, Road 9" is a door).
+  const words = rest.trim().split(/\s+/).filter((w) => w.length > 1 || /[0-9০-৯]/.test(w));
+  if (words.length < 2 || words.join("").length < 10) issues.push({ code: "ADDRESS_SHORT" });
 
   return {
     district,
@@ -1141,4 +1142,27 @@ export function searchBdAreas(query: string, opts: { district?: string | null; l
     .sort((a, b) => b.score - a.score || a.area.length - b.area.length || a.area.localeCompare(b.area))
     .slice(0, opts.limit ?? 8)
     .map(({ area, district }) => ({ area, district }));
+}
+
+// ── Delivery zone choice when the address doesn't say where it is (2026-11-25) ──────────────────────────────────
+
+interface ZoneLike {
+  isDefault: boolean;
+  districts: string[];
+  name: string;
+}
+
+/** How a zone is said to a shopper here: "Inside Dhaka" / "Outside Dhaka" for the usual Dhaka-district split, the zone's
+ * own name for any other set-up (zones are store data). */
+export function bdZoneChoiceLabel(choice: ZoneLike, all: readonly ZoneLike[], lang: "en" | "bn"): string {
+  const dhakaOnly = (z: ZoneLike) => z.districts.length > 0 && z.districts.every((d) => isInsideDhaka(d));
+  if (dhakaOnly(choice)) return lang === "bn" ? "ঢাকার ভেতরে" : "Inside Dhaka";
+  if (choice.isDefault && all.filter((z) => !z.isDefault).every(dhakaOnly)) return lang === "bn" ? "ঢাকার বাইরে" : "Outside Dhaka";
+  return choice.name;
+}
+
+/** Whether the shopper must say which zone they are in: the address names no place and the zones cost different
+ * amounts for this cart. When every zone ships free (or costs the same) there is nothing to ask. */
+export function zoneChoiceNeeded(choices: ReadonlyArray<{ charged: number }> | null | undefined): boolean {
+  return !!choices && choices.length > 1 && new Set(choices.map((c) => c.charged)).size > 1;
 }
