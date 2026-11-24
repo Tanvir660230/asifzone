@@ -36,7 +36,7 @@ import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMess
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatCount, formatPrice, formatStoreDate, formatStoreTime, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CourierCell, DeliveryScoreBadge, OrderRiskBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
+import { CourierCell, DeliveryScoreBadge, HoldChip, OrderRiskBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
 import { useOrderRisk } from "./use-order-risk";
 import type { OrderRisk } from "@/lib/api/admin-analytics";
 import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
@@ -569,6 +569,7 @@ export function OrdersList(props: OrdersListProps) {
                   {/* Pill, then the Packed button under it: side by side they made the column too wide for a laptop. */}
                   <span className="flex flex-col items-start gap-1">
                     <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                    <HoldChip holdUntil={order.holdUntil} />
                     {/* The packing table's one job: being prepared → Packed, one click (Undo in the toast). */}
                     {perms.manage && order.status === "PROCESSING" && canMarkPacked(order) && (
                       <Button
@@ -679,6 +680,7 @@ export function OrdersList(props: OrdersListProps) {
                 <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                     <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
+                    <HoldChip holdUntil={order.holdUntil} />
                     {order.courierConsignmentId && !courierEchoesStatus(order) && <CourierCell order={order} compact hideSyncError={hideSync(order)} />}
                     {/* Every card shows the score (or the check); nothing only when no courier is connected and it was never checked. */}
                     {(order.deliveryScore || (perms.manage && perms.courierConfigured)) && (

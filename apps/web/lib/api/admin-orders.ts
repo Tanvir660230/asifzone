@@ -52,6 +52,8 @@ export interface AdminOrderListParams {
   courierIssue?: "true";
   /** Customer confirmation queues (Order Operations phase 3). */
   confirmQueue?: "callNow" | "callLater" | "escalated";
+  /** Order hold (docs/ORDER_HOLD.md): "on" = held orders only, "off" = none on hold. */
+  hold?: "on" | "off";
   /** Parcel-operations queues (phase 4). */
   parcelQueue?: "handoverPending" | "comingBack" | "inspectionPending" | "scanDiscrepancy" | "stuckInTransit" | "returnOverdue";
   /** "active": the daily work list — finished orders left out. "history": only finished orders (Order history). */
@@ -111,6 +113,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.refundDue) query.set("refundDue", params.refundDue);
   if (params.courierIssue) query.set("courierIssue", params.courierIssue);
   if (params.confirmQueue) query.set("confirmQueue", params.confirmQueue);
+  if (params.hold) query.set("hold", params.hold);
   if (params.parcelQueue) query.set("parcelQueue", params.parcelQueue);
   if (params.scope) query.set("scope", params.scope);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
@@ -175,6 +178,17 @@ export function holdOrder(id: string, followUpAt: string, note?: string) {
     method: "POST",
     body: { followUpAt, note: note || undefined },
   });
+}
+
+/** Order hold (docs/ORDER_HOLD.md): the customer asked us to wait until `until` (ISO). The server decides whether the
+ * stock stays reserved or goes back on sale (`order.holdStockReleased`). */
+export function placeOrderHold(id: string, input: { reason: string; until: string; note?: string }) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/order-hold`, { method: "POST", body: input });
+}
+
+/** Ends the hold: the order returns to its queue and takes its stock back (409 when it sold out meanwhile). */
+export function endOrderHold(id: string) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/order-hold/end`, { method: "POST" });
 }
 
 export function clearOrderHold(id: string) {

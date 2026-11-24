@@ -172,6 +172,8 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   { id: "orders.all", label: "All orders", title: term("order"), kind: "page", parent: "orders", domain: "operate", route: "/admin/orders", capability: "orders.view", order: 0 },
   // Blueprint P1.5 / tab 2 §2: a saved view of All orders — the Order Operations "Ready to book" queue.
+  // Incomplete orders (docs/INCOMPLETE_ORDERS.md): typed their number at checkout or on a landing page, didn't order.
+  { id: "orders.incomplete", label: "Incomplete", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/incomplete", capability: "orders.view", order: 0.45, keywords: ["abandoned", "incomplete", "left", "didn't order", "lead", "recover", "checkout"] },
   { id: "orders.ready", label: "Ready to book", kind: "page", parent: "orders", domain: "operate", route: "/admin/orders/ready", capability: "orders.view", order: 0.5, keywords: ["packed", "to ship", "to book", "courier pickup"] },
   {
     id: "orders.returns",

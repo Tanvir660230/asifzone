@@ -141,8 +141,9 @@ export async function opsQueues(now: Date = new Date()): Promise<OpsQueues> {
   const withCourier = { ...OPERATIONAL_ORDER_WHERE, status: { in: [...WITH_COURIER_STATUSES] }, courierBookedAt: { not: null } };
   const ctx = await orderWhereContext(now);
   const [awaitingConfirmation, onHold, holdsDue, readyToBook, parcels, stuckWithCourier, partialToReconcile, returnsNotBack] = await Promise.all([
-    prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: null } }),
-    prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: { not: null } } }),
+    prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: null, holdUntil: null } }),
+    // Order hold (docs/ORDER_HOLD.md): the customer asked us to wait — pending or confirmed.
+    prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, holdUntil: { not: null } } }),
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING", followUpAt: { lte: now } } }),
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: { in: ["CONFIRMED", "PROCESSING", "PACKED"] }, courierBookedAt: null } }),
     prisma.order.findMany({ where: withCourier, select: { id: true } }),
@@ -215,12 +216,13 @@ export interface CohortOutcome {
 async function cohortOutcome(range: Pick<BusinessRange, "startUtc" | "endUtc">): Promise<CohortOutcome> {
   const orders = await prisma.order.findMany({
     where: { ...OPERATIONAL_ORDER_WHERE, createdAt: { gte: range.startUtc, lt: range.endUtc } },
-    select: { status: true, followUpAt: true, courierBookedAt: true },
+    select: { status: true, holdUntil: true, courierBookedAt: true },
   });
   const out: CohortOutcome = { placed: orders.length, waiting: 0, onHold: 0, confirmed: 0, withCourier: 0, delivered: 0, returned: 0, cancelled: 0 };
   for (const o of orders) {
     const booked = o.courierBookedAt !== null;
-    if (o.status === "PENDING") out[o.followUpAt ? "onHold" : "waiting"] += 1;
+    if (o.holdUntil && (o.status === "PENDING" || o.status === "CONFIRMED")) out.onHold += 1;
+    else if (o.status === "PENDING") out.waiting += 1;
     else if (o.status === "DELIVERED" || o.status === "PARTIALLY_DELIVERED") out.delivered += 1;
     else if (o.status === "RETURNED" || o.status === "REFUNDED" || (o.status === "CANCELLED" && booked)) out.returned += 1;
     else if (o.status === "CANCELLED") out.cancelled += 1;

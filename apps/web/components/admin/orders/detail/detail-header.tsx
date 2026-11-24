@@ -14,6 +14,7 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatStoreDateTime, orderStatusLabel } from "@/lib/format";
 import { OrderStatusBadge, PaymentBadges } from "../order-badges";
 import { OrderProgress } from "./order-progress";
+import { OrderHoldBanner, PutOnHoldButton } from "./order-hold";
 import { nextStatusesFor, type OrderPermissions } from "../order-domain";
 import type { OrderCommands } from "../use-order-commands";
 
@@ -112,6 +113,8 @@ export function DetailHeader({
 
       {!deleted && <OrderProgress order={order} />}
 
+      <OrderHoldBanner order={order} perms={perms} />
+
       <div data-phone-row="" className="flex flex-wrap items-center gap-2" data-testid="order-actions">
         {/* On a phone's order page the same action is pinned at the bottom (OrderPhoneActionBar) — once is enough. */}
         {primary && canPrimary && (
@@ -154,6 +157,7 @@ export function DetailHeader({
             </Popover>
           </>
         )}
+        {!deleted && <PutOnHoldButton order={order} perms={perms} />}
         <Link href={`/admin/orders/${order.id}/invoice`} target="_blank" className={buttonVariants({ variant: "outline", size: "sm" })}>
           <FileText size={14} /> Invoice
         </Link>

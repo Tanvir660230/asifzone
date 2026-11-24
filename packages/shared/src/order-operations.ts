@@ -14,6 +14,8 @@ export interface OrderGuardFacts {
   deletedAt: string | Date | null;
   courierConsignmentId: string | null;
   paymentMethod: string;
+  /** Order hold (docs/ORDER_HOLD.md): set while the customer asked us to wait. */
+  holdUntil?: string | Date | null;
   /** Finished — in Order history (admin order detail only; the API decides). */
   inHistory?: boolean;
 }
@@ -51,6 +53,7 @@ export function followUpHoldBlocker(order: OrderGuardFacts): string | null {
 export function courierBookingBlocker(order: OrderGuardFacts): string | null {
   if (order.deletedAt) return "Restore this order before booking a courier";
   if (order.courierConsignmentId) return "This order is already booked with a courier";
+  if (order.holdUntil) return "This order is on hold — end the hold before booking a courier";
   if (COURIER_UNBOOKABLE_STATUSES.includes(order.status)) return `Cannot book a courier for an order that is ${order.status.toLowerCase()}`;
   return null;
 }
@@ -100,6 +103,9 @@ export function orderModificationBlocker(order: OrderGuardFacts, editor: OrderEd
       ? "This order has left the warehouse — record a return or an exchange instead of editing it"
       : "This order has already been shipped and can't be changed";
   }
+  if (order.holdUntil) {
+    return editor === "ADMIN" ? "This order is on hold — end the hold before changing it" : "This order is on hold — please contact us to change it";
+  }
   const allowed = editor === "ADMIN" ? ADMIN_EDITABLE_STATUSES : CUSTOMER_EDITABLE_STATUSES;
   if (!allowed.includes(order.status)) return "This order is already being prepared and can no longer be changed — please contact us";
   if (order.courierConsignmentId) {
@@ -148,6 +154,7 @@ export const ORDER_QUEUE_IDS = [
   "needsAction",
   "callNow",
   "callLater",
+  "onHold",
   "confirmEscalated",
   "handoverPending",
   "comingBack",
@@ -172,7 +179,7 @@ export type OrderQueueId = (typeof ORDER_QUEUE_IDS)[number];
 
 export type OrderQueueFilter = Pick<
   OrderListQuery,
-  "needsAction" | "confirmQueue" | "parcelQueue" | "followUpDue" | "codPendingStale" | "courierBooked" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
+  "needsAction" | "confirmQueue" | "parcelQueue" | "hold" | "followUpDue" | "codPendingStale" | "courierBooked" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
 >;
 
 /** Confirmed with the customer and not yet with a courier: the day's "Book" step (Order Operations plan, phase 2). */
@@ -183,6 +190,8 @@ export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter
   // Customer confirmation (phase 3): who to call now, callbacks set for later, and what an owner/manager must decide.
   callNow: { confirmQueue: "callNow" },
   callLater: { confirmQueue: "callLater" },
+  // Order hold: the customer asked us to wait (docs/ORDER_HOLD.md) — out of the call and booking queues until the date.
+  onHold: { hold: "on" },
   confirmEscalated: { confirmQueue: "escalated" },
   // Parcel operations (phase 4): what hasn't been handed over, what is coming back, what waits for inspection, and what
   // came back unexpectedly.
@@ -195,7 +204,7 @@ export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter
   returnOverdue: { parcelQueue: "returnOverdue" },
   followUpDue: { followUpDue: "true" },
   codPendingStale: { codPendingStale: "true" },
-  readyToBook: { statusIn: [...READY_TO_BOOK_STATUSES], courierBooked: "false" },
+  readyToBook: { statusIn: [...READY_TO_BOOK_STATUSES], courierBooked: "false", hold: "off" },
   // Being prepared (booking puts a confirmed order here, D-OF1): the packing table's list. Packed takes it out.
   toPack: { statusIn: ["PROCESSING"] },
   unpaid: { paymentStatus: "UNPAID" },

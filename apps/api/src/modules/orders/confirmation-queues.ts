@@ -32,8 +32,13 @@ export function staleWhere(now: Date, policy: ConfirmationPolicy): Prisma.OrderW
   };
 }
 
+/** Not on hold, or the hold's date has come (docs/ORDER_HOLD.md): a held order is out of every call queue until then. */
+export function holdNotWaiting(now: Date): Prisma.OrderWhereInput {
+  return { OR: [{ holdUntil: null }, { holdUntil: { lte: now } }] };
+}
+
 export function escalatedWhere(now: Date, policy: ConfirmationPolicy): Prisma.OrderWhereInput {
-  return { status: "PENDING", OR: [{ confirmationEscalatedAt: { not: null } }, staleWhere(now, policy)] };
+  return { status: "PENDING", AND: [holdNotWaiting(now), { OR: [{ confirmationEscalatedAt: { not: null } }, staleWhere(now, policy)] }] };
 }
 
 function notEscalated(now: Date, policy: ConfirmationPolicy): Prisma.OrderWhereInput {
@@ -41,11 +46,11 @@ function notEscalated(now: Date, policy: ConfirmationPolicy): Prisma.OrderWhereI
 }
 
 export function callNowWhere(now: Date, policy: ConfirmationPolicy): Prisma.OrderWhereInput {
-  return { status: "PENDING", AND: [notEscalated(now, policy), { OR: [{ followUpAt: null }, { followUpAt: { lte: now } }] }] };
+  return { status: "PENDING", AND: [notEscalated(now, policy), holdNotWaiting(now), { OR: [{ followUpAt: null }, { followUpAt: { lte: now } }] }] };
 }
 
 export function callLaterWhere(now: Date, policy: ConfirmationPolicy): Prisma.OrderWhereInput {
-  return { status: "PENDING", followUpAt: { gt: now }, AND: [notEscalated(now, policy)] };
+  return { status: "PENDING", followUpAt: { gt: now }, holdUntil: null, AND: [notEscalated(now, policy)] };
 }
 
 export type ConfirmQueue = "callNow" | "callLater" | "escalated";

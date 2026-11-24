@@ -695,6 +695,14 @@ export interface Order {
   returnInspectedAt?: string | null;
   followUpAt: string | null;
   callAttempts: number;
+  /** Order hold (docs/ORDER_HOLD.md): the customer asked us to wait until this date. Admin reads. */
+  holdUntil?: string | null;
+  holdReason?: string | null;
+  holdNote?: string | null;
+  holdStartedAt?: string | null;
+  /** The hold gave this order's units back to stock; ending it takes them back. */
+  holdStockReleased?: boolean;
+  holdCount?: number;
   statusHistory: OrderStatusHistoryEntry[];
   items: OrderItem[];
   returnRequests?: ReturnRequest[];

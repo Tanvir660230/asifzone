@@ -1,4 +1,5 @@
 import { Router } from "express";
+import * as orderHoldController from "./order-hold.controller";
 import {
   packScanSchema,
   checkoutSchema,
@@ -7,6 +8,7 @@ import {
   updateOrderStatusSchema,
   updateOrderDetailsSchema,
   holdOrderSchema,
+  placeOrderHoldSchema,
   adjustOrderPriceSchema,
   reconcilePartialDeliverySchema,
   doorShortfallSchema,
@@ -128,6 +130,9 @@ orderRouter.get("/:id/courier-note", requireAdmin, requirePermission("orders.rea
 orderRouter.patch("/:id/details", requireAdmin, requirePermission("orders.manage"), validate(updateOrderDetailsSchema), orderController.updateDetails);
 orderRouter.post("/:id/hold", requireAdmin, requirePermission("orders.manage"), validate(holdOrderSchema), orderController.hold);
 orderRouter.post("/:id/hold/clear", requireAdmin, requirePermission("orders.manage"), orderController.clearHold);
+// Order hold (docs/ORDER_HOLD.md): the customer asked us to wait. A hold past the two-hold limit: orders.escalations (service).
+orderRouter.post("/:id/order-hold", requireAdmin, requirePermission("orders.manage"), validate(placeOrderHoldSchema), orderHoldController.place);
+orderRouter.post("/:id/order-hold/end", requireAdmin, requirePermission("orders.manage"), orderHoldController.end);
 orderRouter.get("/:id/confirmation", requireAdmin, requirePermission("orders.read"), confirmationController.state);
 orderRouter.post("/:id/confirmation-attempts", requireAdmin, requirePermission("orders.manage"), validate(recordConfirmationAttemptSchema), confirmationController.recordAttempt);
 orderRouter.post("/:id/confirmation/release", requireAdmin, requirePermission("orders.manage"), confirmationController.release);

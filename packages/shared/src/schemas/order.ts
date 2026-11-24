@@ -123,6 +123,8 @@ export const adminCreateOrderSchema = z.object({
   pricingNote: nullableString(300),
   /** Made from this Inbox conversation (chat to order): the order and the chat are linked. */
   conversationId: z.string().cuid().optional(),
+  /** Made from an incomplete order (docs/INCOMPLETE_ORDERS.md): that lead is closed as ordered. */
+  checkoutLeadId: z.string().cuid().optional(),
 });
 
 function csvToStatusArray(value: unknown) {
@@ -153,6 +155,8 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue
   // (followUpAt <= now) — the callback queue. No "false" variant; omit the param for the normal listing.
   followUpDue: z.enum(["true"]).optional(),
+  // Order hold (docs/ORDER_HOLD.md): "on" = only held orders, "off" = only orders not on hold.
+  hold: z.enum(["on", "off"]).optional(),
   /** Owner decision Q6: Cash-on-delivery orders still PENDING after COD_PENDING_ALERT_HOURS — an operator decides each one. */
   codPendingStale: z.enum(["true"]).optional(),
   // "true" = every order a person has to act on (the "Needs action" queue) — one predicate shared with the stats count.
