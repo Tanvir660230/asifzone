@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
+import { TAHAFI_PHOTO_GLASS as PHOTO_GLASS } from "./styles";
 
 interface TahafiHeroProps {
   storeName: string;
@@ -21,9 +22,6 @@ interface TahafiHeroProps {
 /** Shown only when the hero has no button label of its own — the classic hero's neutral fallback. */
 const FALLBACK_CTA_LABEL = "Explore the collection";
 
-/** Glass on a photograph: dark, blurred, a lit top edge. */
-const PHOTO_GLASS =
-  "border border-white/20 bg-black/30 shadow-[inset_0_1px_0_rgb(255_255_255/0.25)] backdrop-blur-xl backdrop-saturate-150";
 
 /** The glossy white pill on a photograph. */
 const WHITE_PILL =

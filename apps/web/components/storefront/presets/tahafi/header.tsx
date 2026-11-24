@@ -56,7 +56,7 @@ export function TahafiHeader({ categories, settings }: HeaderProps) {
             <Link href="/account" aria-label="Your account" className={TAHAFI_GLASS_BUTTON}>
               <User size={20} aria-hidden="true" />
             </Link>
-            {home("h-6 w-24 object-contain", "glass-panel h-11 rounded-full px-4")}
+            {home("h-6 w-24 object-contain", "solid-panel h-11 rounded-full px-4")}
             <ModeToggle className={TAHAFI_GLASS_BUTTON} />
           </div>
           <TahafiMenu categories={menu} />

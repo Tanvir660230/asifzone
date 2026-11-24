@@ -654,6 +654,13 @@ const themeDefinitions = {
       "--tap-min": "2.75rem",
       // The smallest type (globals.css .ui-fine-print) at 12px, never below.
       "--fine-print-size": "0.75rem",
+      // Small floating controls (globals.css .ui-chip-glass) are solid, not blurred: a live blur under every gallery
+      // chip and chat button made scrolling stutter on mid-range Android phones. Glass stays on the header and dock.
+      "--chip-backdrop": "none",
+      "--chip-alpha": "0.94",
+      // The colour a photograph's frame shows until the photograph arrives: the warm beige of the studio wall the
+      // product photos are shot against, so a slow connection shows a calm tile instead of a blank one.
+      "--media-placeholder": "rgb(214 196 178)",
     },
     // Every section designed on the dark palette renders light, on white: one calm, bright page from top to bottom, the
     // grey page and the white sections clearly two grounds (not three near-identical greys).
@@ -704,6 +711,7 @@ const themeDefinitions = {
         "--glass-alpha": "0.62",
         "--glass-edge": "rgb(255 255 255 / 0.12)",
         "--glass-edge-soft": "rgb(255 255 255 / 0.1)",
+        "--media-placeholder": "rgb(58 52 46)",
         // Fills behind white type (components/ui/button.tsx): danger/sale 600–700 are light text colours here, so the
         // red button and the olive hover get their own deep fills (white on them 5.3, 6.4 and 6.9:1).
         "--danger-fill": "rgb(190 64 56)",

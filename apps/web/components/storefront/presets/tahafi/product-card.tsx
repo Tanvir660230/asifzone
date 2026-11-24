@@ -62,7 +62,8 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
 
   return (
     <div data-nav-pending-scope className="ui-press group block overflow-hidden rounded-[1.375rem] bg-surface shadow-[var(--card-frame-shadow)] transition-shadow duration-300 ease-smooth lg:hover:shadow-[var(--card-frame-shadow-hover)]">
-      <div className="relative aspect-[var(--card-media-aspect)] overflow-hidden bg-surface">
+      {/* Until the photograph arrives the frame shows the studio's beige (--media-placeholder), not a blank tile. */}
+      <div className="relative aspect-[var(--card-media-aspect)] overflow-hidden bg-[var(--media-placeholder,rgb(var(--color-surface)))]">
         <Link href={`/product/${product.slug}`} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
             <>
@@ -78,14 +79,18 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
                   soldOut && "opacity-70 saturate-50",
                 )}
               />
+              {/* The second photograph is a pointer-hover reveal: wide screens only. Hidden below lg, the lazy image is
+                  never fetched on a phone (half the card photos' data), and a tap can't flash it ("sticky" hover). */}
               {secondaryImage && (
-                <Image
-                  src={resolveImageUrl(secondaryImage.url)}
-                  alt={secondaryImage.altText ?? product.name}
-                  fill
-                  sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                  className="object-cover opacity-0 transition-opacity duration-500 ease-smooth group-hover:opacity-100"
-                />
+                <div className="absolute inset-0 hidden lg:block">
+                  <Image
+                    src={resolveImageUrl(secondaryImage.url)}
+                    alt={secondaryImage.altText ?? product.name}
+                    fill
+                    sizes="25vw"
+                    className="object-cover opacity-0 transition-opacity duration-500 ease-smooth lg:group-hover:opacity-100"
+                  />
+                </div>
               )}
             </>
           ) : (
@@ -106,7 +111,7 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
             onClick={handleQuickAdd}
             aria-label={needsChoice ? `Choose a size for ${product.name}` : `Add ${product.name} to bag`}
             data-fab-collision
-            className="glass-panel ui-tap absolute bottom-2.5 right-2.5 z-10 flex items-center justify-center rounded-full text-fg transition-transform duration-200 ease-smooth active:scale-95"
+            className="solid-panel ui-tap absolute bottom-2.5 right-2.5 z-10 flex items-center justify-center rounded-full text-fg transition-transform duration-200 ease-smooth active:scale-95"
           >
             <Plus size={20} strokeWidth={2} aria-hidden="true" />
           </button>
