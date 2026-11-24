@@ -3383,6 +3383,8 @@ model SizeGuidePreset {
   /// string[][] — every row has exactly columns.length cells (enforced on write).
   rows        Json
   notes       String?
+  /// "Find my size" rules (packages/shared size-finder.ts FitProfile): height × weight table, chest limits, hints.
+  fit         Json?
   isArchived  Boolean           @default(false)
   templates   ProductTemplate[]
   createdAt   DateTime          @default(now())

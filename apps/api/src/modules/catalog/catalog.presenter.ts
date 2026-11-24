@@ -45,6 +45,7 @@ export function presetToChart(preset: {
   columns: unknown;
   rows: unknown;
   notes: string | null;
+  fit?: unknown;
 }): SizeGuideData {
   return {
     title: preset.name,
@@ -52,6 +53,7 @@ export function presetToChart(preset: {
     columns: preset.columns as string[],
     rows: preset.rows as string[][],
     ...(preset.notes ? { notes: preset.notes } : {}),
+    ...(preset.fit ? { fit: preset.fit as SizeGuideData["fit"] } : {}),
   };
 }
 

@@ -246,6 +246,9 @@ export async function listSizeGuidePresets() {
   return presets.map(({ _count, ...p }) => ({ ...p, templateCount: _count.templates }));
 }
 
+/** undefined = leave as is, null = remove the size finder. */
+const fitData = (fit: SizeGuidePresetInput["fit"]) => (fit === undefined ? undefined : fit === null ? Prisma.DbNull : (fit as Prisma.InputJsonValue));
+
 async function getPreset(id: string) {
   const preset = await prisma.sizeGuidePreset.findUnique({ where: { id } });
   if (!preset) throw AppError.notFound("Size guide not found");
@@ -254,7 +257,7 @@ async function getPreset(id: string) {
 
 export async function createSizeGuidePreset(input: SizeGuidePresetInput) {
   try {
-    const created = await prisma.sizeGuidePreset.create({ data: { ...input, columns: input.columns, rows: input.rows } });
+    const created = await prisma.sizeGuidePreset.create({ data: { ...input, columns: input.columns, rows: input.rows, fit: fitData(input.fit) } });
     await afterConfigChange();
     return created;
   } catch (err) {
@@ -265,7 +268,7 @@ export async function createSizeGuidePreset(input: SizeGuidePresetInput) {
 export async function updateSizeGuidePreset(id: string, input: SizeGuidePresetInput & { isArchived?: boolean }) {
   await getPreset(id);
   try {
-    const updated = await prisma.sizeGuidePreset.update({ where: { id }, data: input });
+    const updated = await prisma.sizeGuidePreset.update({ where: { id }, data: { ...input, fit: fitData(input.fit) } });
     await afterConfigChange();
     return updated;
   } catch (err) {
@@ -294,6 +297,7 @@ export async function duplicateSizeGuidePreset(id: string) {
       notes: source.notes,
       columns: source.columns as Prisma.InputJsonValue,
       rows: source.rows as Prisma.InputJsonValue,
+      fit: source.fit === null ? Prisma.DbNull : (source.fit as Prisma.InputJsonValue),
     },
   });
   return created;
