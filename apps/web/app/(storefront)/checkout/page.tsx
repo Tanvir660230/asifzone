@@ -16,6 +16,7 @@ import {
   BD_ALL_AREA_OPTIONS,
   parseAreaDistrictOption,
   estimateDelivery,
+  checkoutDistrict,
   type CheckoutInput,
   type QuoteDto,
   type QuoteRequestInput,
@@ -37,6 +38,7 @@ import { getSessionId } from "@/lib/analytics";
 import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { getQuote, getBestCouponQuote } from "@/lib/api/quote";
 import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { getMyStoreCredit, listAddresses } from "@/lib/api/customers";
 import { getSettings } from "@/lib/api/settings";
 import { getActivePaymentMethods } from "@/lib/api/payment-methods";
@@ -257,7 +259,11 @@ function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
-  const deliveryEstimate = estimateDelivery(shippingDistrict);
+  // District and thana are optional (owner 2026-11-24): without a pick the district is read from the address (after a
+  // pause in typing), else the default delivery charge applies. The server prices the same way, so what shows is charged.
+  const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
+  const place = checkoutDistrict({ shippingDistrict, shippingAddressLine: addressLine });
+  const deliveryEstimate = estimateDelivery(place.district);
 
   // The canonical server quote for exactly what will be submitted: items, applied coupon, address. Every amount on
   // this page comes from it; the page never adds, discounts or ships anything itself (PRICING_INVARIANTS §7).
@@ -265,8 +271,9 @@ function CheckoutForm() {
   const lineItems = items.map((i) => ({ variantId: i.variantId, quantity: i.quantity }));
   const baseRequest: QuoteRequestInput = {
     items: lineItems,
-    shippingDivision: shippingDivision || undefined,
-    shippingDistrict: shippingDistrict || undefined,
+    shippingDivision: (shippingDistrict ? shippingDivision : place.division) || undefined,
+    shippingDistrict: place.district || undefined,
+    unknownUsesDefault: true,
   };
   const quoteRequest: QuoteRequestInput = { ...baseRequest, couponCode: couponCode ?? undefined };
   const { data: quote, refetch: refetchQuote } = useQuote(mounted ? quoteRequest : null);
@@ -372,8 +379,11 @@ function CheckoutForm() {
 
   async function onSubmit(values: CheckoutFormValues) {
     setSubmitError(null);
+    const at = checkoutDistrict(values);
     const payload: CheckoutInput = {
       ...values,
+      shippingDistrict: at.district,
+      shippingDivision: (values.shippingDistrict ? values.shippingDivision : at.division) as CheckoutInput["shippingDivision"],
       couponCode: couponCode ?? undefined,
       items: lineItems,
       sessionId: getSessionId() || undefined,
@@ -395,8 +405,8 @@ function CheckoutForm() {
         email: values.customerEmail,
         phone: values.customerPhone,
         fullName: values.customerName,
-        city: values.shippingDistrict,
-        state: values.shippingDivision,
+        city: at.district || undefined,
+        state: payload.shippingDivision || undefined,
       });
       pixelAddPaymentInfo(pixelItems(), values.paymentMethod);
       if (useStoreCredit) void queryClient.invalidateQueries({ queryKey: ["my-store-credit"] });
@@ -692,7 +702,9 @@ function CheckoutForm() {
             )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <Label htmlFor="shippingDistrict">District</Label>
+                <Label htmlFor="shippingDistrict">
+                  District <span className="font-normal text-ink-400">(optional)</span>
+                </Label>
                 <SearchableSelect
                   id="shippingDistrict"
                   autoComplete="address-level2"
@@ -710,7 +722,9 @@ function CheckoutForm() {
                 )}
               </div>
               <div>
-                <Label htmlFor="shippingArea">Area / Thana</Label>
+                <Label htmlFor="shippingArea">
+                  Area / Thana <span className="font-normal text-ink-400">(optional)</span>
+                </Label>
                 <SearchableSelect
                   id="shippingArea"
                   autoComplete="address-level3"
@@ -732,6 +746,7 @@ function CheckoutForm() {
                 <Textarea
                   id="shippingAddressLine"
                   rows={2}
+                  placeholder="House, road, area, thana, district"
                   autoComplete="street-address"
                   aria-invalid={!!errors.shippingAddressLine}
                   aria-describedby={errors.shippingAddressLine ? "shippingAddressLine-error" : undefined}

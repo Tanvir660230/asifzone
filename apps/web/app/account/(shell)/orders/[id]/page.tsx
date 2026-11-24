@@ -346,7 +346,7 @@ export default function AccountOrderDetailPage() {
             <p className="mt-1.5 leading-relaxed text-ink-600">
               {order.customerName}, {order.customerPhone}
               <br />
-              {order.shippingAddressLine}, {order.shippingArea}, {order.shippingDistrict}
+              {[order.shippingAddressLine, order.shippingArea, order.shippingDistrict].filter(Boolean).join(", ")}
             </p>
           </section>
         </aside>

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { quoteRequestSchema, type QuoteRequestInput } from "@clothing-brand/shared";
+import { checkoutDistrict, quoteRequestSchema, type QuoteRequestInput } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { attachAdminIfPresent } from "../../middlewares/require-admin";
@@ -14,9 +14,14 @@ export const checkoutV1Router = Router();
  * is honoured only for an admin session (the admin "Create order" page); a shopper is identified by their cookie. */
 function toRequest(req: Request): QuoteRequest {
   const body = req.body as QuoteRequestInput;
-  const address = body.shippingDistrict || body.shippingDivision || body.shippingPostcode
-    ? { district: body.shippingDistrict ?? null, division: body.shippingDivision ?? null, postcode: body.shippingPostcode ?? null }
-    : null;
+  // The storefront (district optional) sends unknownUsesDefault: the picked district, else the one written in the address,
+  // else the default zone — the same rule createOrder uses, so the quoted and the charged delivery match.
+  const place = body.unknownUsesDefault ? checkoutDistrict(body) : { district: body.shippingDistrict ?? "", division: body.shippingDivision ?? "" };
+  const address = place.district || place.division || body.shippingPostcode
+    ? { district: place.district || null, division: place.division || null, postcode: body.shippingPostcode ?? null }
+    : body.unknownUsesDefault
+      ? { unknownUsesDefault: true }
+      : null;
   return {
     items: body.items,
     couponCode: body.couponCode ?? null,

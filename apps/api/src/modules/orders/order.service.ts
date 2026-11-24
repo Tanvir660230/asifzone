@@ -26,7 +26,7 @@ import {
   clampNonNegative,
   subtract,
   transitionNeedsReason,
-  transitionReasonMissing, sellsPastShelf } from "@clothing-brand/shared";
+  transitionReasonMissing, sellsPastShelf, checkoutDistrict } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -177,6 +177,14 @@ export function toItemSnapshots(quote: Quote): OrderItemSnapshot[] {
   });
 }
 
+/** District and thana are optional on the storefront: fill the district (and its division) from the address text when
+ * none was picked, so the order, its delivery charge and the courier address carry it. Thana stays as entered. */
+function withCheckoutDistrict(input: CheckoutInput): CheckoutInput {
+  if (input.shippingDistrict) return input;
+  const place = checkoutDistrict(input);
+  return place.unknown ? input : { ...input, shippingDistrict: place.district, shippingDivision: place.division as CheckoutInput["shippingDivision"] };
+}
+
 /** Refuses an order whose quote can't be placed, with the same messages checkout has always used. */
 function assertOrderable(quote: Quote, input: CheckoutInput, rows: PricedQuote["rows"]) {
   for (const w of quote.warnings) {
@@ -203,6 +211,7 @@ function assertOrderable(quote: Quote, input: CheckoutInput, rows: PricedQuote["
  * `input.quoteToken` (the quote the customer was shown): when present and no longer matching the server's price, the
  * order is refused with 409 QUOTE_CHANGED carrying the fresh quote — a stale price is never charged. */
 export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null, db: Db = prisma): Promise<DerivedOrderPricing> {
+  input = withCheckoutDistrict(input);
   // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
   // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
   // they register/log in).
@@ -225,7 +234,8 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
     {
       items: input.items,
       couponCode: input.couponCode ?? null,
-      address: { district: input.shippingDistrict, division: input.shippingDivision },
+      // District is optional on the storefront: none picked or written in the address means the default zone.
+      address: input.shippingDistrict ? { district: input.shippingDistrict, division: input.shippingDivision } : { unknownUsesDefault: true },
       customerId,
     },
     db,
@@ -594,6 +604,7 @@ export async function createOrder(
     if (existing) return existing;
   }
 
+  input = withCheckoutDistrict(input);
   const derived = await deriveOrderPricing(input, customerId);
   const pricing = opts.staffPricing ? applyStaffPricing(derived, opts.staffPricing, await getCurrency()) : derived;
 

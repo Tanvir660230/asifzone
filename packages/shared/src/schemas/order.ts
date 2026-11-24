@@ -56,9 +56,11 @@ export const checkoutSchema = z.object({
   customerName: z.string().trim().min(1, "Enter your full name").max(200, "Keep your name under 200 characters"),
   customerEmail: nullableEmail("Enter a valid email address, or leave it empty"),
   customerPhone: bdPhoneSchema(),
-  shippingDivision: z.enum(BD_DIVISIONS, { errorMap: () => ({ message: "Choose your district" }) }),
-  shippingDistrict: z.string().min(1, "Choose your district").max(120),
-  shippingArea: z.string().min(1, "Choose your area or thana").max(120),
+  // District and thana are optional (owner 2026-11-24: shoppers who skipped them could not order). Without them the
+  // server reads the district from the address (checkoutDistrict) or charges the default zone.
+  shippingDivision: z.union([z.enum(BD_DIVISIONS), z.literal("")]).optional().default(""),
+  shippingDistrict: z.string().trim().max(120).optional().default(""),
+  shippingArea: z.string().trim().max(120).optional().default(""),
   shippingAddressLine: z.string().trim().min(1, "Enter your house, road and area").max(500, "Keep the address under 500 characters"),
   paymentMethod: paymentMethodEnum,
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
@@ -82,6 +84,10 @@ export const quoteRequestSchema = z.object({
   shippingDivision: z.string().max(120).optional(),
   shippingDistrict: z.string().max(120).optional(),
   shippingPostcode: z.string().max(20).optional(),
+  /** The address text, to read the district from when none is picked (storefront, where district is optional). */
+  shippingAddressLine: z.string().max(500).optional(),
+  /** No district picked or found: price with the default zone instead of leaving shipping open (storefront only). */
+  unknownUsesDefault: z.boolean().optional(),
   /** Lets the admin "Create order" page quote for a specific customer (per-customer coupon limits). Admin only. */
   customerId: z.string().cuid().optional(),
 });
@@ -264,7 +270,7 @@ export const updateOrderDetailsSchema = z.object({
   customerPhone: bdPhoneSchema().optional(),
   shippingDivision: z.enum(BD_DIVISIONS).optional(),
   shippingDistrict: z.string().min(1).max(120).optional(),
-  shippingArea: z.string().min(1).max(120).optional(),
+  shippingArea: z.string().trim().max(120).optional(), // thana is optional (2026-11-24)
   shippingAddressLine: z.string().min(1).max(500).optional(),
 });
 

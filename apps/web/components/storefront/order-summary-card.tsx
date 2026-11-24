@@ -46,8 +46,8 @@ export function OrderSummaryCard({ order }: { order: Order }) {
       </div>
 
       <p className="mt-4 text-xs text-ink-400">
-        Payment: {order.paymentMethod === "COD" ? "Cash on Delivery" : "Paid online"} · Shipping to {order.shippingArea},{" "}
-        {order.shippingDistrict}, {order.shippingDivision}
+        Payment: {order.paymentMethod === "COD" ? "Cash on Delivery" : "Paid online"} · Shipping to{" "}
+        {[order.shippingArea, order.shippingDistrict, order.shippingDivision].filter(Boolean).join(", ") || order.shippingAddressLine}
       </p>
     </div>
   );

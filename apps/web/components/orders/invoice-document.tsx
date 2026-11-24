@@ -37,7 +37,7 @@ export function InvoiceDocument({ order, store }: InvoiceDocumentProps) {
           <p className="mb-1 text-xs uppercase tracking-wide text-ink-400">Ship To</p>
           <p className="text-ink-600">{order.shippingAddressLine}</p>
           <p className="text-ink-600">
-            {order.shippingArea}, {order.shippingDistrict}, {order.shippingDivision}
+            {[order.shippingArea, order.shippingDistrict, order.shippingDivision].filter(Boolean).join(", ")}
           </p>
         </div>
       </div>

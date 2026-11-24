@@ -27,11 +27,15 @@ describe("checkout validation messages", () => {
       customerName: "Enter your full name",
       customerEmail: "Enter a valid email address, or leave it empty",
       customerPhone: expect.stringMatching(/phone/i),
-      shippingDivision: "Choose your district",
-      shippingDistrict: "Choose your district",
-      shippingArea: "Choose your area or thana",
       shippingAddressLine: "Enter your house, road and area",
     });
+  });
+
+  it("does not ask for district or thana (optional since 2026-11-24)", () => {
+    const messages = messagesFor(blank);
+    expect(messages).not.toHaveProperty("shippingDivision");
+    expect(messages).not.toHaveProperty("shippingDistrict");
+    expect(messages).not.toHaveProperty("shippingArea");
   });
 
   it("never shows a Zod default message", () => {

@@ -87,11 +87,12 @@ function hasUsableAddress(order: {
   shippingDistrict: string;
   shippingDivision: string;
 }): boolean {
+  // Thana is optional on the storefront (2026-11-24) and Steadfast needs only the address text, so it is not required;
+  // the district still is, so staff confirm it on the call before booking.
   return [
     order.customerName,
     order.customerPhone,
     order.shippingAddressLine,
-    order.shippingArea,
     order.shippingDistrict,
     order.shippingDivision,
   ].every((f) => f.trim().length > 0);

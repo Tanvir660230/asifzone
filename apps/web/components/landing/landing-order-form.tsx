@@ -12,7 +12,6 @@ import {
   BD_ALL_AREA_OPTIONS,
   BD_ALL_DISTRICTS,
   BD_AREAS_BY_DISTRICT,
-  BD_DIVISION_BY_DISTRICT,
   NO_SIZE_VALUE,
   bdPhoneSchema,
   maxSellableQuantity,
@@ -22,6 +21,7 @@ import {
   type QuoteDto,
   type QuoteRequestInput,
   variantShipsFree,
+  checkoutDistrict,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,7 @@ import { stockLine, type VariantOptions } from "@/components/storefront/variant-
 import { colorImage, useLandingSelection } from "./landing-selection";
 import { PHOTO_TILE_WIDTH, PhotoTileBody } from "@/components/storefront/photo-tile";
 import { useQuote } from "@/hooks/use-quote";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { createOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
 import { getSessionId } from "@/lib/analytics";
@@ -48,8 +49,10 @@ import { useLeadCapture } from "@/hooks/use-lead-capture";
 const formSchema = z.object({
   customerName: z.string().trim().min(2, "আপনার নাম লিখুন").max(200),
   customerPhone: bdPhoneSchema("১১ সংখ্যার সঠিক মোবাইল নম্বর দিন, যেমন 01712345678"),
-  shippingDistrict: z.string().min(1, "আপনার জেলা বেছে নিন"),
-  shippingArea: z.string().min(1, "আপনার থানা বা এলাকা বেছে নিন"),
+  // District and thana are optional (owner 2026-11-24): shoppers who skipped them could not order. The district is
+  // then read from the address (checkoutDistrict), else the default delivery charge applies.
+  shippingDistrict: z.string(),
+  shippingArea: z.string(),
   shippingAddressLine: z.string().trim().min(4, "বাসা, রোড ও এলাকার নাম লিখুন, যাতে ডেলিভারিম্যান সহজে খুঁজে পান").max(500, "ঠিকানা ৫০০ অক্ষরের মধ্যে লিখুন"),
 });
 type FormValues = z.infer<typeof formSchema>;
@@ -112,7 +115,10 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     { enabled: true, landingSlug: product.slug },
   );
   const areaOptions: readonly string[] = district ? (BD_AREAS_BY_DISTRICT[district] ?? []) : BD_ALL_AREA_OPTIONS;
-  const division = BD_DIVISION_BY_DISTRICT[district] ?? "";
+  // The district picked, else the one written in the address (after a pause in typing), else none: the server prices
+  // the same way, so the delivery charge shown is the one charged.
+  const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
+  const place = checkoutDistrict({ shippingDistrict: district, shippingAddressLine: addressLine });
 
   function handleArea(value: string) {
     const parsed = parseAreaDistrictOption(value);
@@ -129,7 +135,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
   }, [district]);
 
   const quoteRequest: QuoteRequestInput | null =
-    variant && !soldOut ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: division || undefined, shippingDistrict: district || undefined } : null;
+    variant && !soldOut
+      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true }
+      : null;
   const { data: quote, isFetching: quoting, refetch: refetchQuote } = useQuote(quoteRequest);
   const shipping = quote?.shipping;
   // Savings against the product's own compare-at price, as the server resolved both prices.
@@ -155,13 +163,14 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     setSubmitError(null);
     if (!variant) return setPickerOpen(true);
     if (soldOut) return;
+    const at = checkoutDistrict(values);
     const payload: CheckoutInput = {
       items: [{ variantId: variant.id, quantity: qty }],
       customerName: values.customerName,
       customerPhone: values.customerPhone,
       customerEmail: null,
-      shippingDivision: division as CheckoutInput["shippingDivision"],
-      shippingDistrict: values.shippingDistrict,
+      shippingDivision: at.division as CheckoutInput["shippingDivision"],
+      shippingDistrict: at.district,
       shippingArea: values.shippingArea,
       shippingAddressLine: values.shippingAddressLine,
       paymentMethod: "COD",
@@ -176,8 +185,8 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       pixelIdentify({
         phone: values.customerPhone,
         fullName: values.customerName,
-        city: values.shippingDistrict,
-        state: division,
+        city: at.district || undefined,
+        state: at.division || undefined,
       });
       pixelAddPaymentInfo(pixelItems(), "COD");
       router.push(`/order-confirmation/${order!.orderNumber}`);
@@ -293,7 +302,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="lp-district">জেলা</Label>
+            <Label htmlFor="lp-district">
+              জেলা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
+            </Label>
             <SearchableSelect
               id="lp-district"
               autoComplete="address-level2"
@@ -307,7 +318,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             {fieldError("lp-district", errors.shippingDistrict?.message)}
           </div>
           <div>
-            <Label htmlFor="lp-area">থানা / এলাকা</Label>
+            <Label htmlFor="lp-area">
+              থানা / এলাকা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
+            </Label>
             <SearchableSelect
               id="lp-area"
               autoComplete="address-level3"
@@ -327,7 +340,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             id="lp-address"
             rows={2}
             autoComplete="street-address"
-            placeholder="বাসা/ফ্ল্যাট নং, রোড, এলাকা"
+            placeholder="বাসা/ফ্ল্যাট নং, রোড, এলাকা, থানা, জেলা"
             className="text-base"
             aria-invalid={!!errors.shippingAddressLine}
             aria-describedby={errors.shippingAddressLine ? "lp-address-error" : undefined}
@@ -361,9 +374,14 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
           <div className="flex justify-between gap-4">
             <dt className="text-fg-muted">ডেলিভারি চার্জ</dt>
             <dd className="tabular-nums text-fg">
-              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">জেলা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
+              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
             </dd>
           </div>
+          {place.unknown && addressLine.trim().length >= 4 && shipping?.resolved && !shipping.waived && (
+            <p className="text-xs text-fg-muted" data-testid="landing-default-delivery">
+              ঠিকানায় জেলা পাওয়া যায়নি, তাই সাধারণ ডেলিভারি চার্জ ধরা হয়েছে। জেলা বেছে নিলে ঠিক চার্জ দেখাবে।
+            </p>
+          )}
           {savings > 0 && (
             <div className="flex justify-between gap-4 text-success-700">
               <dt>আপনার সাশ্রয়</dt>
