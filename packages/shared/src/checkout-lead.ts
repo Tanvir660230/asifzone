@@ -42,7 +42,7 @@ export const CHECKOUT_LEAD_REASON_LABELS: Record<CheckoutLeadReason, string> = {
   OTHER: "Other",
 };
 
-/** A lead shows up once the shopper has been gone this long. Asif Zone, 30 days to 2026-11-24: 94 % of orders came within
+/** A lead shows up once the shopper has been gone this long. The first store, 30 days to 2026-11-24: 94 % of orders came within
  * 15 minutes of opening checkout (median 2), so a shopper quiet for 15 minutes is very unlikely to order on their own. */
 export const CHECKOUT_LEAD_QUIET_MINUTES = 15;
 /** Calls stop after this many unanswered tries. */
