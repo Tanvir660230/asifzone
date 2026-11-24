@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Order, OrderPaymentSummary, StoreSettings } from "@clothing-brand/shared";
 import { formatPrice, paymentStatusLabel } from "@/lib/format";
-import { DETAIL_LEVELS, LABEL_RENDER_SCALE, chooseLevel, pickLayout, searchUnit, unitBounds, type DetailLevel, type FitResult } from "@/lib/label-fit";
+import { DETAIL_LEVELS, LABEL_RENDER_SCALE, chooseLevel, isLargeSticker, pickLayout, searchUnit, unitBounds, type DetailLevel, type FitResult } from "@/lib/label-fit";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { BarcodeSvg } from "./barcode-svg";
 import { QrCodeSvg } from "./qr-code-svg";
 
 type LabelOrder = Order & { payment: OrderPaymentSummary };
 
-/** font-normal / semibold / bold / extrabold — every weight the label below uses. */
-const LABEL_FONT_WEIGHTS = [400, 600, 700, 800] as const;
+/** font-normal / medium / semibold / bold / extrabold — every weight the labels below use. A weight missing here is
+ * measured in a fallback face and prints wider than the fit allowed for (the large label's medium address did). */
+const LABEL_FONT_WEIGHTS = [400, 500, 600, 700, 800] as const;
 
 interface LabelCardProps {
   order: LabelOrder;
@@ -113,7 +114,13 @@ export function LabelCard({ order, store, wMm, hMm, printedAt, onReady }: LabelC
       className="flex flex-col overflow-hidden bg-white p-[0.15em] font-sans leading-[1.22] text-ink-900 [overflow-wrap:anywhere] [text-rendering:geometricPrecision] [&>*]:shrink-0"
       style={{ width: `${wMm * LABEL_RENDER_SCALE}mm`, height: `${hMm * LABEL_RENDER_SCALE}mm` }}
     >
-      {layout === "stack" ? (
+      {isLargeSticker(wMm, hMm) ? (
+        layout === "stack" ? (
+          <LargeTallLabel view={view} detail={detail} onBarcodeReady={handleBarcodeReady} />
+        ) : (
+          <LargeWideLabel view={view} detail={detail} onBarcodeReady={handleBarcodeReady} />
+        )
+      ) : layout === "stack" ? (
         <StackLabel view={view} detail={detail} onBarcodeReady={handleBarcodeReady} />
       ) : (
         <WideLabel view={view} detail={detail} onBarcodeReady={handleBarcodeReady} />
@@ -249,6 +256,322 @@ function WideLabel({ view, detail, onBarcodeReady }: PartProps) {
       <div className="min-h-0 flex-1" aria-hidden />
       <Barcode view={view} heightEm={detail.slimBarcode ? 2 : 2.6} digitsEm={0.95} onReady={onBarcodeReady} className="mt-[0.3em]" />
       {detail.footer && <Footer view={view} />}
+    </>
+  );
+}
+
+/* ───────────── Large courier sticker (75×100 portrait, 100×75 wide) — the "Panels" design ─────────────
+ * Owner-picked (2026-11-19, direction A of the label mockups): each job sits in its own thin rounded panel — "Deliver to"
+ * for the rider (name, phone, address, and the thana · district as a tag), "Collect · COD" beside the parcel QR, then the
+ * courier note, the items with qty badges, and the barcode with blank space either side for the scanner. Black ink only,
+ * thin rules, no solid blocks except the small thana tag. Every size is in em, so the fit engine scales and trims it like
+ * every other label. */
+
+/** Thana first, then district — the owner's order; the division isn't needed on a parcel. */
+function thanaDistrict(order: LabelOrder): { thana: string | null; district: string | null } {
+  const thana = order.shippingArea?.trim() || null;
+  const district = order.shippingDistrict?.trim() || null;
+  return { thana, district: district && district !== thana ? district : null };
+}
+
+const PANEL = "rounded-[0.6em] border-[0.12em] border-ink-900";
+
+/** Line icons (stroke only, so a thermal head prints a clean outline). */
+function Icon({ name, className = "" }: { name: "user" | "phone" | "pin" | "alert"; className?: string }) {
+  const paths = {
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </>
+    ),
+    phone: <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />,
+    pin: (
+      <>
+        <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" />
+        <circle cx="12" cy="9.5" r="2.5" />
+      </>
+    ),
+    alert: (
+      <>
+        <path d="M12 3l9.5 17h-19z" />
+        <path d="M12 10v4M12 17.5v.01" />
+      </>
+    ),
+  };
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`h-[1em] w-[1em] shrink-0 ${className}`}>
+      {paths[name]}
+    </svg>
+  );
+}
+
+/** A Bangladeshi mobile number as 01XXX XXXXXX — the way people read it out — with a gap, not a character, between the
+ * groups, so the digits stay exactly as typed. Anything else prints as is. */
+function PhoneDigits({ phone }: { phone: string }) {
+  const m = /^(\+?88)?(01\d{3})(\d{6})$/.exec(phone.replace(/[\s-]/g, ""));
+  if (!m) return <>{phone}</>;
+  return (
+    <>
+      {m[1] && <span className="mr-[0.3em]">{m[1]}</span>}
+      <span className="mr-[0.32em]">{m[2]}</span>
+      {m[3]}
+    </>
+  );
+}
+
+/** Small uppercase caption. */
+function Caption({ children, className = "" }: { children: string; className?: string }) {
+  return <p className={`text-[0.6em] font-semibold uppercase leading-none tracking-[0.12em] ${className}`}>{children}</p>;
+}
+
+/** Logo left; right: the store's phone (owner: the company number, not the courier, belongs up here) over the order
+ * number. */
+function LargeHeader({ view, detail }: { view: LabelView; detail: DetailLevel }) {
+  const { store, order } = view;
+  const name = store?.storeName ?? "Store";
+  const wordmark = <span className="text-[1.3em] font-bold uppercase leading-none tracking-[0.06em]">{name}</span>;
+  return (
+    <div className="flex items-center justify-between gap-[0.8em] border-b-[0.08em] border-ink-900 pb-[0.45em]">
+      {store?.logoUrl && detail.logo ? (
+        <StoreLogoImage src={store.logoUrl} alt={name} className="shrink-0 [&_img]:object-left" style={{ height: "2.4em", width: "6.5em" }} fallback={wordmark} />
+      ) : (
+        wordmark
+      )}
+      <div className="flex flex-col items-end leading-[1.15]">
+        {store?.contactPhone && (
+          <p className="flex items-center gap-[0.35em] whitespace-nowrap text-[0.92em] font-semibold tabular-nums">
+            <Icon name="phone" className="text-[0.85em]" />
+            {/* Printed as the store wrote it in Settings (its own spacing, e.g. "+880 1813-048872"). */}
+            {store.contactPhone}
+          </p>
+        )}
+        <p className={`${store?.contactPhone ? "mt-[0.25em]" : ""} whitespace-nowrap text-[0.8em] font-medium tabular-nums`}>{order.orderNumber}</p>
+      </div>
+    </div>
+  );
+}
+
+function DeliverTo({ view, className = "" }: { view: LabelView; className?: string }) {
+  const { order } = view;
+  const { thana, district } = thanaDistrict(order);
+  return (
+    // One icon column, one text column: the caption, name, phone, address and area tag all start on the same line, and
+    // each icon is centred on the first line of its row (the cell's height = that row's first line box, in base em).
+    <div className={`${PANEL} grid grid-cols-[1em_minmax(0,1fr)] gap-x-[0.5em] px-[0.7em] pb-[0.65em] pt-[0.6em] ${className}`}>
+      <span aria-hidden />
+      <Caption>Deliver to</Caption>
+
+      <span className="mt-[0.35em] flex h-[1.57em] items-center">
+        <Icon name="user" />
+      </span>
+      <p lang="bn" className="mt-[0.35em] text-[1.4em] font-bold leading-[1.12]">{order.customerName}</p>
+
+      <span className="mt-[0.2em] flex h-[1.43em] items-center">
+        <Icon name="phone" />
+      </span>
+      <p className="mt-[0.2em] whitespace-nowrap text-[1.3em] font-bold leading-[1.1] tabular-nums">
+        <PhoneDigits phone={order.customerPhone} />
+      </p>
+
+      <span className="mt-[0.3em] flex h-[1.29em] items-center">
+        <Icon name="pin" />
+      </span>
+      <p lang="bn" className="mt-[0.3em] text-[0.98em] font-medium leading-[1.34]">{order.shippingAddressLine}</p>
+
+      {(thana || district) && (
+        <>
+          <span aria-hidden />
+          {/* Thana first, then district, in a thin outlined tag (owner: no black fill). */}
+          <p className="mt-[0.45em] flex w-fit max-w-full items-center rounded-[0.4em] border-[0.1em] border-ink-900 px-[0.55em] py-[0.12em] text-[0.8em] uppercase leading-[1.25] tracking-[0.06em]">
+            {thana && <span className="font-bold">{thana}</span>}
+            {thana && district && <span aria-hidden className="mx-[0.5em] h-[0.9em] w-[0.1em] shrink-0 bg-ink-900" />}
+            {district && <span className="font-medium">{district}</span>}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The amount to collect in its own panel. Paid orders: PAID / Collect nothing; a pending online payment never reads PAID. */
+function LargeCod({ view, amountEm, className = "" }: { view: LabelView; amountEm: number; className?: string }) {
+  const frame = `flex flex-col justify-center ${PANEL} px-[0.7em] py-[0.5em] ${className}`;
+  if (view.cod > 0) {
+    return (
+      <div className={frame}>
+        <Caption>Collect · COD</Caption>
+        <span className="mt-[0.3em] whitespace-nowrap font-bold leading-none tracking-[-0.02em] tabular-nums" style={{ fontSize: `${amountEm}em` }}>
+          {formatPrice(view.cod)}
+        </span>
+      </div>
+    );
+  }
+  const settled = view.order.paymentMethod === "COD" || view.order.paymentStatus === "PAID";
+  return (
+    <div className={frame}>
+      <Caption>Payment</Caption>
+      <span className="mt-[0.3em] font-bold uppercase leading-none tracking-[0.02em]" style={{ fontSize: `${amountEm * 0.75}em` }}>
+        {settled ? "Paid" : "Online"}
+      </span>
+      <span className="mt-[0.25em] text-[0.78em] font-medium leading-tight">{settled ? "Collect nothing" : view.paidCaption}</span>
+    </div>
+  );
+}
+
+/** QR (booked orders) with the courier, parcel id and date beside it. */
+function ParcelBox({ view, detail, qrEm: full, className = "" }: { view: LabelView; detail: DetailLevel; qrEm: number; className?: string }) {
+  const { order } = view;
+  const showQr = detail.qr !== "none" && order.courierTrackingLink;
+  return (
+    <div className={`flex items-center gap-[0.5em] ${className}`}>
+      {showQr && (
+        <div className="shrink-0" style={{ width: `${qrEm(detail, full)}em`, height: `${qrEm(detail, full)}em` }}>
+          <QrCodeSvg value={order.courierTrackingLink!} size={128} fill />
+        </div>
+      )}
+      <div className="min-w-0 tabular-nums">
+        <Caption className="whitespace-nowrap">{order.carrier ?? "Parcel"}</Caption>
+        <p className="mt-[0.3em] whitespace-nowrap text-[0.95em] font-bold leading-none">{order.courierConsignmentId ?? "Not booked yet"}</p>
+        {detail.infoTable && <p className="mt-[0.35em] whitespace-nowrap text-[0.72em] font-medium leading-none">{view.date}</p>}
+      </div>
+    </div>
+  );
+}
+
+function LargeNote({ order, className = "" }: { order: LabelOrder; className?: string }) {
+  if (!order.courierNoteForLabel) return null;
+  return (
+    <p lang="bn" className={`grid grid-cols-[1.09em_minmax(0,1fr)] gap-x-[0.54em] px-[0.87em] text-[0.92em] font-semibold leading-[1.3] ${className}`}>
+      <span className="flex h-[1.28em] items-center">
+        <Icon name="alert" />
+      </span>
+      <span className="min-w-0">{order.courierNoteForLabel}</span>
+    </p>
+  );
+}
+
+/** How many pieces of this product, big and boxed so the packer reads it at a glance (owner: "koy pc" bigger). */
+function QtyBadge({ qty }: { qty: number }) {
+  return (
+    // One inline run inside a centred box: the number and "pc" share a text baseline, the box centres the run.
+    <span className="inline-flex h-[1.5em] min-w-[2.6em] items-center justify-center rounded-[0.4em] border-[0.12em] border-ink-900 px-[0.3em] leading-none tabular-nums">
+      <span className="whitespace-nowrap">
+        <span className="text-[1.1em] font-bold">{qty}</span>
+        <span className="ml-[0.12em] text-[0.72em] font-medium">pc</span>
+      </span>
+    </span>
+  );
+}
+
+function LargeItems({ view, detail, className = "", twoColumns = false }: { view: LabelView; detail: DetailLevel; className?: string; twoColumns?: boolean }) {
+  const { items } = view.order;
+  if (items.length === 0) return null;
+  const variantOf = (item: (typeof items)[number]) => [item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(", ");
+  // Total pieces big on the right (the number the packer counts), the product count small beside it.
+  const head = (
+    <div className="flex items-baseline justify-between border-b-[0.08em] border-ink-900 pb-[0.25em]">
+      <Caption>In this parcel</Caption>
+      <p className="whitespace-nowrap leading-none">
+        <span className="text-[0.62em] font-semibold uppercase tracking-[0.12em]">
+          {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
+        </span>
+        <span className="text-[1.05em] font-bold tabular-nums">{view.pieces}</span>
+        <span className="text-[0.72em] font-medium"> pc{view.pieces === 1 ? "" : "s"}</span>
+      </p>
+    </div>
+  );
+  if (detail.items === "summary") return <div className={className}>{head}</div>;
+  if (detail.items === "inline") {
+    return (
+      <div className={className}>
+        {head}
+        <p lang="bn" className="mt-[0.3em] text-[0.86em] leading-[1.3]">
+          {items.map((item, i) => {
+            const variant = variantOf(item);
+            return (
+              <span key={item.id}>
+                {i > 0 && <span className="font-bold"> / </span>}
+                <span className="text-[1.1em] font-bold tabular-nums">{item.quantity} pc</span> {item.productNameSnapshot}
+                {variant && <span className="font-semibold"> · {variant}</span>}
+              </span>
+            );
+          })}
+        </p>
+      </div>
+    );
+  }
+  const shown = items.slice(0, detail.items);
+  const more = items.length - shown.length;
+  const cols = twoColumns && shown.length > 4 ? "grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)]" : "grid-cols-[auto_minmax(0,1fr)]";
+  return (
+    <div className={className}>
+      {head}
+      <div className={`mt-[0.35em] grid ${cols} items-start gap-x-[0.5em] gap-y-[0.22em] text-[0.9em] leading-[1.24]`}>
+        {shown.map((item) => {
+          const variant = variantOf(item);
+          return (
+            <div key={item.id} className="contents">
+              <QtyBadge qty={item.quantity} />
+              <span lang="bn" className="pt-[0.14em] font-medium">
+                {item.productNameSnapshot}
+                {variant && <span className="font-semibold"> · {variant}</span>}
+              </span>
+            </div>
+          );
+        })}
+        {more > 0 && <span className="col-span-full font-semibold">+{more} more item{more === 1 ? "" : "s"}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** The barcode with blank space either side (scanners want a quiet zone of ~10 bar widths). */
+function LargeBarcode({ view, heightEm, onReady, className }: { view: LabelView; heightEm: number; onReady: () => void; className: string }) {
+  return (
+    <div className={`px-[7%] ${className}`}>
+      <div style={{ height: `${heightEm}em` }}>
+        <BarcodeSvg value={view.barcodeValue} height={60} width={2} onReady={onReady} fill />
+      </div>
+      <p className="mt-[0.25em] text-center text-[0.92em] font-semibold leading-none tracking-[0.12em] tabular-nums">{view.barcodeValue}</p>
+    </div>
+  );
+}
+
+/** 75×100 portrait: header, Deliver to, COD panel beside the QR, note, items, barcode. */
+function LargeTallLabel({ view, detail, onBarcodeReady }: PartProps) {
+  return (
+    <>
+      <LargeHeader view={view} detail={detail} />
+      <DeliverTo view={view} className="mt-[0.6em]" />
+      <div className="mt-[0.6em] flex items-stretch gap-[0.6em]">
+        <LargeCod view={view} amountEm={2.2} className="min-w-0 flex-1" />
+        <ParcelBox view={view} detail={detail} qrEm={4.8} className="shrink-0" />
+      </div>
+      <LargeNote order={view.order} className="mt-[0.6em]" />
+      <LargeItems view={view} detail={detail} className="mt-[0.6em] px-[0.8em]" />
+      <div className="min-h-0 flex-1" aria-hidden />
+      <LargeBarcode view={view} heightEm={detail.slimBarcode ? 2.6 : 3.3} onReady={onBarcodeReady} className="mt-[0.5em]" />
+    </>
+  );
+}
+
+/** 100×75 wide: header; Deliver to left, COD panel + QR right; note and items full width; barcode along the bottom. */
+function LargeWideLabel({ view, detail, onBarcodeReady }: PartProps) {
+  return (
+    <>
+      <LargeHeader view={view} detail={detail} />
+      <div className="mt-[0.55em] flex gap-[0.6em]">
+        <DeliverTo view={view} className="min-w-0 flex-1" />
+        <div className="flex w-[35%] shrink-0 flex-col gap-[0.5em]">
+          <LargeCod view={view} amountEm={2.1} />
+          <ParcelBox view={view} detail={detail} qrEm={4.4} className="px-[0.8em]" />
+        </div>
+      </div>
+      <LargeNote order={view.order} className="mt-[0.5em]" />
+      <LargeItems view={view} detail={detail} twoColumns className="mt-[0.5em] px-[0.8em]" />
+      <div className="min-h-0 flex-1" aria-hidden />
+      <LargeBarcode view={view} heightEm={detail.slimBarcode ? 2.2 : 2.8} onReady={onBarcodeReady} className="mt-[0.45em]" />
     </>
   );
 }

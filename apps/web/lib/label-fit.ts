@@ -74,6 +74,15 @@ export function pickLayout(wMm: number, hMm: number): LabelLayout {
   return hMm / wMm >= 0.85 ? "stack" : "wide";
 }
 
+/** The 75×100 / 100×75 courier sticker (cell ≈ 71×96 either way): big enough for the large design in LabelCard — a
+ * proper header, a solid-black COD block, a "Deliver to" block and an item table — instead of the small-sticker layout
+ * blown up. Bounded on both sides so the 80×50, 3×3", 4×6" and every A4 cell keep the design the owner already prints. */
+export function isLargeSticker(wMm: number, hMm: number): boolean {
+  const short = Math.min(wMm, hMm);
+  const long = Math.max(wMm, hMm);
+  return short >= 68 && short <= 80 && long >= 88 && long <= 105;
+}
+
 export interface UnitBounds {
   /** Largest base unit worth trying — text bigger than this looks shouted, not designed. */
   max: number;
@@ -87,6 +96,14 @@ export interface UnitBounds {
 export function unitBounds(wMm: number, hMm: number): UnitBounds {
   const layout = pickLayout(wMm, hMm);
   const widthPx = wMm * PX_PER_MM;
+  if (isLargeSticker(wMm, hMm)) {
+    // The large design sets its own hierarchy (COD and name are 2-3× the body), so the body stays calm; a short order
+    // no longer grows into shouted text — the spare room becomes whitespace instead.
+    // Short orders grow into the spare room up to ≈ 12px body (measured on the print: a one-item 75×100 left a third
+    // of the sticker blank at 10.7px); long orders still shrink to fit, as before.
+    const max = Math.min(widthPx / (layout === "stack" ? 21.5 : 30), 12.5);
+    return { max, comfortable: Math.min(max, 8), min: MIN_UNIT_PX };
+  }
   const byWidth = layout === "stack" ? widthPx / 17 : Math.min(widthPx / 24, (hMm * PX_PER_MM) / 11);
   const max = Math.max(MIN_UNIT_PX, Math.min(byWidth, 20));
   return { max, comfortable: Math.min(max, 8.5), min: MIN_UNIT_PX };
