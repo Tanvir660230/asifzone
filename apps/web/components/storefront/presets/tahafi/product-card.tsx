@@ -10,8 +10,8 @@ import { Money } from "@/components/ui/money";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { availabilityOf } from "@/lib/availability-display";
 import { cn } from "@/lib/utils";
+import { splitStyleColour } from "@/lib/product-name";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
-import { getProductBadge } from "../../promo-badge";
 import { StarRating } from "../../star-rating";
 import { VariantPickerDialog } from "../../variant-picker-dialog";
 
@@ -31,9 +31,7 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
   const availability = availabilityOf(product);
   const sellableVariants = product.variants.filter((v) => availability.variants[v.id]?.sellable);
   const soldOut = !availability.inStock;
-  const totalStock = availability.sellableUnits ?? Number.POSITIVE_INFINITY;
   const shown = productDisplayPrice(product);
-  const badge = soldOut ? null : getProductBadge(product, totalStock);
   const onSale = !soldOut && shown.was !== null && Number(shown.was) > Number(shown.price);
 
   const firstInStockVariant = sellableVariants[0];
@@ -55,10 +53,12 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
     else addToCart(1);
   }
 
-  const tag = soldOut
-    ? { label: "Sold out", className: "bg-fg text-canvas" }
-    : // Only a live discount: "New Arrival" and "Limited Item" on every card read as clutter (owner, 2026-10-31).
-      badge?.tone === "sale" && { label: badge.label, className: "bg-sale-500 text-white" };
+  // Only "Sold out" sits on the photograph. A discount is told by the struck-through price under it: with the whole range
+  // on sale, the same "30% Off" on every card was noise, not news ("New Arrival"/"Limited Item" went the same way,
+  // owner 2026-10-31).
+  const tag = soldOut ? { label: "Sold out", className: "bg-fg text-canvas" } : null;
+  // "Haven Sleeveless Jacket – Light Ash": neighbours differ by the colour, so it leads; the style is the small line.
+  const { style, colour } = splitStyleColour(product.name);
 
   return (
     <div data-nav-pending-scope className="ui-press group block overflow-hidden rounded-[1.375rem] bg-surface shadow-[var(--card-frame-shadow)] transition-shadow duration-300 ease-smooth lg:hover:shadow-[var(--card-frame-shadow-hover)]">
@@ -120,7 +120,14 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
       <Link href={`/product/${product.slug}`} className="block px-3.5 pb-3.5 pt-2.5">
         <div>
           {/* Two lines kept for every name, so prices line up across a row whatever the name's length. */}
-          <h3 className="line-clamp-2 min-h-[2.75em] text-[0.9375rem] font-semibold leading-snug text-fg">{product.name}</h3>
+          {colour ? (
+            <h3 className="min-h-[2.75em] text-[0.9375rem] leading-snug text-fg">
+              <span className="block truncate font-semibold">{colour}</span>
+              <span className="block truncate text-xs text-fg-muted">{style}</span>
+            </h3>
+          ) : (
+            <h3 className="line-clamp-2 min-h-[2.75em] text-[0.9375rem] font-semibold leading-snug text-fg">{product.name}</h3>
+          )}
           <p className="mt-1 flex items-baseline gap-1.5 tabular-nums" data-testid="card-price">
             <span className={cn("text-[0.9375rem] font-bold", soldOut ? "text-fg-muted" : onSale ? "text-sale-600" : "text-fg")}>
               <Money value={shown.price} />
