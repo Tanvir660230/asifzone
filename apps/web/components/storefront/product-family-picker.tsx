@@ -3,6 +3,7 @@ import type { PublicProductFamily } from "@clothing-brand/shared";
 import { BUY } from "@/lib/buy-copy";
 import { familyTiles } from "@/lib/product-family";
 import { PHOTO_TILE_WIDTH, PhotoTileBody } from "./photo-tile";
+import { ScrollCurrentIntoView } from "./scroll-current-into-view";
 
 /**
  * A product family on the product page (docs/VARIANT_GROUPS_AND_LANDING_PAGES.md §3): the family's name, then one photo
@@ -18,7 +19,7 @@ export function ProductFamilyPicker({ family, currentProductId }: { family: Publ
       <h2 id={headingId} className="mb-2.5 text-xs ui-caps text-ink-500">
         {family.name}
       </h2>
-      <ul className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 pt-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
+      <ScrollCurrentIntoView className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 pt-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
         {tiles.map((t) => {
           const body = <PhotoTileBody imageUrl={t.imageUrl} label={t.label} selected={t.current} unavailable={t.unavailable} unavailableText={BUY.familySoldOut} />;
           return (
@@ -36,7 +37,7 @@ export function ProductFamilyPicker({ family, currentProductId }: { family: Publ
             </li>
           );
         })}
-      </ul>
+      </ScrollCurrentIntoView>
     </section>
   );
 }

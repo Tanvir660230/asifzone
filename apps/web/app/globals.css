@@ -957,6 +957,49 @@
     }
   }
 
+  /* ── Tap sizes ─────────────────────────────────────────────────────────────────────────────
+     Small controls (size chips, swatches, steppers, round icon buttons) take their size from `--tap` / `--tap-sm`. A theme
+     sets them (Tahafi: 2.75rem = 44px, the touch minimum); without them each falls back to the size the control always
+     had, so other stores keep their exact look. `.ui-tap*` sizes a square control, `.ui-tap-h*` only its height. */
+  .ui-tap {
+    width: var(--tap, 2.5rem);
+    height: var(--tap, 2.5rem);
+  }
+  .ui-tap-sm {
+    width: var(--tap-sm, 2.25rem);
+    height: var(--tap-sm, 2.25rem);
+  }
+  .ui-tap-h {
+    height: var(--tap, 2.5rem);
+  }
+  .ui-tap-h-sm {
+    height: var(--tap-sm, 2.25rem);
+  }
+  /* A floor for the height of the shop's regular buttons and form fields: a theme may lift them to the touch minimum
+     (`--tap-min`; Tahafi 44px). Shop and ad landing pages only — the admin keeps its compact controls in every store. */
+  :is([data-storefront], [data-landing]) :is(.ui-control, .ui-tap-min) {
+    min-height: var(--tap-min, 0px);
+  }
+  /* The smallest type on a page (a colour name under a photo tile, a size's measurement, a promise's second line). A theme
+     may raise it (`--fine-print-size`; Tahafi 12px); the fallback is the 11px these lines always had. */
+  .ui-fine-print {
+    font-size: var(--fine-print-size, 0.6875rem);
+  }
+  /* A bigger touch area without a bigger look: an invisible layer centred on a small control (a gallery dot, a footer link,
+     a text link), at least 44px each way. It changes no pixels, so every store has it. */
+  .ui-hit {
+    position: relative;
+  }
+  .ui-hit::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 2.75rem);
+    height: max(100%, 2.75rem);
+    transform: translate(-50%, -50%);
+  }
+
   /* ── The storefront on a phone, like an app ─────────────────────────────────────────────────
      Touch screens only. No grey flash over a tapped link, no double-tap-zoom delay on controls, the app chrome (tab bar,
      navigation bar, sheet grabbers) can't be text-selected or long-pressed into a callout, and a pressed link or button

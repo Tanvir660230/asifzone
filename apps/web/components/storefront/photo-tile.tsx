@@ -22,7 +22,7 @@ export function PhotoTileBody({ imageUrl, label, selected, unavailable, unavaila
         {imageUrl ? (
           <Image src={resolveImageUrl(imageUrl)} alt="" fill sizes="80px" className="[object-fit:var(--product-photo-fit)]" />
         ) : (
-          <span className="absolute inset-0 flex items-center justify-center px-1.5 text-center text-[11px] leading-tight text-fg-muted" aria-hidden="true" data-testid="photo-tile-placeholder">
+          <span className="absolute inset-0 flex items-center justify-center px-1.5 text-center ui-fine-print leading-tight text-fg-muted" aria-hidden="true" data-testid="photo-tile-placeholder">
             {label}
           </span>
         )}
@@ -32,7 +32,7 @@ export function PhotoTileBody({ imageUrl, label, selected, unavailable, unavaila
           </span>
         )}
       </span>
-      <span className={cn("mt-1.5 line-clamp-2 block text-[11px] leading-tight", selected ? "font-semibold text-fg" : "text-fg-muted", unavailable && "line-through")} lang="en">
+      <span className={cn("mt-1.5 line-clamp-2 block ui-fine-print leading-tight", selected ? "font-semibold text-fg" : "text-fg-muted", unavailable && "line-through")} lang="en">
         {label}
       </span>
       {unavailable && unavailableText && <span className="sr-only">, {unavailableText}</span>}

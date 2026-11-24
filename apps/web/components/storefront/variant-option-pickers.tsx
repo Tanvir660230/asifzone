@@ -12,8 +12,9 @@ import { BUY, dimensionLabel } from "@/lib/buy-copy";
 const CRITICAL_STOCK_THRESHOLD = 3;
 
 /** Which option pickers a product needs and how to resolve a (size, color) choice to a variant — shared by the inline
- * PDP selector and the "choose your options" popup so the two can never disagree. */
-export function useVariantOptions(variants: ProductVariant[], variantDimensions: VariantDimension[] = []) {
+ * PDP selector and the "choose your options" popup so the two can never disagree. `colourShownElsewhere`: the page already
+ * shows the colours another way (a product family's photo tiles), so a product with one colour draws no lone swatch. */
+export function useVariantOptions(variants: ProductVariant[], variantDimensions: VariantDimension[] = [], colourShownElsewhere = false) {
   return useMemo(() => {
     const sizeDim = variantDimensions.find((d) => d.targetField === "size");
     const colorDim = variantDimensions.find((d) => d.targetField === "color");
@@ -23,7 +24,7 @@ export function useVariantOptions(variants: ProductVariant[], variantDimensions:
     // a placeholder, not a value worth showing.
     const onlyPlaceholderSize = sizes.length === 1 && sizes[0] === NO_SIZE_VALUE;
     const showSizes = sizes.length > 0 && !onlyPlaceholderSize && (Boolean(sizeDim) || sizes.length > 1);
-    const showColors = colors.length > 0 && (Boolean(colorDim) || colors.length > 1);
+    const showColors = colors.length > 0 && (Boolean(colorDim) || colors.length > 1) && !(colourShownElsewhere && colors.length === 1);
     // When color is the only choice (no size picker), start on the first color in stock, so Buy Now works in one tap; the
     // shopper can still switch. With a size to pick as well, nothing is chosen for them.
     const firstColorInStock = variants.find((v) => v.color && v.stock > 0)?.color ?? colors[0] ?? null;
@@ -40,7 +41,7 @@ export function useVariantOptions(variants: ProductVariant[], variantDimensions:
       /** Products without any color have nothing to match on for color. */
       resolve: (size: string | null, color: string | null) => variants.find((v) => v.size === size && (colors.length === 0 || v.color === color)),
     };
-  }, [variants, variantDimensions]);
+  }, [variants, variantDimensions, colourShownElsewhere]);
 }
 
 export type VariantOptions = ReturnType<typeof useVariantOptions>;
@@ -221,10 +222,10 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   className={cn(
                     "relative isolate flex w-full items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                     segmented
-                      ? "h-10 rounded-full px-1"
+                      ? "ui-tap-h rounded-full px-1"
                       : hasSizeLabels
                         ? "h-14 flex-col gap-0.5 rounded-xl px-2"
-                        : "h-10 min-w-12 rounded-[var(--chip-radius)] px-3",
+                        : "ui-tap-h min-w-12 rounded-[var(--chip-radius)] px-3",
                     isSelected
                       ? cn("border-transparent text-cream-50", !inStock && "text-cream-50/70")
                       : segmented
@@ -246,7 +247,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   )}
                   {!inStock && <SoldOutMark className="text-danger-400" />}
                   <span className="font-medium leading-tight">{size}</span>
-                  {label && <span className={cn("text-[11px] leading-tight tabular-nums", isSelected ? "text-cream-50/70" : inStock ? "text-ink-500" : "text-ink-400")}>{label}</span>}
+                  {label && <span className={cn("ui-fine-print leading-tight tabular-nums", isSelected ? "text-cream-50/70" : inStock ? "text-ink-500" : "text-ink-400")}>{label}</span>}
                   {isSuggested && !isSelected && (
                     // A small accent dot on the pill: "the one you usually take".
                     <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-canvas" />
@@ -285,7 +286,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     aria-pressed={isSelected}
                     whileTap={!disabled ? { scale: 0.9 } : undefined}
                     className={cn(
-                      "relative flex h-9 items-center justify-center overflow-hidden rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                      "relative flex ui-tap-h-sm items-center justify-center overflow-hidden rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                       isSelected
                         ? "border-brass-400 bg-brass-50 text-ink-900 ring-2 ring-brass-200"
                         : soldOut
@@ -311,7 +312,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   animate={isSelected ? { scale: [1, 1.12, 1] } : { scale: 1 }}
                   transition={{ duration: 0.35, ease: "easeOut" }}
                   className={cn(
-                    "relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--swatch-radius)] border-2 shadow-sm transition-all duration-200 ease-smooth disabled:cursor-not-allowed",
+                    "relative flex ui-tap-sm items-center justify-center overflow-hidden rounded-[var(--swatch-radius)] border-2 shadow-sm transition-all duration-200 ease-smooth disabled:cursor-not-allowed",
                     isSelected ? "border-brass-400 ring-2 ring-brass-200" : soldOut ? "border-ink-200" : isPaleColor(colorHex) ? "border-ink-300" : "border-ink-200",
                   )}
                   style={{ backgroundColor: colorHex ?? "#d4d4d4" }}

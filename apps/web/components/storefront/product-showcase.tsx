@@ -238,6 +238,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             onVariantChange={setSelectedVariant}
             onSelectionChange={setSelection}
             pickerRequest={pickerRequest}
+            colourShownElsewhere={families.length > 0}
           />
         </div>
 
