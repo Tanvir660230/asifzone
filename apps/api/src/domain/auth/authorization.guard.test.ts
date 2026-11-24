@@ -38,6 +38,8 @@ const PUBLIC_ROUTES = [
   "POST /api/review-link/:code", // a review of a product in that delivered order only (modules/reviews/review-request.ts)
   "GET /api/order-confirm/:code", // the customer confirms their own order from the SMS link: the HMAC-signed code is the key; rate-limited
   "POST /api/order-confirm/:code", // confirm or cancel a PENDING cash-on-delivery order only (modules/orders/self-confirm.ts)
+  "POST /api/checkout-leads/capture", // incomplete orders: what a shopper typed at checkout, rate-limited; saves a lead, changes nothing else (docs/INCOMPLETE_ORDERS.md)
+  "GET /api/checkout-leads/resume/:code", // the resume link staff send: the HMAC-signed code is the key; returns that lead's bag and details only
   "POST /api/pay/:token/start", // Phase 11: readiness — booleans only (postgres / redis / outbox dispatcher)
   "GET /api/v1/ops/attention", // Phase 11: counts only; gated by requireOpsReadOrMonitorToken (ops.read or the monitor token)
   "POST /api/auth/login",

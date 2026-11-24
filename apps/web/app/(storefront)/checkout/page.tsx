@@ -46,6 +46,8 @@ import { cn } from "@/lib/utils";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
 import { sessionSet } from "@/lib/safe-storage";
+import { useLeadCapture } from "@/hooks/use-lead-capture";
+import { clearCheckoutPrefill, peekCheckoutPrefill } from "@/lib/checkout-prefill";
 import { CheckoutLines } from "@/components/storefront/checkout-lines";
 
 const checkoutFormSchema = checkoutSchema.omit({ items: true, couponCode: true });
@@ -143,6 +145,9 @@ function CheckoutForm() {
   const storeBalance = storeCreditData?.storeCredit.balance ?? 0;
   const [useStoreCredit, setUseStoreCredit] = useState(false);
 
+  // Details a resume link left (incomplete orders, docs/INCOMPLETE_ORDERS.md) — read once, on the client.
+  const [prefill] = useState(peekCheckoutPrefill);
+
   const {
     register,
     handleSubmit,
@@ -159,6 +164,9 @@ function CheckoutForm() {
       shippingDivision: "" as CheckoutFormValues["shippingDivision"],
       shippingDistrict: "",
       shippingArea: "",
+      ...(prefill ?? {}),
+      // The division follows the district (the effect below), so a prefilled district needs its division too.
+      ...(prefill?.shippingDistrict ? { shippingDivision: (BD_DIVISION_BY_DISTRICT[prefill.shippingDistrict] ?? "") as CheckoutFormValues["shippingDivision"] } : {}),
     },
   });
 
@@ -193,8 +201,29 @@ function CheckoutForm() {
     if (enabled.length === 1) setValue("paymentMethod", enabled[0]![0], { shouldValidate: false });
   }, [settingsLoaded, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
+  // A resume link from the shop (incomplete orders) brought back what the shopper typed: it seeded the form's
+  // defaults above; now it's used, drop it so a later visit starts empty.
+  useEffect(() => {
+    if (prefill) clearCheckoutPrefill();
+  }, [prefill]);
+
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
+  // Incomplete orders (docs/INCOMPLETE_ORDERS.md): once the phone is valid, the form and bag are saved so the shop can
+  // call if no order follows. A placed order closes it on the server.
+  useLeadCapture(
+    {
+      phone: watch("customerPhone"),
+      name: watch("customerName"),
+      email: watch("customerEmail"),
+      shippingDistrict,
+      shippingArea,
+      shippingAddressLine: watch("shippingAddressLine"),
+    },
+    items,
+    "CHECKOUT",
+    { enabled: mounted },
+  );
   // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
   // shopper who knows their thana but not its district can find it directly — picking one fills in
   // both fields. Once a district is set, the list narrows to just that district as before.
@@ -603,12 +632,16 @@ function CheckoutForm() {
                   placeholder="01XXXXXXXXX"
                   autoComplete="tel"
                   aria-invalid={!!errors.customerPhone}
-                  aria-describedby={errors.customerPhone ? "customerPhone-error" : undefined}
+                  aria-describedby={errors.customerPhone ? "customerPhone-error" : "customerPhone-hint"}
                   {...register("customerPhone")}
                 />
-                {errors.customerPhone && (
+                {errors.customerPhone ? (
                   <p id="customerPhone-error" className="mt-1 text-xs text-danger-600">
                     {errors.customerPhone.message}
+                  </p>
+                ) : (
+                  <p id="customerPhone-hint" className="mt-1 text-xs text-fg-muted">
+                    We keep these details for a few days so we can help if your order doesn&apos;t go through.
                   </p>
                 )}
               </div>

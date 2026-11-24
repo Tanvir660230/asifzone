@@ -26,7 +26,7 @@ export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-xs text-ink-500 underline hover:text-brass-600"
+        className="-my-2.5 inline-flex items-center gap-1 py-2.5 text-xs text-ink-500 underline hover:text-brass-600"
       >
         <Ruler size={12} /> {BUY.sizeChart}
       </button>

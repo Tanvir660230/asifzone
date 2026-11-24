@@ -647,6 +647,13 @@ const themeDefinitions = {
       "--sheet-radius": "1.75rem",
       // The floating glass dock (presets/tahafi/dock.tsx): its 3.875rem row plus the gap below it.
       "--dock-tab-bar": "4.75rem",
+      // Small controls (size chips, swatches, steppers, round icon buttons) at the 44px touch minimum (globals.css .ui-tap).
+      "--tap": "2.75rem",
+      "--tap-sm": "2.75rem",
+      // Regular buttons and form fields on shop pages at least 44px tall (globals.css .ui-tap-min, .ui-control).
+      "--tap-min": "2.75rem",
+      // The smallest type (globals.css .ui-fine-print) at 12px, never below.
+      "--fine-print-size": "0.75rem",
     },
     // Every section designed on the dark palette renders light, on white: one calm, bright page from top to bottom, the
     // grey page and the white sections clearly two grounds (not three near-identical greys).

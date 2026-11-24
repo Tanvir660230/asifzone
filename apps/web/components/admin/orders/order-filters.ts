@@ -23,6 +23,7 @@ export const ORDER_QUEUE_LABELS: Record<OrderQueueId, string> = {
   needsAction: "Needs action",
   callNow: "Call now",
   callLater: "Call later",
+  onHold: "On hold",
   confirmEscalated: "Escalated calls",
   handoverPending: "Handover pending",
   comingBack: "Coming back",

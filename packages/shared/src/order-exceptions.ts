@@ -112,6 +112,7 @@ export const OPERATIONS_STAGES: readonly OperationsStageDef[] = [
     primary: { queue: "callNow", label: "customers to call" },
     more: [
       { queue: "callLater", label: "callbacks set" },
+      { queue: "onHold", label: "on hold" },
       { queue: "confirmEscalated", label: "escalated" },
     ],
   },

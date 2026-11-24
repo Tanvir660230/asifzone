@@ -161,7 +161,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                       aria-label={label}
                       title={label}
                       className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-full border border-cream-50/15 text-cream-200 transition-[transform,background-color,border-color] duration-200 ease-smooth hover:-translate-y-0.5 hover:border-cream-50/40 active:translate-y-0",
+                        "flex ui-tap items-center justify-center rounded-full border border-cream-50/15 text-cream-200 transition-[transform,background-color,border-color] duration-200 ease-smooth hover:-translate-y-0.5 hover:border-cream-50/40 active:translate-y-0",
                         meta.hoverClass,
                       )}
                     >

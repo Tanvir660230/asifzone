@@ -1234,20 +1234,20 @@ model BundleSuggestion {
 }
 
 model Order {
-  id            String        @id @default(cuid())
-  orderNumber   String        @unique
-  customerId    String?
-  customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  id             String        @id @default(cuid())
+  orderNumber    String        @unique
+  customerId     String?
+  customer       Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   /// The Inbox conversation staff made this order from (chat to order, 2026-11-20); null for checkout and phone orders.
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  status        OrderStatus   @default(PENDING)
-  paymentMethod PaymentMethod
-  paymentStatus PaymentStatus @default(UNPAID)
+  status         OrderStatus   @default(PENDING)
+  paymentMethod  PaymentMethod
+  paymentStatus  PaymentStatus @default(UNPAID)
   /// The storefront session (see PageView.sessionId) that placed this order, if the checkout
   /// beacon fired — links revenue back to conversion rate/traffic-source/campaign analytics.
   /// Never tied to a customer account; just the anonymous client-generated session id.
-  sessionId     String?
+  sessionId      String?
 
   customerName        String
   customerEmail       String?
@@ -1468,6 +1468,20 @@ model Order {
   parcelReceipts        ParcelReceipt[]
   parcelCodeAliases     ParcelCodeAlias[]
 
+  /// Order hold (docs/ORDER_HOLD.md): the customer asked us to wait until a date. Not a status — a PENDING or CONFIRMED
+  /// order keeps its status and leaves the call queues and booking until the hold is ended. A hold longer than a day
+  /// (or a second hold) without an advance releases the order's stock so other buyers can have it; ending the hold takes
+  /// it back (refused when it was sold meanwhile). Each hold is also one OrderHold row, for the history and the report.
+  holdUntil         DateTime?
+  holdReason        String?
+  holdNote          String?
+  holdStartedAt     DateTime?
+  /// This hold gave the order's units back to stock (OrderItem.restockedQuantity); ending it re-reserves them.
+  holdStockReleased Boolean     @default(false)
+  /// Holds placed on this order so far (two at most without an owner/manager).
+  holdCount         Int         @default(0)
+  holds             OrderHold[]
+
   @@index([status])
   @@index([customerId])
   @@index([createdAt, status])
@@ -1475,6 +1489,7 @@ model Order {
   @@index([confirmationEscalatedAt])
   @@index([handedOverAt])
   @@index([receivedBackAt])
+  @@index([holdUntil])
   @@index([sessionId])
   @@index([customerEmail])
   @@index([customerPhone])
@@ -1487,6 +1502,70 @@ model Order {
   @@index([followUpAt])
   @@index([updatedAt])
   @@index([conversationId])
+}
+
+/// An incomplete order (docs/INCOMPLETE_ORDERS.md): a shopper typed a valid phone at checkout or on a landing page and
+/// left without ordering. One OPEN lead per phone (partial unique index in the migration). Never holds stock; closed after
+/// 3 days, deleted after 30 (a do-not-contact phone is kept, emptied, so it is never called again).
+model CheckoutLead {
+  id                  String    @id @default(cuid())
+  phone               String
+  name                String?
+  email               String?
+  shippingDistrict    String?
+  shippingArea        String?
+  shippingAddressLine String?
+  /// [{ variantId, quantity }] as the shopper left it.
+  items               Json
+  /// What the cart was worth when last seen (variant price, else base price) — for sorting and the report.
+  value               Decimal   @default(0) @db.Decimal(12, 2)
+  /// CHECKOUT | LANDING
+  source              String
+  landingSlug         String?
+  sessionId           String?
+  customerId          String?
+  /// OPEN | CONVERTED | CLOSED
+  status              String    @default("OPEN")
+  /// ORDERED_ONLINE | ORDERED_BY_STAFF | NOT_INTERESTED | DO_NOT_CONTACT | NO_ANSWER_LIMIT | EXPIRED
+  outcome             String?
+  /// Why a shopper said no (CHECKOUT_LEAD_REASONS).
+  reason              String?
+  /// Unanswered calls so far.
+  attempts            Int       @default(0)
+  note                String?
+  /// When staff may call next (always inside calling hours).
+  nextCallAt          DateTime
+  lastActivityAt      DateTime  @default(now())
+  orderId             String?
+  closedAt            DateTime?
+  closedById          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([phone])
+  @@index([status, nextCallAt])
+  @@index([createdAt])
+}
+
+/// One order hold (docs/ORDER_HOLD.md): why, until when, whether it released stock, and how it ended. Order.hold* mirrors
+/// the open one; this row stays for the timeline and the hold report.
+model OrderHold {
+  id            String    @id @default(cuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reason        String
+  note          String?
+  until         DateTime
+  stockReleased Boolean   @default(false)
+  startedById   String?
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  endedById     String?
+  /// RESUMED (taken off hold) | CONFIRMED | CANCELLED | TRASHED
+  outcome       String?
+
+  @@index([orderId])
+  @@index([startedAt])
 }
 
 /// One customer-confirmation call and its outcome (Order Operations phase 3). Append-only: a database trigger refuses

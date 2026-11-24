@@ -191,7 +191,7 @@ export function VariantPickerDialog({
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 hover:bg-ink-50 active:scale-90"
+                  className="flex ui-tap items-center justify-center rounded-full text-ink-700 hover:bg-ink-50 active:scale-90"
                   aria-label={BUY.decrease}
                 >
                   −
@@ -200,7 +200,7 @@ export function VariantPickerDialog({
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 hover:bg-ink-50 active:scale-90"
+                  className="flex ui-tap items-center justify-center rounded-full text-ink-700 hover:bg-ink-50 active:scale-90"
                   aria-label={BUY.increase}
                 >
                   +

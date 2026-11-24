@@ -94,7 +94,7 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
         </Link>
         {tag && (
           <span
-            className={cn("pointer-events-none absolute left-2.5 top-2.5 rounded-full px-2.5 py-1.5 text-xs font-semibold leading-none", tag.className)}
+            className={cn("pointer-events-none absolute bottom-5 left-2.5 rounded-full px-2.5 py-1.5 text-xs font-semibold leading-none", tag.className)}
             data-testid={soldOut ? "card-sold-out" : undefined}
           >
             {tag.label}
@@ -106,7 +106,7 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
             onClick={handleQuickAdd}
             aria-label={needsChoice ? `Choose a size for ${product.name}` : `Add ${product.name} to bag`}
             data-fab-collision
-            className="glass-panel absolute bottom-2.5 right-2.5 z-10 flex h-10 w-10 items-center justify-center rounded-full text-fg transition-transform duration-200 ease-smooth active:scale-95"
+            className="glass-panel ui-tap absolute bottom-2.5 right-2.5 z-10 flex items-center justify-center rounded-full text-fg transition-transform duration-200 ease-smooth active:scale-95"
           >
             <Plus size={20} strokeWidth={2} aria-hidden="true" />
           </button>
@@ -127,12 +127,15 @@ export function TahafiProductCard({ product, priority }: ProductCardProps) {
             )}
           </p>
         </div>
-        {product.reviewCount > 0 && (
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <StarRating value={product.avgRating} size={11} />
-            <span className="text-xs text-fg-subtle">({product.reviewCount})</span>
-          </div>
-        )}
+        {/* The rating line keeps its height on every card, so cards in a row end level whether or not a piece has reviews. */}
+        <div className="mt-1.5 flex h-4 items-center gap-1.5">
+          {product.reviewCount > 0 && (
+            <>
+              <StarRating value={product.avgRating} size={11} />
+              <span className="text-xs text-fg-subtle">({product.reviewCount})</span>
+            </>
+          )}
+        </div>
       </Link>
       {pickerOpen && (
         <VariantPickerDialog

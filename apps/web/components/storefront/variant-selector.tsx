@@ -46,6 +46,8 @@ interface VariantSelectorProps {
   /** Opens the "choose your options" popup from outside (the mobile sticky bar's Add to Cart / Buy Now). A new `nonce`
    * opens it again. */
   pickerRequest?: { intent: PickerIntent; nonce: number } | null;
+  /** The page shows the colours as a product family's photo tiles: a single colour then needs no swatch here. */
+  colourShownElsewhere?: boolean;
 }
 
 export function VariantSelector({
@@ -64,8 +66,9 @@ export function VariantSelector({
   onFocusImageChange,
   onSelectionChange,
   pickerRequest,
+  colourShownElsewhere = false,
 }: VariantSelectorProps) {
-  const options = useVariantOptions(variants, variantDimensions);
+  const options = useVariantOptions(variants, variantDimensions, colourShownElsewhere);
   const [selectedSize, setSelectedSize] = useState<string | null>(options.defaultSize);
   const [selectedColor, setSelectedColor] = useState<string | null>(options.defaultColor);
   const [quantity, setQuantity] = useState(1);
@@ -267,7 +270,7 @@ export function VariantSelector({
             <div className="flex items-center rounded-[var(--control-radius)] border border-ink-200 shadow-sm">
               <button
                 onClick={() => setQuantity(Math.max(1, effectiveQty - 1))}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
+                className="flex ui-tap items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
                 aria-label={BUY.decrease}
               >
                 −
@@ -275,7 +278,7 @@ export function VariantSelector({
               <span className="w-10 text-center text-sm">{effectiveQty}</span>
               <button
                 onClick={() => setQuantity(Math.min(maxQty, effectiveQty + 1))}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
+                className="flex ui-tap items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
                 aria-label={BUY.increase}
               >
                 +

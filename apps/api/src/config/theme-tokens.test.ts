@@ -12,6 +12,11 @@ const OPT_IN_TOKENS = new Set([
   "--eyebrow-weight",
   "--hero-cta-text",
   "--band-accent",
+  // Tap sizes: globals.css falls back to each control's old size when a theme leaves them unset.
+  "--tap",
+  "--tap-sm",
+  "--tap-min",
+  "--fine-print-size",
 ]);
 
 function channels(value: string): [number, number, number] {

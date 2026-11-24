@@ -29,6 +29,7 @@ import { useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { PhoneHistoryCard } from "@/components/admin/orders/phone-history";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
+import * as leadsApi from "@/lib/api/checkout-leads";
 import * as productsApi from "@/lib/api/products";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import { getQuote } from "@/lib/api/quote";
@@ -136,6 +137,36 @@ export default function NewOrderPage() {
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
   const customerPhone = watch("customerPhone");
+
+  // From an incomplete order (Orders › Incomplete › Create order): what the shopper typed and their bag fill in, once.
+  const leadId = fromChat.get("lead") ?? undefined;
+  const [leadName, setLeadName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!leadId) return;
+    let cancelled = false;
+    leadsApi
+      .getCheckoutLead(leadId)
+      .then(({ lead }) => {
+        if (cancelled) return;
+        setLeadName(lead.name ?? lead.phone);
+        if (lead.name) setValue("customerName", lead.name);
+        setValue("customerPhone", lead.phone);
+        if (lead.email) setValue("customerEmail", lead.email);
+        if (lead.shippingDistrict) setValue("shippingDistrict", lead.shippingDistrict);
+        if (lead.shippingArea) setValue("shippingArea", lead.shippingArea);
+        if (lead.shippingAddressLine) setValue("shippingAddressLine", lead.shippingAddressLine);
+        setItems(
+          lead.items
+            .filter((i) => i.available && i.maxQuantity > 0)
+            .map((i) => ({ variantId: i.variantId, productName: i.productName, size: i.size, color: i.color, maxQuantity: i.maxQuantity, quantity: Math.min(i.quantity, i.maxQuantity) })),
+        );
+      })
+      .catch(() => !cancelled && setSubmitError("Couldn't load the incomplete order — fill the order in by hand."));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
 
   // Division is derived from the chosen district rather than picked separately; the server quote resolves the
   // shipping zone from the address, exactly as for the storefront checkout.
@@ -291,6 +322,7 @@ export default function NewOrderPage() {
       // The quote staff are looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
       ...(conversationId ? { conversationId } : {}),
+      ...(leadId ? { checkoutLeadId: leadId } : {}),
       ...(staffPricing ? { freeDelivery, finalTotal: agreedValid ? agreed : undefined, pricingNote: pricingNote.trim() || null } : {}),
     };
     try {
@@ -316,6 +348,12 @@ export default function NewOrderPage() {
       {conversationId && (
         <Alert variant="info" title="From an Inbox chat" className="mb-5">
           {chatName ? `${chatName}'s` : "The"} name{chatPhone ? " and number are" : " is"} filled in. The order will be linked to the chat, and the chat will show it.
+        </Alert>
+      )}
+
+      {leadId && (
+        <Alert variant="info" title="From an incomplete order" className="mb-5">
+          {leadName ? `${leadName}'s` : "The shopper's"} details and bag are filled in — check the sizes and address with them. Saving closes the incomplete order as ordered.
         </Alert>
       )}
 

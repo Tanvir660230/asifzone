@@ -27,7 +27,7 @@ export function ShareButton({ title, className }: { title: string; className?: s
       title="Share"
       className={
         className ??
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line text-ink-700 transition-[border-color,color,transform] duration-200 ease-smooth hover:border-ink-900 hover:text-ink-900 active:scale-95"
+        "flex ui-tap shrink-0 items-center justify-center rounded-full border border-line text-ink-700 transition-[border-color,color,transform] duration-200 ease-smooth hover:border-ink-900 hover:text-ink-900 active:scale-95"
       }
     >
       <Share2 size={17} aria-hidden="true" />
