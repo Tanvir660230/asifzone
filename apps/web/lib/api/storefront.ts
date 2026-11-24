@@ -214,6 +214,7 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   legalJurisdiction: null,
   supportHours: null,
   returnWindowDays: null,
+  returnPolicyKind: "RETURN",
   returnConditions: null,
   handlingDaysMin: null,
   handlingDaysMax: null,

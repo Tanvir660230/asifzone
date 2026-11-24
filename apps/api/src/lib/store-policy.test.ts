@@ -6,12 +6,13 @@ import { policyHighlights, returnPolicySentence, shippingAndReturnsText, storePo
 /** What the 20261010100000_store_policy migration backfills into an existing store — what Asif Zone has always stated. */
 const EXISTING_STORE: PolicySettings = {
   returnWindowDays: 7,
+  returnPolicyKind: "RETURN",
   returnConditions: "Unworn items in original condition with tags attached",
   handlingDaysMin: 1,
   handlingDaysMax: 2,
   codEnabled: true,
 };
-const NEW_STORE: PolicySettings = { returnWindowDays: null, returnConditions: null, handlingDaysMin: null, handlingDaysMax: null, codEnabled: false };
+const NEW_STORE: PolicySettings = { returnWindowDays: null, returnPolicyKind: "RETURN", returnConditions: null, handlingDaysMin: null, handlingDaysMax: null, codEnabled: false };
 
 describe("store policy", () => {
   it("states exactly what the existing store's product page always said", () => {
@@ -33,6 +34,15 @@ describe("store policy", () => {
     expect(returnPolicySentence(policy)).toBeNull();
     expect(policyHighlights(policy).map((l) => l.kind)).toEqual(["delivery"]);
     expect(shippingAndReturnsText(policy)).toBe("Inside Dhaka: 1–2 days, outside Dhaka: 2–5 days.");
+  });
+
+  it("an exchange-only store promises an exchange, never a return window", () => {
+    const policy = storePolicy({ ...EXISTING_STORE, returnPolicyKind: "EXCHANGE" });
+    expect(policy.returns).toBeNull();
+    expect(policy.exchange).not.toBeNull();
+    expect(policyHighlights(policy).map((l) => l.label)).toContain("Easy size exchange");
+    expect(returnPolicySentence(policy)).toMatch(/exchanged/);
+    expect(returnPolicySentence(policy)).not.toMatch(/return/i);
   });
 
   it("follows each store's own settings — two stores, two policies, no code change", () => {

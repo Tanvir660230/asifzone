@@ -132,6 +132,8 @@ function toMeta(event: PixelEvent, ctx: PixelEventContext): [string, Record<stri
       return ["CompleteRegistration", { registration_method: event.method, status: true }];
     case "Contact":
       return ["Contact", { contact_channel: event.channel }];
+    case "Funnel":
+      return [event.step, event.params ?? {}];
   }
 }
 
@@ -143,6 +145,10 @@ export const metaPixel: PixelProvider = {
   send(event, ctx) {
     if (!ensureInitialized(ctx.customer)) return;
     const [name, params] = toMeta(event, ctx);
+    if (event.name === "Funnel") {
+      window.fbq!("trackCustom", name, params, { eventID: ctx.eventId });
+      return;
+    }
     window.fbq!("track", name, params, { eventID: ctx.eventId });
     if (event.name !== "Purchase") sendServerCopy(name, params, ctx);
   },

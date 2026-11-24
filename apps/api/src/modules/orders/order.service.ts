@@ -376,6 +376,8 @@ export async function insertOrderRecord(
         shippingDistrict: input.shippingDistrict,
         shippingArea: input.shippingArea,
         shippingAddressLine: input.shippingAddressLine,
+        // The size finder snapshot (landing pages): kept only when it describes a size actually on the order.
+        ...(input.sizeAssist && input.items.length === 1 ? { sizeAssist: input.sizeAssist as Prisma.InputJsonValue } : {}),
         notes: input.notes ?? null,
         subtotal: pricing.subtotal,
         discount: pricing.discount,

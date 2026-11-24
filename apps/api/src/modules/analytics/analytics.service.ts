@@ -148,6 +148,7 @@ export async function trackPageView(
       utmSource: input.utmSource ?? null,
       utmMedium: input.utmMedium ?? null,
       utmCampaign: input.utmCampaign ?? null,
+      utmContent: input.utmContent ?? null,
       userAgent,
       isLoggedIn,
       language: primaryLanguage(acceptLanguage),

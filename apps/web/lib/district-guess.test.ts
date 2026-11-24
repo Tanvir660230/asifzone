@@ -70,3 +70,21 @@ describe("checkout without district or thana", () => {
     expect(dhaka.ok && dhaka.zoneKey).toBe("dhaka-district");
   });
 });
+
+describe("size finder snapshot on a checkout", () => {
+  it("is optional, and kept with what was recommended and what was ordered", async () => {
+    const { sizeAssistSchema } = await import("@clothing-brand/shared");
+    const base = {
+      items: [{ variantId: "cm1234567890abcdefghijklm", quantity: 1 }],
+      customerName: "Rahim",
+      customerPhone: "01712345678",
+      shippingAddressLine: "Mirpur 10, Dhaka",
+      paymentMethod: "COD",
+    };
+    expect(checkoutSchema.safeParse(base).success).toBe(true);
+    const assist = { heightIn: 68, weightKg: 72, recommended: "XL", chosen: "L", accepted: false };
+    const parsed = checkoutSchema.safeParse({ ...base, sizeAssist: assist });
+    expect(parsed.success && parsed.data.sizeAssist).toMatchObject({ ...assist, heightUnit: "ft-in", weightUnit: "kg" });
+    expect(sizeAssistSchema.safeParse({ ...assist, heightIn: 20 }).success).toBe(false);
+  });
+});

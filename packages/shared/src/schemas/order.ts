@@ -49,6 +49,24 @@ export const checkoutItemSchema = z.object({
   quantity: z.number().int().min(1).max(20),
 });
 
+/** The size finder as the shopper used it (landing page, 2026-11-24): their answers, what it recommended and the size
+ * they ordered. Saved on the order as a snapshot, so a later order never overwrites earlier measurements. */
+export const sizeAssistSchema = z.object({
+  heightIn: z.number().int().min(48).max(96),
+  weightKg: z.number().min(20).max(250),
+  chestIn: z.number().min(20).max(70).nullable().optional(),
+  usualSize: z.string().trim().max(12).nullable().optional(),
+  overLayer: z.boolean().optional(),
+  heightUnit: z.literal("ft-in").default("ft-in"),
+  weightUnit: z.literal("kg").default("kg"),
+  /** What the finder recommended. */
+  recommended: z.string().trim().min(1).max(12),
+  /** The size on the order; differs from recommended when the shopper picked another one after using the finder. */
+  chosen: z.string().trim().min(1).max(12),
+  accepted: z.boolean(),
+});
+export type SizeAssist = z.infer<typeof sizeAssistSchema>;
+
 // The checkout form shows these messages to shoppers as they are, so each one says what to do. Name and address are
 // trimmed first, so a field of only spaces counts as empty.
 export const checkoutSchema = z.object({
@@ -74,6 +92,8 @@ export const checkoutSchema = z.object({
   /** Pay as much as possible from the signed-in customer's store balance. A choice, never an amount: the server
    * applies min(balance, total) under a lock. Ignored for guests (docs/ORDER_ADJUSTMENTS.md §6). */
   useStoreCredit: z.boolean().optional(),
+  /** The size finder's answers and result, when the shopper used it (landing pages). */
+  sizeAssist: sizeAssistSchema.optional(),
 });
 
 /** The canonical quote request (POST /api/v1/checkout/quote): what to price, never a price. Address fields are

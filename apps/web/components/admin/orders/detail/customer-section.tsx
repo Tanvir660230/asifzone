@@ -47,7 +47,7 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
   }, [order.id]);
 
   const blocker = customerDetailsEditBlocker(order);
-  const fullAddress = `${order.shippingAddressLine}, ${order.shippingArea}, ${order.shippingDistrict}, ${order.shippingDivision}`;
+  const fullAddress = [order.shippingAddressLine, order.shippingArea, order.shippingDistrict, order.shippingDivision].filter(Boolean).join(", ");
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${fullAddress}, Bangladesh`)}`;
 
   function startEdit() {
@@ -157,10 +157,15 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
             <address className="text-sm not-italic leading-relaxed text-ink-700">
               {order.shippingAddressLine}
               <br />
-              {order.shippingArea}, {order.shippingDistrict}
-              <br />
-              {order.shippingDivision}
+              {[order.shippingArea, order.shippingDistrict].filter(Boolean).join(", ") || <span className="text-warning-700">No district yet — confirm it on the call</span>}
+              {order.shippingDivision && (
+                <>
+                  <br />
+                  {order.shippingDivision}
+                </>
+              )}
             </address>
+            {order.sizeAssist && <SizeAssistLine assist={order.sizeAssist} />}
             <div className="flex flex-wrap items-center gap-1.5">
               <Button variant="outline" size="sm" onClick={() => copyToClipboard(fullAddress, "Address copied")}>
                 <Copy size={13} /> Copy address
@@ -180,5 +185,17 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
         </div>
       )}
     </DetailSection>
+  );
+}
+
+/** What the shopper told the size finder and what they ordered — the confirmation call can check the size against it. */
+function SizeAssistLine({ assist }: { assist: NonNullable<Order["sizeAssist"]> }) {
+  const height = `${Math.floor(assist.heightIn / 12)}'${assist.heightIn % 12}"`;
+  const extra = [assist.chestIn ? `chest ${assist.chestIn}″` : null, assist.usualSize ? `wears ${assist.usualSize} elsewhere` : null, assist.overLayer ? "over a panjabi" : null].filter(Boolean).join(" · ");
+  return (
+    <p className="rounded-lg bg-ink-900/[0.04] px-3 py-2 text-xs text-ink-700" data-testid="order-size-assist">
+      <span className="font-medium text-ink-900">Size finder:</span> {height}, {assist.weightKg} kg{extra ? ` · ${extra}` : ""} → suggested {assist.recommended}
+      {assist.accepted ? ", ordered it" : `, ordered ${assist.chosen} instead`}
+    </p>
   );
 }

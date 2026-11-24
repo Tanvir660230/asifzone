@@ -141,9 +141,9 @@ async function AutomaticLandingView({ product }: { product: Product }) {
 
             <section id="order" className="-mx-4 mt-6 scroll-mt-16 bg-surface px-4 py-6 shadow-float sm:mx-0 sm:rounded-2xl sm:p-6" aria-labelledby="order-title">
               <h2 id="order-title" className="text-xl font-bold text-fg">
-                এখনই অর্ডার করুন
+                আপনার অর্ডারটি সম্পন্ন করুন
               </h2>
-              <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">নাম, মোবাইল নম্বর ও ঠিকানা দিন। আমাদের প্রতিনিধি ফোন করে অর্ডারটি নিশ্চিত করবেন।</p>
+              <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">নিচের তথ্যগুলো দিন, আমরা ফোন করে আপনার অর্ডারটি কনফার্ম করব।</p>
               <LandingOrderForm codEnabled={settings.codEnabled} />
             </section>
 
