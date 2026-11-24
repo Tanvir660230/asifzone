@@ -243,8 +243,8 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         </div>
 
         {orderHelp?.whatsappUrl && (
-          <div className="mt-3">
-            <WhatsAppOrderButton whatsappUrl={orderHelp.whatsappUrl} productName={product.name} options={whatsappOptions} />
+          <div className={tagged ? "mt-1" : "mt-3"}>
+            <WhatsAppOrderButton whatsappUrl={orderHelp.whatsappUrl} productName={product.name} options={whatsappOptions} look={tagged ? "link" : "button"} />
           </div>
         )}
 

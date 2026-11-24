@@ -99,7 +99,7 @@ test("product page: no size nag before a tap, no quantity stepper", async ({ pag
   // Without a size, the options sheet asks for one.
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("radio", { name: "L", exact: true }).first().click();
+  await page.getByRole("group", { name: "Size" }).first().getByRole("button", { name: "L", exact: true }).click();
   await expect(page.getByRole("button", { name: "Increase quantity" })).toHaveCount(0);
 });
 
@@ -107,7 +107,8 @@ test("a product with few reviews shows no five-bar chart", async ({ page }) => {
   await declineTracking(page);
   await page.goto(ONE_REVIEW_PDP, { waitUntil: "networkidle" });
   await page.locator("#reviews").scrollIntoViewIfNeeded();
-  await expect(page.locator("#reviews").getByText(/review/).first()).toBeVisible();
+  // The reviews have loaded (the summary, not the "No reviews yet" line), and still no bars.
+  await expect(page.locator("#reviews").getByText(/^Based on \d+ reviews?$/)).toBeVisible();
   await expect(page.locator("#reviews").getByText("4 star")).toHaveCount(0);
 });
 
