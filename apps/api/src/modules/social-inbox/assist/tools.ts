@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { BD_DELIVERY_TIME_TEXT, normalizeBdPhone } from "@clothing-brand/shared";
+import { BD_DELIVERY_TIME_TEXT, normalizeBdPhone, sellsPastShelf } from "@clothing-brand/shared";
 import { prisma } from "../../../config/prisma";
 import { env } from "../../../config/env";
 import { priceProductsForDisplay } from "../../../domain/pricing/pricing.service";
+import { applyCapacity, fillCapacity } from "../../../domain/stock/fill-capacity.service";
 import { suggestSearch } from "../../products/product.service";
 import { getSettings } from "../../settings/settings.service";
 
@@ -47,6 +48,9 @@ async function findProducts(input: unknown): Promise<ToolOutcome> {
       basePrice: true,
       compareAtPrice: true,
       markedSoldOut: true,
+      trackInventory: true,
+      fillToOrder: true,
+      stockPolicy: true,
       variants: {
         where: { isActive: true },
         orderBy: { sortOrder: "asc" },
@@ -55,6 +59,10 @@ async function findProducts(input: unknown): Promise<ToolOutcome> {
     },
   });
   const pricing = await priceProductsForDisplay(rows);
+  // Stock as the shop sells it: made to order / bought to order (UNLIMITED, BACKORDER) sell past a shelf of 0, and an
+  // untracked product never runs out — the same rule the product page uses, so the AI never says "sold out" for them.
+  const pastShelf = rows.filter((p) => sellsPastShelf(p));
+  const made = pastShelf.length ? await fillCapacity(prisma, { variantIds: pastShelf.flatMap((p) => p.variants.map((v) => v.id)), cached: true }) : null;
   const order = new Map(hits.map((h, i) => [h.id, i]));
   const products = rows
     .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
@@ -66,14 +74,14 @@ async function findProducts(input: unknown): Promise<ToolOutcome> {
         price: price ? (price.from === price.to ? price.from : { from: price.from, to: price.to }) : Number(p.basePrice),
         regularPrice: price?.compareAt ?? null,
         flashSale: Boolean(price?.flash),
-        options: p.variants.map((v) => {
-          const available = !p.markedSoldOut && !v.markedSoldOut && v.stock > 0;
+        options: (made && sellsPastShelf(p) ? applyCapacity(made, p.variants) : p.variants).map((v) => {
+          const available = !p.markedSoldOut && !v.markedSoldOut && (!p.trackInventory || v.stock > 0);
           return {
             size: v.sizeLabel || v.size,
             ...(v.color ? { color: v.color } : {}),
             price: price?.variants[v.id]?.selling ?? null,
             inStock: available,
-            ...(available && v.stock <= LOW_STOCK ? { fewLeft: true } : {}),
+            ...(available && p.trackInventory && v.stock <= LOW_STOCK ? { fewLeft: true } : {}),
           };
         }),
       };
