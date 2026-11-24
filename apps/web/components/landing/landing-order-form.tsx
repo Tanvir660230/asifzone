@@ -35,6 +35,7 @@ import type { FitAnswers } from "@/lib/fit-memory";
 import { colorImage, useLandingSelection } from "./landing-selection";
 import { PHOTO_TILE_WIDTH, PhotoTileBody } from "@/components/storefront/photo-tile";
 import { useQuote } from "@/hooks/use-quote";
+import { getQuote } from "@/lib/api/quote";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { createOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
@@ -224,6 +225,29 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     if (!variant) return setPickerOpen(true);
     if (soldOut) return;
     const at = checkoutDistrict(values);
+    // The quote on screen follows the address after a pause in typing; an order sent inside that pause (a fast tap,
+    // phone autofill) would carry a district the shown quote wasn't priced for, and the server would refuse it as
+    // QUOTE_CHANGED. Price the address being sent now instead: go ahead when the total is no higher than what the
+    // shopper saw, otherwise show the new total first.
+    let quoteToken = quote?.token;
+    if (at.district !== place.district || at.division !== place.division || !quote || quoting) {
+      const request: QuoteRequestInput = {
+        items: [{ variantId: variant.id, quantity: qty }],
+        shippingDivision: at.division || undefined,
+        shippingDistrict: at.district || undefined,
+        unknownUsesDefault: true,
+      };
+      try {
+        const fresh = await queryClient.fetchQuery({ queryKey: ["quote", request], queryFn: async () => (await getQuote(request)).quote, staleTime: 15_000 });
+        if (quotedTotal !== null && Number(fresh.total) > quotedTotal) {
+          setSubmitError("ঠিকানা অনুযায়ী ডেলিভারি চার্জ বদলেছে। নতুন মোট দেখে আবার অর্ডার করুন।");
+          return;
+        }
+        quoteToken = fresh.token;
+      } catch {
+        // Couldn't re-price: send with the quote on screen; the server still refuses a stale one with the new total.
+      }
+    }
     const payload: CheckoutInput = {
       items: [{ variantId: variant.id, quantity: qty }],
       customerName: values.customerName,
@@ -236,7 +260,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       paymentMethod: "COD",
       notes: null,
       sessionId: getSessionId() || undefined,
-      quoteToken: quote?.token,
+      quoteToken,
       sizeAssist: assist && variant.size && variant.size !== NO_SIZE_VALUE ? sizeAssistFor(assist, variant.size) : undefined,
     };
     try {
