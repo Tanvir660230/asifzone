@@ -1,3 +1,4 @@
+import type { FitProfile } from "@clothing-brand/shared";
 import type {
   ResolvedSection,
   SectionOverrideInput,
@@ -66,6 +67,8 @@ export interface SizeGuideRow {
   notes: string | null;
   columns: string[];
   rows: string[][];
+  /** "Find my size" rules, or null. */
+  fit: FitProfile | null;
   isArchived: boolean;
   templateCount: number;
 }

@@ -12,7 +12,10 @@ export function buildSizeGuideView(
   if (!config || config.sizeGuide.mode === "NOT_APPLICABLE") return { show: false, chart: null };
   const saved = attributes.sizeGuide;
   if (saved && typeof saved === "object") {
-    return { show: (saved as SizeGuideData).enabled === true, chart: saved as SizeGuideData };
+    // A product's own chart keeps the type preset's "Find my size" rules unless it brings its own.
+    const own = saved as SizeGuideData;
+    const fit = own.fit ?? config.sizeGuide.chart?.fit;
+    return { show: own.enabled === true, chart: fit ? { ...own, fit } : own };
   }
   return { show: config.sizeGuide.mode === "ON_BY_DEFAULT", chart: config.sizeGuide.chart ?? DEFAULT_SIZE_GUIDE };
 }

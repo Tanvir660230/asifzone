@@ -1,3 +1,5 @@
+import type { FitProfile } from "../size-finder";
+
 /** The original hard-coded product types. They are now seeded into the `ProductTypeDef` table (see the
  * catalog migration) and are only kept here as the seed's source of truth and as a last-resort fallback
  * for a product whose type can't be resolved. New types are created in the admin, not here. */
@@ -48,6 +50,8 @@ export interface SizeGuideData {
   rows: string[][];
   /** Free-text instructions shown under the table ("Measure over the chest…"). */
   notes?: string;
+  /** "Find my size" rules (size-finder.ts). Absent = the product page offers only the chart. */
+  fit?: FitProfile;
 }
 
 /** Generic apparel chart. Shown for size-guide-enabled types until an admin saves their own, so the

@@ -17,6 +17,8 @@ import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { FitProfileEditor } from "@/components/admin/fit-profile-editor";
+import type { FitProfile } from "@clothing-brand/shared";
 
 interface Draft {
   name: string;
@@ -25,9 +27,10 @@ interface Draft {
   notes: string;
   columns: string[];
   rows: string[][];
+  fit: FitProfile | null;
 }
 
-const NEW_DRAFT: Draft = { name: "", description: "", unit: "", notes: "", columns: ["Size", "Measurement"], rows: [["S", ""], ["M", ""], ["L", ""]] };
+const NEW_DRAFT: Draft = { name: "", description: "", unit: "", notes: "", columns: ["Size", "Measurement"], rows: [["S", ""], ["M", ""], ["L", ""]], fit: null };
 
 function ChartTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   return (
@@ -77,7 +80,7 @@ export default function SizeGuidesPage() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const input = { name: draft.name, description: draft.description, unit: draft.unit, notes: draft.notes, columns: draft.columns, rows: draft.rows };
+      const input = { name: draft.name, description: draft.description, unit: draft.unit, notes: draft.notes, columns: draft.columns, rows: draft.rows, fit: draft.fit };
       return editing && editing !== "new" ? catalogApi.updateSizeGuide(editing.id, input) : catalogApi.createSizeGuide(input);
     },
     onSuccess: () => {
@@ -101,6 +104,7 @@ export default function SizeGuidesPage() {
             notes: target.notes ?? "",
             columns: [...target.columns],
             rows: target.rows.map((r) => [...r]),
+            fit: target.fit ?? null,
           },
     );
   }
@@ -153,7 +157,7 @@ export default function SizeGuidesPage() {
                 </h3>
                 <p className="text-xs text-ink-400">
                   {g.unit ? `${g.unit} · ` : ""}
-                  {g.rows.length} rows · used by {g.templateCount} template{g.templateCount === 1 ? "" : "s"}
+                  {g.rows.length} rows{g.fit?.enabled ? " · Find my size on" : ""} · used by {g.templateCount} template{g.templateCount === 1 ? "" : "s"}
                 </p>
               </div>
               {canManage && (
@@ -266,6 +270,8 @@ export default function SizeGuidesPage() {
             <Label htmlFor="sg-notes">Notes shown under the chart</Label>
             <Textarea id="sg-notes" rows={2} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="e.g. Measure around the widest part of your head…" />
           </div>
+
+          <FitProfileEditor value={draft.fit} onChange={(fit) => setDraft((d) => ({ ...d, fit }))} chartSizes={draft.rows.map((r) => r[0] ?? "")} />
 
           <div>
             <Label>Preview (as customers see it)</Label>

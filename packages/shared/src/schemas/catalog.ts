@@ -1,3 +1,4 @@
+import { fitProfileSchema } from "../size-finder";
 import { z } from "zod";
 import { blankToNull, nullableString, slugSchema } from "./common";
 import { skuCodeSchema } from "../sku";
@@ -106,6 +107,7 @@ export const sizeGuidePresetSchema = z
     description: nullableString(300),
     unit: nullableString(40),
     notes: nullableString(500),
+    fit: fitProfileSchema.nullable().optional(),
   })
   .and(sizeGuideTableSchema);
 

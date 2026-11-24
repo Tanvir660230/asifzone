@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { isAvailable, maxSellableQuantity, type Product, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
+import { formatHeight, isAvailable, maxSellableQuantity, recommendSize, type Product, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
+import { readFitAnswers, type FitAnswers } from "@/lib/fit-memory";
+import { SizeFinder } from "./size-finder";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { trackFunnelEvent } from "@/lib/analytics";
@@ -76,6 +78,26 @@ export function VariantSelector({
     const sellable = (size: string) => variants.some((v) => v.size === size && isAvailable(product.trackInventory, v.stock));
     setSuggestedSize(suggestSize(readSizeMemory(), options.sizes, sellable));
   }, [options, variants, product.trackInventory]);
+  // "Find my size": answers given on any product pick the size here too (when it is made and can be bought).
+  const fit = sizeGuide?.fit?.enabled ? sizeGuide.fit : null;
+  const sizeSellable = (size: string) => variants.some((v) => v.size === size && isAvailable(product.trackInventory, v.stock));
+  const [fitPick, setFitPick] = useState<{ size: string; answers: FitAnswers } | null>(null);
+  const [finderRequest, setFinderRequest] = useState(0);
+  useEffect(() => {
+    if (!fit || !options.showSizes || options.defaultSize) return;
+    const answers = readFitAnswers();
+    if (!answers) return;
+    const r = recommendSize(fit, answers);
+    if (r.status !== "ok" || !options.sizes.includes(r.size) || !sizeSellable(r.size)) return;
+    setSelectedSize(r.size);
+    setFitPick({ size: r.size, answers });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fit, options]);
+  const pickFromFinder = (size: string) => {
+    setSelectedSize(size);
+    const answers = readFitAnswers();
+    setFitPick(answers ? { size, answers } : null);
+  };
   const remember = (variant: ProductVariant | undefined) => {
     if (options.showSizes) recordSize(variant?.size);
   };
@@ -162,8 +184,27 @@ export function VariantSelector({
         suggestedSize={suggestedSize}
         soldOutSelectable
         lowStockThreshold={lowStockThreshold}
-        sizeHeadingExtra={showSizeGuide ? <SizeGuideModal sizeGuide={sizeGuide} /> : undefined}
+        sizeHeadingExtra={
+          fit || showSizeGuide ? (
+            <span className="flex items-center gap-4">
+              {fit && <SizeFinder fit={fit} chart={sizeGuide} offered={options.sizes} sellable={sizeSellable} onSelect={pickFromFinder} openRequest={finderRequest} />}
+              {showSizeGuide && <SizeGuideModal sizeGuide={sizeGuide} />}
+            </span>
+          ) : undefined
+        }
       />
+
+      {fitPick && selectedSize === fitPick.size && (
+        <p className="-mt-2 flex items-center gap-2 text-sm text-ink-600" data-testid="size-finder-picked">
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-accent" />
+          <span>
+            {fitPick.size} picked for you · {formatHeight(fitPick.answers.heightIn)}, {fitPick.answers.weightKg} kg{" "}
+            <button type="button" onClick={() => setFinderRequest((n) => n + 1)} className="font-medium text-ink-900 underline underline-offset-2 hover:text-accent">
+              Change
+            </button>
+          </span>
+        </p>
+      )}
 
       <div>
         <AnimatePresence mode="wait">
