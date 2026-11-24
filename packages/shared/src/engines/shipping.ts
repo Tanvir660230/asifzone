@@ -25,6 +25,9 @@ export interface ShippingAddress {
   district?: string | null;
   division?: string | null;
   postcode?: string | null;
+  /** The shopper skipped district and thana (they are optional on the storefront): use the default zone instead of
+   * asking for an address. Staff complete the address on the confirmation call. */
+  unknownUsesDefault?: boolean;
 }
 
 export type ShippingResult =
@@ -84,7 +87,7 @@ export function resolveShipping(
   merchandiseAfterDiscounts: Money,
   opts: { couponFreeShipping: boolean; allLinesFreeDelivery?: boolean },
 ): ShippingResult {
-  if (!address || (!norm(address.district) && !norm(address.division) && !norm(address.postcode))) return { ok: false, reason: "ADDRESS_REQUIRED" };
+  if (!address || (!norm(address.district) && !norm(address.division) && !norm(address.postcode) && !address.unknownUsesDefault)) return { ok: false, reason: "ADDRESS_REQUIRED" };
   const zone = resolveZone(zones, address);
   if (!zone) return { ok: false, reason: "NO_ZONE" };
   const freeOver = zone.freeOverAmount !== null && merchandiseAfterDiscounts.amount >= zone.freeOverAmount.amount;

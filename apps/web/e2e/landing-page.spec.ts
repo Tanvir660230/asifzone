@@ -51,7 +51,10 @@ test.describe("product landing page", () => {
     await page.getByTestId("landing-submit").click();
     await expect(page.getByText("আপনার নাম লিখুন")).toBeVisible();
     await expect(page.getByText(/সঠিক মোবাইল নম্বর দিন/)).toBeVisible();
-    await expect(page.locator("#lp-district-error")).toHaveText("আপনার জেলা বেছে নিন");
+    // District and thana are optional (2026-11-24): only the address is asked for.
+    await expect(page.getByText(/বাসা, রোড ও এলাকার নাম লিখুন/)).toBeVisible();
+    await expect(page.locator("#lp-district-error")).toHaveCount(0);
+    await expect(page.locator("#lp-area-error")).toHaveCount(0);
   });
 
   test("a shopper orders Cash on Delivery from the page: total with delivery, confirmation, stock drops", async ({ page }) => {
@@ -65,9 +68,9 @@ test.describe("product landing page", () => {
 
     await page.getByLabel("আপনার নাম", { exact: true }).fill("Landing Tester");
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345680");
-    await page.getByLabel("জেলা", { exact: true }).fill("Dhaka");
+    await page.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
     await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("থানা / এলাকা", { exact: true }).fill("Dhanmondi");
+    await page.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
     await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
     await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
     // The delivery charge and total come from the server quote once the district is known.
@@ -78,6 +81,24 @@ test.describe("product landing page", () => {
     await expect(page.getByText(product.name).first()).toBeVisible();
 
     if (product.trackInventory) expect(await stockOf(product.slug, variant.id)).toBe(before - 1);
+    expect(errors).toEqual([]);
+  });
+
+  test("orders with only a written address: no district or thana, the district is read from the address", async ({ page }) => {
+    const errors = trackPageErrors(page);
+    const { product, variant } = await stockedProduct();
+
+    await page.goto(`/lp/${product.slug}`);
+    if (new Set(product.variants.map((v) => v.size)).size > 1) await page.getByRole("button", { name: variant.size, exact: true }).first().click();
+    if (new Set(product.variants.map((v) => v.color)).size > 1) await page.getByRole("button", { name: variant.color, exact: true }).first().click();
+
+    await page.getByLabel("আপনার নাম", { exact: true }).fill("No District Tester");
+    await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345682");
+    await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("বাসা ৫, মিরপুর ১০, ঢাকা (automated test order)");
+    await expect(page.getByTestId("landing-total")).toHaveText(/\d/);
+
+    await page.getByTestId("landing-submit").click();
+    await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
     expect(errors).toEqual([]);
   });
 
@@ -92,9 +113,9 @@ test.describe("product landing page", () => {
     await page.goto(`/lp/${product!.slug}`);
     await page.getByLabel("আপনার নাম", { exact: true }).fill("Popup Tester");
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345681");
-    await page.getByLabel("জেলা", { exact: true }).fill("Dhaka");
+    await page.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
     await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("থানা / এলাকা", { exact: true }).fill("Dhanmondi");
+    await page.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
     await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
     await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
 

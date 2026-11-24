@@ -212,6 +212,9 @@ function send(event: PixelEvent, ctx: PixelEventContext): void {
       return trackTikTokEvent("CompleteRegistration", {}, ctx.eventId);
     case "Contact":
       return trackTikTokEvent("Contact", {}, ctx.eventId);
+    case "Funnel":
+      // Meta only: TikTok has no matching standard events and custom ones aren't optimised on.
+      return;
   }
 }
 

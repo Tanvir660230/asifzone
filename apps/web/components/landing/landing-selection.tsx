@@ -13,6 +13,11 @@ interface LandingSelection {
   setColor: (color: string | null) => void;
   /** Some variant matching this (size, colour) can be bought now — null means "any". */
   sellable: (size: string | null, color: string | null) => boolean;
+  quantity: number;
+  setQuantity: (quantity: number) => void;
+  /** The order total as the server quoted it (with delivery), once the form has one — the sticky bar shows it. */
+  quotedTotal: number | null;
+  setQuotedTotal: (total: number | null) => void;
 }
 
 const Ctx = createContext<LandingSelection | null>(null);
@@ -54,7 +59,12 @@ export function LandingSelectionProvider({
   const [size, setSize] = useState<string | null>(pageSize ?? options.defaultSize ?? (options.showSizes ? onlySellable(options.sizes, (s) => sellable(s, null)) : null));
   const [color, setColor] = useState<string | null>(pageColor ?? options.defaultColor ?? (options.showColors ? onlySellable(options.colors, (c) => sellable(null, c)) : null));
 
-  return <Ctx.Provider value={{ product, options, size, color, setSize, setColor, sellable }}>{children}</Ctx.Provider>;
+  const [quantity, setQuantity] = useState(1);
+  const [quotedTotal, setQuotedTotal] = useState<number | null>(null);
+
+  return (
+    <Ctx.Provider value={{ product, options, size, color, setSize, setColor, sellable, quantity, setQuantity, quotedTotal, setQuotedTotal }}>{children}</Ctx.Provider>
+  );
 }
 
 export function useLandingSelection(): LandingSelection {

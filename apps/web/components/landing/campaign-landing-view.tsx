@@ -19,7 +19,7 @@ import { TrackProductView } from "@/components/storefront/track-product-view";
 import { getActiveSocialLinksSafe, getProductBySlug, getSiteSettings } from "@/lib/api/storefront";
 import { formatPrice } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
-import { bn, bnRange, landingPromises, standardLandingFaqs } from "@/lib/landing-content";
+import { bn, bnRange, EXCHANGE_SHORT, landingPromises, standardLandingFaqs } from "@/lib/landing-content";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { buildOpenGraph, productSeoFields, storeTitle } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -286,7 +286,11 @@ function SectionBlock({ section: s, ctx }: { section: LandingSection; ctx: Secti
         { label: "ঢাকার ভেতরে", value: `${ctx.money(settings.shippingFeeDhaka)} · ${bnRange(insideDhaka)} দিন` },
         { label: "ঢাকার বাইরে", value: `${ctx.money(settings.shippingFeeOutsideDhaka)} · ${bnRange(outsideDhaka)} দিন` },
         { label: "পেমেন্ট", value: "ক্যাশ অন ডেলিভারি — পণ্য হাতে পেয়ে দাম দিন" },
-        ...(policy.returns ? [{ label: "রিটার্ন", value: `ডেলিভারির ${bn(policy.returns.days)} দিনের মধ্যে` }] : []),
+        ...(policy.returns
+          ? [{ label: "রিটার্ন", value: `ডেলিভারির ${bn(policy.returns.days)} দিনের মধ্যে` }]
+          : policy.exchange
+            ? [{ label: "এক্সচেঞ্জ", value: EXCHANGE_SHORT }]
+            : []),
       ];
       return (
         <Band section={s}>

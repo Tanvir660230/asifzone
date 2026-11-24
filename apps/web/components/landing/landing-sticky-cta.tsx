@@ -16,14 +16,16 @@ import { colorImage, useLandingSelection } from "./landing-selection";
  * chosen colour's photo, the chosen variant's price, and what is chosen so far.
  */
 export function LandingStickyCta({ price: pagePrice, was: pageWas, imageUrl: pageImage }: { price: string; was: string | null; imageUrl: string | null }) {
-  const { product, options, size, color } = useLandingSelection();
+  const { product, options, size, color, quantity, quotedTotal } = useLandingSelection();
   const variant = options.resolve(size, color);
   const chosen = variant ? variantDisplayPrice(product, variant.id) : null;
-  const price = chosen ? formatPrice(chosen.price) : pagePrice;
-  const was = chosen ? (chosen.was !== null && Number(chosen.was) > Number(chosen.price) ? formatPrice(chosen.was) : null) : pageWas;
+  // With a quantity or a delivery-inclusive quote, the bar shows the total the form shows; otherwise the unit price.
+  const qty = Math.max(1, quantity);
+  const price = quotedTotal !== null ? formatPrice(quotedTotal) : chosen ? formatPrice(Number(chosen.price) * qty) : pagePrice;
+  const was = quotedTotal !== null || qty > 1 ? null : chosen ? (chosen.was !== null && Number(chosen.was) > Number(chosen.price) ? formatPrice(chosen.was) : null) : pageWas;
   const photo = color ? colorImage(product, color) : null;
   const imageUrl = photo ? resolveImageUrl(photo.url) : pageImage;
-  const picked = [color, size && size !== NO_SIZE_VALUE ? size : null].filter(Boolean).join(" · ");
+  const picked = [color, size && size !== NO_SIZE_VALUE ? size : null, qty > 1 ? `× ${qty}` : null].filter(Boolean).join(" · ");
   const [pastPrice, setPastPrice] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
 
@@ -63,6 +65,7 @@ export function LandingStickyCta({ price: pagePrice, was: pageWas, imageUrl: pag
           </span>
         )}
         <div className="min-w-0 leading-tight">
+          {quotedTotal !== null && <p className="text-xs text-fg-muted">ডেলিভারিসহ মোট</p>}
           <p className="text-lg font-bold tabular-nums text-fg">
             {price}
             {was && <span className="ml-1.5 text-xs font-normal text-fg-muted line-through">{was}</span>}

@@ -70,9 +70,9 @@ test("build, publish and order from a campaign landing page", async ({ page, bro
   if (new Set(product.variants.map((v) => v.color)).size > 1) await shopper.locator("#order").getByRole("button", { name: variant.color, exact: true }).first().click();
   await shopper.getByLabel("আপনার নাম", { exact: true }).fill("Campaign Tester");
   await shopper.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345681");
-  await shopper.getByLabel("জেলা", { exact: true }).fill("Dhaka");
+  await shopper.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
   await shopper.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-  await shopper.getByLabel("থানা / এলাকা", { exact: true }).fill("Dhanmondi");
+  await shopper.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
   await shopper.getByRole("option", { name: /Dhanmondi/ }).first().click();
   await shopper.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
   await expect(shopper.getByTestId("landing-total")).toHaveText(/\d/);

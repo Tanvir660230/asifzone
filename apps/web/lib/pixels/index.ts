@@ -7,7 +7,7 @@ import { pixelDebug } from "./debug";
 import { cartSignature, firedJustNow, firstTime, newEventId } from "./guards";
 import { metaPixel } from "./meta";
 import { tiktokPixel } from "./tiktok";
-import type { ContactChannel, PixelCustomer, PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
+import type { ContactChannel, FunnelStep, PixelCustomer, PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
 
 /** The storefront's one ad-tracking layer. Components call the typed pixel* functions below — never `fbq`/`ttq` — and
  * every business event fans out to each configured platform (Meta, TikTok) with ONE decision about whether it fires and
@@ -18,7 +18,7 @@ import type { ContactChannel, PixelCustomer, PixelEvent, PixelEventContext, Pixe
  * Tracking is strictly best-effort: every call is synchronous, never throws and never awaits, so a blocked script, an
  * ad blocker or a provider bug can't break add-to-cart, checkout or the confirmation page. */
 
-export type { PixelLineItem, ContactChannel, PixelCustomer } from "./types";
+export type { PixelLineItem, ContactChannel, PixelCustomer, FunnelStep } from "./types";
 
 const PROVIDERS: PixelProvider[] = [metaPixel, tiktokPixel];
 
@@ -251,6 +251,12 @@ export function pixelPurchase(order: Order): void {
  * after that, and the client can't tell which happened. */
 export function pixelCompleteRegistration(): void {
   emit({ name: "CompleteRegistration", method: "email" });
+}
+
+/** A landing page order-form step (see FunnelStep): once per step and product per tab session, so a shopper changing
+ * their mind five times counts once. */
+export function pixelFunnel(step: FunnelStep, productId: string, params: Record<string, string | number> = {}): void {
+  emit({ name: "Funnel", step, params: { content_ids: productId, ...params } }, { once: { storage: "session", key: `funnel:${step}:${productId}` } });
 }
 
 export function pixelContact(channel: ContactChannel): void {

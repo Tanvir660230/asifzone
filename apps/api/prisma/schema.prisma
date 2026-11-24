@@ -265,6 +265,17 @@ enum FunnelEventType {
   VARIANT_SELECTED
   ADD_TO_CART
   REMOVE_FROM_CART
+  /// Landing page order form stages (2026-11-24): where ad visitors stop.
+  SIZE_ASSIST_OPENED
+  SIZE_ASSIST_COMPLETED
+  CHECKOUT_STARTED
+  SHIPPING_INFO_ADDED
+}
+
+/// What the store promises when an item doesn't suit: a return (refund or swap) or an exchange only.
+enum ReturnPolicyKind {
+  RETURN
+  EXCHANGE
 }
 
 enum BannerPlacement {
@@ -654,6 +665,7 @@ model PageView {
   utmSource      String?
   utmMedium      String?
   utmCampaign    String?
+  utmContent     String?
   userAgent      String?
   /// Filled by a second "exit" beacon (navigator.sendBeacon) fired when the visitor leaves this
   /// page — null until then, and forever null for a row whose exit beacon never arrived (tab
@@ -1256,6 +1268,9 @@ model Order {
   shippingDistrict    String
   shippingArea        String
   shippingAddressLine String
+  /// The size finder as the shopper used it at checkout (height, weight, recommended vs chosen size) — a snapshot per
+  /// order, so earlier measurements are never overwritten. Null when the finder was not used. Shape: sizeAssistSchema.
+  sizeAssist          Json?
 
   subtotal    Decimal @db.Decimal(10, 2)
   discount    Decimal @default(0) @db.Decimal(10, 2)
@@ -2928,6 +2943,9 @@ model StoreSetting {
   /// Returns page, the FAQ and the Product structured data. Null = the store makes no such claim.
   /// Days a customer has to return or exchange an item (null: no return window is stated).
   returnWindowDays             Int?
+  /// RETURN: "N-day returns". EXCHANGE: size exchange (customer pays the courier) and manufacturing defects exchanged at
+  /// the store's cost; no refund promise. Storefront copy follows it (store-policy.ts).
+  returnPolicyKind             ReturnPolicyKind @default(RETURN)
   /// What a returned item must be, as a sentence subject: "Unworn items in original condition with tags attached".
   returnConditions             String?
   /// Business days between an order and its dispatch.

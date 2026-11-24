@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -12,7 +12,6 @@ import {
   BD_ALL_AREA_OPTIONS,
   BD_ALL_DISTRICTS,
   BD_AREAS_BY_DISTRICT,
-  BD_DIVISION_BY_DISTRICT,
   NO_SIZE_VALUE,
   bdPhoneSchema,
   maxSellableQuantity,
@@ -22,6 +21,8 @@ import {
   type QuoteDto,
   type QuoteRequestInput,
   variantShipsFree,
+  checkoutDistrict,
+  type SizeAssist,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,16 +30,19 @@ import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
+import { SizeFinder } from "@/components/storefront/size-finder";
+import type { FitAnswers } from "@/lib/fit-memory";
 import { colorImage, useLandingSelection } from "./landing-selection";
 import { PHOTO_TILE_WIDTH, PhotoTileBody } from "@/components/storefront/photo-tile";
 import { useQuote } from "@/hooks/use-quote";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { createOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
-import { getSessionId } from "@/lib/analytics";
+import { getSessionId, trackFunnelEvent } from "@/lib/analytics";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
-import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
+import { pixelAddPaymentInfo, pixelFunnel, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn, isPaleColor } from "@/lib/utils";
 import { sessionSet } from "@/lib/safe-storage";
@@ -48,8 +52,10 @@ import { useLeadCapture } from "@/hooks/use-lead-capture";
 const formSchema = z.object({
   customerName: z.string().trim().min(2, "আপনার নাম লিখুন").max(200),
   customerPhone: bdPhoneSchema("১১ সংখ্যার সঠিক মোবাইল নম্বর দিন, যেমন 01712345678"),
-  shippingDistrict: z.string().min(1, "আপনার জেলা বেছে নিন"),
-  shippingArea: z.string().min(1, "আপনার থানা বা এলাকা বেছে নিন"),
+  // District and thana are optional (owner 2026-11-24): shoppers who skipped them could not order. The district is
+  // then read from the address (checkoutDistrict), else the default delivery charge applies.
+  shippingDistrict: z.string(),
+  shippingArea: z.string(),
   shippingAddressLine: z.string().trim().min(4, "বাসা, রোড ও এলাকার নাম লিখুন, যাতে ডেলিভারিম্যান সহজে খুঁজে পান").max(500, "ঠিকানা ৫০০ অক্ষরের মধ্যে লিখুন"),
 });
 type FormValues = z.infer<typeof formSchema>;
@@ -72,8 +78,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
   const router = useRouter();
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
-  const { product, options, size, color, setSize, setColor, sellable } = useLandingSelection();
-  const [quantity, setQuantity] = useState(1);
+  const { product, options, size, color, setSize, setColor, sellable, quantity, setQuantity, setQuotedTotal } = useLandingSelection();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -112,7 +117,10 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     { enabled: true, landingSlug: product.slug },
   );
   const areaOptions: readonly string[] = district ? (BD_AREAS_BY_DISTRICT[district] ?? []) : BD_ALL_AREA_OPTIONS;
-  const division = BD_DIVISION_BY_DISTRICT[district] ?? "";
+  // The district picked, else the one written in the address (after a pause in typing), else none: the server prices
+  // the same way, so the delivery charge shown is the one charged.
+  const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
+  const place = checkoutDistrict({ shippingDistrict: district, shippingAddressLine: addressLine });
 
   function handleArea(value: string) {
     const parsed = parseAreaDistrictOption(value);
@@ -129,9 +137,68 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
   }, [district]);
 
   const quoteRequest: QuoteRequestInput | null =
-    variant && !soldOut ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: division || undefined, shippingDistrict: district || undefined } : null;
+    variant && !soldOut
+      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true }
+      : null;
   const { data: quote, isFetching: quoting, refetch: refetchQuote } = useQuote(quoteRequest);
   const shipping = quote?.shipping;
+  // The sticky bar shows the same total as the summary, once the server has quoted it with delivery.
+  const quotedTotal = quote && shipping?.resolved ? Number(quote.total) : null;
+  useEffect(() => setQuotedTotal(quotedTotal), [quotedTotal, setQuotedTotal]);
+
+  // The size finder's answers, kept with the order (recommended vs chosen) when the shopper used it.
+  const [assist, setAssist] = useState<{ answers: FitAnswers; recommended: string } | null>(null);
+  const fit = product.resolved?.sizeGuide?.chart?.fit?.enabled ? product.resolved.sizeGuide.chart.fit : null;
+  const fitChart = product.resolved?.sizeGuide?.chart ?? undefined;
+  function pickSize(s: string) {
+    setSize(s);
+    pixelFunnel("SelectSize", product.id, { size: s });
+  }
+  function pickColor(c: string) {
+    setColor(c);
+    pixelFunnel("SelectColor", product.id, { color: c });
+  }
+  const finder =
+    fit && options.showSizes ? (
+      <SizeFinder
+        fit={fit}
+        chart={fitChart}
+        offered={options.sizes}
+        sellable={(s) => sellable(s, color)}
+        onSelect={pickSize}
+        copy="bn"
+        trigger="card"
+        onOpen={() => {
+          pixelFunnel("StartSizeAssistant", product.id);
+          trackFunnelEvent("SIZE_ASSIST_OPENED", { productId: product.id });
+        }}
+        onAnswers={(answers, recommended) => {
+          setAssist({ answers, recommended });
+          pixelFunnel("CompleteSizeAssistant", product.id, { size: recommended });
+          trackFunnelEvent("SIZE_ASSIST_COMPLETED", { productId: product.id });
+        }}
+      />
+    ) : null;
+
+  // Same phone, same browser: the last delivery details are offered back (never looked up by phone number).
+  const [saved, setSaved] = useState<SavedDelivery | null>(null);
+  useEffect(() => setSaved(readSavedDelivery()), []);
+  function applySaved() {
+    if (!saved) return;
+    setValue("customerName", saved.name, { shouldValidate: true });
+    setValue("customerPhone", saved.phone, { shouldValidate: true });
+    setValue("shippingDistrict", saved.district ?? "");
+    setValue("shippingArea", saved.area ?? "");
+    setValue("shippingAddressLine", saved.addressLine, { shouldValidate: true });
+    setSaved(null);
+  }
+
+  // AddShippingInfo once the address is written (after a pause in typing), once per product per session.
+  useEffect(() => {
+    if (addressLine.trim().length < 8 || !variant) return;
+    pixelFunnel("AddShippingInfo", product.id);
+    trackFunnelEvent("SHIPPING_INFO_ADDED", { productId: product.id, variantId: variant.id });
+  }, [addressLine, variant, product.id]);
   // Savings against the product's own compare-at price, as the server resolved both prices.
   const unitWas = shown.was !== null && Number(shown.was) > Number(shown.price) ? Number(shown.was) : null;
   const savings = unitWas !== null ? (unitWas - Number(shown.price)) * qty : 0;
@@ -143,6 +210,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     if (started.current || !variant) return;
     started.current = true;
     pixelInitiateCheckout(pixelItems());
+    trackFunnelEvent("CHECKOUT_STARTED", { productId: product.id, variantId: variant.id });
   }
 
   // The popup's "continue": close it and carry on with the order (the form's own checks then run as usual).
@@ -155,29 +223,32 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     setSubmitError(null);
     if (!variant) return setPickerOpen(true);
     if (soldOut) return;
+    const at = checkoutDistrict(values);
     const payload: CheckoutInput = {
       items: [{ variantId: variant.id, quantity: qty }],
       customerName: values.customerName,
       customerPhone: values.customerPhone,
       customerEmail: null,
-      shippingDivision: division as CheckoutInput["shippingDivision"],
-      shippingDistrict: values.shippingDistrict,
+      shippingDivision: at.division as CheckoutInput["shippingDivision"],
+      shippingDistrict: at.district,
       shippingArea: values.shippingArea,
       shippingAddressLine: values.shippingAddressLine,
       paymentMethod: "COD",
       notes: null,
       sessionId: getSessionId() || undefined,
       quoteToken: quote?.token,
+      sizeAssist: assist && variant.size && variant.size !== NO_SIZE_VALUE ? sizeAssistFor(assist, variant.size) : undefined,
     };
     try {
       const { order } = await createOrder(payload, idempotencyKeyFor("landing", payload));
       settleIdempotencyKey("landing");
       sessionSet("lastOrderPhone", values.customerPhone);
+      saveDelivery({ name: values.customerName, phone: values.customerPhone, district: values.shippingDistrict || null, area: values.shippingArea || null, addressLine: values.shippingAddressLine });
       pixelIdentify({
         phone: values.customerPhone,
         fullName: values.customerName,
-        city: values.shippingDistrict,
-        state: division,
+        city: at.district || undefined,
+        state: at.division || undefined,
       });
       pixelAddPaymentInfo(pixelItems(), "COD");
       router.push(`/order-confirmation/${order!.orderNumber}`);
@@ -222,8 +293,10 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       size={size}
       color={color}
       sellable={sellable}
-      onSize={setSize}
-      onColor={setColor}
+      onSize={pickSize}
+      onColor={pickColor}
+      finder={finder}
+      picked={assist && size === assist.recommended ? size : null}
     />
   );
 
@@ -255,6 +328,24 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       </div>
 
       <div className="space-y-4">
+        {saved && (
+          <div className="rounded-xl border border-line bg-surface-muted p-4" data-testid="landing-saved-delivery">
+            <p className="text-sm font-semibold text-fg">আপনার আগের ঠিকানা ব্যবহার করবেন?</p>
+            <p className="mt-1 text-sm text-fg-muted">
+              {saved.name}, <span className="tabular-nums">{saved.phone}</span>
+              <br />
+              {[saved.addressLine, saved.area, saved.district].filter(Boolean).join(", ")}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={applySaved} className="min-h-11 flex-1 rounded-[var(--control-radius)] bg-ink-900 px-4 text-sm font-semibold text-cream-50" data-testid="landing-use-saved">
+                হ্যাঁ, ব্যবহার করুন
+              </button>
+              <button type="button" onClick={() => setSaved(null)} className="min-h-11 rounded-[var(--control-radius)] border border-line bg-surface px-4 text-sm font-semibold text-fg">
+                না
+              </button>
+            </div>
+          </div>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="lp-name">আপনার নাম</Label>
@@ -274,7 +365,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             <Input
               id="lp-phone"
               type="tel"
-              inputMode="tel"
+              inputMode="numeric"
               autoComplete="tel"
               placeholder="01XXXXXXXXX"
               className="h-12 text-base tabular-nums"
@@ -293,7 +384,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="lp-district">জেলা</Label>
+            <Label htmlFor="lp-district">
+              জেলা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
+            </Label>
             <SearchableSelect
               id="lp-district"
               autoComplete="address-level2"
@@ -307,7 +400,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             {fieldError("lp-district", errors.shippingDistrict?.message)}
           </div>
           <div>
-            <Label htmlFor="lp-area">থানা / এলাকা</Label>
+            <Label htmlFor="lp-area">
+              থানা / এলাকা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
+            </Label>
             <SearchableSelect
               id="lp-area"
               autoComplete="address-level3"
@@ -327,13 +422,17 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             id="lp-address"
             rows={2}
             autoComplete="street-address"
-            placeholder="বাসা/ফ্ল্যাট নং, রোড, এলাকা"
+            placeholder="বাসা/ফ্ল্যাট নম্বর, রোড, এলাকা, পরিচিত স্থান"
             className="text-base"
             aria-invalid={!!errors.shippingAddressLine}
             aria-describedby={errors.shippingAddressLine ? "lp-address-error" : undefined}
             {...register("shippingAddressLine")}
           />
-          {fieldError("lp-address", errors.shippingAddressLine?.message)}
+          {errors.shippingAddressLine ? (
+            fieldError("lp-address", errors.shippingAddressLine.message)
+          ) : (
+            <p className="mt-1 text-xs text-fg-muted">সঠিক ঠিকানা দিলে ডেলিভারি সহজ হবে। জেলা ওপরে না বাছলে ঠিকানাতেই লিখে দিন।</p>
+          )}
         </div>
       </div>
 
@@ -349,7 +448,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
               {product.name}
             </span>
             <span className="block text-xs text-fg-muted">
-              {[size && size !== NO_SIZE_VALUE ? size : null, color].filter(Boolean).join(", ") || `${missing} বেছে নিন`} × {bn(qty)}
+              {[color && `${colorLabel}: ${color}`, size && size !== NO_SIZE_VALUE ? `${sizeLabel}: ${size}` : null, `পরিমাণ: ${bn(qty)}`].filter(Boolean).join(" · ") || `${missing} বেছে নিন`}
             </span>
           </span>
         </div>
@@ -361,9 +460,14 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
           <div className="flex justify-between gap-4">
             <dt className="text-fg-muted">ডেলিভারি চার্জ</dt>
             <dd className="tabular-nums text-fg">
-              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">জেলা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
+              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
             </dd>
           </div>
+          {place.unknown && addressLine.trim().length >= 4 && shipping?.resolved && !shipping.waived && (
+            <p className="text-xs text-fg-muted" data-testid="landing-default-delivery">
+              ঠিকানায় জেলা পাওয়া যায়নি, তাই সাধারণ ডেলিভারি চার্জ ধরা হয়েছে। জেলা বেছে নিলে ঠিক চার্জ দেখাবে।
+            </p>
+          )}
           {savings > 0 && (
             <div className="flex justify-between gap-4 text-success-700">
               <dt>আপনার সাশ্রয়</dt>
@@ -449,6 +553,8 @@ function OptionPickers({
   sellable,
   onSize,
   onColor,
+  finder,
+  picked,
 }: {
   product: Product;
   options: VariantOptions;
@@ -459,6 +565,10 @@ function OptionPickers({
   sellable: (size: string | null, color: string | null) => boolean;
   onSize: (s: string) => void;
   onColor: (c: string) => void;
+  /** The size finder card, under the size chips (only where the size guide has fit rules). */
+  finder?: ReactNode;
+  /** The size the finder suggested and the shopper kept. */
+  picked?: string | null;
 }) {
   const chip =
     "flex min-h-11 min-w-11 items-center justify-center rounded-[var(--chip-radius)] border px-4 text-sm font-medium transition-[border-color,background-color,color] duration-base ease-smooth active:scale-[0.97]";
@@ -572,6 +682,12 @@ function OptionPickers({
             })}
           </div>
           {anySoldOut && <p className="mt-2 text-xs text-fg-muted">কাটা দাগ দেওয়া সাইজগুলো এখন স্টকে নেই।</p>}
+          {picked && (
+            <p className="mt-2 text-xs font-medium text-fg" data-testid="landing-size-picked">
+              আপনার মাপ অনুযায়ী {picked} বাছা হয়েছে। চাইলে অন্য সাইজও বেছে নিতে পারেন।
+            </p>
+          )}
+          {finder && <div className="mt-3">{finder}</div>}
           {chart && chartOpen && (
             <div id="lp-size-chart" className="mt-3 overflow-x-auto rounded-xl border border-line bg-surface" data-testid="landing-size-chart">
               <table className="w-full text-left text-sm tabular-nums" lang="en">
@@ -597,7 +713,8 @@ function OptionPickers({
                 </tbody>
               </table>
               <p className="border-t border-line px-3 py-2 text-xs text-fg-muted" lang="bn">
-                মাপ {chart.unit === "cm" ? "সেন্টিমিটারে" : "ইঞ্চিতে"}। দুই সাইজের মাঝামাঝি হলে বড়টা নিন।
+                {chart.fit?.enabled ? "এগুলো পোশাকের মাপ, শরীরের নয়। " : ""}মাপ {chart.unit === "cm" ? "সেন্টিমিটারে" : "ইঞ্চিতে"}। দুই সাইজের মাঝামাঝি হলে বড়টা নিন।
+                {chart.fit?.enabled && " মেলাতে: আপনার ঠিকঠাক মাপের একটা জ্যাকেট সমান করে রেখে এক বগল থেকে আরেক বগল মেপে দুই দিয়ে গুণ করুন (বুক), আর কাঁধের ওপর থেকে নিচ পর্যন্ত মাপুন (লম্বা)।"}
               </p>
             </div>
           )}
@@ -606,4 +723,53 @@ function OptionPickers({
       {!byPhoto && colorPicker}
     </div>
   );
+}
+
+/** The finder snapshot for the order: what it recommended, what was ordered, and whether the shopper kept it. */
+function sizeAssistFor(assist: { answers: FitAnswers; recommended: string }, chosen: string): SizeAssist {
+  const a = assist.answers;
+  return {
+    heightIn: a.heightIn,
+    weightKg: a.weightKg,
+    chestIn: a.chestIn ?? null,
+    usualSize: a.usualSize ?? null,
+    overLayer: a.overLayer ?? false,
+    heightUnit: "ft-in",
+    weightUnit: "kg",
+    recommended: assist.recommended,
+    chosen,
+    accepted: chosen === assist.recommended,
+  };
+}
+
+interface SavedDelivery {
+  name: string;
+  phone: string;
+  district: string | null;
+  area: string | null;
+  addressLine: string;
+}
+
+const SAVED_DELIVERY_KEY = "lp:lastDelivery";
+
+/** This browser's last landing-page delivery details (localStorage only — nothing is looked up by phone number). */
+function readSavedDelivery(): SavedDelivery | null {
+  try {
+    const raw = window.localStorage.getItem(SAVED_DELIVERY_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<SavedDelivery>;
+    return v && typeof v.name === "string" && typeof v.phone === "string" && typeof v.addressLine === "string"
+      ? { name: v.name, phone: v.phone, district: v.district ?? null, area: v.area ?? null, addressLine: v.addressLine }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDelivery(v: SavedDelivery) {
+  try {
+    window.localStorage.setItem(SAVED_DELIVERY_KEY, JSON.stringify(v));
+  } catch {
+    // storage blocked (private mode, in-app browser): nothing to offer next time
+  }
 }

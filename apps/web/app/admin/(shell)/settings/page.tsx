@@ -152,7 +152,7 @@ const SECTIONS = {
   contact: ["contactEmail", "contactPhone"],
   identity: ["legalName", "legalJurisdiction", "addressLine", "addressCity", "addressRegion", "addressPostalCode", "addressCountry", "supportHours"],
   contactOptions: ["whatsappLabel", "whatsappMessage", "callEnabled", "callLabel", "liveChatEnabled", "liveChatLabel", "tawkPropertyId", "tawkWidgetId"],
-  policy: ["returnWindowDays", "returnConditions", "handlingDaysMin", "handlingDaysMax"],
+  policy: ["returnWindowDays", "returnPolicyKind", "returnConditions", "handlingDaysMin", "handlingDaysMax"],
   confirmation: ["confirmationMaxUnreached", "confirmationEscalateHours", "confirmationRetryMinutes", "confirmationNextDayHour"],
   dispatch: ["shippedSmsTrigger", "stuckInTransitDays", "returnNotBackDays"],
   taxRewards: ["courierReturnFeeDhaka", "courierReturnFeeOutsideDhaka", "rewardPointsPerCurrency", "taxEnabled", "defaultTaxRate", "shippingTaxable"],
@@ -236,6 +236,7 @@ export default function SettingsPage() {
       legalJurisdiction: s.legalJurisdiction,
       supportHours: s.supportHours,
       returnWindowDays: s.returnWindowDays,
+      returnPolicyKind: s.returnPolicyKind ?? "RETURN",
       returnConditions: s.returnConditions,
       handlingDaysMin: s.handlingDaysMin,
       handlingDaysMax: s.handlingDaysMax,
@@ -581,6 +582,14 @@ export default function SettingsPage() {
           description="What your storefront promises customers — the product page's policy lines, the Shipping & Returns and FAQ pages, and search-engine data. Leave a field blank to make no such claim."
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Label htmlFor="returnPolicyKind">What you offer</Label>
+              <Select id="returnPolicyKind" {...register("returnPolicyKind")}>
+                <option value="RETURN">Returns within the window below</option>
+                <option value="EXCHANGE">Exchange only — size exchange, defects at our cost, no refunds</option>
+              </Select>
+              <p className="mt-1 text-xs text-ink-400">Exchange only: the storefront and landing pages promise a size exchange (customer pays the courier) and a free exchange for a manufacturing defect, never a return.</p>
+            </div>
             <div>
               <Label htmlFor="returnWindowDays">Return window (days)</Label>
               <Input id="returnWindowDays" type="number" min={1} step={1} placeholder="e.g. 7" {...register("returnWindowDays", { valueAsNumber: true })} />

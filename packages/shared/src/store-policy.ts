@@ -8,11 +8,14 @@ import type { StoreSettings } from "./types";
  * and the Product structured data. Nothing here invents a policy: a fact the store hasn't set is simply not claimed.
  */
 
-export type PolicySettings = Pick<StoreSettings, "returnWindowDays" | "returnConditions" | "handlingDaysMin" | "handlingDaysMax" | "codEnabled">;
+export type PolicySettings = Pick<StoreSettings, "returnWindowDays" | "returnPolicyKind" | "returnConditions" | "handlingDaysMin" | "handlingDaysMax" | "codEnabled">;
 
 export interface StorePolicy {
-  /** null: the store states no return window. */
+  /** null: the store states no return window (or offers exchange only). */
   returns: { days: number; conditions: string | null } | null;
+  /** Exchange only (returnPolicyKind EXCHANGE): a size that doesn't fit is exchanged (the customer pays the courier) and a
+   * manufacturing defect is exchanged at the store's cost. No refund is promised. null for a store that states returns. */
+  exchange: { days: number | null; conditions: string | null } | null;
   /** Business days between order and dispatch; null when the store hasn't stated it. */
   handlingDays: [number, number] | null;
   cashOnDelivery: boolean;
@@ -26,7 +29,8 @@ export function storePolicy(settings: PolicySettings): StorePolicy {
   const min = settings.handlingDaysMin;
   const max = settings.handlingDaysMax ?? min;
   return {
-    returns: days && days > 0 ? { days, conditions } : null,
+    returns: settings.returnPolicyKind !== "EXCHANGE" && days && days > 0 ? { days, conditions } : null,
+    exchange: settings.returnPolicyKind === "EXCHANGE" ? { days: days && days > 0 ? days : null, conditions } : null,
     handlingDays: min != null && max != null ? [Math.min(min, max), Math.max(min, max)] : null,
     cashOnDelivery: settings.codEnabled,
     deliveryDays: { insideDhaka: DHAKA_DELIVERY_DAYS, outsideDhaka: OUTSIDE_DHAKA_DELIVERY_DAYS },
@@ -49,12 +53,18 @@ export type PolicyHighlightKind = "delivery" | "returns" | "cashOnDelivery";
 export function policyHighlights(policy: StorePolicy): { kind: PolicyHighlightKind; label: string }[] {
   const lines: { kind: PolicyHighlightKind; label: string }[] = [{ kind: "delivery", label: `Nationwide delivery, ${range(deliverySpan(policy))} business days` }];
   if (policy.returns) lines.push({ kind: "returns", label: `${policy.returns.days}-day easy returns` });
+  else if (policy.exchange) lines.push({ kind: "returns", label: "Easy size exchange" });
   if (policy.cashOnDelivery) lines.push({ kind: "cashOnDelivery", label: "Cash on Delivery available" });
   return lines;
 }
 
+/** Exchange-only stores (returnPolicyKind EXCHANGE). */
+export const EXCHANGE_SENTENCE =
+  "A size that doesn't fit can be exchanged (you pay the courier both ways). A manufacturing defect is exchanged at our cost.";
+
 /** "Unworn items … can be returned or exchanged within 7 days of delivery." — null when no return window is stated. */
 export function returnPolicySentence(policy: StorePolicy): string | null {
+  if (policy.exchange) return EXCHANGE_SENTENCE;
   if (!policy.returns) return null;
   const subject = policy.returns.conditions ?? "Items";
   return `${subject} can be returned or exchanged within ${policy.returns.days} days of delivery.`;

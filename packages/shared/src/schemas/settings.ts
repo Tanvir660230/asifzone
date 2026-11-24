@@ -97,6 +97,7 @@ export const updateSettingsSchema = z.object({
   supportHours: nullableString(200),
   // Phase 5 store policy (store-policy.ts). Blank clears = the store makes no such claim.
   returnWindowDays: optionalNullableDays(365),
+  returnPolicyKind: z.enum(["RETURN", "EXCHANGE"]).optional(),
   returnConditions: nullableString(200),
   handlingDaysMin: optionalNullableDays(60),
   handlingDaysMax: optionalNullableDays(60),

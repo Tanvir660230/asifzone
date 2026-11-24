@@ -11,9 +11,10 @@ interface SessionAttribution {
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
+  utmContent: string | null;
 }
 
-const EMPTY_ATTRIBUTION: SessionAttribution = { sid: "", referrer: null, utmSource: null, utmMedium: null, utmCampaign: null };
+const EMPTY_ATTRIBUTION: SessionAttribution = { sid: "", referrer: null, utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null };
 
 function readCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -69,6 +70,7 @@ export function getSessionAttribution(): SessionAttribution {
     utmSource: params.get("utm_source"),
     utmMedium: params.get("utm_medium"),
     utmCampaign: params.get("utm_campaign"),
+    utmContent: params.get("utm_content"),
   };
   writeCookie(COOKIE_NAME, JSON.stringify(attribution));
   return attribution;
@@ -112,6 +114,7 @@ export async function trackPageView(path: string): Promise<string | null> {
         utmSource: attribution.utmSource,
         utmMedium: attribution.utmMedium,
         utmCampaign: attribution.utmCampaign,
+        utmContent: attribution.utmContent ?? null,
       }),
       keepalive: true,
     });
@@ -132,7 +135,14 @@ export function sendPageExit(id: string, payload: { durationMs: number; scrollDe
   sendBeaconJson(`${apiBaseUrl()}/api/analytics/pageview/${id}/exit`, payload);
 }
 
-export type FunnelEventType = "VARIANT_SELECTED" | "ADD_TO_CART" | "REMOVE_FROM_CART";
+export type FunnelEventType =
+  | "VARIANT_SELECTED"
+  | "ADD_TO_CART"
+  | "REMOVE_FROM_CART"
+  | "SIZE_ASSIST_OPENED"
+  | "SIZE_ASSIST_COMPLETED"
+  | "CHECKOUT_STARTED"
+  | "SHIPPING_INFO_ADDED";
 
 /** Fire-and-forget purchase-funnel event beacon (Sections 3 &amp; 5 BI) — journey/product-interest
  * steps that leave no other trace, especially for guest shoppers whose cart never touches the

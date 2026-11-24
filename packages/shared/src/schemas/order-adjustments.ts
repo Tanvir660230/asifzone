@@ -21,7 +21,8 @@ export const orderModificationSchema = z.object({
       customerPhone: bdPhoneSchema().optional(),
       shippingDivision: z.enum(BD_DIVISIONS),
       shippingDistrict: z.string().min(1).max(120),
-      shippingArea: z.string().min(1).max(120),
+      // Thana is optional (2026-11-24): storefront orders may come without one.
+      shippingArea: z.string().trim().max(120),
       shippingAddressLine: z.string().min(1).max(500),
     })
     .optional(),

@@ -650,6 +650,8 @@ export interface Order {
   shippingDistrict: string;
   shippingArea: string;
   shippingAddressLine: string;
+  /** The size finder snapshot when the shopper used it (sizeAssistSchema); null otherwise. */
+  sizeAssist?: import("./schemas/order").SizeAssist | null;
   subtotal: string;
   discount: string;
   shippingFee: string;
@@ -1118,6 +1120,8 @@ export interface StoreSettings {
   supportHours: string | null;
   /** Phase 5 store policy (store-policy.ts) — each null until the store states it. */
   returnWindowDays: number | null;
+  /** RETURN: the store states an N-day return window. EXCHANGE: exchange only (size exchange, defects at the store's cost). */
+  returnPolicyKind: "RETURN" | "EXCHANGE";
   returnConditions: string | null;
   handlingDaysMin: number | null;
   handlingDaysMax: number | null;

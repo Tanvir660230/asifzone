@@ -38,7 +38,12 @@ export type PixelEvent =
   | { name: "AddPaymentInfo"; items: PixelLineItem[]; paymentMethod: string }
   | { name: "Purchase"; orderId: string; items: PixelLineItem[]; value: number }
   | { name: "CompleteRegistration"; method: "email" }
-  | { name: "Contact"; channel: ContactChannel };
+  | { name: "Contact"; channel: ContactChannel }
+  /** Landing page order-form steps (2026-11-24), sent to Meta as custom events so the ads funnel shows where shoppers stop.
+   * Browser only: no server copy, so nothing to deduplicate. */
+  | { name: "Funnel"; step: FunnelStep; params?: Record<string, string | number> };
+
+export type FunnelStep = "SelectColor" | "SelectSize" | "StartSizeAssistant" | "CompleteSizeAssistant" | "AddShippingInfo";
 
 export type PixelEventName = PixelEvent["name"];
 

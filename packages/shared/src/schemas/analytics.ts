@@ -24,6 +24,7 @@ export const trackPageViewSchema = z.object({
   utmSource: nullableString(120),
   utmMedium: nullableString(120),
   utmCampaign: nullableString(120),
+  utmContent: nullableString(120),
 });
 
 export type TrackPageViewInput = z.infer<typeof trackPageViewSchema>;
@@ -48,7 +49,8 @@ export type TrackPageExitInput = z.infer<typeof trackPageExitSchema>;
 export const trackFunnelEventSchema = z.object({
   sessionId: z.string().min(1).max(64),
   visitorId: z.string().min(1).max(64).optional(),
-  type: z.enum(["VARIANT_SELECTED", "ADD_TO_CART"]),
+  // The landing page order form's stages (2026-11-24) show where ad visitors stop.
+  type: z.enum(["VARIANT_SELECTED", "ADD_TO_CART", "SIZE_ASSIST_OPENED", "SIZE_ASSIST_COMPLETED", "CHECKOUT_STARTED", "SHIPPING_INFO_ADDED"]),
   productId: nullableString(64),
   variantId: nullableString(64),
   path: nullableString(500),
