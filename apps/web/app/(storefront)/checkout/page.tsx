@@ -45,6 +45,7 @@ import { getActivePaymentMethods } from "@/lib/api/payment-methods";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
 import { sessionSet } from "@/lib/safe-storage";
@@ -458,6 +459,11 @@ function CheckoutForm() {
   const couponDiscount = quote?.couponDiscount ?? 0;
   const bundleDiscount = quote?.bundleDiscount ?? 0;
   const shipping = quote?.shipping;
+  const stickyPlaceOrder = storeLayout() === "tahafi";
+  // The store's two delivery fees (its Dhaka and outside-Dhaka zones), for the hint shown before the area is known.
+  const feeOf = (v: string | undefined) => (v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+  const dhakaFee = feeOf(settingsData?.settings.shippingFeeDhaka);
+  const outsideFee = feeOf(settingsData?.settings.shippingFeeOutsideDhaka);
   const stockWarnings = (quote?.warnings ?? []).filter(
     (w) => w.code === "UNKNOWN_ITEM" || w.code === "UNAVAILABLE" || w.code === "INSUFFICIENT_STOCK" || w.code === "FLASH_LIMIT_PARTIAL",
   );
@@ -574,6 +580,13 @@ function CheckoutForm() {
                     <span><Money value={shipping.charged} /></span>
                   )}
                 </div>
+                {/* No district picked or found in the address yet: the quote uses the default charge (the server does
+                    the same), so a Dhaka buyer shouldn't read that as their fee. Both fees, from the store's settings. */}
+                {!place.district && shipping?.resolved && !shipping.waived && dhakaFee !== null && outsideFee !== null && dhakaFee !== outsideFee && (
+                  <p className="text-xs text-ink-400" data-testid="delivery-fee-hint">
+                    Inside Dhaka <Money value={dhakaFee} /> · elsewhere <Money value={outsideFee} /> — set by your address.
+                  </p>
+                )}
                 {quote && quote.tax.addedToTotal > 0 && (
                   <div className="flex justify-between text-ink-600">
                     <span>VAT ({quote.tax.ratePct}%)</span>
@@ -868,13 +881,17 @@ function CheckoutForm() {
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
-          <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting || !anyPaymentMethodEnabled}>
-            {isSubmitting
-              ? "Placing order…"
-              : useStoreCredit && storeBalance > 0 && quote
-                ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
-                : `Place Order — ${money(quote?.total)}`}
-          </Button>
+          {/* The tahafi preset on phones: the button rides at the bottom of the screen while the form scrolls, so the
+              order is always one tap away; it settles in place at the end of the form. */}
+          <div className={cn(stickyPlaceOrder && "sticky bottom-[calc(var(--dock-offset,0px)+0.75rem)] z-raised rounded-full shadow-floatLg lg:static lg:shadow-none")}>
+            <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting || !anyPaymentMethodEnabled}>
+              {isSubmitting
+                ? "Placing order…"
+                : useStoreCredit && storeBalance > 0 && quote
+                  ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
+                  : `Place Order — ${money(quote?.total)}`}
+            </Button>
+          </div>
         </form>
       </div>
     </StorefrontPage>
