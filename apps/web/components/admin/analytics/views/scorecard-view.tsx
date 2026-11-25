@@ -124,7 +124,7 @@ function ScorecardBody({ data }: { data: targetsApi.Scorecard }) {
       {data.money && (
         <section aria-label="Money now">
           <h3 className="mb-2 text-sm font-semibold text-fg">Money now</h3>
-          <div className="overflow-x-auto rounded-xl border border-line-subtle bg-surface">
+          <div tabIndex={0} className="overflow-x-auto rounded-xl border border-line-subtle bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
             <dl className="flex min-w-max divide-x divide-line-subtle">
               {[
                 ["Cash, bank and wallets", data.money.cash],

@@ -54,7 +54,7 @@ export function ProfitDashboard({ period, onChange }: { period: ProfitPeriod; on
         <div className={cn("space-y-6 transition-opacity duration-fast", q.isPlaceholderData && "opacity-60")} aria-busy={q.isFetching}>
           {!d.booksStartedOn && (
             <Alert variant="info" title="The books haven't started yet">
-              Profit appears here once the books are started — <Link href="/admin/finance/opening" className="text-accent hover:underline">start the books</Link>.
+              Profit appears here once the books are started — <Link href="/admin/finance/opening" className="font-medium text-accent underline underline-offset-2">start the books</Link>.
             </Alert>
           )}
           {d.booksStartedOn && from < d.booksStartedOn && (

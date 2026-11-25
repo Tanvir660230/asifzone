@@ -77,7 +77,8 @@ export default function IncompleteOrdersPage() {
       }
     >
       {summary.data && (
-        <dl className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Last 30 days">
+        <div className="mb-4">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Last 30 days">
           {[
             { label: "Left without ordering", value: formatCount(summary.data.captured) },
             { label: "Ordered after all", value: formatCount(summary.data.ordered) },
@@ -92,8 +93,9 @@ export default function IncompleteOrdersPage() {
               <dd className="mt-0.5 truncate text-lg font-semibold tabular-nums text-fg">{s.value}</dd>
             </div>
           ))}
-          <p className="col-span-full -mt-1 text-xs text-fg-subtle">Last 30 days. “Ordered after all” counts orders placed online or entered here.</p>
         </dl>
+        <p className="mt-2 text-xs text-fg-muted">Last 30 days. “Ordered after all” counts orders placed online or entered here.</p>
+        </div>
       )}
 
       {list.isLoading ? (

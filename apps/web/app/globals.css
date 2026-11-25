@@ -66,6 +66,13 @@
     @apply bg-ink-200 text-fg;
   }
 
+  /* Headings break into even lines — no single word left alone on the last line. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
   /* Icon line weight is a theme token. Only icons drawn at lucide's default width follow it — one given its own width
      keeps it — and the default token value is that same width, so the base design is unchanged. */
   svg.lucide[stroke-width="2"] {

@@ -42,7 +42,7 @@ const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "callNow", "onHold", 
 
 export function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
   if (value === undefined) return null;
-  return <span className={cn("tabular-nums", inverted ? "text-accent-fg/80" : "text-fg-subtle")}>{formatCount(value)}</span>;
+  return <span className={cn("tabular-nums", inverted ? "text-accent-fg/80" : "text-fg-muted")}>{formatCount(value)}</span>;
 }
 
 /** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */

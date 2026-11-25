@@ -135,7 +135,7 @@ export default function CartPage() {
 
         <div className="-mx-4 mt-8 sm:-mx-6 lg:-mx-8">
           <RecentlyViewedCarousel />
-          <ProductCarousel eyebrow="Popular right now" title="Trending products" products={trending} />
+          <ProductCarousel title="Popular right now" products={trending} />
         </div>
       </StorefrontPage>
     );

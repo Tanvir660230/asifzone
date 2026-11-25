@@ -166,7 +166,7 @@ export default function PrivacyPolicyPage() {
             </div>
           </nav>
 
-          <div className="max-w-2xl space-y-10 text-sm leading-relaxed text-ink-700">
+          <div className="max-w-[65ch] space-y-10 text-sm leading-relaxed text-ink-700">
             {SECTIONS.map((section, i) => (
               <section key={section.id} id={section.id} className="scroll-mt-28">
                 <h2 className="mb-3 flex items-baseline gap-2 font-display text-lg text-ink-900">

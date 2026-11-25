@@ -15,7 +15,8 @@ export interface SummaryFigure {
  */
 export function SummaryStrip({ figures, loading, className }: { figures: SummaryFigure[]; loading?: boolean; className?: string }) {
   return (
-    <div data-summary-strip="" className={cn("mb-4 overflow-x-auto rounded-xl border border-line-subtle bg-surface", className)}>
+    // Scrolls sideways on a phone, so it takes keyboard focus (WCAG 2.1.1 scrollable region).
+    <div data-summary-strip="" role="region" aria-label="Summary" tabIndex={0} className={cn("mb-4 overflow-x-auto rounded-xl border border-line-subtle bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50", className)}>
       <dl className="flex min-h-kpi-strip min-w-max divide-x divide-line-subtle">
         {figures.map((f) => (
           <div key={f.label} className="flex min-w-[9rem] flex-1 flex-col justify-center px-4 py-2.5">
