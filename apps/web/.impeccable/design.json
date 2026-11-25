@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-25T03:00:00Z",
+  "title": "Design System: Asif Zone commerce",
+  "extensions": {
+    "colorMeta": {
+      "ink-900": { "role": "primary", "displayName": "Ink Black", "canonical": "#111111", "tonalRamp": ["#080808", "#111111", "#1a1a1a", "#333333", "#4d4d4d", "#666666", "#ececec", "#fafafa"] },
+      "nasihamart-orange": { "role": "primary", "displayName": "Nasihamart Orange", "canonical": "#f5871f", "tonalRamp": ["#5c2f05", "#8a4709", "#b8600f", "#ea7a12", "#f5871f", "#f9a75a", "#fcd2a8", "#fef0e2"] },
+      "tahafi-forest-olive": { "role": "primary", "displayName": "Tahafi Forest Olive", "canonical": "#3e4a2f", "tonalRamp": ["#1a1f13", "#262d1d", "#323c25", "#3e4a2f", "#5a6a46", "#818876", "#c3cba8", "#edf0e6"] },
+      "sale-red": { "role": "secondary", "displayName": "Sale Red", "canonical": "#dc3733", "tonalRamp": ["#5a1412", "#8a1e1b", "#c62828", "#dc3733", "#e66a66", "#ef9d9a", "#f7cfcd", "#fdecea"] },
+      "paper-white": { "role": "neutral", "displayName": "Paper White", "canonical": "#ffffff" },
+      "canvas-soft": { "role": "neutral", "displayName": "Soft Canvas", "canonical": "#f8f8f8" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero and campaign titles (theme display face)." },
+      "body": { "displayName": "Body", "purpose": "Everything read or tapped; Bangla falls through to the Bangla face." },
+      "figure": { "displayName": "Figure", "purpose": "Admin headline money figures." }
+    },
+    "shadows": [
+      { "name": "sm", "value": "0 1px 2px 0 rgba(20,20,20,0.06)", "purpose": "Cards and tiles at rest." },
+      { "name": "default", "value": "0 4px 12px -2px rgba(20,20,20,0.08), 0 2px 4px -2px rgba(20,20,20,0.04)", "purpose": "Hover and raised panels." },
+      { "name": "floatLg", "value": "0 8px 16px -4px rgba(20,20,20,0.10), 0 20px 48px -8px rgba(20,20,20,0.18)", "purpose": "Sheets, popovers, dialogs." },
+      { "name": "inset", "value": "inset 0 1px 2px 0 rgba(20,20,20,0.05)", "purpose": "Recessed text fields." }
+    ],
+    "motion": [
+      { "name": "ease-smooth", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default for entering and hover." },
+      { "name": "ease-sheet", "value": "cubic-bezier(0.32, 0.72, 0, 1)", "purpose": "iOS-style sheets and pushes." },
+      { "name": "duration-base", "value": "220ms", "purpose": "Most state transitions." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled action per view; accent fill, pill in the default theme.",
+      "html": "<button class=\"ds-btn-primary\">Place Order</button>",
+      "css": ".ds-btn-primary { background: rgb(var(--color-accent, 17 17 17)); color: rgb(var(--color-accent-fg, 255 255 255)); height: 44px; padding: 0 20px; border: none; border-radius: 9999px; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16,1,0.3,1), transform 100ms; } .ds-btn-primary:hover { background: rgb(26 26 26); } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: 2px solid rgb(17 17 17); outline-offset: 2px; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions beside a primary one.",
+      "html": "<button class=\"ds-btn-outline\">Add to Cart</button>",
+      "css": ".ds-btn-outline { background: #fff; color: #111; height: 44px; padding: 0 20px; border: 1px solid #d9d9d9; border-radius: 9999px; font: 500 15px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: border-color 150ms, background-color 150ms; } .ds-btn-outline:hover { border-color: #707070; } .ds-btn-outline:focus-visible { outline: 2px solid #111; outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "The ui-control recipe: recessed, hairline, soft focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"House, road, area\" />",
+      "css": ".ds-input { height: 40px; width: 260px; padding: 0 12px; background: #fff; color: #111; border: 1px solid #ececec; border-radius: 14px; box-shadow: inset 0 1px 2px 0 rgba(20,20,20,0.05); font: 400 14px/1 Inter, system-ui, sans-serif; transition: border-color 220ms, box-shadow 220ms; } .ds-input::placeholder { color: #707070; } .ds-input:focus { outline: none; border-color: #707070; box-shadow: 0 0 0 4px rgba(17,17,17,0.10); }"
+    },
+    {
+      "name": "Discount Chip",
+      "kind": "chip",
+      "refersTo": "chip-discount",
+      "description": "Promotions only.",
+      "html": "<span class=\"ds-chip-sale\">57% off</span>",
+      "css": ".ds-chip-sale { display: inline-block; background: #fdecea; color: #c62828; padding: 2px 10px; border-radius: 9999px; font: 600 12px/1.5 Inter, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Product Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "White card on the soft canvas, resting shadow, lifts on hover.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-media\"></div><p class=\"ds-card-title\">Sweet Luxe</p><p class=\"ds-card-price\">৳599 <s>৳1,400</s></p></div>",
+      "css": ".ds-card { width: 180px; background: #fff; border-radius: 20px; padding: 10px; box-shadow: 0 1px 2px 0 rgba(20,20,20,0.06); transition: transform 220ms cubic-bezier(0.16,1,0.3,1), box-shadow 220ms; } .ds-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px -2px rgba(20,20,20,0.08), 0 2px 4px -2px rgba(20,20,20,0.04); } .ds-card-media { aspect-ratio: 1 / 1; background: #f5f5f5; border-radius: 14px; } .ds-card-title { margin: 10px 4px 2px; font: 500 14px/1.3 Inter, system-ui, sans-serif; color: #111; } .ds-card-price { margin: 0 4px; font: 600 14px/1.3 Inter, system-ui, sans-serif; color: #111; } .ds-card-price s { color: #707070; font-weight: 400; }"
+    },
+    {
+      "name": "Thana & District Box",
+      "kind": "custom",
+      "description": "Signature checkout field: reads the thana from the address, asks which one for shared names.",
+      "html": "<div class=\"ds-place\"><label>Thana &amp; district</label><div class=\"ds-place-box\">Demra, Dhaka</div><p class=\"ds-place-ok\">✓ Taken from your address</p></div>",
+      "css": ".ds-place { font: 400 14px/1.4 Inter, system-ui, sans-serif; color: #111; width: 280px; } .ds-place label { display: block; font-weight: 500; margin-bottom: 6px; } .ds-place-box { height: 40px; display: flex; align-items: center; padding: 0 12px 0 36px; border: 1px solid #ececec; border-radius: 14px; background: #fff; } .ds-place-ok { margin: 6px 0 0; font-size: 12px; color: #077259; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "One Shop, Three Shopfronts",
+    "overview": "One careful shop sits behind three different shopfronts. Asif Zone, Nasihamart and Tahafi share every behaviour and differ only in the face they show, all carried by tokens. The mood is clean, trustworthy and premium; components are restrained and smooth.",
+    "keyCharacteristics": [
+      "Three brand themes over one behaviour; brand-only looks live in tokens, never in `if (brand === …)`.",
+      "Phone-first at 375px for shoppers and staff alike.",
+      "Neutral surfaces, one action colour per brand, sale red only for promotions.",
+      "Two-layer elevation, soft-editorial radii, gentle ease-out motion.",
+      "English on the site, Bangla on ad landing pages — one language per page."
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Each brand has one action colour. A second accent is not added; old `brass` classes are aliased to ink.", "section": "colors" },
+      { "name": "The Promotions-Only Red Rule", "body": "Sale colours mark promotions and nothing else.", "section": "colors" },
+      { "name": "The Role-Not-Hex Rule", "body": "Components use roles (`fg`, `fg-muted`, `surface`, `line`, `accent`), never raw hex, so a theme change reaches them.", "section": "colors" },
+      { "name": "The Balanced Title Rule", "body": "Headings use `text-wrap: balance`; no single word on a title's last line.", "section": "typography" },
+      { "name": "The One Language Rule", "body": "A page is English or Bangla, never both.", "section": "typography" },
+      { "name": "The Lifted-Not-Blurred Rule", "body": "Depth comes from two layers, never one big blur.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do build with roles and recipes (`fg`, `surface`, `accent`, `ui-control`, `ui-card-frame`) so all three themes follow.",
+      "Do put a brand-only look in that theme's tokens and keep Asif Zone's look unchanged unless the change is meant for it.",
+      "Do keep tap targets at least 24px (44px where `docs/DESIGN_SYSTEM.md` asks); use `tap-target` for isolated inline actions.",
+      "Do handle loading, empty and error states on every screen.",
+      "Do keep reading text to about 65ch."
+    ],
+    "donts": [
+      "Don't use purple/blue gradients, emoji as icons, everything centred, identical three-card grids, generic hero copy or gratuitous glassmorphism.",
+      "Don't hard-code colours, fonts or one-off styles; propose a token instead.",
+      "Don't add dark mode to the admin.",
+      "Don't use sale red for anything but promotions, or a second accent colour in a brand.",
+      "Don't mix English and Bangla on one page."
+    ]
+  }
+}
