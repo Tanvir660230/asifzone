@@ -30,7 +30,8 @@ export function AdminSalesBadge({ productId }: { productId: string }) {
   const [summary, setSummary] = useState<ProductSalesSummary | null>(null);
 
   useEffect(() => {
-    if (!hasAdminHint()) return;
+    // The product builder's live preview has no saved product yet ("preview"): nothing to ask for.
+    if (!hasAdminHint() || productId === "preview") return;
     let live = true;
     fetchSummary(productId).then((result) => {
       if (!live) return;

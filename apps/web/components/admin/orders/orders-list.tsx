@@ -350,7 +350,7 @@ function CustomerCell({ order, commands, perms, risk }: { order: AdminOrderListI
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-fg-subtle">
           <a
             href={`tel:${order.customerPhone}`}
-            className="whitespace-nowrap tabular-nums underline-offset-2 hover:text-fg hover:underline"
+            className="tap-target inline-flex min-h-6 items-center whitespace-nowrap tabular-nums underline-offset-2 hover:text-fg hover:underline"
             aria-label={`Call ${order.customerName} on ${order.customerPhone}`}
           >
             {order.customerPhone}
@@ -441,7 +441,7 @@ export function OrdersList(props: OrdersListProps) {
         <p role="status" data-testid="courier-sync-banner" className="mt-3 flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-3.5 py-2.5 text-sm text-warning-700">
           <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0">
-            Courier sync failing on {formatCount(syncProblem.count)} orders: “<span className="break-all">{syncProblem.message}</span>”. Usually the courier key.{" "}
+            Courier status isn’t updating for {formatCount(syncProblem.count)} orders — usually the courier key needs checking.{" "}
             <Link href="/admin/settings?pane=integrations" className="whitespace-nowrap font-medium underline underline-offset-2">
               Check Integrations
             </Link>
@@ -459,6 +459,8 @@ export function OrdersList(props: OrdersListProps) {
                 .
               </>
             )}
+            {/* The courier's own words, for whoever fixes it — quiet, under the plain sentence. */}
+            <span className="mt-1 block break-all text-xs text-warning-700">Courier said: {syncProblem.message}</span>
           </span>
         </p>
       )}

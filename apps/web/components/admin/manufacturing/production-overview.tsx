@@ -49,7 +49,7 @@ export function ProductionOverview() {
             <Stat label="Ready to close" value={d.open.filter((o) => o.readyToClose).length.toLocaleString()} />
           </dl>
 
-          <div className="flex flex-wrap gap-2" aria-label="Orders by status">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Orders by status">
             {STATUS_ORDER.filter((s) => d.byStatus[s]).map((s) => (
               <Badge key={s} variant={MO_STATUS_BADGE[s]}>{upperFirst(MO_STATUS_LABEL[s])} · {d.byStatus[s]}</Badge>
             ))}
