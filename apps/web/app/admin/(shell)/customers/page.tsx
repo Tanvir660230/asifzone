@@ -651,7 +651,8 @@ export default function CustomersPage() {
                       {customer.lastSmsSentAt ? formatStoreDate(customer.lastSmsSentAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="flex justify-end gap-1">{renderRowActions(customer)}</div>
+                      {/* gap-4 = the icons' -m-2 hit areas side by side, never overlapping (WCAG 2.5.8). */}
+                      <div className="flex justify-end gap-4">{renderRowActions(customer)}</div>
                     </td>
                   </tr>
                 );

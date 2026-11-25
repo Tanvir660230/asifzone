@@ -68,10 +68,9 @@ test.describe("product landing page", () => {
 
     await page.getByLabel("আপনার নাম", { exact: true }).fill("Landing Tester");
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345680");
-    await page.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
-    await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
-    await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
+    // One "থানা ও জেলা" box (2026-11-25): a thana searched in Bangla, its district comes with it.
+    await page.getByLabel("থানা ও জেলা", { exact: true }).fill("ধানমন্ডি");
+    await page.getByRole("option", { name: /ধানমন্ডি/ }).first().click();
     await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
     // The delivery charge and total come from the server quote once the district is known.
     await expect(page.getByTestId("landing-total")).toHaveText(/\d/);
@@ -102,6 +101,25 @@ test.describe("product landing page", () => {
     expect(errors).toEqual([]);
   });
 
+  test("an order sent right after the address is written goes through in one tap (no 'price changed' detour)", async ({ page }) => {
+    const errors = trackPageErrors(page);
+    const { product, variant } = await stockedProduct();
+
+    await page.goto(`/lp/${product.slug}`);
+    if (new Set(product.variants.map((v) => v.size)).size > 1) await page.getByRole("button", { name: variant.size, exact: true }).first().click();
+    if (new Set(product.variants.map((v) => v.color)).size > 1) await page.getByRole("button", { name: variant.color, exact: true }).first().click();
+
+    await page.getByLabel("আপনার নাম", { exact: true }).fill("Fast Tap Tester");
+    await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345683");
+    // Filled in one go (as phone autofill does) and sent at once — inside the pause before the shown quote follows
+    // the address. The order must be priced for the address it carries, not refused as QUOTE_CHANGED.
+    await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("বাসা ৭, ধানমন্ডি, ঢাকা (automated test order)");
+    await page.getByTestId("landing-submit").click();
+
+    await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
+    expect(errors).toEqual([]);
+  });
+
   test("ordering without a size opens a size popup, and picking one carries on with the order", async ({ page }) => {
     const res = await fetch(`${API}/api/products/storefront?pageSize=50`);
     const items = ((await res.json()) as { items: ApiProduct[] }).items;
@@ -113,10 +131,9 @@ test.describe("product landing page", () => {
     await page.goto(`/lp/${product!.slug}`);
     await page.getByLabel("আপনার নাম", { exact: true }).fill("Popup Tester");
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345681");
-    await page.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
-    await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
-    await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
+    // One "থানা ও জেলা" box (2026-11-25): a thana searched in Bangla, its district comes with it.
+    await page.getByLabel("থানা ও জেলা", { exact: true }).fill("ধানমন্ডি");
+    await page.getByRole("option", { name: /ধানমন্ডি/ }).first().click();
     await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
 
     await page.getByTestId("landing-submit").click();

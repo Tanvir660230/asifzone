@@ -166,7 +166,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
             {hasMultiple && (
               // Where the thumbnails were on a phone: one dot per photo, the current one long. A tap on a dot jumps there.
               <div
-                className="glass ui-chip-glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2 lg:hidden"
+                className="glass ui-chip-glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center rounded-full px-1.5 py-2 lg:hidden"
                 data-testid="gallery-dots"
               >
                 {images.map((img, i) => (
@@ -179,11 +179,17 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                     }}
                     aria-label={`View image ${i + 1} of ${images.length}`}
                     aria-current={i === activeIndex}
-                    className={cn(
-                      "relative h-1.5 rounded-full transition-[width,background-color] duration-200 ease-smooth after:absolute after:-inset-2.5",
-                      i === activeIndex ? "w-4 bg-ink-900" : "w-1.5 bg-ink-900/30",
-                    )}
-                  />
+                    // A 24px button (WCAG 2.5.8) around the small dot, so neighbouring hit areas never overlap.
+                    className="-my-2 flex h-6 min-w-6 items-center justify-center"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "h-1.5 rounded-full transition-[width,background-color] duration-200 ease-smooth",
+                        i === activeIndex ? "w-4 bg-ink-900" : "w-1.5 bg-ink-900/30",
+                      )}
+                    />
+                  </button>
                 ))}
               </div>
             )}

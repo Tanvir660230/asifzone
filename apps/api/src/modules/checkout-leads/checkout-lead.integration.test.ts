@@ -146,6 +146,24 @@ describe("the work list", () => {
   });
 });
 
+describe("what the list calls sold out", () => {
+  it("follows the shop: a product that sells past its shelf is available at 0, a variant marked sold out is not", async () => {
+    const pastShelf = await product(0);
+    await prisma.product.updateMany({ where: { variants: { some: { id: pastShelf } } }, data: { stockPolicy: "UNLIMITED" } });
+    const shelfOnly = await product(0);
+    const marked = await product(5);
+    await prisma.productVariant.update({ where: { id: marked }, data: { markedSoldOut: true } });
+    const p = phone();
+    await captureCheckoutLead({ phone: p, items: [{ variantId: pastShelf, quantity: 1 }, { variantId: shelfOnly, quantity: 1 }, { variantId: marked, quantity: 1 }], source: "CHECKOUT" });
+    await age(p, 60);
+    const lead = (await listCheckoutLeads("open")).find((l) => l.phone === p)!;
+    const byId = new Map(lead.items.map((i) => [i.variantId, i.available]));
+    expect(byId.get(pastShelf)).toBe(true);
+    expect(byId.get(shelfOnly)).toBe(false);
+    expect(byId.get(marked)).toBe(false);
+  });
+});
+
 describe("resume link and retention", () => {
   it("the signed link gives the cart back; a forged one gives nothing", async () => {
     const variantId = await product();

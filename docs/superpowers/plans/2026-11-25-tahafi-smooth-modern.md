@@ -266,5 +266,8 @@ Changed from the plan, with reasons:
 - Task 12 (live content) not done: needs the owner's yes.
 
 Default (Asif Zone) and Nasihamart: full-page screenshots of home, a category, a product (AZ) and the bag at 390 and
-1440, origin/main vs this branch on the same live data: 0 differing pixels. The checkout delivery-fee line (Task 11)
-is the one intended change for every store.
+1440, origin/main vs this branch on the same live data: 0 differing pixels.
+
+Task 11 after merging main (#197/#198): main now asks inside / outside Dhaka and leaves delivery out of the total until
+the zone is known, which does the fee hint's job better, so the hint was dropped. Only the Tahafi sticky Place Order
+remains from Task 11; no change for Asif Zone or Nasihamart.
