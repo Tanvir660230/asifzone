@@ -20,7 +20,7 @@ function toRequest(req: Request): QuoteRequest {
   const address = place.district || place.division || body.shippingPostcode
     ? { district: place.district || null, division: place.division || null, postcode: body.shippingPostcode ?? null }
     : body.unknownUsesDefault
-      ? { unknownUsesDefault: true }
+      ? { unknownUsesDefault: true, zoneKey: body.shippingZoneKey ?? null }
       : null;
   return {
     items: body.items,

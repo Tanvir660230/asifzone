@@ -28,6 +28,21 @@ export interface ShippingAddress {
   /** The shopper skipped district and thana (they are optional on the storefront): use the default zone instead of
    * asking for an address. Staff complete the address on the confirmation call. */
   unknownUsesDefault?: boolean;
+  /** With no district/division/postcode: the zone the shopper chose ("Inside Dhaka" / "Outside Dhaka"). Ignored once
+   * the address names a place — the place decides. */
+  zoneKey?: string | null;
+}
+
+/** One zone the shopper can choose when the address doesn't say where it is, priced for this cart. */
+export interface ZoneChoice {
+  key: string;
+  name: string;
+  isDefault: boolean;
+  /** The districts the zone matches by name (empty for the fallback zone) — for labels like "Inside Dhaka". */
+  districts: string[];
+  fee: Money;
+  charged: Money;
+  waived: boolean;
 }
 
 export type ShippingResult =
@@ -78,7 +93,26 @@ export function resolveZone(zones: ShippingZoneRule[], address: ShippingAddress)
     .filter((m) => m.specificity > 0)
     .sort((a, b) => b.zone.priority - a.zone.priority || b.specificity - a.specificity || (a.zone.key < b.zone.key ? -1 : 1));
   if (matched[0]) return matched[0].zone;
+  const placeGiven = Boolean(values.POSTCODE || values.DISTRICT || values.DIVISION);
+  const chosen = !placeGiven && address.zoneKey ? active.find((z) => z.key === address.zoneKey) : undefined;
+  if (chosen) return chosen;
   return active.filter((z) => z.isDefault).sort((a, b) => (a.key < b.key ? -1 : 1))[0] ?? null;
+}
+
+/** Every active zone priced for this cart — offered when the address doesn't say where it is. */
+export function zoneChoices(
+  zones: ShippingZoneRule[],
+  merchandiseAfterDiscounts: Money,
+  opts: { couponFreeShipping: boolean; allLinesFreeDelivery?: boolean },
+): ZoneChoice[] {
+  return zones
+    .filter((z) => z.isActive)
+    .sort((a, b) => Number(a.isDefault) - Number(b.isDefault) || b.priority - a.priority || (a.key < b.key ? -1 : 1))
+    .flatMap((z) => {
+      const r = resolveShipping(zones, { unknownUsesDefault: true, zoneKey: z.key }, merchandiseAfterDiscounts, opts);
+      if (!r.ok || r.zoneKey !== z.key) return [];
+      return [{ key: z.key, name: z.name, isDefault: z.isDefault, districts: z.matches.filter((m) => m.field === "DISTRICT").map((m) => m.value), fee: r.fee, charged: r.charged, waived: r.waived }];
+    });
 }
 
 export function resolveShipping(

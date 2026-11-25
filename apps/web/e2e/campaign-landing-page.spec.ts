@@ -70,10 +70,9 @@ test("build, publish and order from a campaign landing page", async ({ page, bro
   if (new Set(product.variants.map((v) => v.color)).size > 1) await shopper.locator("#order").getByRole("button", { name: variant.color, exact: true }).first().click();
   await shopper.getByLabel("আপনার নাম", { exact: true }).fill("Campaign Tester");
   await shopper.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345681");
-  await shopper.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
-  await shopper.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-  await shopper.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
-  await shopper.getByRole("option", { name: /Dhanmondi/ }).first().click();
+  // One "থানা ও জেলা" box (2026-11-25): a thana searched in Bangla, its district comes with it.
+  await shopper.getByLabel("থানা ও জেলা", { exact: true }).fill("ধানমন্ডি");
+  await shopper.getByRole("option", { name: /ধানমন্ডি/ }).first().click();
   await shopper.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
   await expect(shopper.getByTestId("landing-total")).toHaveText(/\d/);
   await shopper.getByTestId("landing-submit").click();
