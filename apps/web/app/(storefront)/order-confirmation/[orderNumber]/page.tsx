@@ -205,6 +205,21 @@ export default function OrderConfirmationPage() {
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
         <OrderSummaryCard order={order} />
         <aside className="space-y-4">
+          {/* What happens next — the call is coming, so the shopper answers it (unanswered calls are the commonest cancel). */}
+          <section className="rounded-2xl bg-surface p-4 ring-1 ring-inset ring-line-subtle" aria-labelledby="next-steps" data-testid="order-next-steps">
+            <h2 id="next-steps" className="text-sm font-semibold text-fg">What happens next</h2>
+            <ol className="mt-2 space-y-2 text-sm text-fg-muted">
+              <li>
+                <span className="font-medium text-fg">1.</span> We call <span className="tabular-nums text-fg">{order.customerPhone}</span> to confirm before we ship. Please keep your phone close.
+              </li>
+              <li>
+                <span className="font-medium text-fg">2.</span> {order.paymentMethod === "COD" ? "You pay cash when the parcel arrives." : "Your payment is recorded with the order."}
+              </li>
+              <li>
+                <span className="font-medium text-fg">3.</span> Delivery by {formatDateShort(deliveryEstimate.maxDate)}.
+              </li>
+            </ol>
+          </section>
           <Link href="/" className={buttonVariants({ variant: "primary", size: "lg", className: "w-full" })}>
             Continue shopping
           </Link>

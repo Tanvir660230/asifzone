@@ -113,9 +113,22 @@ export default function CartPage() {
 
   const count = items.reduce((sum, i) => sum + i.quantity, 0);
   if (!mounted) {
+    // The saved bag is read after the page starts; until then a quiet outline of the lines, not a blank page.
     return (
       <StorefrontPage>
         <StorefrontPageHeader breadcrumb={[{ name: "Bag" }]} title="Your bag" />
+        <div className="space-y-3" aria-busy="true" aria-label="Loading your bag">
+          {[0, 1].map((i) => (
+            <div key={i} className="flex gap-3 rounded-2xl bg-surface p-3">
+              <span className="ui-skeleton h-20 w-20 shrink-0 rounded-xl" />
+              <span className="flex flex-1 flex-col gap-2 py-1">
+                <span className="ui-skeleton h-4 w-3/4 rounded" />
+                <span className="ui-skeleton h-3 w-1/3 rounded" />
+                <span className="ui-skeleton mt-auto h-4 w-1/4 rounded" />
+              </span>
+            </div>
+          ))}
+        </div>
       </StorefrontPage>
     );
   }
