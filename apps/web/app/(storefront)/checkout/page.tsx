@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, User, MapPin, Banknote, Smartphone, Wallet } from "lucide-react";
+import { ChevronDown, Banknote, Smartphone, Wallet } from "lucide-react";
 import {
   checkoutSchema,
   BD_DIVISION_BY_DISTRICT,
@@ -201,7 +201,9 @@ function CheckoutForm() {
   useEffect(() => {
     if (!settingsLoaded || paymentMethod) return;
     const enabled = ([["COD", codEnabled], ["SSLCOMMERZ", onlinePaymentEnabled], ["EPS_PG", epsPaymentEnabled]] as const).filter(([, on]) => on);
-    if (enabled.length === 1) setValue("paymentMethod", enabled[0]![0], { shouldValidate: false });
+    // Most shoppers pay cash on delivery: it starts ticked when offered (critique 2026-11-25); a lone method is ticked too.
+    const start = codEnabled ? "COD" : enabled.length === 1 ? enabled[0]![0] : null;
+    if (start) setValue("paymentMethod", start, { shouldValidate: false });
   }, [settingsLoaded, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
   // A resume link from the shop (incomplete orders) brought back what the shopper typed: it seeded the form's
@@ -352,6 +354,11 @@ function CheckoutForm() {
     }
   }
 
+  // Every problem in one pass: the delivery-area choice is flagged with the field errors, not after them.
+  function onInvalid() {
+    if (zoneNeeded && !zoneKey && addressLine.trim().length >= 4) setZoneError("Choose inside or outside Dhaka — the delivery charge depends on it.");
+  }
+
   async function onSubmit(values: CheckoutFormValues) {
     setSubmitError(null);
     const at = checkoutDistrict(values);
@@ -442,6 +449,9 @@ function CheckoutForm() {
   // Free delivery (or a known district) asks nothing; otherwise inside / outside Dhaka must be chosen.
   const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
   const zoneOpen = zoneNeeded && !zoneKey;
+  // The choice itself waits until an address is being written — asked on an empty form it appeared and vanished as the
+  // shopper typed a place name.
+  const zoneAsked = zoneNeeded && addressLine.trim().length >= 4;
   // Until inside / outside Dhaka is chosen, totals leave delivery out rather than show a charge that may not apply.
   const shownTotal = quote ? (zoneOpen && shipping?.resolved ? quote.total - shipping.charged : quote.total) : undefined;
   // The district known, else the zone chosen (Inside Dhaka → Dhaka's 1–2 days).
@@ -483,7 +493,13 @@ function CheckoutForm() {
                     ))}
                   </span>
                 )}
-                <span className="text-sm font-medium text-ink-900">{money(shownTotal)}</span>
+                <span className="text-right text-sm font-medium text-ink-900">
+                  {money(shownTotal)}
+                  {/* Delivery said out loud: "+ delivery" while unknown, "incl. delivery" once it is in the total. */}
+                  <span className="block text-[0.6875rem] font-normal text-ink-400">
+                    {zoneOpen ? "+ delivery" : shipping?.resolved && !shipping.waived && shipping.charged > 0 ? `incl. ${formatPrice(shipping.charged)} delivery` : shipping?.resolved && shipping.waived ? "free delivery" : ""}
+                  </span>
+                </span>
                 <ChevronDown size={16} className={cn("text-ink-400 transition-transform duration-200", summaryOpen && "rotate-180")} />
               </span>
             </button>
@@ -552,7 +568,7 @@ function CheckoutForm() {
                 <div className="flex justify-between text-ink-600">
                   <span>Shipping{shipping?.resolved && !shipping.waived && !zoneOpen ? ` (${shipping.zoneName})` : ""}</span>
                   {zoneOpen ? (
-                    <span className="text-ink-400">Choose inside or outside Dhaka</span>
+                    <span className="text-ink-400">{zoneAsked ? "Choose inside or outside Dhaka" : "Added after your address"}</span>
                   ) : !shipping?.resolved ? (
                     <span className="text-ink-400">Select district</span>
                   ) : shipping.waived ? (
@@ -605,11 +621,10 @@ function CheckoutForm() {
           </div>
         </aside>
 
-        <form onSubmit={handleSubmit(onSubmit)} method="post" className="order-2 space-y-5 lg:order-1">
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)} method="post" className="order-2 space-y-5 lg:order-1">
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">1</span>
-              <User size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Contact information</h2>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -633,6 +648,8 @@ function CheckoutForm() {
                 <Input
                   id="customerPhone"
                   placeholder="01XXXXXXXXX"
+                  type="tel"
+                  inputMode="tel"
                   autoComplete="tel"
                   aria-invalid={!!errors.customerPhone}
                   aria-describedby={errors.customerPhone ? "customerPhone-error" : "customerPhone-hint"}
@@ -644,7 +661,7 @@ function CheckoutForm() {
                   </p>
                 ) : (
                   <p id="customerPhone-hint" className="mt-1 text-xs text-fg-muted">
-                    We keep these details for a few days so we can help if your order doesn&apos;t go through.
+                    We&apos;ll call this number to confirm your order. If checkout doesn&apos;t finish, we keep it for a few days to help.
                   </p>
                 )}
               </div>
@@ -670,7 +687,6 @@ function CheckoutForm() {
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">2</span>
-              <MapPin size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Delivery address</h2>
             </div>
             {addressData && addressData.addresses.length > 0 && (
@@ -724,7 +740,7 @@ function CheckoutForm() {
                   setValue("shippingArea", p.area, { shouldValidate: true });
                 }}
               />
-              {zoneNeeded && quote?.zoneChoices && (
+              {zoneAsked && quote?.zoneChoices && (
                 <div className="sm:col-span-2">
                   <DeliveryZoneChoice
                     id="deliveryZone"
@@ -739,17 +755,20 @@ function CheckoutForm() {
                   />
                 </div>
               )}
-              <div className="sm:col-span-2">
-                <Label htmlFor="notes">Order notes (optional)</Label>
-                <Textarea id="notes" rows={2} {...register("notes")} />
-              </div>
+              {/* A note is rare: a quiet link that opens the box, not a second address-sized field. */}
+              <details className="sm:col-span-2" open={Boolean(watch("notes"))}>
+                <summary className="inline-flex min-h-6 cursor-pointer items-center text-sm text-fg-muted underline-offset-2 hover:text-fg hover:underline">
+                  Add a note for the shop
+                </summary>
+                <Label htmlFor="notes" className="sr-only">Order notes</Label>
+                <Textarea id="notes" rows={2} className="mt-2" {...register("notes")} />
+              </details>
             </div>
           </div>
 
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">3</span>
-              <Banknote size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
             <div className="space-y-2">
@@ -854,8 +873,13 @@ function CheckoutForm() {
               ? "Placing order…"
               : useStoreCredit && storeBalance > 0 && quote
                 ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
-                : `Place Order — ${money(shownTotal)}`}
+                : `Place Order — ${money(shownTotal)}${zoneOpen ? " + delivery" : ""}`}
           </Button>
+          {paymentMethod === "COD" && (
+            <p className="-mt-2 text-center text-xs text-fg-muted" data-testid="checkout-cod-note">
+              Pay cash when it arrives · we&apos;ll call to confirm before shipping
+            </p>
+          )}
         </form>
       </div>
     </StorefrontPage>

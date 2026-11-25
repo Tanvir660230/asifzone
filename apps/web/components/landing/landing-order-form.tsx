@@ -402,7 +402,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             setValue("shippingArea", p.area, { shouldValidate: true });
           }}
         />
-        {zoneNeeded && quote?.zoneChoices && (
+        {zoneNeeded && addressLine.trim().length >= 4 && quote?.zoneChoices && (
           <DeliveryZoneChoice
             id="lp-zone"
             lang="bn"

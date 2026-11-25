@@ -37,7 +37,7 @@ export function CheckoutLines({
         const atMax = item.quantity >= item.maxStock;
         return (
           <li key={item.variantId} className="flex gap-3 py-3 first:pt-0" data-testid="checkout-line">
-            <Link href={`/product/${item.productSlug}`} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-ink-100">
+            <Link href={`/product/${item.productSlug}`} aria-label={item.productName} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-ink-100">
               {item.imageUrl && <Image src={resolveImageUrl(item.imageUrl)} alt={item.productName} fill sizes="64px" className="object-cover" />}
             </Link>
             <div className="flex min-w-0 flex-1 flex-col justify-between gap-2">

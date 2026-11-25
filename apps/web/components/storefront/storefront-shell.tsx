@@ -12,6 +12,7 @@ import { AppShellWorker } from "@/components/storefront/app-shell-worker";
 import { NavigationProgress } from "@/components/storefront/navigation-progress";
 import { PageTransition } from "@/components/storefront/page-transition";
 import { SkipToContentLink } from "@/components/storefront/skip-to-content-link";
+import { HiddenOnRoutes } from "@/components/storefront/hidden-on-routes";
 import { Toaster } from "@/components/ui/toast";
 import {
   getActivePaymentMethodsSafe,
@@ -59,7 +60,10 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
       <main id="main-content" className="min-h-[100svh] flex-1">
         <PageTransition>{children}</PageTransition>
       </main>
-      <StoreFooter categories={tree} settings={settings} socialLinks={links} paymentMethods={methods} />
+      {/* Checkout keeps its focus: no newsletter/footer pull after the Place Order button. */}
+      <HiddenOnRoutes prefixes={["/checkout"]}>
+        <StoreFooter categories={tree} settings={settings} socialLinks={links} paymentMethods={methods} />
+      </HiddenOnRoutes>
       <StickyBottomBarSpacer />
       <SearchOverlay categories={tree} />
       <CartDrawer />
