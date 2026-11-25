@@ -9,25 +9,23 @@ import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Check, Loader2, Lock, Minus, Plus, Ruler } from "lucide-react";
 import {
-  BD_ALL_AREA_OPTIONS,
-  BD_ALL_DISTRICTS,
-  BD_AREAS_BY_DISTRICT,
   NO_SIZE_VALUE,
   bdPhoneSchema,
   maxSellableQuantity,
-  parseAreaDistrictOption,
   type CheckoutInput,
   type Product,
   type QuoteDto,
   type QuoteRequestInput,
   variantShipsFree,
   checkoutDistrict,
+  zoneChoiceNeeded,
   type SizeAssist,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
+import { DeliveryZoneChoice } from "@/components/storefront/delivery-zone-choice";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
 import { SizeFinder } from "@/components/storefront/size-finder";
@@ -82,6 +80,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
   const { product, options, size, color, setSize, setColor, sellable, quantity, setQuantity, setQuotedTotal } = useLandingSelection();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ঢাকার ভেতরে / বাইরে — asked only when the address names no place and it changes the delivery charge.
+  const [zoneKey, setZoneKey] = useState("");
+  const [zoneError, setZoneError] = useState<string | null>(null);
 
   // The type's own labels when it names them in Bangla; otherwise the plain Bangla words.
   const sizeLabel = isBangla(options.sizeLabel) ? options.sizeLabel : "সাইজ";
@@ -117,34 +118,21 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     "LANDING",
     { enabled: true, landingSlug: product.slug },
   );
-  const areaOptions: readonly string[] = district ? (BD_AREAS_BY_DISTRICT[district] ?? []) : BD_ALL_AREA_OPTIONS;
   // The district picked, else the one written in the address (after a pause in typing), else none: the server prices
   // the same way, so the delivery charge shown is the one charged.
   const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
   const place = checkoutDistrict({ shippingDistrict: district, shippingAddressLine: addressLine });
 
-  function handleArea(value: string) {
-    const parsed = parseAreaDistrictOption(value);
-    if (parsed) {
-      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
-      setValue("shippingArea", parsed.area, { shouldValidate: true });
-    } else setValue("shippingArea", value, { shouldValidate: true });
-  }
-
-  // A district change clears an area that isn't in it.
-  useEffect(() => {
-    if (district && area && !(BD_AREAS_BY_DISTRICT[district] ?? []).includes(area)) setValue("shippingArea", "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [district]);
-
   const quoteRequest: QuoteRequestInput | null =
     variant && !soldOut
-      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true }
+      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true, shippingZoneKey: place.unknown && zoneKey ? zoneKey : undefined }
       : null;
   const { data: quote, isFetching: quoting, refetch: refetchQuote } = useQuote(quoteRequest);
   const shipping = quote?.shipping;
+  const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
+  const zoneOpen = zoneNeeded && !zoneKey;
   // The sticky bar shows the same total as the summary, once the server has quoted it with delivery.
-  const quotedTotal = quote && shipping?.resolved ? Number(quote.total) : null;
+  const quotedTotal = quote && shipping?.resolved && !zoneOpen ? Number(quote.total) : null;
   useEffect(() => setQuotedTotal(quotedTotal), [quotedTotal, setQuotedTotal]);
 
   // The size finder's answers, kept with the order (recommended vs chosen) when the shopper used it.
@@ -225,6 +213,11 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
     if (!variant) return setPickerOpen(true);
     if (soldOut) return;
     const at = checkoutDistrict(values);
+    if (at.unknown && zoneNeeded && !zoneKey) {
+      setZoneError("ডেলিভারি চার্জের জন্য ঢাকার ভেতরে না বাইরে, বেছে নিন।");
+      document.getElementById("lp-zone")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     // The quote on screen follows the address after a pause in typing; an order sent inside that pause (a fast tap,
     // phone autofill) would carry a district the shown quote wasn't priced for, and the server would refuse it as
     // QUOTE_CHANGED. Price the address being sent now instead: go ahead when the total is no higher than what the
@@ -236,6 +229,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
         shippingDivision: at.division || undefined,
         shippingDistrict: at.district || undefined,
         unknownUsesDefault: true,
+        shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
       };
       try {
         const fresh = await queryClient.fetchQuery({ queryKey: ["quote", request], queryFn: async () => (await getQuote(request)).quote, staleTime: 15_000 });
@@ -257,6 +251,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       shippingDistrict: at.district,
       shippingArea: values.shippingArea,
       shippingAddressLine: values.shippingAddressLine,
+      shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
       paymentMethod: "COD",
       notes: null,
       sessionId: getSessionId() || undefined,
@@ -406,58 +401,45 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
             )}
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="lp-district">
-              জেলা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
-            </Label>
-            <SearchableSelect
-              id="lp-district"
-              autoComplete="address-level2"
-              aria-invalid={!!errors.shippingDistrict}
-              aria-describedby={errors.shippingDistrict ? "lp-district-error" : undefined}
-              value={district}
-              onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
-              options={BD_ALL_DISTRICTS}
-              placeholder="জেলার নাম লিখুন"
-            />
-            {fieldError("lp-district", errors.shippingDistrict?.message)}
-          </div>
-          <div>
-            <Label htmlFor="lp-area">
-              থানা / এলাকা <span className="font-normal text-fg-muted">(ঐচ্ছিক)</span>
-            </Label>
-            <SearchableSelect
-              id="lp-area"
-              autoComplete="address-level3"
-              aria-invalid={!!errors.shippingArea}
-              aria-describedby={errors.shippingArea ? "lp-area-error" : undefined}
-              value={area}
-              onChange={handleArea}
-              options={areaOptions}
-              placeholder="থানার নাম লিখুন"
-            />
-            {fieldError("lp-area", errors.shippingArea?.message)}
-          </div>
-        </div>
+        {/* Address first, the way people write it; the place box below reads the thana out of it. */}
         <div>
           <Label htmlFor="lp-address">পূর্ণ ঠিকানা</Label>
           <Textarea
             id="lp-address"
             rows={2}
             autoComplete="street-address"
-            placeholder="বাসা/ফ্ল্যাট নম্বর, রোড, এলাকা, পরিচিত স্থান"
+            placeholder="বাসা/ফ্ল্যাট নম্বর, রোড, এলাকা, থানা, জেলা"
             className="text-base"
             aria-invalid={!!errors.shippingAddressLine}
             aria-describedby={errors.shippingAddressLine ? "lp-address-error" : undefined}
             {...register("shippingAddressLine")}
           />
-          {errors.shippingAddressLine ? (
-            fieldError("lp-address", errors.shippingAddressLine.message)
-          ) : (
-            <p className="mt-1 text-xs text-fg-muted">সঠিক ঠিকানা দিলে ডেলিভারি সহজ হবে। জেলা ওপরে না বাছলে ঠিকানাতেই লিখে দিন।</p>
-          )}
+          {fieldError("lp-address", errors.shippingAddressLine?.message)}
         </div>
+        <DeliveryPlaceField
+          id="lp-area"
+          lang="bn"
+          addressLine={addressLine}
+          district={district}
+          area={area}
+          onChange={(p) => {
+            setValue("shippingDistrict", p.district, { shouldValidate: true });
+            setValue("shippingArea", p.area, { shouldValidate: true });
+          }}
+        />
+        {zoneNeeded && addressLine.trim().length >= 4 && quote?.zoneChoices && (
+          <DeliveryZoneChoice
+            id="lp-zone"
+            lang="bn"
+            choices={quote.zoneChoices}
+            value={zoneKey}
+            onChange={(k) => {
+              setZoneKey(k);
+              setZoneError(null);
+            }}
+            error={zoneError}
+          />
+        )}
       </div>
 
       <div className="rounded-xl bg-surface-muted p-4" data-testid="landing-summary">
@@ -484,14 +466,9 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
           <div className="flex justify-between gap-4">
             <dt className="text-fg-muted">ডেলিভারি চার্জ</dt>
             <dd className="tabular-nums text-fg">
-              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
+              {zoneOpen ? <span className="text-fg-muted">ঢাকার ভেতরে না বাইরে বাছুন</span> : !shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
             </dd>
           </div>
-          {place.unknown && addressLine.trim().length >= 4 && shipping?.resolved && !shipping.waived && (
-            <p className="text-xs text-fg-muted" data-testid="landing-default-delivery">
-              ঠিকানায় জেলা পাওয়া যায়নি, তাই সাধারণ ডেলিভারি চার্জ ধরা হয়েছে। জেলা বেছে নিলে ঠিক চার্জ দেখাবে।
-            </p>
-          )}
           {savings > 0 && (
             <div className="flex justify-between gap-4 text-success-700">
               <dt>আপনার সাশ্রয়</dt>
@@ -500,7 +477,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
           )}
           <div className="flex items-baseline justify-between gap-4 pt-2 text-fg">
             <dt className="text-base font-semibold">সর্বমোট</dt>
-            {quote && shipping?.resolved ? (
+            {quote && shipping?.resolved && !zoneOpen ? (
               <dd className={cn("text-xl font-bold tabular-nums transition-opacity duration-base", quoting && "opacity-50")} data-testid="landing-total">
                 {formatPrice(quote.total)}
               </dd>
@@ -508,7 +485,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
               // Until the district is known: the products' price and that delivery comes on top — not a bare dash.
               <dd className="text-sm tabular-nums text-fg-muted">
                 {formatPrice(quote ? quote.subtotal : Number(shown.price) * qty)}
-                {!shipsFree && " + ডেলিভারি"}
+                  {!shipsFree && " + ডেলিভারি"}
               </dd>
             )}
           </div>

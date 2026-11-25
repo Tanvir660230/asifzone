@@ -68,10 +68,9 @@ test.describe("product landing page", () => {
 
     await page.getByLabel("আপনার নাম", { exact: true }).fill("Landing Tester");
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345680");
-    await page.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
-    await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
-    await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
+    // One "থানা ও জেলা" box (2026-11-25): a thana searched in Bangla, its district comes with it.
+    await page.getByLabel("থানা ও জেলা", { exact: true }).fill("ধানমন্ডি");
+    await page.getByRole("option", { name: /ধানমন্ডি/ }).first().click();
     await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
     // The delivery charge and total come from the server quote once the district is known.
     await expect(page.getByTestId("landing-total")).toHaveText(/\d/);
@@ -132,10 +131,9 @@ test.describe("product landing page", () => {
     await page.goto(`/lp/${product!.slug}`);
     await page.getByLabel("আপনার নাম", { exact: true }).fill("Popup Tester");
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345681");
-    await page.getByLabel("জেলা (ঐচ্ছিক)", { exact: true }).fill("Dhaka");
-    await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("থানা / এলাকা (ঐচ্ছিক)", { exact: true }).fill("Dhanmondi");
-    await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
+    // One "থানা ও জেলা" box (2026-11-25): a thana searched in Bangla, its district comes with it.
+    await page.getByLabel("থানা ও জেলা", { exact: true }).fill("ধানমন্ডি");
+    await page.getByRole("option", { name: /ধানমন্ডি/ }).first().click();
     await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
 
     await page.getByTestId("landing-submit").click();

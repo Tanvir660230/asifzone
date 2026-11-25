@@ -169,11 +169,10 @@ test("full funnel: each event exactly once, with real data, shared event ids, no
   // Test 5 — AddPaymentInfo once the server accepted the order; no payment fields in it.
   await page.getByLabel("Full name").fill("E2E Pixel Shopper");
   await page.getByLabel("Phone").fill("01712345679");
-  await page.getByLabel("District").fill("Dhaka");
-  await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-  await page.getByLabel("Area / Thana").fill("Dhanmondi");
+  // One "Thana & district" box (2026-11-25): picking a thana sets its district too.
+  await page.getByLabel("Thana & district").fill("Dhanmondi");
   await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
-  await page.getByLabel("House / Road / Details").fill("House 1, Road 2 (automated pixel test order)");
+  await page.getByLabel("Full address").fill("House 1, Road 2 (automated pixel test order)");
   await page.getByLabel("Cash on Delivery").check();
   expect(count(beacons, "AddPaymentInfo")).toBe(0);
   await page.getByRole("button", { name: /^Place Order/ }).click();
