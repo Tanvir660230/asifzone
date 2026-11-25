@@ -192,6 +192,13 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             </>
           )}
         </div>
+        {product.shortDescription && (
+          // What it is and what it's made of, in one line right under the price — the facts a shopper decides on before
+          // the options (2026-11-25 review: "Bonded outer · soft sherpa lining" answers "why this price?").
+          <p className="mt-2 line-clamp-2 max-w-prose text-sm leading-relaxed text-fg-muted" data-testid="product-summary">
+            {product.shortDescription.split(/\r?\n/)[0]}
+          </p>
+        )}
         {shown.flash && (
           <p className="mt-1 text-xs ui-caps text-sale-600">
             Flash sale ends in <CountdownTimer endsAt={shown.flash.endsAt} className="font-medium" />
