@@ -79,7 +79,7 @@ export default async function ContactPage() {
       <StorefrontPageHeader
         breadcrumb={[{ name: "Contact Us" }]}
         title="Contact Us"
-        description="Order questions, product help, or just feedback — reach out below and we usually reply within one business day."
+        description={`Order questions, product help, or just feedback — reach out below${settings.supportHours ? "" : " and we usually reply within one business day"}.`}
       />
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-5 lg:gap-16">

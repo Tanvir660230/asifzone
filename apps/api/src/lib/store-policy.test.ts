@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { policyHighlights, returnPolicySentence, shippingAndReturnsText, storePolicy, type PolicySettings } from "@clothing-brand/shared";
+import { paymentMethodsSentence, policyHighlights, returnPolicySentence, shippingAndReturnsText, storePolicy, type PolicySettings } from "@clothing-brand/shared";
 
 // Phase 5: store policy is store configuration (StoreSetting), never storefront code.
 
@@ -52,5 +52,20 @@ describe("store policy", () => {
     expect(shippingAndReturnsText(other)).toMatch(/^Dispatched within 2 business days\./);
     // Only Cash on Delivery's switch decides that line — it can never claim a disabled payment method.
     expect(policyHighlights(storePolicy({ ...EXISTING_STORE, codEnabled: false })).some((l) => l.kind === "cashOnDelivery")).toBe(false);
+  });
+
+  it("names only the ways to pay the checkout really offers", () => {
+    const online = { onlinePaymentEnabled: true, epsPaymentEnabled: false, onlineGateways: { SSLCOMMERZ: true, EPS_PG: true } };
+    const offline = { onlinePaymentEnabled: false, epsPaymentEnabled: false };
+    expect(paymentMethodsSentence(storePolicy({ ...EXISTING_STORE, ...offline }))).toBe("Cash on Delivery only: you pay in cash when your parcel arrives.");
+    expect(paymentMethodsSentence(storePolicy({ ...EXISTING_STORE, ...online }))).toBe(
+      "We accept Cash on Delivery along with the card and mobile-wallet options shown at checkout.",
+    );
+    expect(paymentMethodsSentence(storePolicy({ ...EXISTING_STORE, ...online, codEnabled: false }))).toBe("We accept the card and mobile-wallet options shown at checkout.");
+    // A gateway switched off in Integrations is not offered, whatever the master switch says; EPS alone counts as online.
+    expect(storePolicy({ ...EXISTING_STORE, ...online, onlineGateways: { SSLCOMMERZ: false, EPS_PG: true } }).onlinePayment).toBe(false);
+    expect(storePolicy({ ...EXISTING_STORE, ...offline, epsPaymentEnabled: true }).onlinePayment).toBe(true);
+    // Settings that say nothing about online payment claim none.
+    expect(storePolicy(EXISTING_STORE).onlinePayment).toBe(false);
   });
 });

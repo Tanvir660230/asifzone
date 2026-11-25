@@ -8,7 +8,9 @@ import type { StoreSettings } from "./types";
  * and the Product structured data. Nothing here invents a policy: a fact the store hasn't set is simply not claimed.
  */
 
-export type PolicySettings = Pick<StoreSettings, "returnWindowDays" | "returnPolicyKind" | "returnConditions" | "handlingDaysMin" | "handlingDaysMax" | "codEnabled">;
+export type PolicySettings = Pick<StoreSettings, "returnWindowDays" | "returnPolicyKind" | "returnConditions" | "handlingDaysMin" | "handlingDaysMax" | "codEnabled"> &
+  // The online gateways, as the checkout reads them. Left out = none claimed.
+  Partial<Pick<StoreSettings, "onlinePaymentEnabled" | "epsPaymentEnabled" | "onlineGateways">>;
 
 export interface StorePolicy {
   /** null: the store states no return window (or offers exchange only). */
@@ -19,6 +21,8 @@ export interface StorePolicy {
   /** Business days between order and dispatch; null when the store hasn't stated it. */
   handlingDays: [number, number] | null;
   cashOnDelivery: boolean;
+  /** A card / mobile-wallet gateway the checkout offers (SSLCommerz or EPS, each also on in Integrations). */
+  onlinePayment: boolean;
   /** Courier transit days per delivery zone (country module). */
   deliveryDays: { insideDhaka: [number, number]; outsideDhaka: [number, number] };
 }
@@ -33,8 +37,20 @@ export function storePolicy(settings: PolicySettings): StorePolicy {
     exchange: settings.returnPolicyKind === "EXCHANGE" ? { days: days && days > 0 ? days : null, conditions } : null,
     handlingDays: min != null && max != null ? [Math.min(min, max), Math.max(min, max)] : null,
     cashOnDelivery: settings.codEnabled,
+    // The checkout's own rule (checkout/page.tsx): a gateway counts when its switch is on and Integrations hasn't turned
+    // it off.
+    onlinePayment:
+      (settings.onlinePaymentEnabled === true && settings.onlineGateways?.SSLCOMMERZ !== false) ||
+      (settings.epsPaymentEnabled === true && settings.onlineGateways?.EPS_PG !== false),
     deliveryDays: { insideDhaka: DHAKA_DELIVERY_DAYS, outsideDhaka: OUTSIDE_DHAKA_DELIVERY_DAYS },
   };
+}
+
+/** The FAQ's answer to "What payment methods do you accept?" — only what the checkout offers. */
+export function paymentMethodsSentence(policy: StorePolicy): string {
+  if (policy.cashOnDelivery && !policy.onlinePayment) return "Cash on Delivery only: you pay in cash when your parcel arrives.";
+  if (policy.cashOnDelivery) return "We accept Cash on Delivery along with the card and mobile-wallet options shown at checkout.";
+  return "We accept the card and mobile-wallet options shown at checkout.";
 }
 
 /** "1–2", or "2" when both ends match. */

@@ -5,7 +5,7 @@ import { buildFaqJsonLd } from "@/lib/structured-data";
 import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { FaqAccordion, type FaqGroup } from "@/components/storefront/faq-accordion";
 import { HelpAside } from "@/components/storefront/help-aside";
-import { BD_DELIVERY_TIME_TEXT, dayRange, jsonLdString, returnPolicySentence, storePolicy, type StorePolicy } from "@clothing-brand/shared";
+import { BD_DELIVERY_TIME_TEXT, dayRange, jsonLdString, paymentMethodsSentence, returnPolicySentence, storePolicy, type StorePolicy } from "@clothing-brand/shared";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -91,9 +91,7 @@ function faqGroups(policy: StorePolicy): FaqGroup[] {
       items: [
         {
           question: "What payment methods do you accept?",
-          answer: policy.cashOnDelivery
-            ? "We accept Cash on Delivery along with the card and mobile-wallet options shown at checkout."
-            : "We accept the card and mobile-wallet options shown at checkout.",
+          answer: paymentMethodsSentence(policy),
         },
         {
           question: "Do I need an account to order?",
