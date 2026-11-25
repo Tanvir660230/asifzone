@@ -78,7 +78,10 @@ function returnSteps(policy: StorePolicy) {
     {
       step: "3",
       title: "We take it from there",
-      body: "Once received and inspected, we'll process your exchange or refund and confirm by phone or email.",
+      // An exchange-only store promises no refund (store-policy.ts).
+      body: policy.exchange
+        ? "Once received and inspected, we'll send your exchange and confirm by phone or email."
+        : "Once received and inspected, we'll process your exchange or refund and confirm by phone or email.",
     },
   ];
 }
