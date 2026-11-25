@@ -128,6 +128,7 @@ orderRouter.get("/:id", requireAdmin, requirePermission("orders.read"), orderCon
 orderRouter.patch("/:id/status", requireAdmin, requirePermission("orders.manage"), validate(updateOrderStatusSchema), orderController.updateStatus);
 orderRouter.get("/:id/courier-note", requireAdmin, requirePermission("orders.read"), orderController.getCourierNote);
 orderRouter.patch("/:id/details", requireAdmin, requirePermission("orders.manage"), validate(updateOrderDetailsSchema), orderController.updateDetails);
+orderRouter.post("/:id/courier-update-done", requireAdmin, requirePermission("orders.manage"), orderController.courierUpdateDone);
 orderRouter.post("/:id/hold", requireAdmin, requirePermission("orders.manage"), validate(holdOrderSchema), orderController.hold);
 orderRouter.post("/:id/hold/clear", requireAdmin, requirePermission("orders.manage"), orderController.clearHold);
 // Order hold (docs/ORDER_HOLD.md): the customer asked us to wait. A hold past the two-hold limit: orders.escalations (service).

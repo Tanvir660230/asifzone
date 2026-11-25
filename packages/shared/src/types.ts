@@ -674,6 +674,10 @@ export interface Order {
   trackingNumber: string | null;
   carrier: string | null;
   courierConsignmentId: string | null;
+  /** Name, phone or address changed after booking: the courier still has the old ones until staff tell it. */
+  courierUpdateNeeded?: boolean;
+  courierUpdateNote?: string | null;
+  courierUpdateAt?: string | null;
   courierStatus: string | null;
   courierTrackingLink: string | null;
   courierBookedAt: string | null;

@@ -134,6 +134,10 @@ export const updateDetails = asyncHandler(async (req: Request, res: Response) =>
   res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body, req.admin!.adminId) });
 });
 
+export const courierUpdateDone = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.markCourierUpdateDone(req.params.id!, req.admin!.adminId) });
+});
+
 export const getCourierNote = asyncHandler(async (req: Request, res: Response) => {
   const view = await getCourierNoteView(req.params.id!);
   if (!view) throw AppError.notFound("Order not found");
