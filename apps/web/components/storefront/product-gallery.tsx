@@ -151,22 +151,22 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               className="absolute inset-0 rounded-xl focus-visible:outline-offset-[-3px] max-lg:pointer-events-none"
             />
             {active.caption && (
-              <span className="glass absolute left-3 top-3 max-w-[70%] truncate rounded-[var(--chip-radius)] px-3 py-1 text-xs text-ink-900" data-testid="image-caption">
+              <span className="glass ui-chip-glass absolute left-3 top-3 max-w-[70%] truncate rounded-[var(--chip-radius)] px-3 py-1 text-xs text-ink-900" data-testid="image-caption">
                 {active.caption}
               </span>
             )}
-            <span className="glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
+            <span className="glass ui-chip-glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
               <ZoomIn size={16} />
             </span>
             {hasMultiple && (
-              <span className="glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900 max-lg:hidden">
+              <span className="glass ui-chip-glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900 max-lg:hidden">
                 {activeIndex + 1} / {images.length}
               </span>
             )}
             {hasMultiple && (
               // Where the thumbnails were on a phone: one dot per photo, the current one long. A tap on a dot jumps there.
               <div
-                className="glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center rounded-full px-1.5 py-2 lg:hidden"
+                className="glass ui-chip-glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center rounded-full px-1.5 py-2 lg:hidden"
                 data-testid="gallery-dots"
               >
                 {images.map((img, i) => (
@@ -206,7 +206,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                 step(-1);
               }}
               aria-label="Previous image"
-              className="glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100 [@media(hover:none)]:hidden"
+              className="glass ui-chip-glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100 [@media(hover:none)]:hidden"
             >
               <ChevronLeft size={18} />
             </button>
@@ -216,7 +216,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                 step(1);
               }}
               aria-label="Next image"
-              className="glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100 [@media(hover:none)]:hidden"
+              className="glass ui-chip-glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100 [@media(hover:none)]:hidden"
             >
               <ChevronRight size={18} />
             </button>

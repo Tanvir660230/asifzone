@@ -43,7 +43,7 @@ export function TahafiHeaderActions({ modeToggle }: { modeToggle?: ReactNode }) 
         className="mr-1.5 flex h-10 w-56 items-center gap-2 rounded-full bg-ink-900/[0.06] px-4 text-left text-sm text-fg-muted transition-colors duration-200 ease-smooth hover:bg-ink-900/[0.09] xl:w-64"
       >
         <Search size={17} aria-hidden="true" />
-        Search jackets, panjabi…
+        Search the shop
       </button>
       {modeToggle}
       <Link href="/account" aria-label="Your account" className={ICON_BUTTON}>

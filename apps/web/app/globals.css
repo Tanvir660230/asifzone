@@ -153,6 +153,20 @@
   .glass-panel {
     @apply border border-[color:var(--glass-edge)] bg-surface/85 shadow-glass ring-1 ring-ink-900/[0.04] backdrop-blur-2xl backdrop-saturate-150;
   }
+  /* A small control floating on a photograph or the page (gallery chips, the chat button). Glass by default, the same
+     blur as `.glass`; a theme that wants a lighter page on mid-range phones turns the blur off with
+     `--chip-backdrop: none` and makes the fill near-opaque with `--chip-alpha`. Put it after `.glass` on the element. */
+  .ui-chip-glass {
+    -webkit-backdrop-filter: var(--chip-backdrop, blur(24px) saturate(1.5));
+    backdrop-filter: var(--chip-backdrop, blur(24px) saturate(1.5));
+    background-color: rgb(var(--color-surface) / var(--chip-alpha, var(--glass-alpha)));
+  }
+  /* `.glass-panel`'s edge, highlight and depth on an opaque fill, without the blur: controls that float over the page
+     all the time (a preset's round header buttons, a card's quick add), where a live blur would cost every frame of a
+     scroll on a mid-range phone. */
+  .solid-panel {
+    @apply border border-[color:var(--glass-edge)] bg-surface shadow-glass ring-1 ring-ink-900/[0.04];
+  }
   /* Artwork made for the light page or the dark one (a theme's colour modes): the logo in the header, for one. */
   .ui-mode-light-art {
     display: var(--mode-light-art);

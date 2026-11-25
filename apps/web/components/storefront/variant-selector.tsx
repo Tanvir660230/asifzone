@@ -11,6 +11,7 @@ import { trackFunnelEvent } from "@/lib/analytics";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { readSizeMemory, recordSize, suggestSize } from "@/lib/size-memory";
 import { BUY } from "@/lib/buy-copy";
+import { storeLayout } from "@/lib/theme-layout";
 import { WishlistButton } from "./wishlist-button";
 import { StockAlertButton } from "./stock-alert-button";
 import { SizeGuideModal } from "./size-guide-modal";
@@ -149,6 +150,12 @@ export function VariantSelector({
   const effectiveQty = Math.max(1, Math.min(quantity, maxQty));
   const soldOut = Boolean(selectedVariant) && maxQty === 0;
 
+  // The tahafi preset keeps the buying area to the choice and two actions: no "Please select a size" before anyone has
+  // tried (Add to Cart / Buy Now without a size open the options sheet, which asks), and no quantity stepper — one
+  // garment is the order; the bag changes the number. "You usually take M" still shows.
+  const compact = storeLayout() === "tahafi";
+  const showHint = !compact || Boolean(suggestedSize && !selectedSize);
+
   function handleAddToCart() {
     if (!selectedVariant) return setPickerIntent("cart");
     remember(selectedVariant);
@@ -209,6 +216,7 @@ export function VariantSelector({
         </p>
       )}
 
+      {(Boolean(selectedVariant && stock) || showHint) && (
       <div>
         <AnimatePresence mode="wait">
           {selectedVariant && stock ? (
@@ -234,10 +242,10 @@ export function VariantSelector({
               transition={{ duration: 0.15 }}
               className="text-sm text-ink-500"
             >
-              {missingSelectionText(options, selectedSize, selectedColor)}
+              {!compact && missingSelectionText(options, selectedSize, selectedColor)}
               {suggestedSize && !selectedSize && (
                 // Its own line, led by the same dot that marks the pill, so the two read as one hint.
-                <span className="mt-1.5 flex items-center gap-2">
+                <span className={compact ? "flex items-center gap-2" : "mt-1.5 flex items-center gap-2"}>
                   <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-accent" />
                   <span>
                     {BUY.usualSize}{" "}
@@ -256,9 +264,10 @@ export function VariantSelector({
           )}
         </AnimatePresence>
       </div>
+      )}
 
       <AnimatePresence>
-        {selectedVariant && maxQty > 0 && (
+        {selectedVariant && maxQty > 0 && !compact && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}

@@ -12,10 +12,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 import { StarRating, StarRatingInput } from "./star-rating";
 import { ReviewPhotoPicker, ReviewPhotoStrip } from "./review-photos";
 
 const PAGE_SIZE = 10;
+const MIN_REVIEWS_FOR_BARS = 5;
 
 /** A review’s age, filled in once the page is in the browser: the product page is served from a cache, so "3 days ago"
  * written on the server is not what the visitor’s clock says (a hydration mismatch, React #418 on live). The server
@@ -217,11 +219,15 @@ export function ProductReviews({ productId, productName, productType }: { produc
               <p className="mt-1 text-sm text-ink-500">
                 Based on {breakdown.count} review{breakdown.count === 1 ? "" : "s"}
               </p>
-              <div className="mt-4 space-y-1.5">
-                {([5, 4, 3, 2, 1] as const).map((star) => (
-                  <RatingBar key={star} star={star} count={breakdown.counts[String(star) as "5"]} total={breakdown.count} />
-                ))}
-              </div>
+              {/* The tahafi preset shows the five bars only once there are enough reviews for a spread to mean something;
+                  with one or two, four empty bars read as "nobody likes this". */}
+              {(storeLayout() !== "tahafi" || breakdown.count >= MIN_REVIEWS_FOR_BARS) && (
+                <div className="mt-4 space-y-1.5">
+                  {([5, 4, 3, 2, 1] as const).map((star) => (
+                    <RatingBar key={star} star={star} count={breakdown.counts[String(star) as "5"]} total={breakdown.count} />
+                  ))}
+                </div>
+              )}
             </>
           ) : (
             // Only once the reviews have loaded: while they load, "Loading reviews…" alone says what is happening.

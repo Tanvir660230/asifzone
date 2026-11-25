@@ -14,6 +14,7 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useSheetDrag } from "@/hooks/use-sheet-drag";
 import { cn } from "@/lib/utils";
 import { TAHAFI_CARD, TAHAFI_PHOTO_GLASS } from "./styles";
+import { ModeSegments } from "./mode-toggle";
 
 const HELP_LINKS = [
   ["/track-order", "Track an order"],
@@ -147,6 +148,9 @@ export function TahafiMenu({ categories }: { categories: NavNode[] }) {
               </li>
             ))}
           </ul>
+
+          <h2 className="mb-3 mt-7 text-[1.375rem] font-semibold tracking-tight text-fg">Appearance</h2>
+          <ModeSegments />
         </nav>
       </div>
     </div>,

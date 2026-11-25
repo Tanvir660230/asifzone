@@ -43,6 +43,7 @@ import { getActivePaymentMethods } from "@/lib/api/payment-methods";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
 import { sessionSet } from "@/lib/safe-storage";
@@ -446,6 +447,7 @@ function CheckoutForm() {
   const couponDiscount = quote?.couponDiscount ?? 0;
   const bundleDiscount = quote?.bundleDiscount ?? 0;
   const shipping = quote?.shipping;
+  const stickyPlaceOrder = storeLayout() === "tahafi";
   // Free delivery (or a known district) asks nothing; otherwise inside / outside Dhaka must be chosen.
   const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
   const zoneOpen = zoneNeeded && !zoneKey;
@@ -868,13 +870,17 @@ function CheckoutForm() {
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
-          <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting || !anyPaymentMethodEnabled}>
-            {isSubmitting
-              ? "Placing order…"
-              : useStoreCredit && storeBalance > 0 && quote
-                ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
-                : `Place Order — ${money(shownTotal)}${zoneOpen ? " + delivery" : ""}`}
-          </Button>
+          {/* The tahafi preset on phones: the button rides at the bottom of the screen while the form scrolls, so the
+              order is always one tap away; it settles in place at the end of the form. */}
+          <div className={cn(stickyPlaceOrder && "sticky bottom-[calc(var(--dock-offset,0px)+0.75rem)] z-raised rounded-full shadow-floatLg lg:static lg:shadow-none")}>
+            <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting || !anyPaymentMethodEnabled}>
+              {isSubmitting
+                ? "Placing order…"
+                : useStoreCredit && storeBalance > 0 && quote
+                  ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
+                  : `Place Order — ${money(shownTotal)}${zoneOpen ? " + delivery" : ""}`}
+            </Button>
+          </div>
           {paymentMethod === "COD" && (
             <p className="-mt-2 text-center text-xs text-fg-muted" data-testid="checkout-cod-note">
               Pay cash when it arrives · we&apos;ll call to confirm before shipping

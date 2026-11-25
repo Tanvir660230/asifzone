@@ -17,6 +17,11 @@ const OPT_IN_TOKENS = new Set([
   "--tap-sm",
   "--tap-min",
   "--fine-print-size",
+  // Floating chips and photo frames: globals.css (.ui-chip-glass) and the cards fall back to today's glass blur, the
+  // glass fill and the surface colour when a theme leaves them unset.
+  "--chip-backdrop",
+  "--chip-alpha",
+  "--media-placeholder",
 ]);
 
 function channels(value: string): [number, number, number] {

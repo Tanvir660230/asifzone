@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { storeLayout } from "@/lib/theme-layout";
 import { configuredTrackerNames, isPixelExcludedPath, trackingConfigured } from "@/lib/pixels";
 import {
   getAdTrackingConsent,
@@ -39,6 +40,32 @@ export function TrackingConsentBanner() {
     setOpen(false);
     setAdTrackingConsent(decision);
   };
+
+  if (storeLayout() === "tahafi") {
+    // The tahafi preset: one calm row above the dock — two short lines and two buttons, a fixed height so a font swap
+    // can't reshape it (the old card grew and shrank as it loaded, moving the page), and solid rather than blurred.
+    return (
+      <div
+        role="dialog"
+        aria-live="polite"
+        aria-label="Tracking preferences"
+        className="solid-panel fixed inset-x-3 bottom-[calc(var(--dock-offset)+0.75rem)] z-50 mx-auto flex h-[3.75rem] max-w-xl items-center gap-2 rounded-full py-2 pl-4 pr-2 shadow-floatLg sm:bottom-[calc(var(--dock-offset)+1.5rem)]"
+      >
+        <p className="line-clamp-2 min-w-0 flex-1 text-[0.8125rem] leading-snug text-fg-muted">
+          {notice ? "We use cookies to measure our ads." : "May we use cookies to measure our ads?"}{" "}
+          <Link href="/privacy-policy" className="text-fg underline underline-offset-2">
+            Privacy
+          </Link>
+        </p>
+        <Button variant="ghost" size="sm" className="shrink-0 whitespace-nowrap px-3" onClick={() => choose("denied")}>
+          Decline
+        </Button>
+        <Button size="sm" className="shrink-0 whitespace-nowrap px-4" onClick={() => choose("granted")}>
+          {notice ? "OK" : "Allow"}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div

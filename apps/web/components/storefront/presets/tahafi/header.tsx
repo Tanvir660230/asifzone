@@ -8,8 +8,9 @@ import { StoreLogoImage } from "@/components/store-logo-image";
 import { HeaderShell } from "../../header-shell";
 import { PhoneNavBar } from "../../phone-nav-bar";
 import { TahafiMenu } from "./menu";
-import { TahafiHeaderActions } from "./header-actions";
+import { TahafiHeaderActions, TahafiSearchButton } from "./header-actions";
 import { ModeToggle } from "./mode-toggle";
+import { desktopNavLinks } from "./nav-links";
 import { TAHAFI_GLASS_BUTTON, TAHAFI_NAV_LINK } from "./styles";
 
 interface HeaderProps {
@@ -18,8 +19,8 @@ interface HeaderProps {
 }
 
 /**
- * The Tahafi header, as in the approved mockup. Phones: on the tab pages, round glass buttons float over the page — the
- * account, the logo in a glass capsule, light or dark — and the bar behind them turns to glass once the page scrolls
+ * The Tahafi header, as in the approved mockup. Phones: on the tab pages, round buttons float over the page — the
+ * account, the logo in a capsule, search — and the bar behind them turns to glass once the page scrolls
  * (`.ui-header-float`); on pages inside a tab, Back and Search (PhoneNavBar) on that glass bar. Wide screens: one glass
  * bar — the logo, the pieces as soft pills, search, light/dark, account, bag. The logo is the store's light-page one, or
  * its dark-page one in dark mode. The menu sheet the dock's Shop opens is the honey preset's, which reads only tokens.
@@ -56,8 +57,9 @@ export function TahafiHeader({ categories, settings }: HeaderProps) {
             <Link href="/account" aria-label="Your account" className={TAHAFI_GLASS_BUTTON}>
               <User size={20} aria-hidden="true" />
             </Link>
-            {home("h-6 w-24 object-contain", "glass-panel h-11 rounded-full px-4")}
-            <ModeToggle className={TAHAFI_GLASS_BUTTON} />
+            {home("h-6 w-24 object-contain", "solid-panel h-11 rounded-full px-4")}
+            {/* Search in the corner people reach for; light or dark lives in the Shop sheet (menu.tsx). */}
+            <TahafiSearchButton className={TAHAFI_GLASS_BUTTON} />
           </div>
           <TahafiMenu categories={menu} />
         </PhoneNavBar>
@@ -65,9 +67,9 @@ export function TahafiHeader({ categories, settings }: HeaderProps) {
         <div className="mx-auto hidden h-[4.25rem] max-w-7xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-8 px-8 lg:grid">
           {home("h-8 w-32 object-contain object-left", "justify-start")}
           <nav aria-label="Shop" className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
-            {menu.slice(0, 6).map((node) => (
-              <Link key={node.id} href={node.href ?? `/category/${node.slug}`} className={`${TAHAFI_NAV_LINK} whitespace-nowrap`}>
-                {node.name}
+            {desktopNavLinks(menu).map((link) => (
+              <Link key={link.href} href={link.href} className={`${TAHAFI_NAV_LINK} whitespace-nowrap`}>
+                {link.label}
               </Link>
             ))}
           </nav>

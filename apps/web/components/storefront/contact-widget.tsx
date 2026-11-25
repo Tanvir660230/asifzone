@@ -262,7 +262,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                       if (action.key === "whatsapp" || action.key === "call") pixelContact(action.key);
                     }}
                     aria-label={action.label}
-                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
+                    className="glass ui-chip-glass glossy flex h-10 w-10 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >
                     {action.icon}
                   </Link>
@@ -271,7 +271,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                     type="button"
                     onClick={action.onClick}
                     aria-label={action.label}
-                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
+                    className="glass ui-chip-glass glossy flex h-10 w-10 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >
                     {action.icon}
                   </button>
@@ -288,7 +288,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
           aria-expanded={open}
           animate={open ? { scale: 1 } : { scale: [1, 1.05, 1] }}
           transition={open ? { duration: 0.15 } : { duration: 2.4, repeat: 2, repeatDelay: 1, ease: "easeInOut" }}
-          className="glass glossy flex h-11 w-11 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg"
+          className="glass ui-chip-glass glossy flex h-11 w-11 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg"
         >
           <motion.span initial={false} animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
             {open ? <X size={24} /> : <MessageCircle size={24} />}
