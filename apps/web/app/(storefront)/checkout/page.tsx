@@ -7,16 +7,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, User, MapPin, Banknote, Smartphone, Wallet } from "lucide-react";
+import { ChevronDown, Banknote, Smartphone, Wallet } from "lucide-react";
 import {
   checkoutSchema,
-  BD_ALL_DISTRICTS,
   BD_DIVISION_BY_DISTRICT,
-  BD_AREAS_BY_DISTRICT,
-  BD_ALL_AREA_OPTIONS,
-  parseAreaDistrictOption,
   estimateDelivery,
   checkoutDistrict,
+  zoneChoiceNeeded,
   type CheckoutInput,
   type QuoteDto,
   type QuoteRequestInput,
@@ -26,7 +23,8 @@ import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/st
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
+import { DeliveryZoneChoice } from "@/components/storefront/delivery-zone-choice";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { useCartStore } from "@/store/cart";
@@ -89,6 +87,9 @@ function CheckoutForm() {
   // under React 18 Strict Mode's dev-only double-invoke (mount → cleanup → mount), which wiped the
   // item out right after "Buy Now" set it, making checkout look like an empty cart every time.
   const [mounted, setMounted] = useState(false);
+  // Inside / outside Dhaka, when the address names no place and it changes the delivery charge (DeliveryZoneChoice).
+  const [zoneKey, setZoneKey] = useState("");
+  const [zoneError, setZoneError] = useState<string | null>(null);
   useEffect(() => setMounted(true), []);
 
   // Waits for `mounted` so the persisted cart has rehydrated. pixelInitiateCheckout dedupes per cart
@@ -200,7 +201,9 @@ function CheckoutForm() {
   useEffect(() => {
     if (!settingsLoaded || paymentMethod) return;
     const enabled = ([["COD", codEnabled], ["SSLCOMMERZ", onlinePaymentEnabled], ["EPS_PG", epsPaymentEnabled]] as const).filter(([, on]) => on);
-    if (enabled.length === 1) setValue("paymentMethod", enabled[0]![0], { shouldValidate: false });
+    // Most shoppers pay cash on delivery: it starts ticked when offered (critique 2026-11-25); a lone method is ticked too.
+    const start = codEnabled ? "COD" : enabled.length === 1 ? enabled[0]![0] : null;
+    if (start) setValue("paymentMethod", start, { shouldValidate: false });
   }, [settingsLoaded, codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
   // A resume link from the shop (incomplete orders) brought back what the shopper typed: it seeded the form's
@@ -226,21 +229,6 @@ function CheckoutForm() {
     "CHECKOUT",
     { enabled: mounted },
   );
-  // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
-  // shopper who knows their thana but not its district can find it directly — picking one fills in
-  // both fields. Once a district is set, the list narrows to just that district as before.
-  const areaOptions: readonly string[] = shippingDistrict ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? []) : BD_ALL_AREA_OPTIONS;
-
-  function handleAreaChange(value: string) {
-    const parsed = parseAreaDistrictOption(value);
-    if (parsed) {
-      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
-      setValue("shippingArea", parsed.area, { shouldValidate: true });
-    } else {
-      setValue("shippingArea", value, { shouldValidate: true });
-    }
-  }
-
   // Division is derived from the chosen district rather than picked separately; the shipping zone (and fee) is
   // resolved by the server quote from the address.
   useEffect(() => {
@@ -248,22 +236,10 @@ function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
-  // The area/thana list narrows to the selected district — clear it if it no longer applies. Only
-  // relevant once a district is actually picked: with no district, areaOptions is the country-wide
-  // combo list (formatted "Area — District"), which a plain area value would never match.
-  useEffect(() => {
-    if (!shippingDistrict) return;
-    if (shippingArea && !areaOptions.includes(shippingArea)) {
-      setValue("shippingArea", "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shippingDistrict]);
-
   // District and thana are optional (owner 2026-11-24): without a pick the district is read from the address (after a
   // pause in typing), else the default delivery charge applies. The server prices the same way, so what shows is charged.
   const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
   const place = checkoutDistrict({ shippingDistrict, shippingAddressLine: addressLine });
-  const deliveryEstimate = estimateDelivery(place.district);
 
   // The canonical server quote for exactly what will be submitted: items, applied coupon, address. Every amount on
   // this page comes from it; the page never adds, discounts or ships anything itself (PRICING_INVARIANTS §7).
@@ -274,6 +250,7 @@ function CheckoutForm() {
     shippingDivision: (shippingDistrict ? shippingDivision : place.division) || undefined,
     shippingDistrict: place.district || undefined,
     unknownUsesDefault: true,
+    shippingZoneKey: place.unknown && zoneKey ? zoneKey : undefined,
   };
   const quoteRequest: QuoteRequestInput = { ...baseRequest, couponCode: couponCode ?? undefined };
   const { data: quote, refetch: refetchQuote } = useQuote(mounted ? quoteRequest : null);
@@ -377,14 +354,25 @@ function CheckoutForm() {
     }
   }
 
+  // Every problem in one pass: the delivery-area choice is flagged with the field errors, not after them.
+  function onInvalid() {
+    if (zoneNeeded && !zoneKey && addressLine.trim().length >= 4) setZoneError("Choose inside or outside Dhaka — the delivery charge depends on it.");
+  }
+
   async function onSubmit(values: CheckoutFormValues) {
     setSubmitError(null);
     const at = checkoutDistrict(values);
+    if (at.unknown && zoneNeeded && !zoneKey) {
+      setZoneError("Choose inside or outside Dhaka — the delivery charge depends on it.");
+      document.getElementById("deliveryZone")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     const payload: CheckoutInput = {
       ...values,
       shippingDistrict: at.district,
       shippingDivision: (values.shippingDistrict ? values.shippingDivision : at.division) as CheckoutInput["shippingDivision"],
       couponCode: couponCode ?? undefined,
+      shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
       items: lineItems,
       sessionId: getSessionId() || undefined,
       // The quote the shopper is looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
@@ -458,6 +446,16 @@ function CheckoutForm() {
   const couponDiscount = quote?.couponDiscount ?? 0;
   const bundleDiscount = quote?.bundleDiscount ?? 0;
   const shipping = quote?.shipping;
+  // Free delivery (or a known district) asks nothing; otherwise inside / outside Dhaka must be chosen.
+  const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
+  const zoneOpen = zoneNeeded && !zoneKey;
+  // The choice itself waits until an address is being written — asked on an empty form it appeared and vanished as the
+  // shopper typed a place name.
+  const zoneAsked = zoneNeeded && addressLine.trim().length >= 4;
+  // Until inside / outside Dhaka is chosen, totals leave delivery out rather than show a charge that may not apply.
+  const shownTotal = quote ? (zoneOpen && shipping?.resolved ? quote.total - shipping.charged : quote.total) : undefined;
+  // The district known, else the zone chosen (Inside Dhaka → Dhaka's 1–2 days).
+  const deliveryEstimate = estimateDelivery(place.district || (quote?.zoneChoices?.find((c) => c.key === zoneKey)?.districts[0] ?? ""));
   const stockWarnings = (quote?.warnings ?? []).filter(
     (w) => w.code === "UNKNOWN_ITEM" || w.code === "UNAVAILABLE" || w.code === "INSUFFICIENT_STOCK" || w.code === "FLASH_LIMIT_PARTIAL",
   );
@@ -495,7 +493,13 @@ function CheckoutForm() {
                     ))}
                   </span>
                 )}
-                <span className="text-sm font-medium text-ink-900">{money(quote?.total)}</span>
+                <span className="text-right text-sm font-medium text-ink-900">
+                  {money(shownTotal)}
+                  {/* Delivery said out loud: "+ delivery" while unknown, "incl. delivery" once it is in the total. */}
+                  <span className="block text-[0.6875rem] font-normal text-ink-400">
+                    {zoneOpen ? "+ delivery" : shipping?.resolved && !shipping.waived && shipping.charged > 0 ? `incl. ${formatPrice(shipping.charged)} delivery` : shipping?.resolved && shipping.waived ? "free delivery" : ""}
+                  </span>
+                </span>
                 <ChevronDown size={16} className={cn("text-ink-400 transition-transform duration-200", summaryOpen && "rotate-180")} />
               </span>
             </button>
@@ -562,8 +566,10 @@ function CheckoutForm() {
                   </div>
                 )}
                 <div className="flex justify-between text-ink-600">
-                  <span>Shipping{shipping?.resolved ? ` (${shipping.zoneName})` : ""}</span>
-                  {!shipping?.resolved ? (
+                  <span>Shipping{shipping?.resolved && !shipping.waived && !zoneOpen ? ` (${shipping.zoneName})` : ""}</span>
+                  {zoneOpen ? (
+                    <span className="text-ink-400">{zoneAsked ? "Choose inside or outside Dhaka" : "Added after your address"}</span>
+                  ) : !shipping?.resolved ? (
                     <span className="text-ink-400">Select district</span>
                   ) : shipping.waived ? (
                     <span>
@@ -585,7 +591,10 @@ function CheckoutForm() {
                 </p>
                 <div className="flex justify-between border-t border-ink-100 pt-1.5 text-base text-ink-900">
                   <span>Total</span>
-                  <span className="font-medium">{money(quote?.total)}</span>
+                  <span className="font-medium">
+                    {money(shownTotal)}
+                    {zoneOpen && <span className="font-normal text-ink-400"> + delivery</span>}
+                  </span>
                 </div>
                 {quote && quote.tax.inclusive && quote.tax.taxAmount > 0 && (
                   <p className="text-xs text-ink-400">Includes VAT <Money value={quote.tax.taxAmount} /></p>
@@ -612,11 +621,10 @@ function CheckoutForm() {
           </div>
         </aside>
 
-        <form onSubmit={handleSubmit(onSubmit)} method="post" className="order-2 space-y-5 lg:order-1">
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)} method="post" className="order-2 space-y-5 lg:order-1">
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">1</span>
-              <User size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Contact information</h2>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -640,6 +648,8 @@ function CheckoutForm() {
                 <Input
                   id="customerPhone"
                   placeholder="01XXXXXXXXX"
+                  type="tel"
+                  inputMode="tel"
                   autoComplete="tel"
                   aria-invalid={!!errors.customerPhone}
                   aria-describedby={errors.customerPhone ? "customerPhone-error" : "customerPhone-hint"}
@@ -651,7 +661,7 @@ function CheckoutForm() {
                   </p>
                 ) : (
                   <p id="customerPhone-hint" className="mt-1 text-xs text-fg-muted">
-                    We keep these details for a few days so we can help if your order doesn&apos;t go through.
+                    We&apos;ll call this number to confirm your order. If checkout doesn&apos;t finish, we keep it for a few days to help.
                   </p>
                 )}
               </div>
@@ -677,7 +687,6 @@ function CheckoutForm() {
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">2</span>
-              <MapPin size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Delivery address</h2>
             </div>
             {addressData && addressData.addresses.length > 0 && (
@@ -701,52 +710,13 @@ function CheckoutForm() {
               </div>
             )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="shippingDistrict">
-                  District <span className="font-normal text-ink-400">(optional)</span>
-                </Label>
-                <SearchableSelect
-                  id="shippingDistrict"
-                  autoComplete="address-level2"
-                  aria-invalid={!!errors.shippingDistrict}
-                  aria-describedby={errors.shippingDistrict ? "shippingDistrict-error" : undefined}
-                  value={shippingDistrict}
-                  onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
-                  options={BD_ALL_DISTRICTS}
-                  placeholder="Search district..."
-                />
-                {errors.shippingDistrict && (
-                  <p id="shippingDistrict-error" className="mt-1 text-xs text-danger-600">
-                    {errors.shippingDistrict.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="shippingArea">
-                  Area / Thana <span className="font-normal text-ink-400">(optional)</span>
-                </Label>
-                <SearchableSelect
-                  id="shippingArea"
-                  autoComplete="address-level3"
-                  aria-invalid={!!errors.shippingArea}
-                  aria-describedby={errors.shippingArea ? "shippingArea-error" : undefined}
-                  value={shippingArea}
-                  onChange={handleAreaChange}
-                  options={areaOptions}
-                  placeholder={shippingDistrict ? "Search area/thana..." : "Search area/thana (any district)..."}
-                />
-                {errors.shippingArea && (
-                  <p id="shippingArea-error" className="mt-1 text-xs text-danger-600">
-                    {errors.shippingArea.message}
-                  </p>
-                )}
-              </div>
+              {/* Address first, the way people write it; the place box below reads the thana out of it. */}
               <div className="sm:col-span-2">
-                <Label htmlFor="shippingAddressLine">House / Road / Details</Label>
+                <Label htmlFor="shippingAddressLine">Full address</Label>
                 <Textarea
                   id="shippingAddressLine"
                   rows={2}
-                  placeholder="House, road, area, thana, district"
+                  placeholder="House, road, area — e.g. House 12, Road 3, Mirpur 10, Dhaka"
                   autoComplete="street-address"
                   aria-invalid={!!errors.shippingAddressLine}
                   aria-describedby={errors.shippingAddressLine ? "shippingAddressLine-error" : undefined}
@@ -758,17 +728,47 @@ function CheckoutForm() {
                   </p>
                 )}
               </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="notes">Order notes (optional)</Label>
-                <Textarea id="notes" rows={2} {...register("notes")} />
-              </div>
+              <DeliveryPlaceField
+                id="shippingArea"
+                lang="en"
+                className="sm:col-span-2"
+                addressLine={addressLine}
+                district={shippingDistrict}
+                area={shippingArea}
+                onChange={(p) => {
+                  setValue("shippingDistrict", p.district, { shouldValidate: true });
+                  setValue("shippingArea", p.area, { shouldValidate: true });
+                }}
+              />
+              {zoneAsked && quote?.zoneChoices && (
+                <div className="sm:col-span-2">
+                  <DeliveryZoneChoice
+                    id="deliveryZone"
+                    lang="en"
+                    choices={quote.zoneChoices}
+                    value={zoneKey}
+                    onChange={(k) => {
+                      setZoneKey(k);
+                      setZoneError(null);
+                    }}
+                    error={zoneError}
+                  />
+                </div>
+              )}
+              {/* A note is rare: a quiet link that opens the box, not a second address-sized field. */}
+              <details className="sm:col-span-2" open={Boolean(watch("notes"))}>
+                <summary className="inline-flex min-h-6 cursor-pointer items-center text-sm text-fg-muted underline-offset-2 hover:text-fg hover:underline">
+                  Add a note for the shop
+                </summary>
+                <Label htmlFor="notes" className="sr-only">Order notes</Label>
+                <Textarea id="notes" rows={2} className="mt-2" {...register("notes")} />
+              </details>
             </div>
           </div>
 
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">3</span>
-              <Banknote size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
             <div className="space-y-2">
@@ -873,8 +873,13 @@ function CheckoutForm() {
               ? "Placing order…"
               : useStoreCredit && storeBalance > 0 && quote
                 ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
-                : `Place Order — ${money(quote?.total)}`}
+                : `Place Order — ${money(shownTotal)}${zoneOpen ? " + delivery" : ""}`}
           </Button>
+          {paymentMethod === "COD" && (
+            <p className="-mt-2 text-center text-xs text-fg-muted" data-testid="checkout-cod-note">
+              Pay cash when it arrives · we&apos;ll call to confirm before shipping
+            </p>
+          )}
         </form>
       </div>
     </StorefrontPage>
