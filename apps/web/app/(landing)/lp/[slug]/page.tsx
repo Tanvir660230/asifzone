@@ -13,7 +13,7 @@ import { LandingStickyCta } from "@/components/landing/landing-sticky-cta";
 import { LandingMoreProducts } from "@/components/landing/landing-more-products";
 import { LandingFaqList, LandingFooter, LandingHeader, telHref } from "@/components/landing/landing-chrome";
 import { CampaignLandingView, campaignMetadata, loadCampaignProduct } from "@/components/landing/campaign-landing-view";
-import { getActiveSocialLinksSafe, getProductBySlug, getPublicLandingPage, getSiteSettings } from "@/lib/api/storefront";
+import { getActiveSocialLinksSafe, getProductBySlug, getProductFamilies, getPublicLandingPage, getSiteSettings } from "@/lib/api/storefront";
 import { formatPrice } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { bn, landingPromises, standardLandingFaqs } from "@/lib/landing-content";
@@ -73,7 +73,7 @@ export default async function ProductLandingPage({ params }: Props) {
 
 /** A product's automatic landing page: one fixed layout for every published product, at its own slug. */
 async function AutomaticLandingView({ product }: { product: Product }) {
-  const [{ settings }, { links }] = await Promise.all([getSiteSettings(), getActiveSocialLinksSafe()]);
+  const [{ settings }, { links }, families] = await Promise.all([getSiteSettings(), getActiveSocialLinksSafe(), getProductFamilies(product.id)]);
 
   // A server component formats money in the store's own currency explicitly (lib/store-config.ts).
   const money = (value: string | number) => formatPrice(value, settings.currency);
@@ -144,7 +144,7 @@ async function AutomaticLandingView({ product }: { product: Product }) {
                 আপনার অর্ডারটি সম্পন্ন করুন
               </h2>
               <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">নিচের তথ্যগুলো দিন, আমরা ফোন করে আপনার অর্ডারটি কনফার্ম করব।</p>
-              <LandingOrderForm codEnabled={settings.codEnabled} />
+              <LandingOrderForm codEnabled={settings.codEnabled} families={families} />
             </section>
 
             {(tel || whatsapp) && (
