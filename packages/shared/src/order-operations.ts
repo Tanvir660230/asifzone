@@ -38,7 +38,6 @@ export function priceAdjustmentBlocker(order: OrderGuardFacts, paidAmount: numbe
 /** Name / phone / address (tracking and admin notes stay editable). */
 export function customerDetailsEditBlocker(order: OrderGuardFacts): string | null {
   if (order.deletedAt) return RESTORE_BEFORE_CHANGES;
-  if (order.courierConsignmentId) return "Cannot change name/address after a courier has been booked — unlink the booking first";
   if (order.inHistory) return "This order is finished and in Order history — its customer details stay as they were";
   return null;
 }

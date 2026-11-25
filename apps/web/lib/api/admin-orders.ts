@@ -287,6 +287,10 @@ export function linkCourier(id: string, body: { consignmentId: string; trackingC
   return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/link`, { method: "POST", body });
 }
 
+export function courierUpdateDone(id: string) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/courier-update-done`, { method: "POST" });
+}
+
 export function unlinkCourier(id: string) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/unlink`, { method: "POST" });
 }

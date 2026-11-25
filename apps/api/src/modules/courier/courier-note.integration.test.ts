@@ -122,7 +122,7 @@ describe("booking with Steadfast", () => {
     }
   });
 
-  it("sends staff's own wording instead, and freezes it once booked", async () => {
+  it("sends staff's own wording instead; a change after booking is saved and flags the courier", async () => {
     const { product, variants } = await createStockedProduct();
     await prisma.product.update({ where: { id: product.id }, data: { courierNoteRuleIds: [fragrance.id] } });
     const order = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }]);
@@ -132,10 +132,14 @@ describe("booking with Steadfast", () => {
     await bookOrderWithSteadfast(order.id);
     expect(sent).toEqual(["সন্ধ্যার পরে দেবেন"]);
 
+    // Saving other details with the same note raises nothing for the courier.
+    const same = await owner.patch(`/api/orders/${order.id}/details`, { courierNote: "সন্ধ্যার পরে দেবেন", adminNotes: "ok" });
+    expect(same.status).toBe(200);
+    expect(same.body.order.courierUpdateNeeded).toBe(false);
+    // A new note after booking is kept, and the courier must be told (Steadfast keeps the one sent at booking).
     const change = await owner.patch(`/api/orders/${order.id}/details`, { courierNote: "অন্য কিছু" });
-    expect(change.status).toBe(400);
-    // Saving other details with the same note still works after booking.
-    expect((await owner.patch(`/api/orders/${order.id}/details`, { courierNote: "সন্ধ্যার পরে দেবেন", adminNotes: "ok" })).status).toBe(200);
+    expect(change.status).toBe(200);
+    expect(change.body.order).toMatchObject({ courierNote: "অন্য কিছু", courierUpdateNeeded: true });
   });
 
   it("deleting a rule strips it from products", async () => {

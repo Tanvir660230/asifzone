@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { DistrictAreaFields } from "@/components/admin/district-area-fields";
 import { Textarea } from "@/components/ui/textarea";
 import { copyToClipboard } from "@/lib/clipboard";
+import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
 import { DeliveryScoreBadge } from "../order-badges";
 import { StoreHistory } from "./store-history";
@@ -27,6 +28,7 @@ import type { OrderDetailCommands } from "./use-order-detail-commands";
 interface Draft {
   customerName: string;
   customerPhone: string;
+  altPhone: string;
   shippingDistrict: string;
   shippingArea: string;
   shippingAddressLine: string;
@@ -55,6 +57,7 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
     setDraft({
       customerName: order.customerName,
       customerPhone: order.customerPhone,
+      altPhone: order.altPhone ?? "",
       shippingDistrict: order.shippingDistrict,
       shippingArea: order.shippingArea,
       shippingAddressLine: order.shippingAddressLine,
@@ -65,7 +68,7 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
     if (!draft) return;
     // Same schema the API validates with — this only surfaces the first problem early.
     const parsed = updateOrderDetailsSchema
-      .pick({ customerName: true, customerPhone: true, shippingDivision: true, shippingDistrict: true, shippingArea: true, shippingAddressLine: true })
+      .pick({ customerName: true, customerPhone: true, altPhone: true, shippingDivision: true, shippingDistrict: true, shippingArea: true, shippingAddressLine: true })
       .safeParse({ ...draft, shippingDivision: BD_DIVISION_BY_DISTRICT[draft.shippingDistrict] });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Please check the fields");
@@ -97,6 +100,9 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
             <Field htmlFor="edit-customer-phone" label="Phone">
               <Input id="edit-customer-phone" inputMode="tel" value={draft.customerPhone} onChange={(e) => setDraft({ ...draft, customerPhone: e.target.value })} />
             </Field>
+            <Field htmlFor="edit-alt-phone" label="Another number (optional)" hint="The courier calls it if the first one doesn't answer.">
+              <Input id="edit-alt-phone" inputMode="tel" value={draft.altPhone} onChange={(e) => setDraft({ ...draft, altPhone: e.target.value })} />
+            </Field>
             <DistrictAreaFields
               idPrefix="edit"
               value={{ district: draft.shippingDistrict, area: draft.shippingArea }}
@@ -106,7 +112,11 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
           <Field htmlFor="edit-address" label="House / road / details" error={error ?? undefined}>
             <Textarea id="edit-address" rows={2} value={draft.shippingAddressLine} onChange={(e) => setDraft({ ...draft, shippingAddressLine: e.target.value })} />
           </Field>
-          <p className="text-xs text-ink-400">Changes are recorded on the order timeline.</p>
+          <p className="text-xs text-ink-400">
+            {order.courierConsignmentId
+              ? "The courier already has the old details — after you save, tell Steadfast (this order will remind you)."
+              : "Changes are recorded on the order timeline."}
+          </p>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setDraft(null)}>
               Cancel
@@ -118,6 +128,34 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
         </div>
       ) : (
         <div className={stacked ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 gap-4 sm:grid-cols-2"}>
+          {order.courierUpdateNeeded && !order.deletedAt && (
+            // Steadfast has no API to edit a booked parcel: staff send this message (panel / support), then mark it done.
+            <div className={cn("rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700", !stacked && "sm:col-span-2")} data-testid="courier-update-needed">
+              <p className="font-semibold">Tell the courier — details changed after booking</p>
+              <p className="mt-1 break-words text-danger-700">
+                Consignment {order.courierConsignmentId}: {order.courierUpdateNote}
+              </p>
+              {perms.manage && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      copyToClipboard(
+                        `Consignment ${order.courierConsignmentId} (invoice ${order.orderNumber}): please update — ${order.courierUpdateNote}. Now: ${order.customerName}, ${order.customerPhone}, ${fullAddress}`,
+                        "Message copied — send it to Steadfast",
+                      )
+                    }
+                  >
+                    <Copy size={13} /> Copy message for Steadfast
+                  </Button>
+                  <Button size="sm" loading={detail.courierTold.isPending} onClick={() => detail.courierTold.mutate()}>
+                    Courier told
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-700" aria-hidden="true">
@@ -137,6 +175,14 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
                   {order.customerPhone}
                   <DeliveryScoreBadge score={order.deliveryScore} />
                 </p>
+                {order.altPhone && (
+                  <p className="text-sm text-ink-500" data-testid="order-alt-phone">
+                    Also{" "}
+                    <a href={`tel:${order.altPhone}`} className="tabular-nums text-fg underline-offset-2 hover:underline">
+                      {order.altPhone}
+                    </a>
+                  </p>
+                )}
                 {order.customerEmail && <p className="truncate text-sm text-ink-500">{order.customerEmail}</p>}
               </div>
             </div>

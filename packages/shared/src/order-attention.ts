@@ -89,6 +89,8 @@ export interface OrderAttentionFacts {
   possibleDuplicateOf?: { id: string; orderNumber: string } | null;
   /** The delivery address line, for the short-address check (left out → no check). */
   shippingAddressLine?: string | null;
+  /** Customer details changed after the courier was booked; the courier still has the old ones. */
+  courierUpdateNeeded?: boolean;
   /** District and thana as on the order, for the thana checks (readBdAddress; left out → no check). */
   shippingDistrict?: string | null;
   shippingArea?: string | null;
@@ -189,6 +191,9 @@ export function orderAttentionItems(order: OrderAttentionFacts, fmt: AttentionFo
     items.push({ key: "address-short", tone: "warning", label: "Address looks short", detail: "Ask for the house, road and a landmark before booking — the rider needs them." });
   }
   if (beforeShipping && !order.courierConsignmentId) items.push(...thanaItems(order));
+  if (order.courierUpdateNeeded) {
+    items.push({ key: "courier-update", tone: "danger", label: "Tell courier: details changed", detail: "Phone or address changed after booking — send the change to Steadfast, then mark it told." });
+  }
   const pendingRequests = order.returnRequests?.filter((r) => r.status === "PENDING") ?? [];
   if (pendingRequests.length > 0) {
     items.push({

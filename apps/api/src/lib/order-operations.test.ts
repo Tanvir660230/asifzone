@@ -85,7 +85,8 @@ describe("order command guards", () => {
 
   it("customer details and follow-up holds", () => {
     expect(customerDetailsEditBlocker(order({ status: "SHIPPED" }))).toBeNull();
-    expect(customerDetailsEditBlocker(order({ courierConsignmentId: "x" }))).toMatch(/unlink/);
+    // Booked parcels can be corrected too (2026-11-25): the order is then flagged "tell the courier" by the API.
+    expect(customerDetailsEditBlocker(order({ courierConsignmentId: "x" }))).toBeNull();
     expect(followUpHoldBlocker(order())).toBeNull();
     expect(followUpHoldBlocker(order({ status: "CONFIRMED" }))).toMatch(/Only pending/);
   });

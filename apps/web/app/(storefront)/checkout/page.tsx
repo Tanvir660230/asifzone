@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
+import { AltPhoneField } from "@/components/storefront/alt-phone-field";
 import { DeliveryZoneChoice } from "@/components/storefront/delivery-zone-choice";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -666,6 +667,7 @@ function CheckoutForm() {
                     We&apos;ll call this number to confirm your order. If checkout doesn&apos;t finish, we keep it for a few days to help.
                   </p>
                 )}
+                <AltPhoneField id="altPhone" lang="en" className="mt-2" error={errors.altPhone?.message} inputProps={register("altPhone")} />
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>

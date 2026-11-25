@@ -64,6 +64,7 @@ import { flashUnitsSold, priceProductsForDisplay, quoteCart, toQuoteDto, type Pr
 import { LEGACY_ZONE_KEYS, loadShippingZones } from "../../domain/pricing/pricing-config";
 import { getSettings } from "../settings/settings.service";
 import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryScore, loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
+import { isUnclaimedPlaceholder } from "../customers/customer-identity";
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
@@ -376,6 +377,7 @@ export async function insertOrderRecord(
         customerName: input.customerName,
         customerEmail: input.customerEmail ?? null,
         customerPhone: input.customerPhone,
+        altPhone: input.altPhone && input.altPhone !== input.customerPhone ? input.altPhone : null,
         shippingDivision: input.shippingDivision,
         shippingDistrict: input.shippingDistrict,
         shippingArea: input.shippingArea,
@@ -1572,6 +1574,7 @@ export async function changeOrderStatus(id: string, input: UpdateOrderStatusInpu
 const ORDER_DETAIL_FIELD_LABELS = {
   customerName: "Name",
   customerPhone: "Phone",
+  altPhone: "Alt phone",
   shippingDivision: "Division",
   shippingDistrict: "District",
   shippingArea: "Area",
@@ -1586,7 +1589,7 @@ const ORDER_DETAIL_FIELD_LABELS = {
 function buildOrderDetailsDiffNote(
   existing: Pick<
     Awaited<ReturnType<typeof getOrderById>>,
-    "customerName" | "customerPhone" | "shippingDivision" | "shippingDistrict" | "shippingArea" | "shippingAddressLine"
+    "customerName" | "customerPhone" | "altPhone" | "shippingDivision" | "shippingDistrict" | "shippingArea" | "shippingAddressLine"
   >,
   input: UpdateOrderDetailsInput,
 ): string | null {
@@ -1610,28 +1613,77 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
   if (diffNote && (await isOrderFinished(id))) {
     throw new AppError(409, "This order is finished and in Order history — its customer details can't be changed", { code: "ORDER_FINISHED" });
   }
-  // Steadfast's parcel is booked with a fixed name/phone/address as of booking time — changing
-  // these here would silently desync from what the courier actually has on file (there's no
-  // Steadfast API to push a correction). Same guard/remedy as adjustOrderPrice.
-  if (diffNote && existing.courierConsignmentId) {
-    throw AppError.badRequest("Cannot change name/address after a courier has been booked — unlink the booking first");
-  }
-  // Same for the parcel note: Steadfast already has the one sent at booking (kept in courierNoteSent).
-  if (input.courierNote !== undefined && (input.courierNote ?? null) !== (existing.courierNote ?? null) && existing.courierConsignmentId) {
-    throw AppError.badRequest("Cannot change the courier note after a courier has been booked");
-  }
+  // Steadfast's parcel was booked with the name/phone/address of that moment and it has no API to edit a consignment.
+  // A wrong number on a shipped parcel is exactly when the correction matters most (owner, 2026-11-25), so the change is
+  // saved anyway and the order is flagged "tell the courier" (courierUpdateNeeded) until staff mark it done. Same for the
+  // parcel note (Steadfast keeps the one sent at booking, courierNoteSent).
+  const noteChanged = input.courierNote !== undefined && (input.courierNote ?? null) !== (existing.courierNote ?? null);
+  const booked = Boolean(existing.courierConsignmentId);
+  const courierNote = booked && (diffNote || noteChanged)
+    ? [existing.courierUpdateNeeded ? existing.courierUpdateNote : null, diffNote?.replace(/^Order details updated — /, ""), noteChanged ? `Note: "${input.courierNote ?? ""}"` : null]
+        .filter(Boolean)
+        .join("; ")
+    : null;
 
   // A new phone number: the unanswered-call count starts again (Order Operations phase 3).
   const phoneChanged = input.customerPhone !== undefined && input.customerPhone !== existing.customerPhone;
+  // A guest's order follows the corrected number to that number's customer (delivery score, history, reports); an order
+  // placed from a real account stays with the account.
+  let customerId: string | null | undefined;
+  if (phoneChanged && existing.customerId) {
+    const current = await prisma.customer.findUnique({ where: { id: existing.customerId }, select: { passwordHash: true, googleId: true, phoneVerifiedAt: true } });
+    if (!current || isUnclaimedPlaceholder(current)) {
+      customerId = await findOrCreateGuestCustomer(input.customerName ?? existing.customerName, existing.customerEmail ?? null, input.customerPhone!);
+    }
+  }
+  // The status SMS the customer already got went to the wrong number: send the current one again to the right one.
+  const resendTouchpoint: CustomerTouchpoint | null = !phoneChanged
+    ? null
+    : existing.status === "SHIPPED"
+      ? "SHIPPED"
+      : (["CONFIRMED", "PROCESSING", "PACKED"] as string[]).includes(existing.status)
+        ? "CONFIRMED"
+        : null;
 
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id },
+      data: {
+        ...input,
+        ...(customerId ? { customer: { connect: { id: customerId } } } : {}),
+        ...(phoneChanged ? phoneChangedConfirmationData(existing.confirmationEscalationReason ?? null) : {}),
+        ...(courierNote ? { courierUpdateNeeded: true, courierUpdateNote: courierNote.slice(0, 1000), courierUpdateAt: new Date() } : {}),
+        ...(diffNote
+          ? { statusHistory: { create: { status: existing.status, note: booked ? `${diffNote} — tell the courier` : diffNote, changedByAdminId: changedByAdminId ?? null } } }
+          : {}),
+      },
+      include,
+    });
+    if (resendTouchpoint) {
+      await recordOutboxEvents(tx as AppTransactionClient, [
+        {
+          eventType: "order.status_changed.v1",
+          consumer: "customer-order-sms",
+          eventKey: `phone-change:${id}:${input.customerPhone}:${Date.now()}`,
+          aggregateType: "Order",
+          aggregateId: id,
+          payload: { orderId: id, touchpoint: resendTouchpoint },
+        },
+      ]);
+    }
+    return updated;
+  });
+}
+
+/** Staff told the courier about the changed details (Steadfast panel or support): the flag goes, the change stays. */
+export async function markCourierUpdateDone(id: string, changedByAdminId?: string) {
+  const existing = await getOrderById(id);
+  if (!existing.courierUpdateNeeded) return existing;
   return prisma.order.update({
     where: { id },
     data: {
-      ...input,
-      ...(phoneChanged ? phoneChangedConfirmationData(existing.confirmationEscalationReason ?? null) : {}),
-      ...(diffNote
-        ? { statusHistory: { create: { status: existing.status, note: diffNote, changedByAdminId: changedByAdminId ?? null } } }
-        : {}),
+      courierUpdateNeeded: false,
+      statusHistory: { create: { status: existing.status, note: `Courier told about the change: ${existing.courierUpdateNote ?? ""}`.trim(), changedByAdminId: changedByAdminId ?? null } },
     },
     include,
   });

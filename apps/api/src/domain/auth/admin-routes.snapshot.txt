@@ -548,6 +548,7 @@ POST /api/notifications/:id/read → (self)
 POST /api/notifications/read-all → (self)
 POST /api/orders/:id/confirmation-attempts → orders.manage
 POST /api/orders/:id/confirmation/release → orders.manage
+POST /api/orders/:id/courier-update-done → orders.manage
 POST /api/orders/:id/courier/book → courier.manage
 POST /api/orders/:id/courier/link → courier.manage
 POST /api/orders/:id/courier/refresh → courier.manage

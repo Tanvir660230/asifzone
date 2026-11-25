@@ -1330,6 +1330,14 @@ model Order {
   /// Steadfast's internal id for the booked consignment — the key used to poll status and to
   /// match incoming webhooks back to this order. Null until "Book with Steadfast" is used.
   courierConsignmentId    String?
+  /// Name, phone or address changed after the courier was booked: the courier still has the old ones until staff tell it
+  /// (Steadfast has no API to edit a consignment). Cleared by "Courier told" (POST /orders/:id/courier-update-done).
+  /// A second number the courier can call (optional; checkout, landing page or staff). Sent with the address.
+  altPhone                String?
+  courierUpdateNeeded     Boolean   @default(false)
+  /// What changed, for the message to the courier ("Phone: 017… → 018…").
+  courierUpdateNote       String?
+  courierUpdateAt         DateTime?
   /// Raw delivery_status string from Steadfast (e.g. "in_review", "delivered", "cancelled"),
   /// shown to the admin as-is; see mapSteadfastStatusToOrderStatus for how it affects `status`.
   courierStatus           String?
@@ -2868,42 +2876,42 @@ model NotificationRead {
 /// Single-row store configuration — always read/written via id "singleton". Fields not yet wired
 /// into a live consumer are documented at the call site, not silently unused.
 model StoreSetting {
-  id                           String   @id @default("singleton")
-  storeName                    String   @default("Store")
+  id                           String           @id @default("singleton")
+  storeName                    String           @default("Store")
   tagline                      String?
   /// The short line printed beside the logo on product stickers, e.g. "OUTERWEAR". Empty: none.
-  labelTagline                 String?  @db.VarChar(40)
+  labelTagline                 String?          @db.VarChar(40)
   logoUrl                      String?
   logoOnDarkUrl                String?
   faviconUrl                   String?
-  currency                     String   @default("BDT")
+  currency                     String           @default("BDT")
   /// IANA timezone of the store's business day (metrics, "today", reports) — docs/METRICS_REGISTRY.md §1. Phase 5.
-  timezone                     String   @default("Asia/Dhaka")
+  timezone                     String           @default("Asia/Dhaka")
   contactEmail                 String?
   contactPhone                 String?
-  shippingFeeDhaka             Decimal  @default(60) @db.Decimal(10, 2)
-  shippingFeeOutsideDhaka      Decimal  @default(120) @db.Decimal(10, 2)
+  shippingFeeDhaka             Decimal          @default(60) @db.Decimal(10, 2)
+  shippingFeeOutsideDhaka      Decimal          @default(120) @db.Decimal(10, 2)
   /// Estimated round-trip courier fee lost on a post-booking cancellation or partial-delivery
   /// return, zone-matched the same way as shippingFeeDhaka/OutsideDhaka above — Steadfast's API
   /// never exposes a real per-order fee (see lib/steadfast.ts), so this is an admin-entered
   /// estimate (their actual return-fee rate) used only to total up CourierLossEvent rows for the
   /// dashboard's "courier cancellation loss" figure, not billed or charged anywhere.
-  courierReturnFeeDhaka        Decimal  @default(60) @db.Decimal(10, 2)
-  courierReturnFeeOutsideDhaka Decimal  @default(120) @db.Decimal(10, 2)
-  taxEnabled                   Boolean  @default(false)
-  defaultTaxRate               Decimal? @db.Decimal(5, 2)
-  rewardPointsPerCurrency      Decimal  @default(0) @db.Decimal(10, 4)
+  courierReturnFeeDhaka        Decimal          @default(60) @db.Decimal(10, 2)
+  courierReturnFeeOutsideDhaka Decimal          @default(120) @db.Decimal(10, 2)
+  taxEnabled                   Boolean          @default(false)
+  defaultTaxRate               Decimal?         @db.Decimal(5, 2)
+  rewardPointsPerCurrency      Decimal          @default(0) @db.Decimal(10, 4)
   /// Prefill text appended to the active WHATSAPP SocialLink's URL as a `text` query param — the
   /// number/enable-state itself stays sourced from SocialLink (see comment above SocialLink) so
   /// there's exactly one place admins manage the WhatsApp destination.
   whatsappMessage              String?
-  whatsappLabel                String   @default("WhatsApp")
-  callEnabled                  Boolean  @default(false)
-  callLabel                    String   @default("Call Us")
+  whatsappLabel                String           @default("WhatsApp")
+  callEnabled                  Boolean          @default(false)
+  callLabel                    String           @default("Call Us")
   /// Live Chat: Tawk.to. Kept DB-driven (unlike the old NEXT_PUBLIC_TAWKTO_* env vars) so it can be
   /// toggled without a rebuild; see apps/web/components/storefront/live-chat-widget.tsx.
-  liveChatEnabled              Boolean  @default(false)
-  liveChatLabel                String   @default("Live Chat")
+  liveChatEnabled              Boolean          @default(false)
+  liveChatLabel                String           @default("Live Chat")
   tawkPropertyId               String?
   tawkWidgetId                 String?
   /// A single combined "we accept" graphic (all payment logos already laid out in one image) as an
@@ -2915,13 +2923,13 @@ model StoreSetting {
   /// off entirely (e.g. during a COD abuse spike, or while SSLCommerz credentials are being rotated)
   /// without touching code. Both default on; enforced both in the checkout UI and server-side in
   /// order.service.ts so a stale page can't submit a disabled method.
-  codEnabled                   Boolean  @default(true)
-  onlinePaymentEnabled         Boolean  @default(true)
+  codEnabled                   Boolean          @default(true)
+  onlinePaymentEnabled         Boolean          @default(true)
   /// Gates the EPS-PG checkout option, kept separate from onlinePaymentEnabled (which gates
   /// SSLCommerz) so either gateway can be toggled independently — e.g. turning EPS off while its
   /// credentials are being rotated without touching SSLCommerz or COD. Defaults off since it stays
   /// unusable until EPS sandbox/live credentials are entered via the EPS_* env vars.
-  epsPaymentEnabled            Boolean  @default(false)
+  epsPaymentEnabled            Boolean          @default(false)
   /// The content= value Google Search Console gives you for the HTML-tag verification method —
   /// pasted here and rendered as a <meta name="google-site-verification"> tag on every page,
   /// rather than requiring a file upload or DNS change to prove domain ownership.
@@ -2962,18 +2970,18 @@ model StoreSetting {
   storefrontDesign             Json?
   /// Customer confirmation calls (Order Operations phase 3): unanswered calls before escalation, hours an order may stay
   /// unconfirmed, minutes to the 1st/2nd retry, store-local hour of the next-day retry. Defaults = the plan's.
-  confirmationMaxUnreached     Int      @default(4)
-  confirmationEscalateHours    Int      @default(72)
-  confirmationRetryMinutes     Int      @default(120)
-  confirmationNextDayHour      Int      @default(10)
+  confirmationMaxUnreached     Int              @default(4)
+  confirmationEscalateHours    Int              @default(72)
+  confirmationRetryMinutes     Int              @default(120)
+  confirmationNextDayHour      Int              @default(10)
   /// When the customer's "shipped" SMS goes: BOOKING (today) or HANDOVER (at the dispatch scan — after the pilot, plan M4).
-  shippedSmsTrigger            String   @default("BOOKING")
+  shippedSmsTrigger            String           @default("BOOKING")
   /// Courier automation (Order Operations phase 5, plan M8): a parcel out longer than this (from handover, or booking for
   /// an unscanned one) is "stuck in transit"; a return the courier reported this long ago that hasn't arrived is overdue.
-  stuckInTransitDays           Int      @default(6)
+  stuckInTransitDays           Int              @default(6)
   /// Owner decision Q-B: the store's one follow-up deadline for parcels coming back (FinanceBusiness.returnFollowUpDays was folded in).
-  returnNotBackDays            Int      @default(14)
-  updatedAt                    DateTime @updatedAt
+  returnNotBackDays            Int              @default(14)
+  updatedAt                    DateTime         @updatedAt
 }
 
 /// Admin-only SMS notification config — kept separate from StoreSetting because settingsRouter's

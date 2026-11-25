@@ -136,7 +136,16 @@ export function useOrderDetailCommands(orderId: string) {
     },
   });
 
-  return { details, hold, clearHold, price, reconcile, receiveReturn, refund, completeRefund, payment, remark, voidPayment, storeCredit };
+  const courierTold = useMutation({
+    mutationFn: () => adminOrdersApi.courierUpdateDone(orderId),
+    onSuccess: () => {
+      refresh();
+      toast.success("Marked as told to the courier");
+    },
+    onError: fail("Failed to save"),
+  });
+
+  return { details, hold, clearHold, price, reconcile, receiveReturn, refund, completeRefund, payment, remark, voidPayment, storeCredit, courierTold };
 }
 
 /** The server refused to cancel courier money a posted payout covers until the person confirms. */
