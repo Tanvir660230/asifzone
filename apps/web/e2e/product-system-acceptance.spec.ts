@@ -453,11 +453,10 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.goto("/checkout");
     await page.getByLabel("Full name").fill("E2E Acceptance Shopper");
     await page.getByLabel("Phone").fill("01712345670");
-    await page.getByLabel("District").fill("Dhaka");
-    await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("Area / Thana").fill("Dhanmondi");
+    // One "Thana & district" box (2026-11-25): picking a thana sets its district too.
+    await page.getByLabel("Thana & district").fill("Dhanmondi");
     await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
-    await page.getByLabel("House / Road / Details").fill("House 1, Road 2 (automated acceptance order)");
+    await page.getByLabel("Full address").fill("House 1, Road 2 (automated acceptance order)");
     await page.getByLabel("Cash on Delivery").check();
     await page.getByRole("button", { name: /^Place Order/ }).click();
     await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });

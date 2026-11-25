@@ -1,6 +1,7 @@
 import { MONEY_HELD_PAYMENT_STATUSES } from "./engines/payment-ledger";
 import { PRE_SHIPMENT_STATUSES, canTransitionOrder } from "./order-state";
 import type { OrderStatus } from "./schemas/order";
+import { readBdAddress, type BdPlace } from "./country/bd";
 
 /**
  * Blueprint V2 P0 — one definition, shared by the order screens (list row, detail, preview) and the AI assistant:
@@ -88,6 +89,32 @@ export interface OrderAttentionFacts {
   possibleDuplicateOf?: { id: string; orderNumber: string } | null;
   /** The delivery address line, for the short-address check (left out → no check). */
   shippingAddressLine?: string | null;
+  /** District and thana as on the order, for the thana checks (readBdAddress; left out → no check). */
+  shippingDistrict?: string | null;
+  shippingArea?: string | null;
+}
+
+const placeText = (p: BdPlace) => `${p.area}, ${p.district}`;
+
+/** Thana problems a rider would hit, before the parcel is booked: none given or read, a name several districts share, or a
+ * picked thana / district the written address contradicts. Advisory, like the short-address check. */
+function thanaItems(order: OrderAttentionFacts): OrderAttentionItem[] {
+  if (order.shippingArea === undefined || order.shippingAddressLine === undefined) return [];
+  const read = readBdAddress({ addressLine: order.shippingAddressLine, district: order.shippingDistrict, area: order.shippingArea });
+  const items: OrderAttentionItem[] = [];
+  for (const issue of read.issues) {
+    if (issue.code === "AREA_MISMATCH") {
+      items.push({ key: "thana-mismatch", tone: "warning", label: "Thana doesn't match address", detail: `Picked ${placeText(issue.picked)}, but the address says ${placeText(issue.written)} — ask which is right.` });
+    } else if (issue.code === "DISTRICT_MISMATCH") {
+      items.push({ key: "district-mismatch", tone: "warning", label: "District doesn't match address", detail: `Picked ${issue.picked}, but the address says ${issue.written} — ask which is right.` });
+    } else if (issue.code === "AREA_UNCLEAR") {
+      const name = issue.choices[0]!.area;
+      items.push({ key: "thana-unclear", tone: "warning", label: `Which ${name}?`, detail: `${name} is in ${issue.choices.map((c) => c.district).join(", ")} — ask the customer which one.` });
+    } else if (issue.code === "AREA_MISSING") {
+      items.push({ key: "thana-missing", tone: "warning", label: "Thana missing", detail: "Ask for the thana on the call — the courier sorts parcels by it." });
+    }
+  }
+  return items;
 }
 
 /** An address a rider can't find a house from: under 12 characters, or fewer than three words ("Mirpur", "Uttara 10").
@@ -161,6 +188,7 @@ export function orderAttentionItems(order: OrderAttentionFacts, fmt: AttentionFo
   if (beforeShipping && !order.courierConsignmentId && order.shippingAddressLine !== undefined && addressLooksShort(order.shippingAddressLine)) {
     items.push({ key: "address-short", tone: "warning", label: "Address looks short", detail: "Ask for the house, road and a landmark before booking — the rider needs them." });
   }
+  if (beforeShipping && !order.courierConsignmentId) items.push(...thanaItems(order));
   const pendingRequests = order.returnRequests?.filter((r) => r.status === "PENDING") ?? [];
   if (pendingRequests.length > 0) {
     items.push({

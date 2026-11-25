@@ -2,7 +2,7 @@ import { multiply, subtract, sum, toMajor, zero, type Money } from "./money";
 import { priceLineSegments, remainingUnits, resolveUnitPrice, type AppliedFlash, type FlashOffer, type PriceSegment } from "./pricing";
 import { evaluateBundles, evaluateCoupon, type BundleCandidate, type BundleRule, type CouponContext, type CouponRejection, type CouponRule, type PromoLine } from "./promotion";
 import { computeTax, type TaxConfig, type TaxResult } from "./tax";
-import { resolveShipping, type ShippingAddress, type ShippingWaiverReason, type ShippingZoneRule } from "./shipping";
+import { resolveShipping, zoneChoices, type ShippingAddress, type ShippingWaiverReason, type ShippingZoneRule, type ZoneChoice } from "./shipping";
 import { computeOrderTotals } from "./order-totals";
 import { isAvailable } from "./availability";
 import type { RoundingPolicy } from "./rounding";
@@ -132,6 +132,9 @@ export interface Quote {
   shipping:
     | { resolved: true; zoneId: string; zoneKey: string; zoneName: string; fee: Money; charged: Money; waived: boolean; waivedReason: ShippingWaiverReason | null }
     | { resolved: false; reason: "ADDRESS_REQUIRED" | "NO_ZONE" };
+  /** The address names no place (storefront, district optional): each zone priced for this cart, so the shopper can say
+   * which one they are in. Null when the address decides the zone. */
+  zoneChoices: ZoneChoice[] | null;
   tax: TaxResult;
   total: Money;
   appliedPromotions: AppliedPromotion[];
@@ -292,6 +295,9 @@ export function buildQuote(input: QuoteInputs): Quote {
         : { code: "NO_SHIPPING_ZONE", message: "We can't deliver to this address yet" },
     );
   }
+  const addr = input.address;
+  const placeUnknown = Boolean(addr?.unknownUsesDefault) && !addr?.district?.trim() && !addr?.division?.trim() && !addr?.postcode?.trim();
+  const choices = placeUnknown ? zoneChoices(input.shippingZones, preShipping.merchandiseTotal, { couponFreeShipping: coupon?.freeShipping ?? false, allLinesFreeDelivery }) : null;
   const shippingCharged = ship.ok ? ship.charged : zero(cur);
   const tax = computeTax(input.tax, preShipping.merchandiseTotal, shippingCharged, input.rounding);
 
@@ -328,6 +334,7 @@ export function buildQuote(input: QuoteInputs): Quote {
     shipping: ship.ok
       ? { resolved: true, zoneId: ship.zoneId, zoneKey: ship.zoneKey, zoneName: ship.zoneName, fee: ship.fee, charged: ship.charged, waived: ship.waived, waivedReason: ship.waivedReason }
       : { resolved: false, reason: ship.reason },
+    zoneChoices: choices,
     tax,
     total: totals.total,
     appliedPromotions,

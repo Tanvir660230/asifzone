@@ -7,6 +7,8 @@
  * apps/api/src/domain/config/country-module.guard.test.ts.
  */
 
+import { BD_AREA_NAMES_BN } from "./bd-area-names-bn";
+
 /** ISO 3166-1 alpha-2 code (structured data, gateway payloads). */
 export const BD_COUNTRY_CODE = "BD";
 /** Country name exactly as the payment gateways receive it today. */
@@ -886,5 +888,281 @@ export function checkoutDistrict(input: { shippingDistrict?: string | null; ship
   const picked = input.shippingDistrict?.trim();
   if (picked) return { district: picked, division: BD_DIVISION_BY_DISTRICT[picked] ?? input.shippingDivision?.trim() ?? "", unknown: false };
   const guess = guessDistrictFromAddress(input.shippingAddressLine);
-  return guess ? { ...guess, unknown: false } : { district: "", division: "", unknown: true };
+  if (guess) return { ...guess, unknown: false };
+  // No district named: a thana that belongs to one district names it ("Gobindaganj" → Gaibandha).
+  const read = readBdAddress({ addressLine: input.shippingAddressLine });
+  return read.district && read.division ? { district: read.district, division: read.division, unknown: false } : { district: "", division: "", unknown: true };
+}
+
+// ── Thana (and district) from a written address, with checks (2026-11-25) ──────────────────────────────────────
+
+/*
+ * District and thana stay optional at checkout, so the address the shopper writes is what the parcel goes on. This reads
+ * the thana out of it (English or Bangla), the way people in Bangladesh write an address: smallest place first, then the
+ * thana, then the district ("Rail gate, Station road, Demra, Dhaka" · "বাসস্ট্যান্ডের পাশে, গাজীপুর").
+ *
+ * Seventeen thana names exist in more than one district (Kotwali in seven, Kaliganj in four, Mirpur in Dhaka and
+ * Kushtia…). Such a name is never decided alone: the written or picked district settles it; Mirpur and Mohammadpur
+ * mean Dhaka unless another of their districts is written (as guessDistrictFromAddress already does); any other shared
+ * name without a district comes back as `areaChoices` for the shopper (or staff) to pick from. Words that are only
+ * thanas inside a city (Kotwali, Bandar, Airport, EPZ…) also need the district — "বিমানবন্দর রোড" is not a thana.
+ */
+
+/** Thana names that mean nothing without their district (city police thanas named after a common word). */
+const NEEDS_DISTRICT = new Set(["kotwali", "bandar", "airport", "epz", "cantonment", "new market", "sadarghat", "chawkbazar", "chackbazar", "pagla"]);
+/** Shared names that mean Dhaka unless another of their districts is written (same rule as EN_DHAKA_AREAS). */
+const DHAKA_FIRST = new Set(["mirpur", "mohammadpur"]);
+/** "Uttara" → Uttara East / West: the part people drop. */
+const AREA_SUFFIX_EN = /\s+(east|west|north|south|industrial area)$/i;
+const AREA_SUFFIX_BN = /\s+(পূর্ব|পশ্চিম|শিল্পাঞ্চল)$/;
+
+interface AreaPattern {
+  /** Normalised, space-padded name as it would appear in normalised text. */
+  key: string;
+  district: string;
+  area: string;
+  /** false: a shortened form ("uttara" for Uttara East) — loses to an exact name at the same place. */
+  exact: boolean;
+  /** The name (lower case English) the shared-name rules look at. */
+  plain: string;
+}
+
+const AREA_PATTERNS: AreaPattern[] = (() => {
+  const out: AreaPattern[] = [];
+  const add = (raw: string, district: string, area: string, exact: boolean, bn: boolean) => {
+    const key = bn ? ` ${normBn(normEn(raw).trim())} ` : normEn(raw);
+    if (key.trim().length < (bn ? 2 : 3)) return;
+    out.push({ key, district, area, exact, plain: area.toLowerCase().replace(AREA_SUFFIX_EN, "") });
+  };
+  for (const [district, areas] of Object.entries(BD_AREAS_BY_DISTRICT)) {
+    for (const area of areas) {
+      add(area, district, area, true, false);
+      if (AREA_SUFFIX_EN.test(area)) add(area.replace(AREA_SUFFIX_EN, ""), district, area, false, false);
+      for (const bn of BD_AREA_NAMES_BN[district]?.[area] ?? []) {
+        add(bn, district, area, true, true);
+        if (AREA_SUFFIX_BN.test(bn)) add(bn.replace(AREA_SUFFIX_BN, ""), district, area, false, true);
+      }
+    }
+  }
+  return out;
+})();
+
+/** How many districts share each thana name (lower case English, suffix dropped). */
+const AREA_NAME_DISTRICTS: Map<string, Set<string>> = (() => {
+  const m = new Map<string, Set<string>>();
+  for (const p of AREA_PATTERNS) m.set(p.plain, (m.get(p.plain) ?? new Set()).add(p.district));
+  return m;
+})();
+
+export interface BdPlace {
+  area: string;
+  district: string;
+}
+
+export type AddressIssue =
+  /** No thana picked and none could be read from the address. */
+  | { code: "AREA_MISSING" }
+  /** The address names a thana that several districts have, and no district says which. */
+  | { code: "AREA_UNCLEAR"; choices: BdPlace[] }
+  /** The picked thana is not the one written in the address. */
+  | { code: "AREA_MISMATCH"; picked: BdPlace; written: BdPlace }
+  /** The picked district is not the one written in the address. */
+  | { code: "DISTRICT_MISMATCH"; picked: string; written: string }
+  /** Too little to find the door: under two words / ten characters once the thana and district are taken out. */
+  | { code: "ADDRESS_SHORT" };
+
+export interface AddressReading {
+  district: string | null;
+  division: string | null;
+  area: string | null;
+  districtFrom: "picked" | "address" | null;
+  areaFrom: "picked" | "address" | null;
+  /** A written thana name shared by several districts, when nothing settles it. */
+  areaChoices: BdPlace[];
+  issues: AddressIssue[];
+}
+
+interface Hit extends AreaPattern {
+  at: number;
+}
+
+function areaHits(en: string, bn: string): Hit[] {
+  const hits: Hit[] = [];
+  for (const p of AREA_PATTERNS) {
+    const text = /[ঀ-৿]/.test(p.key) ? bn : en;
+    const at = text.lastIndexOf(p.key);
+    if (at >= 0) hits.push({ ...p, at: at + p.key.length });
+  }
+  // A shortened form loses to an exact name ending at the same place ("Tejgaon" vs "Tejgaon Industrial Area" → Tejgaon).
+  return hits.filter((h) => h.exact || !hits.some((o) => o.exact && o.at === h.at && o.plain === h.plain));
+}
+
+/** Districts written by name ("Dhaka", "গাজীপুর"), in the order they were last written. */
+function writtenDistricts(en: string, bn: string): string[] {
+  const at = new Map<string, number>();
+  for (const [p, d] of EN_PATTERNS) {
+    const i = en.lastIndexOf(p);
+    if (i >= 0) at.set(d, Math.max(at.get(d) ?? -1, i));
+  }
+  for (const [p, d] of BN_PATTERNS) {
+    const i = bn.lastIndexOf(p);
+    if (i >= 0) at.set(d, Math.max(at.get(d) ?? -1, i));
+  }
+  return [...at].sort((a, b) => a[1] - b[1]).map(([d]) => d);
+}
+
+function samePlace(a: BdPlace, b: BdPlace) {
+  return a.area === b.area && a.district === b.district;
+}
+
+/**
+ * Reads an address the way staff would: the district and thana it names, checked against what the shopper picked.
+ * Never throws and never blocks an order — the result fills an empty thana when it is sure, and lists what staff should
+ * check on the confirmation call when it is not.
+ */
+export function readBdAddress(input: { addressLine?: string | null; district?: string | null; area?: string | null }): AddressReading {
+  const text = input.addressLine?.trim() ?? "";
+  const en = normEn(text);
+  const bn = normBn(en);
+  const pickedDistrict = input.district?.trim() || null;
+  const pickedArea = input.area?.trim() || null;
+
+  // District: picked, else written by name (the last real one; a trailing "Dhaka" loses to another), else from the thana.
+  const named = writtenDistricts(en, bn);
+  let hits = areaHits(en, bn);
+  let writtenDistrict: string | null = null;
+  if (named.length === 1) writtenDistrict = named[0]!;
+  else if (named.length > 1) {
+    const others = named.filter((d) => d !== "Dhaka");
+    // "বগুড়া শেরপুর": Sherpur is a district and also Bogura's thana — the thana explains it.
+    const explained = others.filter((d) => hits.some((h) => h.district !== d && others.includes(h.district) && h.plain === d.toLowerCase()));
+    const left = others.filter((d) => !explained.includes(d));
+    writtenDistrict = left.length === 1 ? left[0]! : others.length === 1 ? others[0]! : null;
+  }
+  const context = pickedDistrict ?? writtenDistrict;
+
+  // Thana: names that need their district only count with it; a name several districts share is settled by the district.
+  hits = hits.filter((h) => {
+    if (NEEDS_DISTRICT.has(h.plain)) return context === h.district;
+    return true;
+  });
+  const inContext = context ? hits.filter((h) => h.district === context) : [];
+  let written: BdPlace | null = null;
+  let choices: BdPlace[] = [];
+  const latest = (list: Hit[]) => list.reduce((a, b) => (b.at > a.at || (b.at === a.at && b.key.length > a.key.length) ? b : a));
+  if (inContext.length) {
+    const h = latest(inContext);
+    // "Uttara" alone: both Uttara East and West match at the same place — ask, don't guess.
+    const tied = inContext.filter((o) => o.at === h.at && o.plain === h.plain && o.area !== h.area);
+    if (tied.length) choices = [h, ...tied].map(({ area, district }) => ({ area, district }));
+    else written = { area: h.area, district: h.district };
+  } else if (!context && hits.length) {
+    const h = latest(hits);
+    const sameName = hits.filter((o) => o.plain === h.plain && o.at === h.at);
+    const districts = new Set(sameName.map((o) => o.district));
+    if (districts.size === 1 && (AREA_NAME_DISTRICTS.get(h.plain)?.size ?? 1) === 1) {
+      const areas = [...new Set(sameName.map((o) => o.area))];
+      if (areas.length === 1) written = { area: h.area, district: h.district };
+      else choices = areas.map((area) => ({ area, district: h.district }));
+    } else if (DHAKA_FIRST.has(h.plain)) written = { area: sameName.find((o) => o.district === "Dhaka")?.area ?? h.area, district: "Dhaka" };
+    else choices = [...new Map(sameName.map((o) => [`${o.area}|${o.district}`, { area: o.area, district: o.district }])).values()];
+  }
+  // "<District> Sadar" written as "sadar"/"সদর" next to the district.
+  if (!written && !choices.length && context && (en.includes(" sadar ") || bn.includes(` ${normBn("সদর")} `))) {
+    const sadar = (BD_AREAS_BY_DISTRICT[context] ?? []).filter((a) => /\bSadar\b/.test(a));
+    if (sadar.length === 1) written = { area: sadar[0]!, district: context };
+    else if (sadar.length > 1) choices = sadar.map((a) => ({ area: a, district: context }));
+  }
+
+  const district = pickedDistrict ?? writtenDistrict ?? written?.district ?? null;
+  const area = pickedArea ?? (written && written.district === district ? written.area : null);
+  const issues: AddressIssue[] = [];
+  if (!area) issues.push(choices.length ? { code: "AREA_UNCLEAR", choices } : { code: "AREA_MISSING" });
+  if (pickedArea && written && pickedDistrict && !samePlace(written, { area: pickedArea, district: pickedDistrict })) {
+    issues.push({ code: "AREA_MISMATCH", picked: { area: pickedArea, district: pickedDistrict }, written });
+  }
+  if (pickedDistrict && writtenDistrict && writtenDistrict !== pickedDistrict) {
+    issues.push({ code: "DISTRICT_MISMATCH", picked: pickedDistrict, written: writtenDistrict });
+  }
+  // What is left once place names are taken out: a door needs a house, road or landmark — two words and a dozen letters.
+  let rest = ` ${bn} `;
+  for (const h of areaHits(en, bn)) rest = rest.split(/[ঀ-৿]/.test(h.key) ? h.key : normBn(h.key)).join(" ");
+  for (const [p] of [...EN_PATTERNS, ...BN_PATTERNS]) rest = rest.split(normBn(p)).join(" ");
+  // House and road numbers count ("House 4, Road 9" is a door).
+  const words = rest.trim().split(/\s+/).filter((w) => w.length > 1 || /[0-9০-৯]/.test(w));
+  if (words.length < 2 || words.join("").length < 10) issues.push({ code: "ADDRESS_SHORT" });
+
+  return {
+    district,
+    division: district ? (BD_DIVISION_BY_DISTRICT[district] ?? null) : null,
+    area,
+    districtFrom: pickedDistrict ? "picked" : district ? "address" : null,
+    areaFrom: pickedArea ? "picked" : area ? "address" : null,
+    areaChoices: area ? [] : choices,
+    issues,
+  };
+}
+
+/** The Bangla name of a district / thana for Bangla pages (landing pages); falls back to the English name. */
+export function bdDistrictNameBn(district: string): string {
+  return BN_NAMES[district]?.[0] ?? district;
+}
+export function bdAreaNameBn(district: string, area: string): string {
+  return BD_AREA_NAMES_BN[district]?.[area]?.[0] ?? area;
+}
+
+/** Search the country's thanas by what someone types, in English or Bangla ("demra", "ডেমরা", "kali"): best first. */
+export function searchBdAreas(query: string, opts: { district?: string | null; limit?: number } = {}): BdPlace[] {
+  const q = query.trim();
+  if (!q) return [];
+  const bnQ = /[ঀ-৿]/.test(q);
+  const key = bnQ ? normBn(q) : q.toLowerCase().replace(/['’`]/g, "");
+  const scored: Array<BdPlace & { score: number }> = [];
+  for (const [district, areas] of Object.entries(BD_AREAS_BY_DISTRICT)) {
+    if (opts.district && district !== opts.district) continue;
+    for (const area of areas) {
+      const names = bnQ ? (BD_AREA_NAMES_BN[district]?.[area] ?? []).map(normBn) : [area.toLowerCase()];
+      const districtNames = bnQ ? (BN_NAMES[district] ?? []).map(normBn) : [district.toLowerCase()];
+      let score = 0;
+      for (const n of names) {
+        if (n === key) score = Math.max(score, 4);
+        else if (n.startsWith(key)) score = Math.max(score, 3);
+        else if (n.split(/\s+/).some((w) => w.startsWith(key))) score = Math.max(score, 2);
+        else if (key.length >= 3 && n.includes(key)) score = Math.max(score, 1);
+      }
+      // "Kotwali Rangpur" / "রংপুর কোতোয়ালী": the district in the query narrows it.
+      if (!score && key.includes(" ")) {
+        const words = key.split(/\s+/);
+        if (words.some((w) => districtNames.some((d) => d.startsWith(w))) && words.some((w) => names.some((n) => n.startsWith(w)))) score = 2;
+      }
+      if (score) scored.push({ area, district, score });
+    }
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.area.length - b.area.length || a.area.localeCompare(b.area))
+    .slice(0, opts.limit ?? 8)
+    .map(({ area, district }) => ({ area, district }));
+}
+
+// ── Delivery zone choice when the address doesn't say where it is (2026-11-25) ──────────────────────────────────
+
+interface ZoneLike {
+  isDefault: boolean;
+  districts: string[];
+  name: string;
+}
+
+/** How a zone is said to a shopper here: "Inside Dhaka" / "Outside Dhaka" for the usual Dhaka-district split, the zone's
+ * own name for any other set-up (zones are store data). */
+export function bdZoneChoiceLabel(choice: ZoneLike, all: readonly ZoneLike[], lang: "en" | "bn"): string {
+  const dhakaOnly = (z: ZoneLike) => z.districts.length > 0 && z.districts.every((d) => isInsideDhaka(d));
+  if (dhakaOnly(choice)) return lang === "bn" ? "ঢাকার ভেতরে" : "Inside Dhaka";
+  if (choice.isDefault && all.filter((z) => !z.isDefault).every(dhakaOnly)) return lang === "bn" ? "ঢাকার বাইরে" : "Outside Dhaka";
+  return choice.name;
+}
+
+/** Whether the shopper must say which zone they are in: the address names no place and the zones cost different
+ * amounts for this cart. When every zone ships free (or costs the same) there is nothing to ask. */
+export function zoneChoiceNeeded(choices: ReadonlyArray<{ charged: number }> | null | undefined): boolean {
+  return !!choices && choices.length > 1 && new Set(choices.map((c) => c.charged)).size > 1;
 }

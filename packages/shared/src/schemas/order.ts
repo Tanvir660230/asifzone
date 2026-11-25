@@ -17,7 +17,7 @@ export const orderStatusEnum = z.enum([
   "REFUNDED",
 ]);
 
-export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ", "EPS_PG"]);
+export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ", "EPS_PG"], { errorMap: () => ({ message: "Choose how you'd like to pay" }) });
 // A projection of the payment ledger (docs/PAYMENT_LEDGER.md §4); PARTIALLY_REFUNDED since Phase 4; PARTIALLY_PAID and
 // CREDITED since the order-adjustments phase (docs/ORDER_ADJUSTMENTS.md §5).
 export const paymentStatusEnum = z.enum(["UNPAID", "PARTIALLY_PAID", "PAID", "FAILED", "REFUNDED", "PARTIALLY_REFUNDED", "CREDITED"]);
@@ -80,6 +80,8 @@ export const checkoutSchema = z.object({
   shippingDistrict: z.string().trim().max(120).optional().default(""),
   shippingArea: z.string().trim().max(120).optional().default(""),
   shippingAddressLine: z.string().trim().min(1, "Enter your house, road and area").max(500, "Keep the address under 500 characters"),
+  /** No district picked or read from the address: the delivery zone the shopper chose ("Inside Dhaka" / "Outside Dhaka"). */
+  shippingZoneKey: z.string().trim().max(60).optional(),
   paymentMethod: paymentMethodEnum,
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
   notes: nullableString(500),
@@ -108,6 +110,8 @@ export const quoteRequestSchema = z.object({
   shippingAddressLine: z.string().max(500).optional(),
   /** No district picked or found: price with the default zone instead of leaving shipping open (storefront only). */
   unknownUsesDefault: z.boolean().optional(),
+  /** With unknownUsesDefault and no place in the address: the zone the shopper chose. */
+  shippingZoneKey: z.string().max(60).optional(),
   /** Lets the admin "Create order" page quote for a specific customer (per-customer coupon limits). Admin only. */
   customerId: z.string().cuid().optional(),
 });
