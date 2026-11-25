@@ -10,14 +10,25 @@ import { ScrollCurrentIntoView } from "./scroll-current-into-view";
  * tile per member on sale — the current product chosen, every other one a link to its own product page. A sold-out
  * member stays (struck through), so the shopper sees the whole series. A family with nothing else to show draws nothing.
  */
-export function ProductFamilyPicker({ family, currentProductId }: { family: PublicProductFamily; currentProductId: string }) {
-  const tiles = familyTiles(family, currentProductId);
+export function ProductFamilyPicker({
+  family,
+  currentProductId,
+  hrefFor,
+  title,
+}: {
+  family: PublicProductFamily;
+  currentProductId: string;
+  hrefFor?: (slug: string) => string;
+  /** The heading instead of the family's own name (a Bangla landing page says "কালার", never the English name). */
+  title?: string;
+}) {
+  const tiles = familyTiles(family, currentProductId, hrefFor);
   if (!tiles) return null;
   const headingId = `family-${family.id}`;
   return (
     <section aria-labelledby={headingId} data-testid="product-family">
       <h2 id={headingId} className="mb-2.5 text-xs ui-caps text-ink-500">
-        {family.name}
+        {title ?? family.name}
       </h2>
       <ScrollCurrentIntoView className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 pt-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
         {tiles.map((t) => {

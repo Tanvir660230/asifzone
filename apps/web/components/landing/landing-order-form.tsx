@@ -14,6 +14,7 @@ import {
   maxSellableQuantity,
   type CheckoutInput,
   type Product,
+  type PublicProductFamily,
   type QuoteDto,
   type QuoteRequestInput,
   variantShipsFree,
@@ -32,6 +33,9 @@ import { SizeFinder } from "@/components/storefront/size-finder";
 import type { FitAnswers } from "@/lib/fit-memory";
 import { colorImage, useLandingSelection } from "./landing-selection";
 import { PHOTO_TILE_WIDTH, PhotoTileBody } from "@/components/storefront/photo-tile";
+import { ProductFamilyPicker } from "@/components/storefront/product-family-picker";
+import { familyTiles } from "@/lib/product-family";
+import { landingPagePath } from "@/lib/landing";
 import { useQuote } from "@/hooks/use-quote";
 import { getQuote } from "@/lib/api/quote";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -73,7 +77,7 @@ const isBangla = (s: string) => /[ঀ-৿]/.test(s);
  *
  * The colour and size live in LandingSelectionProvider, so the gallery and the colour showcase follow the same choice.
  */
-export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean; ctaText?: string }) {
+export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEnabled: boolean; ctaText?: string; families?: PublicProductFamily[] }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
@@ -316,6 +320,7 @@ export function LandingOrderForm({ codEnabled, ctaText }: { codEnabled: boolean;
       onColor={pickColor}
       finder={finder}
       picked={assist && size === assist.recommended ? size : null}
+      families={families}
     />
   );
 
@@ -556,6 +561,7 @@ function OptionPickers({
   onColor,
   finder,
   picked,
+  families = [],
 }: {
   product: Product;
   options: VariantOptions;
@@ -570,6 +576,8 @@ function OptionPickers({
   finder?: ReactNode;
   /** The size the finder suggested and the shopper kept. */
   picked?: string | null;
+  /** The product families this product is in: each colour is its own product, shown as photo tiles (as on the product page). */
+  families?: PublicProductFamily[];
 }) {
   const chip =
     "flex min-h-11 min-w-11 items-center justify-center rounded-[var(--chip-radius)] border px-4 text-sm font-medium transition-[border-color,background-color,color] duration-base ease-smooth active:scale-[0.97]";
@@ -582,6 +590,7 @@ function OptionPickers({
   // Every colour has its own photo: the shopper picks the jacket they can see, not a dot of colour.
   const photos = options.showColors ? options.colors.map((c) => colorImage(product, c)) : [];
   const byPhoto = photos.length > 1 && photos.every(Boolean);
+  const familyShown = families.some((f) => familyTiles(f, product.id) !== null);
 
   const colorPicker = options.showColors && (
     // min-w-0: a fieldset is min-content wide by default, which would let the photo strip widen the page.
@@ -649,7 +658,10 @@ function OptionPickers({
 
   return (
     <div className="space-y-5">
-      {/* Photos first: the colour is what an ad visitor came for, and the gallery above follows it. */}
+      {/* Photos first: the colour is what an ad visitor came for, and the gallery above follows it. When each colour is
+          its own product (a family), the family's photo tiles take that place — a tap opens that colour's landing page. */}
+      {familyShown &&
+        families.map((family) => <ProductFamilyPicker key={family.id} family={family} currentProductId={product.id} hrefFor={(slug) => landingPagePath(slug)} title={colorLabel} />)}
       {byPhoto && colorPicker}
       {options.showSizes && (
         <fieldset>
@@ -721,7 +733,7 @@ function OptionPickers({
           )}
         </fieldset>
       )}
-      {!byPhoto && colorPicker}
+      {!byPhoto && !(familyShown && options.colors.length <= 1) && colorPicker}
     </div>
   );
 }
