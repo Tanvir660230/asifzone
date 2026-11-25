@@ -7,6 +7,7 @@ import {
   CHECKOUT_LEAD_REASONS,
   nextCallingMoment,
   normalizeBdPhone,
+  sellsPastShelf,
   type CaptureCheckoutLeadInput,
   type CheckoutLeadDto,
   type CheckoutLeadItem,
@@ -21,6 +22,7 @@ import { prisma, type Db } from "../../config/prisma";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { getTimezone } from "../../domain/config/commerce-settings";
+import { applyCapacity, fillCapacity } from "../../domain/stock/fill-capacity.service";
 import { checkoutLeadCode, parseCheckoutLeadCode } from "./checkout-lead-code";
 
 /**
@@ -127,17 +129,23 @@ async function enrichItems(stored: StoredItem[]): Promise<CheckoutLeadItem[]> {
       price: true,
       stock: true,
       isActive: true,
+      markedSoldOut: true,
       image: { select: { url: true } },
       product: {
-        select: { id: true, name: true, basePrice: true, trackInventory: true, isActive: true, deletedAt: true, markedSoldOut: true, images: { select: { url: true }, take: 1, orderBy: { sortOrder: "asc" } } },
+        select: { id: true, name: true, basePrice: true, trackInventory: true, fillToOrder: true, stockPolicy: true, isActive: true, deletedAt: true, markedSoldOut: true, images: { select: { url: true }, take: 1, orderBy: { sortOrder: "asc" } } },
       },
     },
   });
-  const byId = new Map(variants.map((v) => [v.id, v]));
+  // Stock as the shop sells it: a fill-to-order or bought-to-order product (UNLIMITED / BACKORDER) sells past its shelf,
+  // so its raw shelf count of 0 is not "sold out" (withFillToOrder's rule, batched in one capacity read).
+  const pastShelf = variants.filter((v) => sellsPastShelf(v.product));
+  const made = pastShelf.length ? await fillCapacity(prisma, { variantIds: pastShelf.map((v) => v.id), cached: true }) : new Map<string, number>();
+  const shopStock = new Map(applyCapacity(made, pastShelf).map((v) => [v.id, v.stock]));
+  const byId = new Map(variants.map((v) => [v.id, { ...v, stock: shopStock.get(v.id) ?? v.stock }]));
   return stored.map((i) => {
     const v = byId.get(i.variantId);
     if (!v) return { variantId: i.variantId, quantity: i.quantity, productId: null, productName: "Removed product", size: "", color: "", price: 0, imageUrl: null, available: false, maxQuantity: 0 };
-    const live = v.isActive && v.product.isActive && !v.product.deletedAt && !v.product.markedSoldOut;
+    const live = v.isActive && !v.markedSoldOut && v.product.isActive && !v.product.deletedAt && !v.product.markedSoldOut;
     return {
       variantId: v.id,
       quantity: i.quantity,

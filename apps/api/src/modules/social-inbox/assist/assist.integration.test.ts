@@ -118,6 +118,16 @@ describe("Inbox AI — auto answers", () => {
     expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("HANDLED");
   });
 
+  it("a product sold past its shelf (made / bought to order) is in stock at 0, as on the product page", async () => {
+    const { product } = await createStockedProduct({ stocks: [0], basePrice: 2100 });
+    await prisma.product.update({ where: { id: product.id }, data: { stockPolicy: "UNLIMITED" } });
+    const { lastId } = await thread("WHATSAPP", [{ body: "Eta ache?" }]);
+    const { model, toolResults } = scripted([tool("find_products", { query: product.name })], [respond("draft", "stock", "Ji ache.")]);
+    await assistConversation(lastId, model);
+    // This product's own options (the search can also return the shared fixture product).
+    expect(toolResults().replaceAll("\\", "")).toMatch(new RegExp(`"name":"${product.name}"[^\\]]*"inStock":true`));
+  });
+
   it("delivery charge comes from the shipping zones", async () => {
     const { lastId } = await thread("INSTAGRAM", [{ body: "Delivery charge koto?" }]);
     const { model, toolResults } = scripted([tool("delivery_charges", {})], [respond("auto", "delivery_charge", "Dhakay 60 taka.")]);

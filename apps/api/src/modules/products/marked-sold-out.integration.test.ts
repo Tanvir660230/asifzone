@@ -89,4 +89,19 @@ describe("show as sold out", () => {
     await expect.poll(notifiedAt, { timeout: 3000 }).not.toBeNull();
     await prisma.customer.delete({ where: { id: customer.id } });
   });
+
+  it("a product sold past its shelf goes back on sale at 0 too, so those waiting are told", async () => {
+    const { product, variants } = await createStockedProduct({ stocks: [0] });
+    const [only] = variants;
+    await prisma.product.update({ where: { id: product.id }, data: { stockPolicy: "UNLIMITED" } });
+    const owner = await asOwner();
+    await owner.patch(`/api/products/${product.id}`, { variants: [{ id: only!.id, markedSoldOut: true }] }).expect(200);
+    const customer = await prisma.customer.create({ data: { name: "VT waiting 2", email: `vt-soldout2-${RUN}@example.com` } });
+    const alert = await prisma.stockAlert.create({ data: { customerId: customer.id, variantId: only!.id } });
+    const notifiedAt = async () => (await prisma.stockAlert.findUniqueOrThrow({ where: { id: alert.id } })).notifiedAt;
+
+    await owner.patch(`/api/products/${product.id}`, { variants: [{ id: only!.id, markedSoldOut: false }] }).expect(200);
+    await expect.poll(notifiedAt, { timeout: 3000 }).not.toBeNull();
+    await prisma.customer.delete({ where: { id: customer.id } });
+  });
 });

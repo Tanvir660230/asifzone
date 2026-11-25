@@ -1970,9 +1970,13 @@ export async function updateProduct(
   if (existing.variants.some(wasMarked)) {
     const now = await prisma.productVariant.findMany({
       where: { productId: id, isActive: true },
-      select: { id: true, stock: true, markedSoldOut: true, product: { select: { markedSoldOut: true, trackInventory: true } } },
+      select: { id: true, stock: true, markedSoldOut: true, product: { select: { markedSoldOut: true, trackInventory: true, fillToOrder: true, stockPolicy: true } } },
     });
-    for (const v of now) {
+    // A product that sells past its shelf (made / bought to order) is on sale at 0 too — those waiting are told as well.
+    const pastShelf = now.filter((v) => sellsPastShelf(v.product));
+    const made = pastShelf.length ? await fillCapacity(prisma, { variantIds: pastShelf.map((v) => v.id) }) : null;
+    for (const raw of now) {
+      const v = made && sellsPastShelf(raw.product) ? applyCapacity(made, [raw])[0]! : raw;
       const before = existing.variants.find((e) => e.id === v.id);
       const onSaleNow = !v.product.markedSoldOut && !v.markedSoldOut && (!v.product.trackInventory || v.stock > 0);
       if (before && wasMarked(before) && onSaleNow) replenished.push(v.id);
