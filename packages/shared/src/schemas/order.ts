@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { bdPhoneSchema, nullableEmail, nullableString, paginationQuerySchema } from "./common";
+import { bdPhoneSchema, nullableBdPhone, nullableEmail, nullableString, paginationQuerySchema } from "./common";
 import { couponCartItemSchema } from "./coupon";
 import { BD_DIVISIONS } from "../country/bd";
 import { ORDER_EXCEPTION_IDS } from "../order-exceptions";
@@ -74,6 +74,8 @@ export const checkoutSchema = z.object({
   customerName: z.string().trim().min(1, "Enter your full name").max(200, "Keep your name under 200 characters"),
   customerEmail: nullableEmail("Enter a valid email address, or leave it empty"),
   customerPhone: bdPhoneSchema(),
+  /** A second number the courier can call — optional; blank means none. */
+  altPhone: nullableBdPhone(),
   // District and thana are optional (owner 2026-11-24: shoppers who skipped them could not order). Without them the
   // server reads the district from the address (checkoutDistrict) or charges the default zone.
   shippingDivision: z.union([z.enum(BD_DIVISIONS), z.literal("")]).optional().default(""),
@@ -292,6 +294,7 @@ export const updateOrderDetailsSchema = z.object({
   // corrected value has to meet the same bar a fresh order would.
   customerName: z.string().min(1).max(200).optional(),
   customerPhone: bdPhoneSchema().optional(),
+  altPhone: nullableBdPhone(),
   shippingDivision: z.enum(BD_DIVISIONS).optional(),
   shippingDistrict: z.string().min(1).max(120).optional(),
   shippingArea: z.string().trim().max(120).optional(), // thana is optional (2026-11-24)

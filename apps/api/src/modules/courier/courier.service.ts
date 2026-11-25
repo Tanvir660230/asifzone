@@ -69,10 +69,14 @@ function buildRecipientAddress(order: {
   shippingArea: string;
   shippingDistrict: string;
   shippingDivision: string;
+  altPhone?: string | null;
 }): string {
-  return [order.shippingAddressLine, order.shippingArea, order.shippingDistrict, order.shippingDivision]
-    .filter(Boolean)
-    .join(", ");
+  const address = [order.shippingAddressLine, order.shippingArea, order.shippingDistrict, order.shippingDivision].filter(Boolean).join(", ");
+  // The second number rides with the address: the rider sees it on the parcel and can call it when the first is off.
+  if (!order.altPhone) return address;
+  // Steadfast takes at most 250 characters here: the address gives way, the second number always fits.
+  const tail = ` (Alt phone: ${order.altPhone})`;
+  return `${address.slice(0, 250 - tail.length)}${tail}`;
 }
 
 /** Cheap defense-in-depth guard, not a replacement for UI-level validation — updateOrderDetailsSchema

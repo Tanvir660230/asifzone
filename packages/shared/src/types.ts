@@ -646,6 +646,8 @@ export interface Order {
   customerName: string;
   customerEmail: string | null;
   customerPhone: string;
+  /** A second number the courier can call. */
+  altPhone?: string | null;
   shippingDivision: string;
   shippingDistrict: string;
   shippingArea: string;

@@ -28,6 +28,7 @@ import type { OrderDetailCommands } from "./use-order-detail-commands";
 interface Draft {
   customerName: string;
   customerPhone: string;
+  altPhone: string;
   shippingDistrict: string;
   shippingArea: string;
   shippingAddressLine: string;
@@ -56,6 +57,7 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
     setDraft({
       customerName: order.customerName,
       customerPhone: order.customerPhone,
+      altPhone: order.altPhone ?? "",
       shippingDistrict: order.shippingDistrict,
       shippingArea: order.shippingArea,
       shippingAddressLine: order.shippingAddressLine,
@@ -66,7 +68,7 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
     if (!draft) return;
     // Same schema the API validates with — this only surfaces the first problem early.
     const parsed = updateOrderDetailsSchema
-      .pick({ customerName: true, customerPhone: true, shippingDivision: true, shippingDistrict: true, shippingArea: true, shippingAddressLine: true })
+      .pick({ customerName: true, customerPhone: true, altPhone: true, shippingDivision: true, shippingDistrict: true, shippingArea: true, shippingAddressLine: true })
       .safeParse({ ...draft, shippingDivision: BD_DIVISION_BY_DISTRICT[draft.shippingDistrict] });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Please check the fields");
@@ -97,6 +99,9 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
             </Field>
             <Field htmlFor="edit-customer-phone" label="Phone">
               <Input id="edit-customer-phone" inputMode="tel" value={draft.customerPhone} onChange={(e) => setDraft({ ...draft, customerPhone: e.target.value })} />
+            </Field>
+            <Field htmlFor="edit-alt-phone" label="Another number (optional)" hint="The courier calls it if the first one doesn't answer.">
+              <Input id="edit-alt-phone" inputMode="tel" value={draft.altPhone} onChange={(e) => setDraft({ ...draft, altPhone: e.target.value })} />
             </Field>
             <DistrictAreaFields
               idPrefix="edit"
@@ -170,6 +175,14 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
                   {order.customerPhone}
                   <DeliveryScoreBadge score={order.deliveryScore} />
                 </p>
+                {order.altPhone && (
+                  <p className="text-sm text-ink-500" data-testid="order-alt-phone">
+                    Also{" "}
+                    <a href={`tel:${order.altPhone}`} className="tabular-nums text-fg underline-offset-2 hover:underline">
+                      {order.altPhone}
+                    </a>
+                  </p>
+                )}
                 {order.customerEmail && <p className="truncate text-sm text-ink-500">{order.customerEmail}</p>}
               </div>
             </div>

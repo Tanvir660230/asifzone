@@ -377,6 +377,7 @@ export async function insertOrderRecord(
         customerName: input.customerName,
         customerEmail: input.customerEmail ?? null,
         customerPhone: input.customerPhone,
+        altPhone: input.altPhone && input.altPhone !== input.customerPhone ? input.altPhone : null,
         shippingDivision: input.shippingDivision,
         shippingDistrict: input.shippingDistrict,
         shippingArea: input.shippingArea,
@@ -1573,6 +1574,7 @@ export async function changeOrderStatus(id: string, input: UpdateOrderStatusInpu
 const ORDER_DETAIL_FIELD_LABELS = {
   customerName: "Name",
   customerPhone: "Phone",
+  altPhone: "Alt phone",
   shippingDivision: "Division",
   shippingDistrict: "District",
   shippingArea: "Area",
@@ -1587,7 +1589,7 @@ const ORDER_DETAIL_FIELD_LABELS = {
 function buildOrderDetailsDiffNote(
   existing: Pick<
     Awaited<ReturnType<typeof getOrderById>>,
-    "customerName" | "customerPhone" | "shippingDivision" | "shippingDistrict" | "shippingArea" | "shippingAddressLine"
+    "customerName" | "customerPhone" | "altPhone" | "shippingDivision" | "shippingDistrict" | "shippingArea" | "shippingAddressLine"
   >,
   input: UpdateOrderDetailsInput,
 ): string | null {

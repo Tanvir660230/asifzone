@@ -58,3 +58,20 @@ describe("changing customer details after the courier is booked", () => {
     expect(await prisma.outboxEvent.count({ where: { aggregateId: order.id, eventKey: { startsWith: "phone-change:" } } })).toBe(0);
   });
 });
+
+describe("a second phone number", () => {
+  it("is kept from checkout (not when it repeats the main number) and can be added after booking, flagging the courier", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5] });
+    const main = phone();
+    const alt = phone();
+    const order = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }], { customerPhone: main, altPhone: alt } as never);
+    expect(order.altPhone).toBe(alt);
+    const same = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }], { customerPhone: main, altPhone: main } as never);
+    expect(same.altPhone).toBeNull();
+
+    await prisma.order.update({ where: { id: same.id }, data: { courierConsignmentId: `CN-${same.id}` } });
+    const updated = await updateOrderDetails(same.id, { altPhone: alt });
+    expect(updated).toMatchObject({ altPhone: alt, courierUpdateNeeded: true });
+    expect(updated.courierUpdateNote).toContain(alt);
+  });
+});

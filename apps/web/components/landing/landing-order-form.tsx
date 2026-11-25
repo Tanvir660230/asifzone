@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { DeliveryPlaceField } from "@/components/storefront/delivery-place-field";
+import { AltPhoneField } from "@/components/storefront/alt-phone-field";
 import { DeliveryZoneChoice } from "@/components/storefront/delivery-zone-choice";
 import { Textarea } from "@/components/ui/textarea";
 import { stockLine, type VariantOptions } from "@/components/storefront/variant-option-pickers";
@@ -55,6 +56,8 @@ import { useLeadCapture } from "@/hooks/use-lead-capture";
 const formSchema = z.object({
   customerName: z.string().trim().min(2, "আপনার নাম লিখুন").max(200),
   customerPhone: bdPhoneSchema("১১ সংখ্যার সঠিক মোবাইল নম্বর দিন, যেমন 01712345678"),
+  /** A second number for the courier — optional; blank means none. */
+  altPhone: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), bdPhoneSchema("১১ সংখ্যার সঠিক নম্বর দিন, অথবা ঘরটা খালি রাখুন").optional()),
   // District and thana are optional (owner 2026-11-24): shoppers who skipped them could not order. The district is
   // then read from the address (checkoutDistrict), else the default delivery charge applies.
   shippingDistrict: z.string(),
@@ -250,6 +253,7 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
       items: [{ variantId: variant.id, quantity: qty }],
       customerName: values.customerName,
       customerPhone: values.customerPhone,
+      altPhone: values.altPhone || null,
       customerEmail: null,
       shippingDivision: at.division as CheckoutInput["shippingDivision"],
       shippingDistrict: at.district,
@@ -404,6 +408,7 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
                 এই নম্বরে ফোন করে অর্ডার কনফার্ম করা হবে। অর্ডার শেষ না হলে সাহায্যের জন্য আমরা এই তথ্য রাখি।
               </p>
             )}
+            <AltPhoneField id="lp-alt-phone" lang="bn" className="mt-2" error={errors.altPhone?.message} inputProps={register("altPhone")} />
           </div>
         </div>
         {/* Address first, the way people write it; the place box below reads the thana out of it. */}

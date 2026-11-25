@@ -1332,6 +1332,8 @@ model Order {
   courierConsignmentId    String?
   /// Name, phone or address changed after the courier was booked: the courier still has the old ones until staff tell it
   /// (Steadfast has no API to edit a consignment). Cleared by "Courier told" (POST /orders/:id/courier-update-done).
+  /// A second number the courier can call (optional; checkout, landing page or staff). Sent with the address.
+  altPhone                String?
   courierUpdateNeeded     Boolean   @default(false)
   /// What changed, for the message to the courier ("Phone: 017… → 018…").
   courierUpdateNote       String?
