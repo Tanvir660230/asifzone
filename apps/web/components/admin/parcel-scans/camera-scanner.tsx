@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, CloudOff, Flashlight, FlashlightOff, Loader2, RefreshCw, X, XCircle, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -46,7 +47,10 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const [state, setState] = useState<"starting" | "scanning" | "denied" | "unsupported">("starting");
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [cameraIndex, setCameraIndex] = useState(0);
+  // The lens the operator picked with "Switch lens"; undefined = let the browser choose the rear camera. Only a switch
+  // re-opens the stream (listing the lenses after the first open must not restart the camera).
+  const [deviceId, setDeviceId] = useState<string | undefined>(undefined);
+  const currentDeviceRef = useRef<string | undefined>(undefined);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [zoomRange, setZoomRange] = useState<{ min: number; max: number } | null>(null);
@@ -78,7 +82,7 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
     };
   }, [onClose]);
 
-  const activeDeviceId = cameras[cameraIndex]?.deviceId;
+  const activeDeviceId = deviceId;
 
   useEffect(() => {
     let stopped = false;
@@ -139,21 +143,17 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
 
       const track = stream.getVideoTracks()[0] ?? null;
       trackRef.current = track;
+      currentDeviceRef.current = track?.getSettings?.().deviceId ?? activeDeviceId;
 
-      // Enumerate rear cameras once permission is granted so iPhone users can switch lenses if needed.
+      // List the rear lenses once permission is granted (labels are empty before that) so the operator can switch lens.
+      // This only fills the list — it never restarts the stream.
       if (cameras.length === 0 && navigator.mediaDevices.enumerateDevices) {
         try {
           const all = await navigator.mediaDevices.enumerateDevices();
           const videoInputs = all.filter((d) => d.kind === "videoinput");
           const rear = videoInputs.filter((d) => /back|rear|environment|wide|telephoto|macro/i.test(d.label));
           const list = rear.length > 0 ? rear : videoInputs;
-          if (list.length > 1 && !stopped) {
-            // Put the active track's device first so switching cycles cleanly.
-            const currentId = track?.getSettings?.().deviceId;
-            const idx = currentId ? list.findIndex((d) => d.deviceId === currentId) : 0;
-            setCameras(list);
-            setCameraIndex(idx >= 0 ? idx : 0);
-          }
+          if (list.length > 1 && !stopped) setCameras(list);
         } catch {
           // Ignore device enumeration errors.
         }
@@ -300,30 +300,32 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
 
   const switchCamera = useCallback(() => {
     if (cameras.length <= 1) return;
-    setCameraIndex((i) => (i + 1) % cameras.length);
-  }, [cameras.length]);
+    const at = cameras.findIndex((d) => d.deviceId === currentDeviceRef.current);
+    setDeviceId(cameras[(at + 1) % cameras.length]!.deviceId);
+  }, [cameras]);
 
   const cornerColor =
     flashTone === "ok"
-      ? "border-success-400"
+      ? "border-success-500"
       : flashTone === "warn"
-        ? "border-warning-400"
+        ? "border-warning-500"
         : flashTone === "error"
           ? "border-danger-400"
           : "border-white";
 
-  return (
+  // Portalled to <body>: a transformed page wrapper would otherwise pin this "fixed" layer inside the page, under the toolbar.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex flex-col bg-black text-white sm:items-center sm:justify-center sm:bg-black/80 sm:p-6 sm:backdrop-blur-md"
+      className="fixed inset-0 z-overlay flex flex-col bg-black text-white sm:items-center sm:justify-center sm:bg-black/80 sm:p-6 sm:backdrop-blur-md"
     >
       <div className="relative flex h-full w-full flex-col overflow-hidden bg-black sm:h-[min(86vh,720px)] sm:max-w-lg sm:rounded-3xl sm:border sm:border-white/15 sm:shadow-2xl">
         {/* Top bar (safe-area aware for iPhone notch / Dynamic Island) */}
         <div className="relative z-20 flex items-center justify-between gap-2 bg-gradient-to-b from-black/80 via-black/45 to-transparent px-4 pb-4 pt-[max(0.85rem,env(safe-area-inset-top))]">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[15px] font-semibold tracking-tight">{title}</span>
+            <span className="truncate text-base font-semibold tracking-tight">{title}</span>
             {typeof scannedCount === "number" && (
               <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-semibold tabular-nums backdrop-blur-md">
                 {scannedCount} scanned
@@ -339,7 +341,7 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
                 aria-pressed={torchOn}
                 className={cn(
                   "flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-md transition-colors active:scale-95",
-                  torchOn ? "bg-warning-400 text-ink-900" : "bg-white/15 text-white hover:bg-white/25",
+                  torchOn ? "bg-warning-500 text-ink-900" : "bg-white/15 text-white hover:bg-white/25",
                 )}
               >
                 {torchOn ? <Flashlight size={19} /> : <FlashlightOff size={19} />}
@@ -382,7 +384,7 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
           {state === "denied" || state === "unsupported" ? (
             <div className="flex h-full flex-col items-center justify-center px-6 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
-                <AlertTriangle size={26} className="text-warning-400" />
+                <AlertTriangle size={26} className="text-warning-500" />
               </div>
               <p className="mt-4 text-base font-semibold">
                 {state === "denied" ? "Camera permission blocked" : "Camera not available here"}
@@ -417,12 +419,12 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
                   <span className={cn("absolute -bottom-0.5 -left-0.5 h-7 w-7 rounded-bl-2xl border-b-[3.5px] border-l-[3.5px] transition-colors", cornerColor)} />
                   <span className={cn("absolute -bottom-0.5 -right-0.5 h-7 w-7 rounded-br-2xl border-b-[3.5px] border-r-[3.5px] transition-colors", cornerColor)} />
                   {/* Center laser guide line */}
-                  <div className="absolute inset-x-4 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-accent shadow-[0_0_12px_rgba(56,189,248,0.85)]" />
+                  <div className="absolute inset-x-4 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-danger-500 shadow-[0_0_12px_rgb(var(--color-danger-500)/0.85)]" />
                 </div>
               </div>
 
               {state === "starting" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/55 backdrop-blur-xs">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/55 backdrop-blur-sm">
                   <div className="flex items-center gap-2.5 rounded-full bg-black/75 px-4 py-2 text-sm font-medium">
                     <Loader2 size={16} className="animate-spin" /> Starting camera…
                   </div>
@@ -462,12 +464,13 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
           <button
             type="button"
             onClick={onClose}
-            className="flex h-12 w-full items-center justify-center rounded-2xl bg-white text-[15px] font-semibold text-ink-900 shadow-lg transition active:scale-[0.99]"
+            className="flex h-12 w-full items-center justify-center rounded-2xl bg-white text-base font-semibold text-ink-900 shadow-lg transition active:scale-[0.99]"
           >
             {typeof scannedCount === "number" && scannedCount > 0 ? `Done (${scannedCount} scanned)` : "Done"}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

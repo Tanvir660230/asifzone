@@ -198,9 +198,8 @@ export function ReceiveStation() {
 
   useWedgeScanner({ inputRef, onType: (ch) => setCode((c) => c + ch), onScan: (c) => void handleCode(c), paused: cameraOpen || correcting !== null });
 
-  // Keep the scan box focused on desktop USB stations only (fine pointer). Never steal focus or pop up the iOS keyboard on phones.
+  // Keep the scan box focused when nothing else is being used, so the next parcel can always be scanned.
   useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia("(pointer: fine)").matches) return;
     const refocus = () => {
       const active = document.activeElement as HTMLElement | null;
       const elsewhere = active && active !== document.body && active !== inputRef.current && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.closest("[role=dialog]"));
@@ -245,7 +244,7 @@ export function ReceiveStation() {
       say("success", `${res.parcel.orderNumber} received${res.replayed ? " (already saved)" : ""} — ${summarise(res.receipt.lines)}. Scan the next parcel.`);
       toast.success(`${res.parcel.orderNumber} received`);
       setView({ kind: "idle" });
-      if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
+      inputRef.current?.focus();
     } catch (err) {
       const code = err instanceof ApiError ? (err.details as { code?: string } | undefined)?.code : undefined;
       say("failed", err instanceof ApiError && err.status > 0 ? getErrorMessage(err, "Not saved") : "Not saved — the connection dropped. Check it and press Confirm again; it will be saved once.");
@@ -288,7 +287,7 @@ export function ReceiveStation() {
         <Button
           type="button"
           variant="primary"
-          className="h-12 w-full rounded-xl text-[15px] font-semibold sm:hidden"
+          className="h-12 w-full rounded-xl text-base font-semibold sm:hidden"
           onClick={() => {
             sound.unlock();
             setCameraOpen(true);
