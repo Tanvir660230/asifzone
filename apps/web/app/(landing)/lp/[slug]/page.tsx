@@ -81,7 +81,10 @@ async function AutomaticLandingView({ product }: { product: Product }) {
   const hasWas = shown.was !== null && Number(shown.was) > Number(shown.price);
   const policy = storePolicy(settings);
   const description = DOMPurify.sanitize(product.description ?? "");
-  const whatsapp = links.find((l) => l.platform === "WHATSAPP" && l.isActive)?.url ?? null;
+  // WhatsApp opens with the product already named, so the customer only has to press send.
+  const whatsappRaw = links.find((l) => l.platform === "WHATSAPP" && l.isActive)?.url ?? null;
+  const whatsappText = encodeURIComponent(`আসসালামু আলাইকুম, আমি "${product.name}" (${money(shown.price)}) অর্ডার করতে চাই।`);
+  const whatsapp = whatsappRaw ? `${whatsappRaw}${whatsappRaw.includes("?") ? "&" : "?"}text=${whatsappText}` : null;
   const tel = telHref(settings.contactPhone);
   const promises = landingPromises(policy);
   // Real answers from this store's own settings and policy: nothing here is promised that the store hasn't set.

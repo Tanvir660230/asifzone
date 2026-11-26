@@ -382,10 +382,26 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         </div>
       )}
 
-      <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-5">
+      <div className="space-y-3 rounded-2xl border border-line-subtle bg-surface p-4 shadow sm:p-5">
+        {/* Phones: a thumb-sized camera button first; a USB or Bluetooth scanner still types into the box below. */}
+        <Button
+          type="button"
+          variant="primary"
+          className="h-12 w-full rounded-xl text-base font-semibold sm:hidden"
+          onClick={() => {
+            sound.unlock();
+            setCameraOpen(true);
+          }}
+          data-testid="open-camera-mobile"
+        >
+          <Camera size={19} aria-hidden="true" />
+          Open camera scanner{accepted > 0 ? ` (${accepted})` : ""}
+        </Button>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            sound.unlock();
             submit(code);
           }}
           className="flex gap-2"
@@ -410,8 +426,18 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
               data-testid="scan-input"
             />
           </label>
-          <Button type="button" variant="outline" className="h-12 w-12 shrink-0 px-0" aria-label="Scan with the camera" onClick={() => setCameraOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="hidden h-12 shrink-0 gap-2 px-3.5 sm:inline-flex"
+            aria-label="Scan with the camera"
+            onClick={() => {
+              sound.unlock();
+              setCameraOpen(true);
+            }}
+          >
             <Camera size={18} />
+            <span>Camera</span>
           </Button>
         </form>
 
@@ -515,6 +541,9 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
 
       {cameraOpen && (
         <CameraScanner
+          title={kind === "DISPATCH" ? "Dispatch scanner" : "Returns in scanner"}
+          scannedCount={accepted}
+          feedback={last}
           onClose={() => setCameraOpen(false)}
           onCode={(value) => {
             submit(value);

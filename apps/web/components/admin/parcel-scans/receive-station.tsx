@@ -282,10 +282,26 @@ export function ReceiveStation() {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-5">
+      <div className="space-y-3 rounded-2xl border border-line-subtle bg-surface p-4 shadow sm:p-5">
+        {/* Phones: primary thumb-friendly camera button first for fast daily Returns In scanning. */}
+        <Button
+          type="button"
+          variant="primary"
+          className="h-12 w-full rounded-xl text-base font-semibold sm:hidden"
+          onClick={() => {
+            sound.unlock();
+            setCameraOpen(true);
+          }}
+          data-testid="receive-open-camera-mobile"
+        >
+          <Camera size={19} aria-hidden="true" />
+          Scan returned parcel
+        </Button>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            sound.unlock();
             void handleCode(code);
           }}
           className="flex gap-2"
@@ -309,8 +325,18 @@ export function ReceiveStation() {
               data-testid="receive-scan-input"
             />
           </label>
-          <Button type="button" variant="outline" className="h-12 w-12 shrink-0 px-0" aria-label="Scan with the camera" onClick={() => setCameraOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="hidden h-12 shrink-0 gap-2 px-3.5 sm:inline-flex"
+            aria-label="Scan with the camera"
+            onClick={() => {
+              sound.unlock();
+              setCameraOpen(true);
+            }}
+          >
             <Camera size={18} />
+            <span>Camera</span>
           </Button>
         </form>
         <div
@@ -520,7 +546,17 @@ export function ReceiveStation() {
         </section>
       )}
 
-      {cameraOpen && <CameraScanner onClose={() => setCameraOpen(false)} onCode={(value) => { setCameraOpen(false); void handleCode(value); }} />}
+      {cameraOpen && (
+        <CameraScanner
+          title="Returns in scanner"
+          feedback={feedback}
+          onClose={() => setCameraOpen(false)}
+          onCode={(value) => {
+            setCameraOpen(false);
+            void handleCode(value);
+          }}
+        />
+      )}
       {correcting && parcel && (
         <CorrectionDialog
           parcel={parcel}
