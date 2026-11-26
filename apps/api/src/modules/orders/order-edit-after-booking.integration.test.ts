@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
 import { cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { markCourierUpdateDone, updateOrderDetails } from "./order.service";
+import { applyOrderModification, previewOrderModification } from "./order-modification.service";
 
 // Owner 2026-11-25: a parcel shipped with a wrong number must be fixable. Steadfast has no API to edit a consignment, so
 // the change is saved and the order is flagged "tell the courier" until staff mark it done; the customer gets the
@@ -56,6 +57,33 @@ describe("changing customer details after the courier is booked", () => {
     const updated = await updateOrderDetails(order.id, { shippingAddressLine: "House 1, Road 1, Mirpur 10, Dhaka" });
     expect(updated.courierUpdateNeeded).toBe(false);
     expect(await prisma.outboxEvent.count({ where: { aggregateId: order.id, eventKey: { startsWith: "phone-change:" } } })).toBe(0);
+  });
+});
+
+describe("changing the items of a booked order (owner 2026-11-26)", () => {
+  it("staff can swap the size: stock follows, the courier is told what the parcel holds; COD only when it changes", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5, 5], basePrice: 1000 });
+    const other = await createStockedProduct({ stocks: [5], basePrice: 400 });
+    const [m, l] = [variants[0]!, variants[1]!];
+    const order = await placeOrder([{ variantId: m.id, quantity: 1 }], { customerPhone: phone() });
+    await prisma.order.update({ where: { id: order.id }, data: { status: "PROCESSING", courierConsignmentId: `CN-${order.id}`, courierBookedAt: new Date() } });
+    const admin = { type: "ADMIN" as const, adminId: await ownerId() };
+
+    await applyOrderModification(order.id, { items: [{ variantId: l.id, quantity: 1 }] }, admin);
+    let after = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
+    expect(after.items.map((i) => i.variantId)).toEqual([l.id]);
+    expect(after.courierConsignmentId).toBe(`CN-${order.id}`);
+    expect(after.courierUpdateNeeded).toBe(true);
+    expect(after.courierUpdateNote).toMatch(/^Parcel now: .+×1\.$/);
+    expect(after.courierUpdateNote).not.toContain("COD");
+
+    await applyOrderModification(order.id, { items: [{ variantId: l.id, quantity: 1 }, { variantId: other.variants[0]!.id, quantity: 1 }] }, admin);
+    after = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
+    expect(after.courierUpdateNote!.match(/Parcel now/g)).toHaveLength(1);
+    expect(after.courierUpdateNote).toMatch(/COD now \S+ \(was \S+\)\.$/);
+
+    // The customer can no longer change it online.
+    await expect(previewOrderModification(order.id, { items: [{ variantId: m.id, quantity: 1 }] }, { type: "CUSTOMER", customerId: after.customerId! })).rejects.toMatchObject({ statusCode: 409 });
   });
 });
 

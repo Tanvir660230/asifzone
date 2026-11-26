@@ -227,7 +227,8 @@ describe("state guards (§3, §10)", () => {
     expect(orderModificationBlocker(facts("SHIPPED"), "ADMIN")).toMatch(/return or an exchange/);
     expect(orderModificationBlocker(facts("DELIVERED"), "ADMIN")).toMatch(/return or an exchange/);
     expect(orderModificationBlocker(facts("CANCELLED"), "ADMIN")).toMatch(/can't be changed/);
-    expect(orderModificationBlocker(facts("PACKED", { courier: true }), "ADMIN")).toMatch(/unlink/);
+    // A booked parcel can still be changed by staff (owner 2026-11-26); the courier is told.
+    expect(orderModificationBlocker(facts("PACKED", { courier: true }), "ADMIN")).toBeNull();
     expect(orderModificationBlocker(facts("PENDING", { deleted: true }), "ADMIN")).toMatch(/Restore/);
   });
   it("customer cancellation: same window; a repeat on a cancelled order is allowed (idempotent)", () => {
