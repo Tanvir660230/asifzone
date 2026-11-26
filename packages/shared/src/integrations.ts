@@ -161,6 +161,19 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
     fields: [
       { key: "META_ADS_ACCESS_TOKEN", label: "Access token (ads_read)", kind: "secret", required: true },
       { key: "META_ADS_ACCOUNT_IDS", label: "Ad account ids", kind: "text", required: true, placeholder: "act_1234567890", help: "One or more, separated by commas. Add each as an Ad platform account in Finance › Money accounts with this id as its reference." },
+      { key: "META_ADS_TAX_PERCENT", label: "VAT on spend (%)", kind: "text", placeholder: "5", help: "What Meta adds to the spend on your bill (Bangladesh: 5). Ads Manager shows spend without it; the books take spend + this." },
+    ],
+  },
+  {
+    id: "tiktok_ads",
+    name: "TikTok ad spend (for the books)",
+    group: "marketing",
+    description: "Brings each TikTok campaign's daily spend into Finance, next to Meta's. Read-only.",
+    docsHint: "TikTok for Business Developers › My apps › your app (scope: Reporting) › Advertiser authorization → long-term access token. Advertiser id: Ads Manager, top left",
+    fields: [
+      { key: "TIKTOK_ADS_ACCESS_TOKEN", label: "Access token (reporting)", kind: "secret", required: true },
+      { key: "TIKTOK_ADS_ADVERTISER_IDS", label: "Advertiser ids", kind: "text", required: true, placeholder: "7711798919910572053", help: "One or more, separated by commas. Add each as an Ad platform account in Finance › Money accounts with this id as its reference." },
+      { key: "TIKTOK_ADS_TAX_PERCENT", label: "Tax on spend (%)", kind: "text", placeholder: "5", help: "The sales tax TikTok adds to each top-up (Bangladesh: 5). The books take spend + this." },
     ],
   },
   {

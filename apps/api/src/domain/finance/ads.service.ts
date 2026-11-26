@@ -16,6 +16,7 @@ import { applyFinanceFacts, booksStarted, postRecorded, type FinanceFact } from 
 import { OWNER_BOOKS_EVENT_TYPES } from "./owner-books-posting-rules";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 import { getProviders } from "../../providers/registry";
+import type { AdSpendSource } from "../../providers/capabilities";
 
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 
@@ -495,18 +496,38 @@ export async function syncAllAdSpend() {
   return total;
 }
 
+/** Spend + the platform's tax on it (Meta VAT, TikTok sales tax), in minor units, rounded to the paisa. Pure. */
+export function withSpendTax(minor: number, taxPercent: number): number {
+  return taxPercent > 0 ? Math.round(minor * (1 + taxPercent / 100)) : minor;
+}
+
 /**
  * Pulls actual daily spend from Meta for every connected ad account (Settings › Integrations › Meta ad spend), last
  * `days` days (Meta revises recent days, so they are read again). Each Meta ad account is the money account whose
  * reference is its id (act_…); campaigns are created on first sight. Spend in another currency is converted at the ad
- * account's rate (its details: fxRate = taka per unit).
+ * account's rate (its details: fxRate = taka per unit). The VAT Meta bills on top (Settings: VAT on spend, or the
+ * account's details: spendTaxPercent) is added, so the books carry what the card is charged.
  */
-export async function importMetaSpend(input: { days?: number; since?: string }, actor: FinanceActor) {
+export function importMetaSpend(input: { days?: number; since?: string }, actor: FinanceActor) {
+  return importPlatformSpend(getProviders().adSpend, input, actor);
+}
+
+/** TikTok's twin of importMetaSpend (Settings › Integrations › TikTok ad spend; advertiser id = the account's reference). */
+export function importTikTokSpend(input: { days?: number; since?: string }, actor: FinanceActor) {
+  return importPlatformSpend(getProviders().tiktokAdSpend, input, actor);
+}
+
+async function importPlatformSpend(source: AdSpendSource, input: { days?: number; since?: string }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
-  const source = getProviders().adSpend;
+  const meta = source.id === "meta";
+  const sourceTag = meta ? "META_API" : "TIKTOK_API";
   const cfg = { configured: source.configured(), accounts: source.adAccounts() };
-  if (!cfg.configured) throw financeError(409, "META_ADS_NOT_CONNECTED", "Connect Meta ad spend in Settings › Integrations (access token and ad account id)");
+  if (!cfg.configured) {
+    throw meta
+      ? financeError(409, "META_ADS_NOT_CONNECTED", "Connect Meta ad spend in Settings › Integrations (access token and ad account id)")
+      : financeError(409, "TIKTOK_ADS_NOT_CONNECTED", "Connect TikTok ad spend in Settings › Integrations (access token and advertiser id)");
+  }
   const today = businessToday(business);
   const since = input.since ?? addDays(today, -(input.days ?? 7));
   const accounts = await prisma.financialAccount.findMany({ where: { businessId: business.id, kind: "AD_PLATFORM", isActive: true } });
@@ -519,9 +540,12 @@ export async function importMetaSpend(input: { days?: number; since?: string }, 
     }
     try {
       const rows = await source.campaignDays(act, since, today);
-      const meta = (fa.metadata ?? {}) as Record<string, unknown>;
+      const details = (fa.metadata ?? {}) as Record<string, unknown>;
+      // The tax billed on top of the spend: the account's own figure, else the platform's setting.
+      const ownTax = details.spendTaxPercent === undefined || details.spendTaxPercent === null || details.spendTaxPercent === "" ? NaN : Number(details.spendTaxPercent);
+      const taxPercent = Number.isFinite(ownTax) && ownTax >= 0 && ownTax < 100 ? ownTax : source.taxPercent();
       // The account's own rate, else the books' default USD rate (Finance Center › Settings).
-      const rate = Number(meta.fxRate) || Number((await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true } })).defaultUsdRate ?? 0);
+      const rate = Number(details.fxRate) || Number((await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true } })).defaultUsdRate ?? 0);
       // Days the owner already gave as part of a period total (from Ads Manager) keep it: Meta's figure for them is the
       // same money, so it is not booked again.
       const periodDays = new Set((await prisma.adSpendDay.findMany({ where: { source: "PERIOD", campaign: { financialAccountId: fa.id }, date: { gte: dateColumn(since), lte: dateColumn(today) } }, select: { date: true } })).map((d) => businessDateOf(d.date)));
@@ -531,23 +555,23 @@ export async function importMetaSpend(input: { days?: number; since?: string }, 
           if (periodDays.has(r.date)) continue;
           const foreign = r.currency && r.currency !== cur;
           if (foreign && !(rate > 0)) throw financeError(409, "AD_ACCOUNT_RATE", `${fa.name} spends in ${r.currency} — set the default taka per ${r.currency} in Finance Center › Settings, or fxRate in the account's details`);
-          const amount = toMinor(foreign ? Math.round(r.spend * rate * 100) / 100 : r.spend, cur);
+          const amount = withSpendTax(toMinor(foreign ? Math.round(r.spend * rate * 100) / 100 : r.spend, cur), taxPercent);
           let campaign = await tx.adCampaign.findUnique({ where: { financialAccountId_externalId: { financialAccountId: fa.id, externalId: r.campaignId } } });
           if (!campaign) {
-            campaign = await tx.adCampaign.create({ data: { businessId: business.id, financialAccountId: fa.id, platform: "META", externalId: r.campaignId, name: r.campaignName, startDate: dateColumn(r.date), createdByAdminId: adminOf(actor) } });
+            campaign = await tx.adCampaign.create({ data: { businessId: business.id, financialAccountId: fa.id, platform: source.platform, externalId: r.campaignId, name: r.campaignName, startDate: dateColumn(r.date), createdByAdminId: adminOf(actor) } });
             await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_campaign.import", entityType: "AdCampaign", entityId: campaign.id, after: campaign });
           } else if (businessDateOf(campaign.startDate) > r.date) {
             campaign = await tx.adCampaign.update({ where: { id: campaign.id }, data: { startDate: dateColumn(r.date) } });
           }
           touched.add(campaign.id);
           const data = {
-            source: "META_API", amount: toDecimal(amount, cur), originalAmount: foreign ? toDecimal(toMinor(r.spend, cur), cur) : null, originalCurrency: foreign ? r.currency : null,
+            source: sourceTag, amount: toDecimal(amount, cur), originalAmount: foreign ? toDecimal(toMinor(r.spend, cur), cur) : null, originalCurrency: foreign ? r.currency : null,
             fxRate: foreign ? rate : null, impressions: r.impressions, clicks: r.clicks, purchases: r.purchases,
           } satisfies Prisma.AdSpendDayUpdateInput;
           await tx.adSpendDay.upsert({ where: { campaignId_date: { campaignId: campaign.id, date: dateColumn(r.date) } }, create: { campaignId: campaign.id, date: dateColumn(r.date), ...data }, update: data });
         }
-        // Meta reports only the days a campaign spent. A Meta campaign with a budget had a finished day in the window that
-        // Meta didn't report: it spent nothing (paused, off) — recorded as 0, so its budget is never booked for that day.
+        // The platform reports only the days a campaign spent. A campaign with a budget had a finished day in the window that
+        // it didn't report: it spent nothing (paused, off) — recorded as 0, so its budget is never booked for that day.
         const reported = new Set(rows.map((r) => `${r.campaignId}|${r.date}`));
         const linked = await tx.adCampaign.findMany({
           where: { financialAccountId: fa.id, externalId: { not: null }, budget: { not: null } },
@@ -559,11 +583,11 @@ export async function importMetaSpend(input: { days?: number; since?: string }, 
           const last = c.endDate && businessDateOf(c.endDate) < addDays(today, -1) ? businessDateOf(c.endDate) : addDays(today, -1);
           for (let d = first; d <= last; d = addDays(d, 1)) {
             if (have.has(d) || periodDays.has(d) || reported.has(`${c.externalId}|${d}`)) continue;
-            await tx.adSpendDay.create({ data: { campaignId: c.id, date: dateColumn(d), source: "META_API", amount: toDecimal(0, cur) } });
+            await tx.adSpendDay.create({ data: { campaignId: c.id, date: dateColumn(d), source: sourceTag, amount: toDecimal(0, cur) } });
             touched.add(c.id);
           }
         }
-        await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.import", entityType: "FinancialAccount", entityId: fa.id, after: { adAccountId: act, since, until: today, rows: rows.length } });
+        await recordFinanceAudit(tx, { businessId: business.id, actor, action: "ad_spend.import", entityType: "FinancialAccount", entityId: fa.id, after: { platform: source.platform, adAccountId: act, since, until: today, rows: rows.length, taxPercent } });
       });
       for (const id of touched) await syncCampaignSpend(id);
       result.accounts.push({ adAccountId: act, financialAccount: fa.name, days: rows.length, campaigns: touched.size, error: null });
@@ -626,7 +650,7 @@ export async function listCampaigns(q: { from?: string; to?: string }) {
   }
   const totals = out.reduce((t, c) => ({ spend: t.spend + c.spend, orders: t.orders + c.orders, revenue: t.revenue + c.revenue }), { spend: 0, orders: 0, revenue: 0 });
   const unlinkedTags = await unlinkedCampaignTags(campaigns, from, to, business.timezone);
-  return { period: { from, to }, campaigns: out, totals: { spend: Math.round(totals.spend * 100) / 100, orders: totals.orders, revenue: Math.round(totals.revenue * 100) / 100 }, unlinkedTags, meta: { connected: getProviders().adSpend.configured() } };
+  return { period: { from, to }, campaigns: out, totals: { spend: Math.round(totals.spend * 100) / 100, orders: totals.orders, revenue: Math.round(totals.revenue * 100) / 100 }, unlinkedTags, meta: { connected: getProviders().adSpend.configured() }, tiktok: { connected: getProviders().tiktokAdSpend.configured() } };
 }
 
 /**

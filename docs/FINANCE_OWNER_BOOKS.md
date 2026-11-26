@@ -132,7 +132,7 @@ unique per (campaign, date, basis).
 - **Planned:** generated from the budget (daily budget × active days, or lifetime ÷ days).
 - **Actual:** Meta Marketing API Insights (`/act_<id>/insights?level=campaign&time_increment=1`, needs `ads_read`
   via a system-user token stored in Settings › Integrations). Pulled daily for the last 7 days (Meta revises recent
-  days), backfilled once for history. TikTok later, same shape. Manual entry for anything else.
+  days), backfilled once for history. TikTok the same way (below). Manual entry for anything else.
 - Actual supersedes planned per day.
 - **A period total** (`PUT /ads/campaigns/:id/period-spend`, source PERIOD, added 2026-10-21): what Ads Manager or the
   card statement shows for a stretch of days, in taka or in USD at a rate (the owner uses ৳130/USD, the dollar costs
@@ -141,6 +141,15 @@ unique per (campaign, date, basis).
   the period again replaces only its shared days, so a month typed exactly later narrows the shared total.
 - Meta's import skips days that already carry a period total on the same ad account (the owner's Ads Manager figure is
   the same money), and converts USD at the account's fxRate, else the default USD rate (Finance Center › Settings).
+- **The platform's tax (2026-11-27):** Ads Manager shows spend without the tax the platform bills on top (Meta VAT,
+  TikTok sales tax on each top-up — 5% in Bangladesh). Settings › Integrations › *VAT on spend* / *Tax on spend*, or
+  an ad account's details `spendTaxPercent`, makes each imported day spend × (1 + tax), rounded to the paisa, so the
+  books carry what the card is charged (proven against Tahafi's Amex bills: payments ÷ 1.05 + outstanding = spend).
+- **TikTok (2026-11-27):** `providers/ads/tiktok-report.ts` reads the Business API daily campaign report
+  (`/open_api/v1.3/report/integrated/get/`, BASIC, AUCTION_CAMPAIGN, `campaign_id` × `stat_time_day`, 30-day slices)
+  with a long-term token (Reporting scope). Settings › Integrations › TikTok ad spend (token, advertiser ids, tax); each
+  advertiser id is an AD_PLATFORM money account's reference. `POST /ads/import-tiktok` and the autopilot's ad step
+  (Meta and TikTok each, last 7 days) record days with source `TIKTOK_API`, campaigns with platform TIKTOK.
 
 ### 5.3 Postings
 | Moment | Journal |
@@ -309,7 +318,7 @@ The owner asked for everything that can run by itself to run by itself. `autopil
 |---|---|---|
 | Steadfast payouts | the account Steadfast pays into (`autoPayoutAccountId`) | Imports new payouts (§3.2). A draft is posted when every parcel is matched to its order, or has no invoice number (booked straight on Steadfast → marked a sale outside the website). A parcel carrying our invoice number that matches no order keeps the payout in draft for a person (Steadfast check). |
 | Owner's withdrawals | `autoPayoutsToOwner` | Every posted payout into that account becomes the owner's drawing on the payout's day (`markPayoutsTaken`, once per payout). |
-| Meta ad spend | Meta connected in Settings › Integrations | Reads the last 7 days (§5.2). |
+| Meta / TikTok ad spend | Connected in Settings › Integrations | Reads each platform's last 7 days, with its tax (§5.2). |
 | Depreciation | an asset in use | Runs every finished month not yet run, in order, so the month's profit has it. |
 | Partners' shares | `autoProfitShares` | `runProfitShares` once the books have started: each finished month is shared once (§8 of FINANCE_EQUITY.md). |
 

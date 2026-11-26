@@ -22,6 +22,7 @@ import { createMaterial } from "../manufacturing/materials.service";
 import { recordExpense } from "./expenses.service";
 import { profitByDay } from "./profit.service";
 import { spending } from "./spending.service";
+import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 
 // Owner's books §5–§6 (docs/FINANCE_OWNER_BOOKS.md): ad spend booked day by day (budget until the actual is known, Meta's
 // figures replacing it), a year of hosting shared month by month, and packaging leaving stock with each parcel at its real
@@ -31,6 +32,12 @@ const meta = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>> }));
 vi.mock("../../providers/ads/meta-insights", () => ({
   metaAdsConfig: () => ({ token: "t", accounts: ["act_111"], configured: true }),
   fetchMetaCampaignSpend: async () => meta.rows,
+  taxPercentOf: (raw: string) => Number(raw) || 0,
+}));
+const tiktok = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>> }));
+vi.mock("../../providers/ads/tiktok-report", () => ({
+  tiktokAdsConfig: () => ({ token: "t", accounts: ["7711"], configured: true }),
+  fetchTikTokCampaignSpend: async () => tiktok.rows,
 }));
 
 const CSRF = "vitest-csrf";
@@ -371,5 +378,48 @@ describe("spending (docs/FINANCE_SPENDING.md)", () => {
     const res = await api().get(`/spending?from=2026-10-01&to=2026-10-31`);
     expect(res.status).toBe(200);
     expect(res.body.period).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+  });
+});
+
+describe("ad spend from the platforms' APIs (Meta VAT, TikTok)", () => {
+  it("Meta's VAT (Settings: VAT on spend) is added to each day, so the books carry what the card is charged", async () => {
+    const restore = overrideIntegrationsForTests({ META_ADS_TAX_PERCENT: "5" });
+    try {
+      meta.rows = [{ campaignId: "cmp-vat", campaignName: "VAT check", date: "2026-10-20", spend: 501.97, currency: "BDT", impressions: 1, clicks: 1, purchases: 0 }];
+      const r = await api().post("/ads/import-meta", { since: "2026-10-01" });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const day = await prisma.adSpendDay.findFirstOrThrow({ where: { campaign: { externalId: "cmp-vat" } } });
+      expect([day.source, Number(day.amount)]).toEqual(["META_API", 527.07]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("TikTok's daily spend comes in the same way, plus its sales tax, on the TikTok ad account (advertiser id = reference)", async () => {
+    const before = await balanceOf("expense.advertising");
+    const missing = await api().post("/ads/import-tiktok", { since: "2026-10-01" });
+    expect(missing.status, JSON.stringify(missing.body)).toBe(200);
+    expect(missing.body.accounts[0]).toMatchObject({ adAccountId: "7711", financialAccount: null });
+    const fa = await api().post("/financial-accounts", { kind: "AD_PLATFORM", name: `TikTok ads ${RUN}`, provider: "TikTok", accountReference: "7711" });
+    expect(fa.status, JSON.stringify(fa.body)).toBe(201);
+    const restore = overrideIntegrationsForTests({ TIKTOK_ADS_TAX_PERCENT: "5" });
+    try {
+      tiktok.rows = [
+        { campaignId: "tt-1", campaignName: "Haven - Website Purchase", date: "2026-10-25", spend: 501.97, currency: "BDT", impressions: 19642, clicks: 337, purchases: 7 },
+        { campaignId: "tt-1", campaignName: "Haven - Website Purchase", date: "2026-10-26", spend: 500.45, currency: "BDT", impressions: 23049, clicks: 418, purchases: 6 },
+      ];
+      const r = await api().post("/ads/import-tiktok", { since: "2026-10-01" });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(r.body.accounts[0]).toMatchObject({ adAccountId: "7711", days: 2, campaigns: 1, error: null });
+      const c = await prisma.adCampaign.findFirstOrThrow({ where: { externalId: "tt-1" }, include: { spendDays: { orderBy: { date: "asc" } } } });
+      expect([c.platform, c.financialAccountId]).toEqual(["TIKTOK", fa.body.id]);
+      expect(c.spendDays.map((d) => [d.source, Number(d.amount), d.purchases])).toEqual([["TIKTOK_API", 527.07, 7], ["TIKTOK_API", 525.47, 6]]);
+      expect(await balanceOf("expense.advertising")).toBe(Math.round((before + 1052.54) * 100) / 100);
+      // a re-import changes nothing
+      await api().post("/ads/import-tiktok", { since: "2026-10-01" });
+      expect(await balanceOf("expense.advertising")).toBe(Math.round((before + 1052.54) * 100) / 100);
+    } finally {
+      restore();
+    }
   });
 });

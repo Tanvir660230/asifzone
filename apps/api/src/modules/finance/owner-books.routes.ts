@@ -174,6 +174,7 @@ ownerBooksRouter.post("/ads/campaigns/:id/archive", requirePermission("finance.t
 ownerBooksRouter.post("/ads/campaigns/:id/confirm-zero", requirePermission("finance.post"), validate(adConfirmZeroSchema), asyncHandler(async (req, res) => res.json(await ads.confirmZeroSpendDays(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.put("/ads/campaigns/:id/period-spend", requirePermission("finance.transact"), validate(adPeriodSpendSchema), asyncHandler(async (req, res) => res.json(await ads.recordPeriodSpend(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.post("/ads/import-meta", requirePermission("finance.transact"), validate(metaSpendImportSchema), asyncHandler(async (req, res) => res.json(await ads.importMetaSpend(req.body, await actorOf(req)))));
+ownerBooksRouter.post("/ads/import-tiktok", requirePermission("finance.transact"), validate(metaSpendImportSchema), asyncHandler(async (req, res) => res.json(await ads.importTikTokSpend(req.body, await actorOf(req)))));
 
 // ── prepaid costs (§6.1) ────────────────────────────────────────────────────────────────────────────────────────────
 ownerBooksRouter.get("/prepaid", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await prepaid.listPrepaid())));

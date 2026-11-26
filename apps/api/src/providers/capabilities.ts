@@ -19,7 +19,7 @@ import type { EpsCheck, EpsValidationResult, InitEpsSessionParams } from "./paym
 import type { InitSessionParams, SslValidationResult } from "./payment/sslcommerz";
 import type { PushInput } from "./push/web-push";
 import type { SmsInput } from "./sms/bulksmsbd";
-import type { MetaCampaignDay } from "./ads/meta-insights";
+import type { CampaignSpendDay } from "./ads/meta-insights";
 import type { PageConversation, RawTemplate, TemplateSend } from "./social/meta-graph";
 import type { CourierProviderId, EmailProviderId, PaymentGatewayKey, PushProviderId, SmsProviderId } from "./selection";
 
@@ -167,11 +167,15 @@ export interface SocialMessenger {
 
 /** Owner's books §5.2: an ad platform's daily spend per campaign (read-only). */
 export interface AdSpendSource {
-  readonly id: "meta";
+  readonly id: "meta" | "tiktok";
+  /** The platform the campaigns it creates are marked with. */
+  readonly platform: "META" | "TIKTOK";
   configured(): boolean;
-  /** The connected ad account ids (act_…). */
+  /** The connected ad account ids (Meta act_…, TikTok advertiser ids). */
   adAccounts(): string[];
-  campaignDays(adAccountId: string, since: string, until: string): Promise<MetaCampaignDay[]>;
+  /** The tax the platform bills on top of the spend it reports (Meta VAT, TikTok sales tax), percent; 0 when not set. */
+  taxPercent(): number;
+  campaignDays(adAccountId: string, since: string, until: string): Promise<CampaignSpendDay[]>;
 }
 
 export interface Providers {
@@ -184,6 +188,7 @@ export interface Providers {
   tiktokServerEvents: TikTokServerEventSink;
   payments: PaymentGateways;
   adSpend: AdSpendSource;
+  tiktokAdSpend: AdSpendSource;
 }
 
 /** OWNER view for admin/ops: booleans and credential variable NAMES only (never a value). */

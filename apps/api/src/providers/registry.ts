@@ -10,6 +10,8 @@ import { env } from "../config/env";
 import { installId } from "../config/installation";
 import * as steadfast from "./courier/steadfast";
 import * as metaInsights from "./ads/meta-insights";
+import * as tiktokReport from "./ads/tiktok-report";
+import { integrationSetting } from "../config/integration-overrides";
 import * as resend from "./email/resend";
 import * as metaCapi from "./events/meta-capi";
 import * as tiktokEvents from "./events/tiktok-events";
@@ -181,9 +183,19 @@ export function buildProviders(selection: ProviderSelection): Providers {
     payments: buildPayments(selection.paymentGateways),
     adSpend: {
       id: "meta",
+      platform: "META",
       configured: () => metaInsights.metaAdsConfig().configured,
       adAccounts: () => metaInsights.metaAdsConfig().accounts,
+      taxPercent: () => metaInsights.taxPercentOf(integrationSetting("META_ADS_TAX_PERCENT")),
       campaignDays: (adAccountId, since, until) => metaInsights.fetchMetaCampaignSpend(adAccountId, since, until),
+    },
+    tiktokAdSpend: {
+      id: "tiktok",
+      platform: "TIKTOK",
+      configured: () => tiktokReport.tiktokAdsConfig().configured,
+      adAccounts: () => tiktokReport.tiktokAdsConfig().accounts,
+      taxPercent: () => metaInsights.taxPercentOf(integrationSetting("TIKTOK_ADS_TAX_PERCENT")),
+      campaignDays: (advertiserId, since, until) => tiktokReport.fetchTikTokCampaignSpend(advertiserId, since, until),
     },
   };
 }

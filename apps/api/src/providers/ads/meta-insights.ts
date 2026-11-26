@@ -6,7 +6,8 @@ import { env } from "../../config/env";
 import { integrationSetting } from "../../config/integration-overrides";
 import { AppError } from "../../lib/app-error";
 
-export interface MetaCampaignDay {
+/** One campaign's spend on one day, as an ad platform reports it (spend without the platform's tax). */
+export interface CampaignSpendDay {
   campaignId: string;
   campaignName: string;
   date: string;
@@ -15,6 +16,13 @@ export interface MetaCampaignDay {
   impressions: number | null;
   clicks: number | null;
   purchases: number | null;
+}
+export type MetaCampaignDay = CampaignSpendDay;
+
+/** A tax percent setting ("5", "5%", blank) → a number ≥ 0; anything unreadable is 0. Pure. */
+export function taxPercentOf(raw: string): number {
+  const n = Number(raw.replace(/%/g, "").trim());
+  return Number.isFinite(n) && n > 0 && n < 100 ? n : 0;
 }
 
 export function metaAdsConfig() {

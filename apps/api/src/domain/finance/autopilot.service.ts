@@ -21,7 +21,7 @@ import { booksStarted } from "./finance-facts";
 import { importCourierPayouts, invoiceOf } from "./courier-payouts.service";
 import { getSettlement, markUnmatchedAsOutsideSales, postSettlement } from "./settlements.service";
 import { markPayoutsTaken, runProfitShares } from "./partner-profit.service";
-import { importMetaSpend } from "./ads.service";
+import { importMetaSpend, importTikTokSpend } from "./ads.service";
 import { runDepreciation } from "./fixed-assets.service";
 import { getProviders } from "../../providers/registry";
 import { liveProvidersEnabled } from "../../lib/provider-guard";
@@ -42,6 +42,7 @@ export async function getAutopilotSettings() {
     payoutsToOwner: b.autoPayoutsToOwner,
     profitShares: b.autoProfitShares,
     metaConnected: getProviders().adSpend.configured(),
+    tiktokConnected: getProviders().tiktokAdSpend.configured(),
     lastRun: (b.autopilotLastRun ?? null) as AutopilotRun | null,
   };
 }
@@ -118,16 +119,26 @@ async function ownerStep(accountId: string | null, on: boolean, actor: FinanceAc
   }
 }
 
+/** Each connected ad platform's last 7 days (Meta, TikTok); skipped when none is connected. */
 async function adStep(actor: FinanceActor): Promise<Step> {
-  if (!getProviders().adSpend.configured()) return { ok: true, skipped: "META_NOT_CONNECTED" };
+  const platforms = [
+    { on: getProviders().adSpend.configured(), run: importMetaSpend },
+    { on: getProviders().tiktokAdSpend.configured(), run: importTikTokSpend },
+  ].filter((p) => p.on);
+  if (!platforms.length) return { ok: true, skipped: "META_NOT_CONNECTED" };
   if (!liveProvidersEnabled()) return { ok: true, skipped: "LIVE_PROVIDERS_OFF" };
-  try {
-    const r = await importMetaSpend({ days: 7 }, actor);
-    const errors = r.accounts.filter((a) => a.error).map((a) => `${a.adAccountId}: ${a.error}`);
-    return { ok: errors.length === 0, days: r.accounts.reduce((s, a) => s + a.days, 0), ...(errors.length ? { error: errors.join("; ") } : {}) };
-  } catch (err) {
-    return failed(err);
+  let days = 0;
+  const errors: string[] = [];
+  for (const p of platforms) {
+    try {
+      const r = await p.run({ days: 7 }, actor);
+      days += r.accounts.reduce((s, a) => s + a.days, 0);
+      errors.push(...r.accounts.filter((a) => a.error).map((a) => `${a.adAccountId}: ${a.error}`));
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err));
+    }
   }
+  return { ok: errors.length === 0, days, ...(errors.length ? { error: errors.join("; ") } : {}) };
 }
 
 const nextMonth = (m: string) => {

@@ -475,6 +475,13 @@ function Autopilot({ canEdit }: { canEdit: boolean }) {
           </span>
           <Badge variant={d.metaConnected ? "success" : "neutral"}>{d.metaConnected ? "Connected" : "Not connected"}</Badge>
         </div>
+        <div className="flex items-start justify-between gap-4 pt-4">
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium text-fg">TikTok ad spend</span>
+            <span className="block text-xs text-fg-muted">{d.tiktokConnected ? "Read every run for the last 7 days." : "Connect TikTok in Settings › Integrations, or add the spend by hand in Ad spend."}</span>
+          </span>
+          <Badge variant={d.tiktokConnected ? "success" : "neutral"}>{d.tiktokConnected ? "Connected" : "Not connected"}</Badge>
+        </div>
       </div>
       <div className="space-y-3 rounded-lg bg-surface-muted p-3 sm:p-4">
         <div className="flex items-center justify-between gap-3">
