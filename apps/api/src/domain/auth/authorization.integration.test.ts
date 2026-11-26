@@ -334,6 +334,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/ads/campaigns/:id/archive",
   "POST /api/v1/finance/ads/campaigns/:id/confirm-zero",
   "POST /api/v1/finance/ads/import-meta",
+  "POST /api/v1/finance/ads/import-tiktok",
   "GET /api/v1/finance/prepaid",
   "POST /api/v1/finance/prepaid",
   "POST /api/v1/finance/costs",

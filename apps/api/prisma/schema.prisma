@@ -4128,7 +4128,7 @@ model AdSpendDay {
   campaignId             String
   campaign               AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   date                   DateTime   @db.Date
-  /// META_API, MANUAL, CSV, or PERIOD (a period total shared over its days without their own figure).
+  /// META_API, TIKTOK_API, MANUAL, CSV, or PERIOD (a period total shared over its days without their own figure).
   source                 String
   amount                 Decimal    @db.Decimal(18, 2)
   originalAmount         Decimal?   @db.Decimal(18, 2)

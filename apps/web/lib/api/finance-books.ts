@@ -114,7 +114,7 @@ export interface AdCampaign {
 }
 /** A utm_campaign value visitors came with that no campaign claims yet (Meta sends the campaign's numeric id). */
 export interface UnlinkedAdTag { tag: string; sessions: number; orders: number }
-export const listCampaigns = (q: { from?: string; to?: string }) => apiFetch<{ period: { from: string; to: string }; campaigns: AdCampaign[]; totals: { spend: number; orders: number; revenue: number }; unlinkedTags?: UnlinkedAdTag[]; meta: { connected: boolean } }>(`${BASE}/ads/campaigns${qs(q)}`);
+export const listCampaigns = (q: { from?: string; to?: string }) => apiFetch<{ period: { from: string; to: string }; campaigns: AdCampaign[]; totals: { spend: number; orders: number; revenue: number }; unlinkedTags?: UnlinkedAdTag[]; meta: { connected: boolean }; tiktok?: { connected: boolean } }>(`${BASE}/ads/campaigns${qs(q)}`);
 export const createCampaign = (body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns`, { method: "POST", body });
 export const updateCampaign = (id: string, body: Record<string, unknown>) => apiFetch<AdCampaign>(`${BASE}/ads/campaigns/${id}`, { method: "PATCH", body });
 export const recordDaySpend = (id: string, body: { date: string; amount?: number | null; originalAmount?: number | null; currency?: string | null; fxRate?: number | null }) => apiFetch<{ ok: true }>(`${BASE}/ads/campaigns/${id}/spend`, { method: "PUT", body });
@@ -125,8 +125,9 @@ export const recordPeriodSpend = (id: string, body: { from: string; to: string; 
 export const setCampaignArchived = (id: string, body: { archived: boolean; reason?: string | null }) => apiFetch<{ id: string; archivedAt: string | null }>(`${BASE}/ads/campaigns/${id}/archive`, { method: "POST", body });
 /** Confirm that a campaign spent nothing on these days (needs finance.post and a reason). */
 export const confirmZeroSpend = (id: string, body: { dates: string[]; reason: string }) => apiFetch<{ campaignId: string; confirmed: string[] }>(`${BASE}/ads/campaigns/${id}/confirm-zero`, { method: "POST", body });
-export const importMetaSpend = (body: { days?: number; since?: string }) =>
-  apiFetch<{ since: string; until: string; accounts: Array<{ adAccountId: string; financialAccount: string | null; days: number; campaigns: number; error: string | null }> }>(`${BASE}/ads/import-meta`, { method: "POST", body });
+export type SpendImportResult = { since: string; until: string; accounts: Array<{ adAccountId: string; financialAccount: string | null; days: number; campaigns: number; error: string | null }> };
+export const importMetaSpend = (body: { days?: number; since?: string }) => apiFetch<SpendImportResult>(`${BASE}/ads/import-meta`, { method: "POST", body });
+export const importTikTokSpend = (body: { days?: number; since?: string }) => apiFetch<SpendImportResult>(`${BASE}/ads/import-tiktok`, { method: "POST", body });
 
 // ── prepaid costs ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -256,7 +257,7 @@ export const updateCenterSettings = (body: Partial<CenterSettings>) => apiFetch<
 /** Autopilot (docs/FINANCE_OWNER_BOOKS.md §15): what runs by itself every morning and evening. */
 export interface AutopilotStep { ok: boolean; skipped?: string; error?: string; imported?: number; posted?: string[]; waiting?: Array<{ reference: string; parcels: number }>; problems?: Array<{ payoutId: string; message: string }>; taken?: number; amount?: number; days?: number; shared?: Array<{ partner: string; period: string; amount: number }>; months?: string[] }
 export interface AutopilotRun { at: string; payouts: AutopilotStep; ownerDrawings: AutopilotStep; adSpend: AutopilotStep; depreciation?: AutopilotStep; profitShares: AutopilotStep }
-export interface AutopilotSettings { payoutAccount: { id: string; name: string; kind: string } | null; payoutsToOwner: boolean; profitShares: boolean; metaConnected: boolean; lastRun: AutopilotRun | null }
+export interface AutopilotSettings { payoutAccount: { id: string; name: string; kind: string } | null; payoutsToOwner: boolean; profitShares: boolean; metaConnected: boolean; tiktokConnected?: boolean; lastRun: AutopilotRun | null }
 export const getAutopilot = () => apiFetch<AutopilotSettings>(`${BASE}/center/autopilot`);
 export const updateAutopilot = (body: { payoutAccountId?: string | null; payoutsToOwner?: boolean; profitShares?: boolean }) => apiFetch<AutopilotSettings>(`${BASE}/center/autopilot`, { method: "PATCH", body });
 export const runAutopilot = () => apiFetch<AutopilotRun>(`${BASE}/center/autopilot/run`, { method: "POST" });

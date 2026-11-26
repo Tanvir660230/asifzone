@@ -125,15 +125,21 @@ export default function AdSpendPage() {
   const recorded = useQuery({ queryKey: booksApi.spendingKey(thisMonth), queryFn: () => booksApi.getSpending(thisMonth), enabled: allowed });
   const behind = recorded.data?.adsMissingAfter ?? null;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
+  const imported = (platform: string) => (r: booksApi.SpendImportResult) => {
+    refresh();
+    const bad = r.accounts.filter((a) => a.error);
+    if (bad.length) toast.error(bad.map((a) => `${a.adAccountId}: ${a.error}`).join(" · "));
+    else toast.success(`${platform} spend brought in: ${r.accounts.reduce((s, a) => s + a.days, 0)} campaign-days`);
+  };
   const meta = useMutation({
     mutationFn: () => booksApi.importMetaSpend({ days: 7 }),
-    onSuccess: (r) => {
-      refresh();
-      const bad = r.accounts.filter((a) => a.error);
-      if (bad.length) toast.error(bad.map((a) => `${a.adAccountId}: ${a.error}`).join(" · "));
-      else toast.success(`Meta spend brought in: ${r.accounts.reduce((s, a) => s + a.days, 0)} campaign-days`);
-    },
+    onSuccess: imported("Meta"),
     onError: (e) => toast.error(getErrorMessage(e, "Meta's spend couldn't be read")),
+  });
+  const tiktok = useMutation({
+    mutationFn: () => booksApi.importTikTokSpend({ days: 7 }),
+    onSuccess: imported("TikTok"),
+    onError: (e) => toast.error(getErrorMessage(e, "TikTok's spend couldn't be read")),
   });
 
   if (ready && !allowed) return <div><ModuleTabs /><PermissionState icon={Megaphone} page="Ad spend" /></div>;
@@ -141,10 +147,11 @@ export default function AdSpendPage() {
   return (
     <ListPage
       title="Ad spend"
-      description="Each campaign's daily spend comes out of its ad account — Meta's real figure when connected, otherwise the budget until you enter what was spent."
+      description="Each campaign's daily spend comes out of its ad account — Meta's or TikTok's real figure (with their tax) when connected, otherwise the budget until you enter what was spent."
       action={can("finance.transact") && (
         <div className="flex flex-wrap gap-2" data-phone-row>
           {d?.meta.connected && <Button size="sm" variant="outline" loading={meta.isPending} onClick={() => meta.mutate()} data-testid="import-meta"><Download className="h-4 w-4" /> Bring in Meta spend</Button>}
+          {d?.tiktok?.connected && <Button size="sm" variant="outline" loading={tiktok.isPending} onClick={() => tiktok.mutate()} data-testid="import-tiktok"><Download className="h-4 w-4" /> Bring in TikTok spend</Button>}
           <Button size="sm" variant="outline" onClick={() => setImporting(true)} disabled={!adAccounts.length} data-testid="import-ad-csv"><FileUp className="h-4 w-4" /> Import Ads Manager file</Button>
           <Button size="sm" onClick={() => setEditing("new")} disabled={!adAccounts.length} data-testid="new-campaign"><Plus className="h-4 w-4" /> Campaign</Button>
         </div>
@@ -166,7 +173,7 @@ export default function AdSpendPage() {
         </Alert>
       )}
       {d && !d.meta.connected && (
-        <p className="text-sm text-fg-muted">Tip: connect <Link href="/admin/settings?pane=integrations" className="text-accent hover:underline">Meta ad spend</Link> in Settings › Integrations and the real daily spend comes in by itself.</p>
+        <p className="text-sm text-fg-muted">Tip: connect <Link href="/admin/settings?pane=integrations" className="text-accent hover:underline">Meta ad spend</Link> (and TikTok ad spend) in Settings › Integrations and the real daily spend comes in by itself.</p>
       )}
 
       <div className="flex flex-wrap items-end gap-3">

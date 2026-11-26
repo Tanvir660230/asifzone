@@ -641,6 +641,7 @@ POST /api/v1/finance/ads/campaigns/:id/archive → finance.transact
 POST /api/v1/finance/ads/campaigns/:id/confirm-zero → finance.post
 POST /api/v1/finance/ads/import-csv → finance.transact
 POST /api/v1/finance/ads/import-meta → finance.transact
+POST /api/v1/finance/ads/import-tiktok → finance.transact
 POST /api/v1/finance/bank-matches/:id/unmatch → finance.reconcile
 POST /api/v1/finance/bank-reconciliations → finance.reconcile
 POST /api/v1/finance/bank-reconciliations/:id/abandon → finance.reconcile
