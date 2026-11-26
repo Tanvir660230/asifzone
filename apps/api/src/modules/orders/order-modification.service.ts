@@ -416,6 +416,28 @@ async function heldFor(orderId: string) {
   return { paid: s?.paid ?? 0, netHeld: s?.netPaid ?? 0 };
 }
 
+/** A booked parcel's contents or COD changed: Steadfast has no API to edit a consignment, so the order carries a "tell the
+ * courier" note (what is in the parcel now, and the COD to collect) until staff mark it done (order.service). */
+async function flagCourierAfterChange(tx: Tx, order: OrderRow, newTotal: unknown) {
+  const items = await tx.orderItem.findMany({
+    where: { orderId: order.id },
+    orderBy: { id: "asc" },
+    select: { productNameSnapshot: true, sizeSnapshot: true, colorSnapshot: true, quantity: true },
+  });
+  const line = (i: (typeof items)[number]) => {
+    const opts = [i.colorSnapshot, i.sizeSnapshot].filter((v) => v && !i.productNameSnapshot.includes(v)).join(" / ");
+    return `${i.productNameSnapshot}${opts ? ` (${opts})` : ""} ×${i.quantity}`;
+  };
+  const before = Number(order.total);
+  const after = Number(newTotal);
+  const cod = order.paymentMethod === "COD" && before !== after ? ` COD now ৳${after.toLocaleString("en-US")} (was ৳${before.toLocaleString("en-US")}).` : "";
+  const fresh = `Parcel now: ${items.map(line).join(", ")}.${cod}`;
+  // An earlier untold change keeps its phone/address part; its old "Parcel now" is replaced by this one.
+  const earlier = order.courierUpdateNeeded ? (order.courierUpdateNote ?? "").split(" · Parcel now: ")[0]!.replace(/^Parcel now: .*$/s, "") : "";
+  const note = [earlier, fresh].filter(Boolean).join(" · ");
+  await tx.order.update({ where: { id: order.id }, data: { courierUpdateNeeded: true, courierUpdateNote: note.slice(0, 1000), courierUpdateAt: new Date() } });
+}
+
 async function loadOrder(db: Tx | typeof prisma, orderId: string) {
   const order = await db.order.findUnique({ where: { id: orderId }, include: { items: { orderBy: { id: "asc" } } } });
   if (!order) throw AppError.notFound("Order not found");
@@ -558,6 +580,8 @@ export async function applyPlan(
       statusHistory: { create: { status: order.status, note: ctx.note, changedByAdminId: ctx.adminId ?? null } },
     },
   });
+
+  if (order.courierConsignmentId) await flagCourierAfterChange(tx, order, t.total);
 
   // Every open way of paying the old amount is closed (a link/session is tied to the amount it showed).
   await closeOpenPaymentRequests(tx, order.id, "Order changed", { exceptSessionId: ctx.keepSessionId, adminId: ctx.adminId });

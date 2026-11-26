@@ -107,11 +107,9 @@ export function orderModificationBlocker(order: OrderGuardFacts, editor: OrderEd
   }
   const allowed = editor === "ADMIN" ? ADMIN_EDITABLE_STATUSES : CUSTOMER_EDITABLE_STATUSES;
   if (!allowed.includes(order.status)) return "This order is already being prepared and can no longer be changed — please contact us";
-  if (order.courierConsignmentId) {
-    return editor === "ADMIN"
-      ? "A courier is booked for this order — unlink the booking before changing it"
-      : "This order has already been handed to the courier and can't be changed";
-  }
+  // Staff may change a booked order (owner 2026-11-26): Steadfast can't be edited by API, so the change is saved and the
+  // order is flagged "tell the courier" with the new items and COD. The customer can't change it online any more.
+  if (order.courierConsignmentId && editor === "CUSTOMER") return "This order has already been handed to the courier and can't be changed";
   return null;
 }
 
