@@ -146,8 +146,10 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
     };
   }, []);
 
-  // The wedge scanner types into whatever has focus: keep it on the scan box unless the operator is using another control.
+  // The USB wedge scanner types into whatever has focus: keep it on the scan box on desktop (fine pointer) only.
+  // On touch phones (iPhone/Android), never auto-focus the text box — it pops up the virtual keyboard over the screen.
   useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia("(pointer: fine)").matches) return;
     const refocus = () => {
       const active = document.activeElement as HTMLElement | null;
       const elsewhere = active && active !== document.body && active !== inputRef.current && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.closest("[role=dialog]"));
@@ -299,8 +301,8 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
       void queryClient.invalidateQueries({ queryKey: ["parcel-scan-summary"] });
       play("success");
       toast.success(`${done.accepted} parcel${done.accepted === 1 ? "" : "s"} confirmed`);
-      // Ready for the next parcel straight away (the scanner types into whatever has focus).
-      inputRef.current?.focus();
+      // Ready for the next parcel straight away on desktop USB stations (never pop up a phone keyboard).
+      if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
     } catch (err) {
       play("failed");
       toast.error(getErrorMessage(err, "Couldn't confirm the batch"));
@@ -382,10 +384,26 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         </div>
       )}
 
-      <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-5">
+      <div className="space-y-3 rounded-2xl border border-line-subtle bg-surface p-4 shadow sm:p-5">
+        {/* Phones: primary thumb-friendly camera button first, so daily Dispatch scanning is one tap without keyboard pop-ups. */}
+        <Button
+          type="button"
+          variant="primary"
+          className="h-12 w-full rounded-xl text-[15px] font-semibold sm:hidden"
+          onClick={() => {
+            sound.unlock();
+            setCameraOpen(true);
+          }}
+          data-testid="open-camera-mobile"
+        >
+          <Camera size={19} aria-hidden="true" />
+          Open camera scanner{accepted > 0 ? ` (${accepted})` : ""}
+        </Button>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            sound.unlock();
             submit(code);
           }}
           className="flex gap-2"
@@ -410,8 +428,18 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
               data-testid="scan-input"
             />
           </label>
-          <Button type="button" variant="outline" className="h-12 w-12 shrink-0 px-0" aria-label="Scan with the camera" onClick={() => setCameraOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="hidden h-12 shrink-0 gap-2 px-3.5 sm:inline-flex"
+            aria-label="Scan with the camera"
+            onClick={() => {
+              sound.unlock();
+              setCameraOpen(true);
+            }}
+          >
             <Camera size={18} />
+            <span>Camera</span>
           </Button>
         </form>
 
@@ -515,6 +543,9 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
 
       {cameraOpen && (
         <CameraScanner
+          title={kind === "DISPATCH" ? "Dispatch scanner" : "Returns in scanner"}
+          scannedCount={accepted}
+          feedback={last}
           onClose={() => setCameraOpen(false)}
           onCode={(value) => {
             submit(value);

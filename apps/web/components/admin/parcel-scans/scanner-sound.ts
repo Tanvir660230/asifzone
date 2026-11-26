@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * The scanner's sounds — one per outcome, so an operator who isn't looking at the screen still knows what happened:
- * scan     — one short high beep: the code was recognised
+ * scan      — one short high beep: the code was recognised
  * duplicate — two mid beeps: already scanned / already done
- * unknown  — one low buzz: not one of our codes
- * invalid  — three low beeps: recognised, but this parcel can't be used here (cancelled, wrong store, wrong item…)
- * success  — a rising pair: the operation was saved by the server
- * failed   — a falling pair: the operation was refused or didn't reach the server
- * Phones also vibrate. The on/off choice is remembered on this device (it is a station preference, not shared).
+ * unknown   — one low buzz: not one of our codes
+ * invalid   — three low beeps: recognised, but this parcel can't be used here (cancelled, wrong store, wrong item…)
+ * success   — a rising pair: the operation was saved by the server
+ * failed    — a falling pair: the operation was refused or didn't reach the server
+ *
+ * iOS Safari suspends AudioContext until resumed inside a user gesture: call `unlock()` on button taps (e.g. opening
+ * the camera or toggling sound) so subsequent async scan results always beep cleanly on iPhone.
  */
 export type ScannerTone = "scan" | "duplicate" | "unknown" | "invalid" | "success" | "failed";
 
@@ -25,6 +27,19 @@ const PATTERNS: Record<ScannerTone, { beeps: Array<[number, number]>; vibrate: n
 
 const STORAGE_KEY = "scanner-sound";
 
+function getAudioContext(ref: React.MutableRefObject<AudioContext | null>): AudioContext | null {
+  try {
+    if (!ref.current) {
+      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return null;
+      ref.current = new Ctor();
+    }
+    return ref.current;
+  } catch {
+    return null;
+  }
+}
+
 export function useScannerSound() {
   const ctx = useRef<AudioContext | null>(null);
   const [enabled, setEnabledState] = useState(true);
@@ -38,39 +53,59 @@ export function useScannerSound() {
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
-  const setEnabled = useCallback((on: boolean) => {
-    setEnabledState(on);
-    try {
-      localStorage.setItem(STORAGE_KEY, on ? "on" : "off");
-    } catch {
-      // Not remembered — still applies to this page.
+  /** Call synchronously inside a user tap/click so iPhone Safari unlocks Web Audio for async scan results. */
+  const unlock = useCallback(() => {
+    const ac = getAudioContext(ctx);
+    if (ac && ac.state === "suspended") {
+      void ac.resume().catch(() => {});
     }
   }, []);
+
+  const setEnabled = useCallback(
+    (on: boolean) => {
+      setEnabledState(on);
+      if (on) unlock();
+      try {
+        localStorage.setItem(STORAGE_KEY, on ? "on" : "off");
+      } catch {
+        // Not remembered — still applies to this page.
+      }
+    },
+    [unlock],
+  );
 
   const play = useCallback((tone: ScannerTone) => {
     const pattern = PATTERNS[tone];
     if (enabledRef.current) {
-      try {
-        ctx.current ??= new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-        const ac = ctx.current;
-        let t = ac.currentTime;
-        for (const [freq, dur] of pattern.beeps) {
-          const osc = ac.createOscillator();
-          const gain = ac.createGain();
-          osc.frequency.value = freq;
-          gain.gain.setValueAtTime(0.18, t);
-          gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-          osc.connect(gain).connect(ac.destination);
-          osc.start(t);
-          osc.stop(t + dur);
-          t += dur + 0.06;
+      const ac = getAudioContext(ctx);
+      if (ac) {
+        const trigger = () => {
+          try {
+            let t = ac.currentTime;
+            for (const [freq, dur] of pattern.beeps) {
+              const osc = ac.createOscillator();
+              const gain = ac.createGain();
+              osc.frequency.value = freq;
+              gain.gain.setValueAtTime(0.2, t);
+              gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+              osc.connect(gain).connect(ac.destination);
+              osc.start(t);
+              osc.stop(t + dur);
+              t += dur + 0.06;
+            }
+          } catch {
+            // Audio unavailable: visual banner and haptics still signal the outcome.
+          }
+        };
+        if (ac.state === "suspended") {
+          void ac.resume().then(trigger).catch(() => {});
+        } else {
+          trigger();
         }
-      } catch {
-        // No audio (autoplay policy before the first interaction): colour and text still say it.
       }
     }
     navigator.vibrate?.(pattern.vibrate);
   }, []);
 
-  return { play, enabled, setEnabled };
+  return { play, unlock, enabled, setEnabled };
 }

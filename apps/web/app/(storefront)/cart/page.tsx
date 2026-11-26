@@ -217,11 +217,13 @@ export default function CartPage() {
                         >
                           −
                         </button>
-                        <span className="w-8 text-center text-sm">{item.quantity}</span>
+                        <span className="w-8 text-center text-sm tabular-nums">{item.quantity}</span>
                         <button
                           onClick={() => updateQuantity(item.variantId, Math.min(item.maxStock, item.quantity + 1))}
-                          className="h-10 w-10 text-ink-700 hover:bg-ink-50"
+                          disabled={item.quantity >= item.maxStock}
+                          className="h-10 w-10 text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-200 disabled:hover:bg-transparent"
                           aria-label="Increase quantity"
+                          title={item.quantity >= item.maxStock ? "That's all we have in stock" : undefined}
                         >
                           +
                         </button>

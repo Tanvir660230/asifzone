@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { formatCourierError } from "@/lib/admin/courier-errors";
 import { copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { courierStatusDescription, formatPrice, formatStoreDateTime, timeAgo } from "@/lib/format";
@@ -390,12 +391,7 @@ export function DeliverySection({
                 {order.courierStatusSyncedAt ? `last synced ${timeAgo(order.courierStatusSyncedAt)}` : "never synced"}
               </p>
             )}
-            {order.courierSyncError && (
-              <p className="flex items-start gap-1.5 text-xs text-danger-700">
-                <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                Sync failed: {order.courierSyncError} — showing the last known status. If the consignment was cancelled in the courier panel, unlink it.
-              </p>
-            )}
+            {order.courierSyncError && <CourierSyncError raw={order.courierSyncError} />}
             {open && !order.courierExternal && (
               <p className="text-xs text-ink-500">
                 The order moves to Delivered, Partially delivered or Cancelled automatically when the courier reports a final outcome.
@@ -506,5 +502,24 @@ export function DeliverySection({
         )}
       </div>
     </DetailSection>
+  );
+}
+
+/** A failed courier sync in plain words with what to do next; the courier's raw message stays one tap away for support. */
+function CourierSyncError({ raw }: { raw: string }) {
+  const formatted = formatCourierError(raw);
+  return (
+    <div className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+      <p className="flex items-start gap-1.5 font-medium">
+        <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>
+          {formatted.summary}. {formatted.action} Showing the last known status — if the consignment was cancelled in the courier panel, unlink it.
+        </span>
+      </p>
+      <details className="mt-1 pl-5">
+        <summary className="cursor-pointer select-none hover:underline">Courier&apos;s message</summary>
+        <p className="mt-0.5 break-words font-mono">{formatted.raw}</p>
+      </details>
+    </div>
   );
 }
