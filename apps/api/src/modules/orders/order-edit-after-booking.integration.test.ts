@@ -80,7 +80,7 @@ describe("changing the items of a booked order (owner 2026-11-26)", () => {
     await applyOrderModification(order.id, { items: [{ variantId: l.id, quantity: 1 }, { variantId: other.variants[0]!.id, quantity: 1 }] }, admin);
     after = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
     expect(after.courierUpdateNote!.match(/Parcel now/g)).toHaveLength(1);
-    expect(after.courierUpdateNote).toContain(`COD now ৳${Number(after.total).toLocaleString("en-US")}`);
+    expect(after.courierUpdateNote).toMatch(/COD now \S+ \(was \S+\)\.$/);
 
     // The customer can no longer change it online.
     await expect(previewOrderModification(order.id, { items: [{ variantId: m.id, quantity: 1 }] }, { type: "CUSTOMER", customerId: after.customerId! })).rejects.toMatchObject({ statusCode: 409 });

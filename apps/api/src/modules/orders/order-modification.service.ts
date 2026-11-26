@@ -430,7 +430,8 @@ async function flagCourierAfterChange(tx: Tx, order: OrderRow, newTotal: unknown
   };
   const before = Number(order.total);
   const after = Number(newTotal);
-  const cod = order.paymentMethod === "COD" && before !== after ? ` COD now ৳${after.toLocaleString("en-US")} (was ৳${before.toLocaleString("en-US")}).` : "";
+  const currency = await getCurrency();
+  const cod = order.paymentMethod === "COD" && before !== after ? ` COD now ${formatMoney(after, currency)} (was ${formatMoney(before, currency)}).` : "";
   const fresh = `Parcel now: ${items.map(line).join(", ")}.${cod}`;
   // An earlier untold change keeps its phone/address part; its old "Parcel now" is replaced by this one.
   const earlier = order.courierUpdateNeeded ? (order.courierUpdateNote ?? "").split(" · Parcel now: ")[0]!.replace(/^Parcel now: .*$/s, "") : "";
