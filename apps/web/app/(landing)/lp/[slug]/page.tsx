@@ -126,11 +126,6 @@ async function AutomaticLandingView({ product }: { product: Product }) {
                 </>
               )}
             </div>
-            {product.shortDescription && (
-              <p className="mt-3 max-w-prose text-base leading-relaxed text-fg-muted" lang="en">
-                {product.shortDescription}
-              </p>
-            )}
 
             <ul className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-surface" aria-label="আমাদের প্রতিশ্রুতি">
               {promises.map(({ icon: Icon, title, text }) => (
@@ -147,7 +142,11 @@ async function AutomaticLandingView({ product }: { product: Product }) {
                 আপনার অর্ডারটি সম্পন্ন করুন
               </h2>
               <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">নিচের তথ্যগুলো দিন, আমরা ফোন করে আপনার অর্ডারটি কনফার্ম করব।</p>
-              <LandingOrderForm codEnabled={settings.codEnabled} families={families} />
+              <LandingOrderForm
+                codEnabled={settings.codEnabled}
+                families={families}
+                deliveryFees={{ insideDhaka: money(settings.shippingFeeDhaka), outsideDhaka: money(settings.shippingFeeOutsideDhaka) }}
+              />
             </section>
 
             {(tel || whatsapp) && (

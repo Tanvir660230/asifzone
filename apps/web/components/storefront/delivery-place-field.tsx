@@ -27,6 +27,7 @@ type Lang = "en" | "bn";
 const COPY = {
   en: {
     label: "Thana & district",
+    optional: "Optional",
     help: "Helps the courier reach you a day sooner. Write it in your address and we fill it in.",
     placeholder: "Search thana, e.g. Demra",
     fromAddress: "Taken from your address",
@@ -41,6 +42,7 @@ const COPY = {
   },
   bn: {
     label: "থানা ও জেলা",
+    optional: "ঐচ্ছিক",
     help: "এটা দিলে কুরিয়ার এক দিন আগে পৌঁছাতে পারে। ঠিকানায় থানা লিখলে আমরা নিজেই বসিয়ে দেবো।",
     placeholder: "থানা খুঁজুন, যেমন ডেমরা",
     fromAddress: "আপনার ঠিকানা থেকে নেওয়া",
@@ -170,9 +172,15 @@ export function DeliveryPlaceField({ id, lang, addressLine, district, area, onCh
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-fg">
-        {t.label}
-      </label>
+      {/* "Optional" sits beside the label, not in it: the field keeps its plain name, and the help line says why it helps. */}
+      <div className="mb-1.5 flex items-baseline gap-1.5 text-sm">
+        <label htmlFor={id} className="font-medium text-fg">
+          {t.label}
+        </label>
+        <span aria-hidden="true" className="text-fg-muted">
+          ({t.optional})
+        </span>
+      </div>
       <div ref={boxRef} className="relative">
         <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
         <input

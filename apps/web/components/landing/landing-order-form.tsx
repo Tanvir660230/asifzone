@@ -2,24 +2,17 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Check, Loader2, Lock, Minus, Plus, Ruler } from "lucide-react";
 import {
   NO_SIZE_VALUE,
   bdPhoneSchema,
   maxSellableQuantity,
-  type CheckoutInput,
   type Product,
   type PublicProductFamily,
-  type QuoteDto,
-  type QuoteRequestInput,
   variantShipsFree,
-  checkoutDistrict,
-  zoneChoiceNeeded,
   type SizeAssist,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
@@ -37,20 +30,15 @@ import { PHOTO_TILE_WIDTH, PhotoTileBody } from "@/components/storefront/photo-t
 import { ProductFamilyPicker } from "@/components/storefront/product-family-picker";
 import { familyTiles } from "@/lib/product-family";
 import { landingPagePath } from "@/lib/landing";
-import { useQuote } from "@/hooks/use-quote";
-import { getQuote } from "@/lib/api/quote";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { createOrder } from "@/lib/api/orders";
-import { ApiError } from "@/lib/api-client";
-import { getSessionId, trackFunnelEvent } from "@/lib/analytics";
+import { trackFunnelEvent } from "@/lib/analytics";
 import { formatPrice } from "@/lib/format";
-import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
-import { pixelAddPaymentInfo, pixelFunnel, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
+import { pixelFunnel, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn, isPaleColor } from "@/lib/utils";
-import { sessionSet } from "@/lib/safe-storage";
 import { useLeadCapture } from "@/hooks/use-lead-capture";
+import { useCodOrder, type CodOrderCopy } from "@/hooks/use-cod-order";
+import { readSavedDelivery, type SavedDelivery } from "@/lib/saved-delivery";
 
 // The landing page's own field messages, in Bangla; the server still validates the same fields with checkoutSchema.
 const formSchema = z.object({
@@ -66,6 +54,13 @@ const formSchema = z.object({
 });
 type FormValues = z.infer<typeof formSchema>;
 
+const LANDING_ORDER_COPY: CodOrderCopy = {
+  pickZone: "ডেলিভারি চার্জের জন্য ঢাকার ভেতরে না বাইরে, বেছে নিন।",
+  chargeChanged: "ঠিকানা অনুযায়ী ডেলিভারি চার্জ বদলেছে। নতুন মোট দেখে আবার অর্ডার করুন।",
+  priceChanged: "এর মধ্যে দাম পরিবর্তন হয়েছে। নতুন মোট দেখে আবার অর্ডার করুন।",
+  failed: "অর্ডারটি পাঠানো যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।",
+};
+
 const BN_DIGITS = "০১২৩৪৫৬৭৮৯";
 const bn = (n: number) => String(n).replace(/\d/g, (d) => BN_DIGITS[Number(d)]!);
 const isBangla = (s: string) => /[ঀ-৿]/.test(s);
@@ -80,16 +75,22 @@ const isBangla = (s: string) => /[ঀ-৿]/.test(s);
  *
  * The colour and size live in LandingSelectionProvider, so the gallery and the colour showcase follow the same choice.
  */
-export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEnabled: boolean; ctaText?: string; families?: PublicProductFamily[] }) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
+export function LandingOrderForm({
+  codEnabled,
+  ctaText,
+  families = [],
+  deliveryFees,
+}: {
+  codEnabled: boolean;
+  ctaText?: string;
+  families?: PublicProductFamily[];
+  /** The store's two delivery charges, formatted ("৳60"), shown before the address is written so the total is never a
+   * surprise. Omitted → the old "shown once you give the address" line. */
+  deliveryFees?: { insideDhaka: string; outsideDhaka: string };
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const { product, options, size, color, setSize, setColor, sellable, quantity, setQuantity, setQuotedTotal } = useLandingSelection();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  // ঢাকার ভেতরে / বাইরে — asked only when the address names no place and it changes the delivery charge.
-  const [zoneKey, setZoneKey] = useState("");
-  const [zoneError, setZoneError] = useState<string | null>(null);
 
   // The type's own labels when it names them in Bangla; otherwise the plain Bangla words.
   const sizeLabel = isBangla(options.sizeLabel) ? options.sizeLabel : "সাইজ";
@@ -125,21 +126,17 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
     "LANDING",
     { enabled: true, landingSlug: product.slug },
   );
-  // The district picked, else the one written in the address (after a pause in typing), else none: the server prices
-  // the same way, so the delivery charge shown is the one charged.
-  const addressLine = useDebouncedValue(watch("shippingAddressLine") ?? "", 400);
-  const place = checkoutDistrict({ shippingDistrict: district, shippingAddressLine: addressLine });
-
-  const quoteRequest: QuoteRequestInput | null =
-    variant && !soldOut
-      ? { items: [{ variantId: variant.id, quantity: qty }], shippingDivision: place.division || undefined, shippingDistrict: place.district || undefined, unknownUsesDefault: true, shippingZoneKey: place.unknown && zoneKey ? zoneKey : undefined }
-      : null;
-  const { data: quote, isFetching: quoting, refetch: refetchQuote } = useQuote(quoteRequest);
-  const shipping = quote?.shipping;
-  const zoneNeeded = place.unknown && zoneChoiceNeeded(quote?.zoneChoices);
-  const zoneOpen = zoneNeeded && !zoneKey;
+  const pixelItems = (): PixelLineItem[] => (variant ? [{ id: variant.id, name: product.name, quantity: qty, price: Number(shown.price) }] : []);
+  const { addressLine, quote, quoting, shipping, zoneNeeded, zoneOpen, zoneKey, setZoneKey, zoneError, quotedTotal, submit, submitError } = useCodOrder({
+    item: variant && !soldOut ? { variantId: variant.id, quantity: qty } : null,
+    district,
+    addressLine: watch("shippingAddressLine") ?? "",
+    scope: "landing",
+    copy: LANDING_ORDER_COPY,
+    pixelItems,
+    zoneElementId: "lp-zone",
+  });
   // The sticky bar shows the same total as the summary, once the server has quoted it with delivery.
-  const quotedTotal = quote && shipping?.resolved && !zoneOpen ? Number(quote.total) : null;
   useEffect(() => setQuotedTotal(quotedTotal), [quotedTotal, setQuotedTotal]);
 
   // The size finder's answers, kept with the order (recommended vs chosen) when the shopper used it.
@@ -201,7 +198,6 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
 
   // InitiateCheckout once, when the shopper starts on the form: the landing page's equivalent of opening checkout.
   const started = useRef(false);
-  const pixelItems = (): PixelLineItem[] => (variant ? [{ id: variant.id, name: product.name, quantity: qty, price: Number(shown.price) }] : []);
   function onStart() {
     if (started.current || !variant) return;
     started.current = true;
@@ -216,79 +212,9 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
   }
 
   async function placeOrder(values: FormValues) {
-    setSubmitError(null);
     if (!variant) return setPickerOpen(true);
     if (soldOut) return;
-    const at = checkoutDistrict(values);
-    if (at.unknown && zoneNeeded && !zoneKey) {
-      setZoneError("ডেলিভারি চার্জের জন্য ঢাকার ভেতরে না বাইরে, বেছে নিন।");
-      document.getElementById("lp-zone")?.scrollIntoView({ block: "center", behavior: "smooth" });
-      return;
-    }
-    // The quote on screen follows the address after a pause in typing; an order sent inside that pause (a fast tap,
-    // phone autofill) would carry a district the shown quote wasn't priced for, and the server would refuse it as
-    // QUOTE_CHANGED. Price the address being sent now instead: go ahead when the total is no higher than what the
-    // shopper saw, otherwise show the new total first.
-    let quoteToken = quote?.token;
-    if (at.district !== place.district || at.division !== place.division || !quote || quoting) {
-      const request: QuoteRequestInput = {
-        items: [{ variantId: variant.id, quantity: qty }],
-        shippingDivision: at.division || undefined,
-        shippingDistrict: at.district || undefined,
-        unknownUsesDefault: true,
-        shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
-      };
-      try {
-        const fresh = await queryClient.fetchQuery({ queryKey: ["quote", request], queryFn: async () => (await getQuote(request)).quote, staleTime: 15_000 });
-        if (quotedTotal !== null && Number(fresh.total) > quotedTotal) {
-          setSubmitError("ঠিকানা অনুযায়ী ডেলিভারি চার্জ বদলেছে। নতুন মোট দেখে আবার অর্ডার করুন।");
-          return;
-        }
-        quoteToken = fresh.token;
-      } catch {
-        // Couldn't re-price: send with the quote on screen; the server still refuses a stale one with the new total.
-      }
-    }
-    const payload: CheckoutInput = {
-      items: [{ variantId: variant.id, quantity: qty }],
-      customerName: values.customerName,
-      customerPhone: values.customerPhone,
-      altPhone: values.altPhone || null,
-      customerEmail: null,
-      shippingDivision: at.division as CheckoutInput["shippingDivision"],
-      shippingDistrict: at.district,
-      shippingArea: values.shippingArea,
-      shippingAddressLine: values.shippingAddressLine,
-      shippingZoneKey: at.unknown && zoneKey ? zoneKey : undefined,
-      paymentMethod: "COD",
-      notes: null,
-      sessionId: getSessionId() || undefined,
-      quoteToken,
-      sizeAssist: assist && variant.size && variant.size !== NO_SIZE_VALUE ? sizeAssistFor(assist, variant.size) : undefined,
-    };
-    try {
-      const { order } = await createOrder(payload, idempotencyKeyFor("landing", payload));
-      settleIdempotencyKey("landing");
-      sessionSet("lastOrderPhone", values.customerPhone);
-      saveDelivery({ name: values.customerName, phone: values.customerPhone, district: values.shippingDistrict || null, area: values.shippingArea || null, addressLine: values.shippingAddressLine });
-      pixelIdentify({
-        phone: values.customerPhone,
-        fullName: values.customerName,
-        city: at.district || undefined,
-        state: at.division || undefined,
-      });
-      pixelAddPaymentInfo(pixelItems(), "COD");
-      router.push(`/order-confirmation/${order!.orderNumber}`);
-    } catch (err) {
-      const details = err instanceof ApiError ? (err.details as { code?: string; quote?: QuoteDto } | undefined) : undefined;
-      if (details?.code === "QUOTE_CHANGED") {
-        if (details.quote && quoteRequest) queryClient.setQueryData(["quote", quoteRequest], details.quote);
-        else void refetchQuote();
-        setSubmitError("এর মধ্যে দাম পরিবর্তন হয়েছে। নতুন মোট দেখে আবার অর্ডার করুন।");
-        return;
-      }
-      setSubmitError(err instanceof ApiError ? err.message : "অর্ডারটি পাঠানো যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।");
-    }
+    await submit(values, { sizeAssist: assist && variant.size && variant.size !== NO_SIZE_VALUE ? sizeAssistFor(assist, variant.size) : undefined });
   }
 
   // A missing size or colour comes first, whatever else is still empty: it is the one thing the form can't guess.
@@ -443,10 +369,7 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
             lang="bn"
             choices={quote.zoneChoices}
             value={zoneKey}
-            onChange={(k) => {
-              setZoneKey(k);
-              setZoneError(null);
-            }}
+            onChange={setZoneKey}
             error={zoneError}
           />
         )}
@@ -476,7 +399,17 @@ export function LandingOrderForm({ codEnabled, ctaText, families = [] }: { codEn
           <div className="flex justify-between gap-4">
             <dt className="text-fg-muted">ডেলিভারি চার্জ</dt>
             <dd className="tabular-nums text-fg">
-              {zoneOpen ? <span className="text-fg-muted">ঢাকার ভেতরে না বাইরে বাছুন</span> : !shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
+              {/* "Inside or outside Dhaka?" only once an address is written and names no place; before that, both charges. */}
+              {zoneOpen && addressLine.trim().length >= 4 ? <span className="text-fg-muted">ঢাকার ভেতরে না বাইরে বাছুন</span> : !shipping?.resolved || zoneOpen ? (shipsFree && !zoneOpen ? (
+                <span className="font-semibold text-success-700">ফ্রি</span>
+              ) : deliveryFees ? (
+                // Both charges before the address is written: the shopper knows the total from the first look.
+                <span className="text-fg-muted" data-testid="landing-fees">
+                  ঢাকায় {deliveryFees.insideDhaka} · বাইরে {deliveryFees.outsideDhaka}
+                </span>
+              ) : (
+                <span className="text-fg-muted">ঠিকানা দিলে দেখাবে</span>
+              )) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
             </dd>
           </div>
           {savings > 0 && (
@@ -758,36 +691,4 @@ function sizeAssistFor(assist: { answers: FitAnswers; recommended: string }, cho
     chosen,
     accepted: chosen === assist.recommended,
   };
-}
-
-interface SavedDelivery {
-  name: string;
-  phone: string;
-  district: string | null;
-  area: string | null;
-  addressLine: string;
-}
-
-const SAVED_DELIVERY_KEY = "lp:lastDelivery";
-
-/** This browser's last landing-page delivery details (localStorage only — nothing is looked up by phone number). */
-function readSavedDelivery(): SavedDelivery | null {
-  try {
-    const raw = window.localStorage.getItem(SAVED_DELIVERY_KEY);
-    if (!raw) return null;
-    const v = JSON.parse(raw) as Partial<SavedDelivery>;
-    return v && typeof v.name === "string" && typeof v.phone === "string" && typeof v.addressLine === "string"
-      ? { name: v.name, phone: v.phone, district: v.district ?? null, area: v.area ?? null, addressLine: v.addressLine }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveDelivery(v: SavedDelivery) {
-  try {
-    window.localStorage.setItem(SAVED_DELIVERY_KEY, JSON.stringify(v));
-  } catch {
-    // storage blocked (private mode, in-app browser): nothing to offer next time
-  }
 }
