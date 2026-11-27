@@ -59,13 +59,25 @@ export function TahafiHero({
 
   return (
     <section data-surface="storefront" className="mx-auto -mt-[3.75rem] max-w-7xl bg-transparent lg:mt-0 lg:px-8 lg:pt-5">
-      <div className="relative isolate h-[min(82svh,38rem)] overflow-hidden rounded-b-[2rem] bg-ink-900 lg:h-[min(80svh,42rem)] lg:rounded-[2rem]">
+      <div
+        className={cn(
+          "relative isolate overflow-hidden rounded-b-[2rem] bg-ink-900 sm:h-[min(82svh,38rem)] lg:h-[min(80svh,42rem)] lg:rounded-[2rem]",
+          // A phone with its own photograph: the frame is the photograph itself, under the header row, so nothing is cut.
+          imageUrl && mobileImageUrl ? "pt-[3.75rem] sm:pt-0" : "h-[min(82svh,38rem)]",
+        )}
+      >
         {imageUrl && (
           <>
-            {/* The phone photograph is pinned to its top: with the browser bars showing a phone gives a short frame (82svh),
-                and centring it cut the model's head off under the floating logo. Its lower part sits behind the headline. */}
+            {/* The phone photograph starts under the header's floating logo and buttons and is shown whole, at its own
+                9:14 shape (1080×1680). A fixed-height frame cut it, and pinning it to the top put the head under the logo
+                (owner, 2026-11-27). Behind the header row the same photograph, blurred, carries the picture up to the edge. */}
             {mobileImageUrl && (
-              <Image src={resolveImageUrl(mobileImageUrl)} alt={alt} fill priority sizes="(min-width: 640px) 1px, 100vw" className="object-cover object-top sm:hidden" />
+              <>
+                <Image src={resolveImageUrl(mobileImageUrl)} alt="" aria-hidden fill priority sizes="(min-width: 640px) 1px, 100vw" className="scale-110 object-cover object-top blur-xl sm:hidden" />
+                <div className="relative aspect-[9/14] sm:hidden">
+                  <Image src={resolveImageUrl(mobileImageUrl)} alt={alt} fill priority sizes="(min-width: 640px) 1px, 100vw" className="object-cover object-top" />
+                </div>
+              </>
             )}
             <Image
               src={resolveImageUrl(imageUrl)}
