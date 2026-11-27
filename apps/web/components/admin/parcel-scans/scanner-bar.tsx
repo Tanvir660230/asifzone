@@ -1,13 +1,13 @@
 "use client";
 
-import { CloudOff, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, CloudOff, Volume2, VolumeX } from "lucide-react";
 import type { ParcelScanKind } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
 
 /**
  * The scanner's status strip, the same in both modes: whether the scanner can type into the scan box right now, the last
- * code read, and the sound switch. The mode (Dispatch scan / Returns in) is the page, chosen in the Orders tabs above —
- * a second switch here made three rows of navigation on a phone.
+ * code read, and the sound / optional voice switches. The mode (Dispatch scan / Returns in) is the page, chosen in the
+ * Orders tabs above — a second switch here made three rows of navigation on a phone.
  */
 export function ScannerBar({
   ready,
@@ -15,6 +15,9 @@ export function ScannerBar({
   lastCode,
   sound,
   onSound,
+  voice,
+  voiceSupported,
+  onVoice,
 }: {
   mode: ParcelScanKind;
   ready: boolean;
@@ -22,6 +25,9 @@ export function ScannerBar({
   lastCode: string | null;
   sound: boolean;
   onSound: (on: boolean) => void;
+  voice?: boolean;
+  voiceSupported?: boolean;
+  onVoice?: (on: boolean) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="scanner-bar">
@@ -48,16 +54,33 @@ export function ScannerBar({
         </span>
       )}
 
-      <button
-        type="button"
-        onClick={() => onSound(!sound)}
-        aria-pressed={sound}
-        className="ml-auto flex min-h-[40px] items-center gap-1.5 rounded-full px-3 text-xs font-medium text-fg-muted ring-1 ring-line-subtle hover:text-fg"
-        data-testid="scanner-sound"
-      >
-        {sound ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}
-        Sound {sound ? "on" : "off"}
-      </button>
+      <div className="ml-auto flex items-center gap-1.5">
+        {voiceSupported && onVoice && (
+          <button
+            type="button"
+            onClick={() => onVoice(!voice)}
+            aria-pressed={Boolean(voice)}
+            className={cn(
+              "flex min-h-[40px] items-center gap-1.5 rounded-full px-3 text-xs font-medium ring-1 transition-colors",
+              voice ? "bg-accent/10 text-fg ring-accent" : "text-fg-muted ring-line-subtle hover:text-fg",
+            )}
+            data-testid="scanner-voice"
+          >
+            <AudioLines size={15} aria-hidden="true" />
+            Voice {voice ? "on" : "off"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onSound(!sound)}
+          aria-pressed={sound}
+          className="flex min-h-[40px] items-center gap-1.5 rounded-full px-3 text-xs font-medium text-fg-muted ring-1 ring-line-subtle hover:text-fg"
+          data-testid="scanner-sound"
+        >
+          {sound ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}
+          Sound {sound ? "on" : "off"}
+        </button>
+      </div>
     </div>
   );
 }

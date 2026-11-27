@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, CircleSlash, CloudOff, Loader2, ScanLine, X, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronUp, CircleSlash, CloudOff, Loader2, PackageCheck, Plus, ScanLine, X, XCircle } from "lucide-react";
 import {
   PARCEL_SCAN_RESULT_LABELS,
   SCAN_MATCH_LABELS,
@@ -25,7 +25,7 @@ import { invalidateOrderQueries, orderKeys } from "@/components/admin/orders/ord
 import { CameraScanner } from "./camera-scanner";
 import { ParcelHeader, ParcelLinesList } from "./parcel-card";
 import { ScannerBar } from "./scanner-bar";
-import { useScannerSound, type ScannerTone } from "./scanner-sound";
+import { useScannerSound, useScannerVoice, type ScannerTone } from "./scanner-sound";
 
 /**
  * A scanning station (Order Operations plan, phase 4): a USB keyboard-wedge scanner types the code and presses Enter into
@@ -67,6 +67,20 @@ const RESULT_TONE: Record<ParcelScanResult, "ok" | "warn" | "error"> = { ACCEPTE
 /** The sound for each answer (scanner-sound.ts): recognised, already done, not our code, can't be used here. */
 const RESULT_SOUND: Record<ParcelScanResult, ScannerTone> = { ACCEPTED: "scan", DUPLICATE: "duplicate", ALREADY_PROCESSED: "duplicate", INVALID: "unknown", INELIGIBLE: "invalid" };
 
+/** Short spoken phrase for optional voice feedback — concise so fast scanning stays crisp. */
+function voicePhraseForScan(kind: ParcelScanKind, event: ParcelScanEventRow): string {
+  if (event.result === "ACCEPTED") return event.discrepancy ? "Added, check discrepancy" : "Added";
+  if (event.result === "DUPLICATE") return "Duplicate";
+  if (event.result === "ALREADY_PROCESSED") return kind === "DISPATCH" ? "Already handed over" : "Already received";
+  if (event.result === "INVALID") return "Unknown code";
+  const lower = event.message.toLowerCase();
+  if (lower.includes("cancelled")) return "Cancelled, do not ship";
+  if (lower.includes("not booked") || lower.includes("isn't booked")) return "Not booked";
+  if (lower.includes("confirmed")) return "Not confirmed";
+  if (lower.includes("trash")) return "In trash";
+  return "Cannot scan";
+}
+
 function newScanId() {
   return (crypto.randomUUID?.() ?? `${Date.now()}${Math.random()}`).replace(/[^A-Za-z0-9]/g, "").slice(0, 32);
 }
@@ -76,6 +90,8 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
   const queryClient = useQueryClient();
   const sound = useScannerSound();
   const play = sound.play;
+  const voice = useScannerVoice();
+  const speak = voice.speak;
   const inputRef = useRef<HTMLInputElement>(null);
   const [focused, setFocused] = useState(false);
   const [lastCode, setLastCode] = useState<string | null>(null);
@@ -213,6 +229,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           setBatch((cur) => (cur ? { ...cur, events: [event, ...cur.events.filter((e) => e.clientScanId !== event.clientScanId)], accepted: cur.accepted + (event.result === "ACCEPTED" ? 1 : 0) } : cur));
           const tone = RESULT_TONE[event.result];
           play(RESULT_SOUND[event.result]);
+          speak(voicePhraseForScan(kind, event));
           // The message already names the order or the problem; "Added" is said once, for an accepted scan.
           setLast({ tone, text: event.result === "ACCEPTED" ? `Added — ${event.message}` : event.message });
           if (event.orderId) {
@@ -236,13 +253,14 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           }
           setQueue((cur) => cur.map((p) => (p.clientScanId === next.clientScanId ? { ...p, state: "failed", error: getErrorMessage(err, "Refused") } : p)));
           play("failed");
+          speak("Scan failed");
           setLast({ tone: "error", text: `${next.code}: ${getErrorMessage(err, "Refused")}` });
         }
       }
     } finally {
       sending.current = false;
     }
-  }, [ensureBatch, play, setQueue]);
+  }, [ensureBatch, kind, play, setQueue, speak]);
 
   // Retry what is waiting when the connection comes back, and every few seconds while anything waits.
   const waitingCount = pending.filter((p) => p.state === "waiting").length;
@@ -277,12 +295,14 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
     const n = checked.get(line.orderItemId) ?? 0;
     if (n >= line.ordered) {
       play("duplicate");
+      speak("Already checked");
       setLast({ tone: "warn", text: `All ${line.ordered} × ${line.name} already checked` });
       return true;
     }
     setChecked((m) => new Map(m).set(line.orderItemId, n + 1));
     const done = peek.lines.every((l) => (l.orderItemId === line.orderItemId ? n + 1 : (checked.get(l.orderItemId) ?? 0)) >= l.ordered);
     play(done ? "success" : "scan");
+    speak(done ? "All items checked" : `${n + 1} of ${line.ordered}`);
     setLast({ tone: "ok", text: done ? `${peek.orderNumber}: every item checked` : `${line.name}: ${n + 1} of ${line.ordered} checked` });
     return true;
   }
@@ -298,11 +318,13 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
       invalidateOrderQueries(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["parcel-scan-summary"] });
       play("success");
+      speak(`Confirmed ${done.accepted} ${done.accepted === 1 ? "parcel" : "parcels"}`);
       toast.success(`${done.accepted} parcel${done.accepted === 1 ? "" : "s"} confirmed`);
       // Ready for the next parcel straight away (the scanner types into whatever has focus).
       inputRef.current?.focus();
     } catch (err) {
       play("failed");
+      speak("Could not confirm batch");
       toast.error(getErrorMessage(err, "Couldn't confirm the batch"));
       if (batch) setBatch(await scansApi.getBatch(batch.id).catch(() => batch));
     } finally {
@@ -333,6 +355,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
 
   const events = useMemo(() => (batch?.events ?? []).filter((e) => !e.voided), [batch]);
   const accepted = events.filter((e) => e.result === "ACCEPTED").length;
+  const acceptedOrderIds = useMemo(() => new Set(events.filter((e) => e.result === "ACCEPTED" && e.orderId).map((e) => e.orderId!)), [events]);
   const unanswered = pending.filter((p) => p.state !== "failed").length;
   const canConfirm = Boolean(batch) && accepted > 0 && unanswered === 0 && online && !confirming;
 
@@ -349,7 +372,17 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
 
   return (
     <div className="mt-4 space-y-4">
-      <ScannerBar mode={kind} ready={focused} online={online} lastCode={lastCode} sound={sound.enabled} onSound={sound.setEnabled} />
+      <ScannerBar
+        mode={kind}
+        ready={focused}
+        online={online}
+        lastCode={lastCode}
+        sound={sound.enabled}
+        onSound={sound.setEnabled}
+        voice={voice.enabled}
+        voiceSupported={voice.supported}
+        onVoice={voice.setEnabled}
+      />
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {kind === "DISPATCH" && summary && (
           <span className="rounded-full bg-surface px-3 py-1.5 text-fg-muted ring-1 ring-line-subtle" data-testid="dispatch-summary">
@@ -362,6 +395,10 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           </Link>
         ))}
       </div>
+
+      {kind === "DISPATCH" && summary && summary.bookedToday > 0 && (
+        <DispatchProgress summary={summary} acceptedOrderIds={acceptedOrderIds} onAdd={(orderNumber) => { sound.unlock(); submit(orderNumber); }} />
+      )}
 
       {automation?.run && (
         <p className="text-xs text-fg-muted" data-testid="courier-check">
@@ -573,6 +610,94 @@ function DispatchParcel({ parcel, checking, checked, onCheck }: { parcel: Parcel
       </div>
       {checking && <p className="mt-1 text-xs text-fg-muted">Scan each item&apos;s SKU barcode. A code that isn&apos;t one of these items is taken as the next parcel.</p>}
       <ParcelLinesList parcel={parcel} checked={checking ? checked : undefined} />
+    </section>
+  );
+}
+
+/** Live dispatch progress against today's booked parcels, with an expandable list of the exact parcels still unscanned. */
+function DispatchProgress({
+  summary,
+  acceptedOrderIds,
+  onAdd,
+}: {
+  summary: scansApi.DispatchSummary;
+  acceptedOrderIds: Set<string>;
+  onAdd: (orderNumber: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const remaining = summary.remaining ?? [];
+  const inBatchToday = remaining.filter((r) => acceptedOrderIds.has(r.orderId)).length;
+  const unscanned = remaining.filter((r) => !acceptedOrderIds.has(r.orderId));
+  const remainingCount = Math.max(0, (summary.remainingTotal ?? remaining.length) - inBatchToday);
+  const accounted = Math.min(summary.bookedToday, summary.handedOverToday + inBatchToday);
+  const pct = summary.bookedToday > 0 ? Math.min(100, Math.round((accounted / summary.bookedToday) * 100)) : 0;
+  const allDone = remainingCount === 0;
+
+  return (
+    <section className="rounded-2xl border border-line-subtle bg-surface p-3.5 sm:p-4" aria-label="Today's dispatch progress" data-testid="dispatch-progress">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+            {allDone && <PackageCheck size={16} className="shrink-0 text-success-600" aria-hidden="true" />}
+            <span>
+              {allDone ? "All booked parcels for today accounted for" : `${formatCount(accounted)} of ${formatCount(summary.bookedToday)} parcels accounted for`}
+            </span>
+          </p>
+          <p className="mt-0.5 text-xs text-fg-muted tabular-nums">
+            {formatCount(summary.handedOverToday)} handed over
+            {inBatchToday > 0 ? ` · ${formatCount(inBatchToday)} in this batch` : ""}
+            {remainingCount > 0 ? ` · ${formatCount(remainingCount)} remaining` : ""}
+          </p>
+        </div>
+        {remainingCount > 0 && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            data-testid="toggle-remaining-parcels"
+          >
+            <span>{open ? "Hide remaining" : `Show ${formatCount(remainingCount)} remaining`}</span>
+            {open ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-surface-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Today's dispatch completion">
+        <div className={cn("h-full rounded-full transition-all duration-300", allDone ? "bg-success-500" : "bg-accent")} style={{ width: `${pct}%` }} />
+      </div>
+
+      {open && unscanned.length > 0 && (
+        <ul className="mt-3 max-h-64 divide-y divide-line-subtle overflow-y-auto rounded-xl border border-line-subtle" data-testid="remaining-parcels-list">
+          {unscanned.map((r) => (
+            <li key={r.orderId} className="flex items-center gap-2.5 px-3 py-2 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-fg">
+                  <Link href={`/admin/orders?open=${r.orderId}`} className="font-medium hover:underline">
+                    {r.orderNumber}
+                  </Link>
+                  <span className="text-fg-muted"> · {r.customerName}</span>
+                </p>
+                <p className="truncate text-xs text-fg-subtle">
+                  {r.itemCount} item{r.itemCount === 1 ? "" : "s"}
+                  {r.area ? ` · ${r.area}` : ""}
+                  {r.consignmentId ? ` · #${r.consignmentId}` : ""}
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="ghost" className="shrink-0 gap-1" onClick={() => onAdd(r.orderNumber)} data-testid={`add-remaining-${r.orderNumber}`}>
+                <Plus size={14} aria-hidden="true" />
+                Add
+              </Button>
+            </li>
+          ))}
+          {remainingCount > unscanned.length && (
+            <li className="px-3 py-2 text-center text-xs text-fg-muted">
+              Showing first {unscanned.length} of {formatCount(remainingCount)} remaining parcels.
+            </li>
+          )}
+        </ul>
+      )}
     </section>
   );
 }

@@ -109,3 +109,81 @@ export function useScannerSound() {
 
   return { play, unlock, enabled, setEnabled };
 }
+
+const VOICE_STORAGE_KEY = "scanner-voice";
+
+/**
+ * Optional spoken feedback (Web Speech API) so fast packers / warehouse operators hear the scan outcome
+ * ("Added", "Duplicate", "Cancelled, do not ship") without looking up at the screen. Off by default; cancels any
+ * in-progress utterance before speaking the latest one so rapid scans never queue up a backlog.
+ */
+export function useScannerVoice() {
+  const [supported, setSupported] = useState(false);
+  const [enabled, setEnabledState] = useState(false);
+
+  useEffect(() => {
+    const ok = typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+    setSupported(ok);
+    if (!ok) return;
+    try {
+      setEnabledState(localStorage.getItem(VOICE_STORAGE_KEY) === "on");
+    } catch {
+      // Storage blocked: stays off until toggled.
+    }
+    return () => {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Ignore cleanup errors.
+      }
+    };
+  }, []);
+
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const supportedRef = useRef(supported);
+  supportedRef.current = supported;
+
+  const speak = useCallback((phrase: string) => {
+    if (!enabledRef.current || !supportedRef.current) return;
+    const text = phrase.trim();
+    if (!text) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.rate = 1.15;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Speech unavailable — beeps and visual banner still work.
+    }
+  }, []);
+
+  const setEnabled = useCallback((on: boolean) => {
+    setEnabledState(on);
+    try {
+      localStorage.setItem(VOICE_STORAGE_KEY, on ? "on" : "off");
+    } catch {
+      // Not remembered — still applies to this page.
+    }
+    if (!on) {
+      try {
+        window.speechSynthesis?.cancel();
+      } catch {
+        // Ignore.
+      }
+    } else if (supportedRef.current) {
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance("Voice on");
+        u.lang = "en-US";
+        u.rate = 1.15;
+        window.speechSynthesis.speak(u);
+      } catch {
+        // Ignore.
+      }
+    }
+  }, []);
+
+  return { speak, enabled, setEnabled, supported };
+}

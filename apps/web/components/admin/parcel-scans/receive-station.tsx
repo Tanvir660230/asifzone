@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, CloudOff, Link2, Minus, PackageOpen, Plus, ScanLine, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, CloudOff, Link2, Minus, PackageOpen, Plus, ScanLine, XCircle, Zap } from "lucide-react";
 import {
   PARCEL_MONEY_REASONS,
   PARCEL_MONEY_REASON_LABELS,
@@ -30,7 +30,7 @@ import { invalidateOrderQueries, orderKeys } from "@/components/admin/orders/ord
 import { CameraScanner } from "./camera-scanner";
 import { ParcelHeader, ParcelHistory } from "./parcel-card";
 import { ScannerBar } from "./scanner-bar";
-import { useScannerSound, type ScannerTone } from "./scanner-sound";
+import { useScannerSound, useScannerVoice, type ScannerTone } from "./scanner-sound";
 import { useWedgeScanner } from "./use-wedge-scanner";
 
 /**
@@ -74,6 +74,8 @@ function keptLikely(p: ParcelView): number | null {
 export function ReceiveStation() {
   const queryClient = useQueryClient();
   const sound = useScannerSound();
+  const voice = useScannerVoice();
+  const speak = voice.speak;
   const inputRef = useRef<HTMLInputElement>(null);
   const [code, setCode] = useState("");
   const [view, setView] = useState<View>({ kind: "idle" });
@@ -108,11 +110,12 @@ export function ReceiveStation() {
   }, []);
 
   const say = useCallback(
-    (tone: ScannerTone, text: string) => {
+    (tone: ScannerTone, text: string, spoken?: string) => {
       sound.play(tone);
       setFeedback({ tone: tone === "scan" || tone === "success" ? "ok" : tone === "duplicate" ? "warn" : "error", text });
+      if (spoken) speak(spoken);
     },
-    [sound],
+    [sound, speak],
   );
 
   const dirty = useMemo(() => {
@@ -145,11 +148,11 @@ export function ReceiveStation() {
       const cap = capOf(line, cur, parcel);
       const used = cur.good + cur.damaged + cur.missing + cur.wrong + cur.other;
       if (used >= cap) {
-        say("duplicate", `All ${cap} of ${line.name} are already counted`);
+        say("duplicate", `All ${cap} of ${line.name} are already counted`, "Already counted");
         return true;
       }
       setForm((f) => ({ ...f, lines: { ...f.lines, [line.orderItemId]: { ...cur, good: cur.good + 1 } } }));
-      say("scan", `${line.name}: ${cur.good + 1} good`);
+      say("scan", `${line.name}: ${cur.good + 1} good`, `${cur.good + 1} good`);
       return true;
     },
     [form.lines, say],
@@ -167,30 +170,31 @@ export function ReceiveStation() {
       try {
         const result = await scansApi.resolveCode(value, "RETURN");
         if (view.kind === "parcel" && result.kind === "ORDER" && result.orderId === view.parcel.orderId) {
-          say("duplicate", `${view.parcel.orderNumber} is already open`);
+          say("duplicate", `${view.parcel.orderNumber} is already open`, "Already open");
           return;
         }
         if (dirty && !opts.force) {
           // Another parcel scanned with unsaved entries: hold it, keep what was typed (a wrong parcel is never opened silently).
           setHeld(value);
-          say("invalid", `Unsaved entries for ${view.kind === "parcel" ? view.parcel.orderNumber : "this parcel"} — save or discard them first`);
+          say("invalid", `Unsaved entries for ${view.kind === "parcel" ? view.parcel.orderNumber : "this parcel"} — save or discard them first`, "Unsaved entries");
           return;
         }
         setHeld(null);
         if (result.kind === "ORDER" && result.orderId) {
           const parcel = await openParcel(result.orderId, value, result.matchedBy);
-          if (parcel.receive.mode === "NOTHING") say("duplicate", `${parcel.orderNumber}: ${parcel.receive.message}`);
-          else say("scan", `${parcel.orderNumber} · ${parcel.customerName}`);
+          if (parcel.receive.mode === "NOTHING") say("duplicate", `${parcel.orderNumber}: ${parcel.receive.message}`, "Already received");
+          else if (keptLikely(parcel) !== null) say("scan", `${parcel.orderNumber} · ${parcel.customerName}`, "Warning, customer likely kept an item");
+          else say("scan", `${parcel.orderNumber} · ${parcel.customerName}`, "Parcel opened");
         } else if (result.kind === "CANDIDATES") {
           setView({ kind: "candidates", result });
-          say("duplicate", result.message);
+          say("duplicate", result.message, "Multiple parcels found");
         } else {
           setView({ kind: "unknown", result });
-          say("unknown", result.message);
+          say("unknown", result.message, "Unknown code");
         }
       } catch (err) {
         setView({ kind: "idle" });
-        say("failed", getErrorMessage(err, "Couldn't look that code up — check the connection and scan again"));
+        say("failed", getErrorMessage(err, "Couldn't look that code up — check the connection and scan again"), "Lookup failed");
       }
     },
     [countItem, dirty, openParcel, say, view],
@@ -241,13 +245,13 @@ export function ReceiveStation() {
     try {
       const res = await scansApi.receiveParcel(input);
       invalidateOrderQueries(queryClient);
-      say("success", `${res.parcel.orderNumber} received${res.replayed ? " (already saved)" : ""} — ${summarise(res.receipt.lines)}. Scan the next parcel.`);
+      say("success", `${res.parcel.orderNumber} received${res.replayed ? " (already saved)" : ""} — ${summarise(res.receipt.lines)}. Scan the next parcel.`, "Receipt saved");
       toast.success(`${res.parcel.orderNumber} received`);
       setView({ kind: "idle" });
       inputRef.current?.focus();
     } catch (err) {
       const code = err instanceof ApiError ? (err.details as { code?: string } | undefined)?.code : undefined;
-      say("failed", err instanceof ApiError && err.status > 0 ? getErrorMessage(err, "Not saved") : "Not saved — the connection dropped. Check it and press Confirm again; it will be saved once.");
+      say("failed", err instanceof ApiError && err.status > 0 ? getErrorMessage(err, "Not saved") : "Not saved — the connection dropped. Check it and press Confirm again; it will be saved once.", "Not saved");
       if (code === "PARCEL_CHANGED" || code === "NOTHING_TO_RECEIVE") {
         const fresh = await scansApi.getParcel(parcel.orderId).catch(() => null);
         if (fresh) setView({ kind: "parcel", parcel: fresh, code: view.kind === "parcel" ? view.code : null, matchedBy: view.kind === "parcel" ? view.matchedBy : null });
@@ -258,6 +262,42 @@ export function ReceiveStation() {
   }
 
   const setLine = (id: string, patch: Partial<Counts>) => setForm((f) => ({ ...f, lines: { ...f.lines, [id]: { ...(f.lines[id] ?? EMPTY), ...patch } } }));
+
+  /** 1-tap fast-path for standard full returns where every item came back intact. */
+  const fillFullReturnAllGood = useCallback(() => {
+    if (!parcel || parcel.receive.mode === "NOTHING") return;
+    sound.unlock();
+    setForm((f) => ({
+      ...f,
+      outcome: parcel.receive.mode === "DECIDE_OUTCOME" ? "FULL_RETURN" : f.outcome,
+      lines: Object.fromEntries(
+        parcel.lines.map((l) => {
+          const cur = f.lines[l.orderItemId] ?? EMPTY;
+          const kept = parcel.receive.mode === "DECIDE_OUTCOME" ? 0 : cur.kept;
+          const next = { ...EMPTY, kept, note: cur.note };
+          return [l.orderItemId, { ...next, good: capOf(l, next, parcel) }];
+        }),
+      ),
+    }));
+    say("scan", `${parcel.orderNumber}: marked full return · all good — press Confirm (Ctrl+Enter)`, "All good, ready to confirm");
+  }, [parcel, say, sound]);
+
+  // Ctrl+Enter / Cmd+Enter confirms the open receipt when valid, so fast desktop / keyboard operators don't need to scroll.
+  const confirmRef = useRef<() => void>(() => {});
+  confirmRef.current = () => {
+    if (parcel && plan?.ok && !saving && online) void confirm();
+  };
+  useEffect(() => {
+    if (!parcel || cameraOpen || correcting !== null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        confirmRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [parcel, cameraOpen, correcting]);
 
   // What is waiting to be received, by kind — only the ones with something in them, so the scanner stays near the top.
   // Partly delivered parcels are received here too (the receipt reconciles them), so they are counted with the rest.
@@ -272,7 +312,17 @@ export function ReceiveStation() {
 
   return (
     <div className="mt-4 space-y-4">
-      <ScannerBar mode="RETURN" ready={focused} online={online} lastCode={lastCode} sound={sound.enabled} onSound={sound.setEnabled} />
+      <ScannerBar
+        mode="RETURN"
+        ready={focused}
+        online={online}
+        lastCode={lastCode}
+        sound={sound.enabled}
+        onSound={sound.setEnabled}
+        voice={voice.enabled}
+        voiceSupported={voice.supported}
+        onVoice={voice.setEnabled}
+      />
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {queues.map((q) => (
@@ -437,6 +487,19 @@ export function ReceiveStation() {
               The courier collected {formatPrice(keptLikely(parcel)!)} — at least one item&apos;s price, more than a delivery charge. Say which items the customer kept; only what is in your hand goes back into stock.
             </Alert>
           )}
+          {parcel.receive.mode !== "NOTHING" && keptLikely(parcel) === null && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line-subtle bg-surface-muted/60 px-3.5 py-2.5" data-testid="fast-path-bar">
+              <p className="text-xs text-fg-muted">
+                {parcel.receive.mode === "DECIDE_OUTCOME"
+                  ? "Whole parcel came back intact?"
+                  : "Every awaiting item came back intact?"}
+              </p>
+              <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={fillFullReturnAllGood} data-testid="fast-full-return-good">
+                <Zap size={14} aria-hidden="true" />
+                {parcel.receive.mode === "DECIDE_OUTCOME" ? "Full return · all good" : "Mark all good"}
+              </Button>
+            </div>
+          )}
           {parcel.receive.mode === "DECIDE_OUTCOME" && (
             <fieldset>
               <legend className="text-sm font-semibold text-fg">Did the customer keep anything?</legend>
@@ -528,7 +591,7 @@ export function ReceiveStation() {
               <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-line bg-surface/95 px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <Button className="min-h-[48px] flex-1 sm:flex-none" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()} data-testid="confirm-receipt">
                   <span className="sm:hidden">Confirm receipt</span>
-                  <span className="hidden sm:inline">Physically received — confirm</span>
+                  <span className="hidden sm:inline">Physically received — confirm (Ctrl+Enter)</span>
                 </Button>
                 <Button className="min-h-[48px] shrink-0" variant="outline" onClick={() => { setView({ kind: "idle" }); setHeld(null); }}>
                   Cancel
