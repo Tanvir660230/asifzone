@@ -621,7 +621,7 @@ export function ReceiveStation() {
                       const showIssues = Boolean(expandedIssues[l.orderItemId]) || hasIssue;
                       return (
                         <>
-                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                          <div className={cn("mt-2 grid gap-2 sm:grid-cols-3 lg:grid-cols-6", showKept || showIssues ? "grid-cols-2" : "grid-cols-1")}>
                             {showKept && <Stepper label="Kept by customer" hint="Stays sold" value={c.kept} max={l.ordered - l.received} onChange={(v) => setLine(l.orderItemId, { kept: v })} testId="kept" />}
                             {FINDINGS.map((f) => (
                               <div key={f.key} className={cn(f.key !== "good" && !showIssues && "hidden sm:block")}>
@@ -662,7 +662,7 @@ export function ReceiveStation() {
               <div className="sticky bottom-0 -mx-4 flex flex-wrap gap-2 border-t border-line bg-surface/95 px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <Button className="min-h-[48px] flex-1 gap-1.5 sm:hidden" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm({ scanNext: true })} data-testid="confirm-and-scan-next">
                   <Camera size={16} aria-hidden="true" />
-                  Confirm &amp; scan next
+                  Confirm &amp; next
                 </Button>
                 <Button className="min-h-[48px] shrink-0 sm:hidden" variant="outline" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()}>
                   Save

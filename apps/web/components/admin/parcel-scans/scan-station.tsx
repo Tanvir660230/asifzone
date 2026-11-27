@@ -411,7 +411,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         <Button
           type="button"
           variant="primary"
-          className="h-12 w-full rounded-xl text-base font-semibold sm:hidden"
+          className="min-h-[48px] w-full rounded-xl py-2.5 text-base font-semibold sm:hidden"
           onClick={() => {
             sound.unlock();
             setCameraOpen(true);
@@ -419,7 +419,9 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           data-testid="open-camera-mobile"
         >
           <Camera size={19} aria-hidden="true" />
-          Open camera scanner{dispatchMetrics ? ` (${dispatchMetrics.label})` : accepted > 0 ? ` (${accepted})` : ""}
+          <span className="truncate">
+            {dispatchMetrics ? `Scan parcels · ${dispatchMetrics.label}` : `Open camera scanner${accepted > 0 ? ` (${accepted})` : ""}`}
+          </span>
         </Button>
 
         <form
