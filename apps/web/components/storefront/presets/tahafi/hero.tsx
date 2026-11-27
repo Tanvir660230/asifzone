@@ -62,8 +62,10 @@ export function TahafiHero({
       <div className="relative isolate h-[min(82svh,38rem)] overflow-hidden rounded-b-[2rem] bg-ink-900 lg:h-[min(80svh,42rem)] lg:rounded-[2rem]">
         {imageUrl && (
           <>
+            {/* The phone photograph is pinned to its top: with the browser bars showing a phone gives a short frame (82svh),
+                and centring it cut the model's head off under the floating logo. Its lower part sits behind the headline. */}
             {mobileImageUrl && (
-              <Image src={resolveImageUrl(mobileImageUrl)} alt={alt} fill priority sizes="(min-width: 640px) 1px, 100vw" className="object-cover sm:hidden" />
+              <Image src={resolveImageUrl(mobileImageUrl)} alt={alt} fill priority sizes="(min-width: 640px) 1px, 100vw" className="object-cover object-top sm:hidden" />
             )}
             <Image
               src={resolveImageUrl(imageUrl)}
