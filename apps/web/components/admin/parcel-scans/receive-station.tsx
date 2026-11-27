@@ -671,8 +671,9 @@ export function ReceiveStation() {
                   <Camera size={16} aria-hidden="true" />
                   Confirm &amp; next
                 </Button>
-                <Button className="min-h-[48px] shrink-0 sm:hidden" variant="outline" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()}>
-                  Save
+                {/* Phones: confirm and stay here (the wide-screen button below is hidden on a phone). */}
+                <Button className="min-h-[48px] shrink-0 sm:hidden" variant="outline" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()} data-testid="confirm-receipt-phone">
+                  Confirm
                 </Button>
                 <Button className="hidden min-h-[48px] sm:inline-flex" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()} data-testid="confirm-receipt">
                   Physically received — confirm (Ctrl+Enter)
