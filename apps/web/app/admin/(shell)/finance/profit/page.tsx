@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, TrendingUp } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,7 @@ export default function ProfitPage() {
       {report.isError && <Alert variant="danger" title="Profit couldn't be worked out" action={<Button size="sm" variant="outline" onClick={() => report.refetch()}>Retry</Button>}>{getErrorMessage(report.error, "")}</Alert>}
       {r && (
         <>
+          {(r.products.length > 0 || r.orders.length > 0) && <WinnersAndAlerts report={r} />}
           {r.totals.outsideSales > 0 && r.totals.outsideSaleCostPct === null && (
             <Alert variant="warning" title="Sales outside the website have no cost of goods">
               Parcels sent straight through Steadfast took goods with them, but no order says which. Set their cost as a share of the cash in <Link href="/admin/finance/center" className="text-accent hover:underline">Finance Center › Settings</Link> — until then profit is too high by their cost.
@@ -133,6 +134,96 @@ export default function ProfitPage() {
         </Card>
       )}
     </ListPage>
+  );
+}
+
+/** At-a-glance split of what earned the most vs. what lost money in the chosen period. */
+function WinnersAndAlerts({ report }: { report: booksApi.ProfitReport }) {
+  const winners = [...report.products].filter((p) => p.contribution > 0).sort((a, b) => b.contribution - a.contribution).slice(0, 3);
+  const losingProducts = [...report.products].filter((p) => p.contribution < 0).sort((a, b) => a.contribution - b.contribution);
+  const losingOrders = report.orders.filter((o) => o.contribution < 0);
+  const losingTotal = losingOrders.reduce((sum, o) => sum + o.contribution, 0);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="profit-winners-alerts">
+      <Card className="p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+            <TrendingUp size={15} className="text-success-600" aria-hidden="true" />
+            Top earners
+          </h3>
+          <span className="text-xs text-fg-subtle">Net earned</span>
+        </div>
+        {winners.length === 0 ? (
+          <p className="mt-3 text-sm text-fg-muted">No profitable product sales recorded in this period yet.</p>
+        ) : (
+          <ul className="mt-2.5 divide-y divide-line-subtle">
+            {winners.map((p) => (
+              <li key={p.name} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-fg">{p.name}</p>
+                  <p className="text-xs text-fg-muted">{p.units} sold · {formatPrice(p.sales)} sales</p>
+                </div>
+                <div className="shrink-0 text-right tabular-nums">
+                  <p className="font-semibold text-success-700">{formatPrice(p.contribution)}</p>
+                  {p.marginPct !== null && <p className="text-xs text-fg-subtle">{p.marginPct}% margin</p>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card className="p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+            {losingOrders.length > 0 || losingProducts.length > 0 ? (
+              <AlertTriangle size={15} className="text-danger-600" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 size={15} className="text-success-600" aria-hidden="true" />
+            )}
+            Needs attention
+          </h3>
+          {losingOrders.length > 0 && (
+            <Badge variant="danger">{losingOrders.length} losing order{losingOrders.length === 1 ? "" : "s"}</Badge>
+          )}
+        </div>
+        {losingProducts.length === 0 && losingOrders.length === 0 ? (
+          <p className="mt-3 text-sm text-fg-muted">Every product and order earned a positive margin in this period.</p>
+        ) : (
+          <div className="mt-2.5 space-y-2.5">
+            {losingOrders.length > 0 && (
+              <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs font-medium text-danger-700">
+                {losingOrders.length} order{losingOrders.length === 1 ? "" : "s"} lost a combined {formatPrice(Math.abs(losingTotal))} (goods, courier &amp; ads exceeded sales).
+              </p>
+            )}
+            <ul className="divide-y divide-line-subtle">
+              {(losingProducts.length > 0 ? losingProducts.slice(0, 3) : []).map((p) => (
+                <li key={p.name} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-fg">{p.name}</p>
+                    <p className="text-xs text-fg-muted">{p.units} sold · costs {formatPrice(p.costs)}</p>
+                  </div>
+                  <span className="shrink-0 font-semibold tabular-nums text-danger-600">{formatPrice(p.contribution)}</span>
+                </li>
+              ))}
+              {losingProducts.length === 0 &&
+                losingOrders.slice(0, 3).map((o) => (
+                  <li key={o.orderId} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <Link href={`/admin/orders/${o.orderId}`} className="font-medium text-accent hover:underline">
+                        {o.orderNumber}
+                      </Link>
+                      <p className="text-xs text-fg-muted">{formatBookDate(o.date)} · sales {formatPrice(o.sales)}</p>
+                    </div>
+                    <span className="shrink-0 font-semibold tabular-nums text-danger-600">{formatPrice(o.contribution)}</span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
