@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
+import { useQuickOrderStore } from "@/store/quick-order";
 import { pixelAddToCart } from "@/lib/pixels";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { variantDisplayPrice } from "@/lib/pricing-display";
@@ -62,7 +63,10 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     // Buy Now skips the cart drawer but still puts the item into the checkout flow, so it counts
     // the same as an explicit Add to Cart for funnel purposes.
     trackFunnelEvent("ADD_TO_CART", { productId: item.productId, variantId: item.variantId });
-    router.push("/checkout");
+    // The quick order sheet takes the order right here (name, phone, address); without it, the checkout page.
+    const quickOrder = useQuickOrderStore.getState();
+    if (quickOrder.available) quickOrder.show();
+    else router.push("/checkout");
   }
 
   return { addToCart, buyNow };

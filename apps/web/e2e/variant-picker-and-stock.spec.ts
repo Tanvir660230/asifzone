@@ -116,7 +116,9 @@ test("Add to Cart with nothing chosen opens the options popup, and the choice is
   await expect(page.locator("main").getByRole("group", { name: "Size" }).first().getByRole("button", { name: "L", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Buy Now with nothing chosen opens the popup and goes to checkout with the choice", async ({ page }) => {
+const quickOrder = (page: Page) => page.getByTestId("quick-order");
+
+test("Buy Now with nothing chosen opens the popup, then the quick order sheet with the choice; full checkout is one tap", async ({ page }) => {
   await openPdp(page);
   await page.locator("main").getByRole("button", { name: "Buy Now", exact: true }).first().click();
   const dialog = picker(page);
@@ -124,6 +126,14 @@ test("Buy Now with nothing chosen opens the popup and goes to checkout with the 
   await dialog.getByRole("button", { name: "M", exact: true }).click();
   await dialog.getByRole("button", { name: "Black", exact: true }).click();
   await dialog.getByRole("button", { name: "Buy Now", exact: true }).click();
+  // Buy Now orders right on the product page: the sheet names the item and its choice.
+  const sheet = quickOrder(page);
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText(name);
+  await expect(sheet).toContainText("M · Black");
+  await expect(page).toHaveURL(new RegExp(`/product/${slug}`));
+  // A coupon or online payment: the full checkout, with the same one item.
+  await sheet.getByTestId("quick-order-full-checkout").click();
   await expect(page).toHaveURL(/\/checkout/);
   // Buy Now is the one-item express checkout; the summary (with the item) is collapsed on phones, so check presence.
   await expect(page.getByText("Buying 1 item")).toBeVisible();
@@ -145,9 +155,32 @@ test("a bigger quantity picked on one variant never carries over to a lower-stoc
   for (let i = 0; i < 4; i++) await main.getByRole("button", { name: "Increase quantity" }).first().click();
   await main.getByRole("group", { name: "Color" }).first().getByRole("button", { name: "White", exact: true }).click(); // only 2 in stock
   await main.getByRole("button", { name: "Buy Now", exact: true }).first().click();
-  await expect(page).toHaveURL(/\/checkout/);
-  // The checkout line shows the quantity in its stepper: 2 (all there is), not 5.
-  await expect(page.getByTestId("checkout-line").filter({ hasText: name }).first().getByTestId("checkout-line-qty")).toHaveText("2");
+  // The quick order sheet shows the quantity: 2 (all there is), not 5.
+  await expect(quickOrder(page).getByTestId("quick-order-qty")).toHaveText("2");
+});
+
+test("Buy Now orders Cash on Delivery from the product page: name, phone, address, confirmation", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  await openPdp(page);
+  const main = page.locator("main");
+  await main.getByRole("group", { name: "Size" }).first().getByRole("button", { name: "L", exact: true }).click();
+  await main.getByRole("group", { name: "Color" }).first().getByRole("button", { name: "Black", exact: true }).click();
+  await main.getByRole("button", { name: "Buy Now", exact: true }).first().click();
+  const sheet = quickOrder(page);
+  await expect(sheet).toBeVisible();
+  // Before the address: both delivery charges, never a blank.
+  await expect(sheet.getByTestId("quick-order-summary")).toContainText(/Dhaka .*Elsewhere|Free/);
+  await sheet.getByTestId("quick-order-submit").click();
+  await expect(sheet.getByText("Please enter your name")).toBeVisible();
+  await sheet.getByLabel("Full name", { exact: true }).fill("Quick Order Tester");
+  await sheet.getByLabel("Mobile number", { exact: true }).fill("01712345683");
+  await sheet.getByLabel("Full address", { exact: true }).fill("House 5, Mirpur 10, Dhaka (automated test order)");
+  await expect(sheet.getByTestId("quick-order-total")).toHaveText(/\d/);
+  await sheet.getByTestId("quick-order-submit").click();
+  await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
+  await expect(page.getByText(name).first()).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test("Escape or ✕ closes the popup without adding anything", async ({ page }) => {
