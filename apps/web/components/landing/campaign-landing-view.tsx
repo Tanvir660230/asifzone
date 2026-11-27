@@ -372,7 +372,11 @@ function OrderBlock({ section, ctx }: { section: OrderSection; ctx: SectionConte
       </h2>
       {section.subtitle && <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">{section.subtitle}</p>}
       <div className={section.subtitle ? "" : "mt-6"}>
-        <LandingOrderForm codEnabled={ctx.settings.codEnabled} ctaText={section.ctaText} />
+        <LandingOrderForm
+          codEnabled={ctx.settings.codEnabled}
+          ctaText={section.ctaText}
+          deliveryFees={{ insideDhaka: ctx.money(ctx.settings.shippingFeeDhaka), outsideDhaka: ctx.money(ctx.settings.shippingFeeOutsideDhaka) }}
+        />
       </div>
       {(ctx.tel || ctx.whatsapp) && (
         <div className="mt-5 flex flex-col gap-2 sm:flex-row">

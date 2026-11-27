@@ -29,6 +29,7 @@ import {
 // responsiveness for a saving that rarely pays off.
 const SearchOverlay = nextDynamic(() => import("@/components/storefront/search-overlay").then((m) => m.SearchOverlay));
 const QuickViewModal = nextDynamic(() => import("@/components/storefront/quick-view-modal").then((m) => m.QuickViewModal));
+const QuickOrderSheet = nextDynamic(() => import("@/components/storefront/quick-order-sheet").then((m) => m.QuickOrderSheet));
 const CompareBar = nextDynamic(() => import("@/components/storefront/compare-bar").then((m) => m.CompareBar));
 const LiveChatWidget = nextDynamic(() =>
   import("@/components/storefront/live-chat-widget").then((m) => m.LiveChatWidget),
@@ -74,6 +75,8 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
       <StoreDock />
       <LiveChatWidget settings={settings} />
       <QuickViewModal />
+      {/* Buy Now’s one-step order (name, phone, address), over the page instead of a trip to /checkout. */}
+      <QuickOrderSheet codEnabled={settings.codEnabled} shippingFeeDhaka={settings.shippingFeeDhaka} shippingFeeOutsideDhaka={settings.shippingFeeOutsideDhaka} currency={settings.currency} />
       <CompareBar />
       <Toaster />
       <AppShellWorker />
