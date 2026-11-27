@@ -11,6 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { BarcodeSvg } from "@/components/orders/barcode-svg";
@@ -174,7 +175,7 @@ function PickListSection({ data, className }: { data: PickListResponse; classNam
         <p className="text-xs text-fg-subtle">Made {formatStoreDateTime(data.generatedAt)}</p>
       </div>
       <Card className="overflow-hidden p-0 print:border-0 print:shadow-none">
-        <table className="w-full text-sm">
+        <Table data-no-stack="">
           <thead className="bg-surface-muted text-left text-xs font-medium text-fg-subtle print:bg-transparent">
             <tr>
               <th scope="col" className="w-10 px-3 py-2">
@@ -210,7 +211,7 @@ function PickListSection({ data, className }: { data: PickListResponse; classNam
               </tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </Card>
     </section>
   );
@@ -275,7 +276,7 @@ function PackingSheetCard({ sheet: s, packed, onToggle }: { sheet: PackingSheet;
         {printedSheets > 0 && <span>Sheet printed {printedSheets}×</span>}
       </div>
 
-      <table className="mt-4 w-full text-sm">
+      <Table data-no-stack="" className="mt-4">
         <thead className="text-left text-xs font-medium text-fg-subtle">
           <tr className="border-b border-line-subtle">
             <th scope="col" className="py-2 pr-3">Item</th>
@@ -314,7 +315,7 @@ function PackingSheetCard({ sheet: s, packed, onToggle }: { sheet: PackingSheet;
             );
           })}
         </tbody>
-      </table>
+      </Table>
 
       {s.courierNote && <p className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-sm text-fg-muted print:bg-transparent print:px-0">Courier note: {s.courierNote}</p>}
 

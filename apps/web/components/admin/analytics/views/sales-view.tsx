@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Info, ShoppingBag, Percent, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
@@ -98,7 +99,7 @@ export default function SalesIntelligencePage() {
             {!returns || returns.byTypeStatus.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No return or exchange requests yet for this range.</p>
             ) : (
-              <table className="w-full min-w-[380px] text-sm">
+              <Table className="min-w-[380px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Type</th>
@@ -115,7 +116,7 @@ export default function SalesIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

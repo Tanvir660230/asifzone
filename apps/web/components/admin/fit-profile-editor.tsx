@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Table } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 interface FitProfileEditorProps {
@@ -93,7 +94,7 @@ export function FitProfileEditor({ value, onChange, chartSizes }: FitProfileEdit
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-ink-100">
-        <table className="w-full border-collapse text-sm">
+        <Table data-no-stack="" className="border-collapse">
           <thead>
             <tr className="text-xs text-ink-500">
               <th className="p-2 text-left font-medium">Height up to</th>
@@ -159,7 +160,7 @@ export function FitProfileEditor({ value, onChange, chartSizes }: FitProfileEdit
               <td />
             </tr>
           </tbody>
-        </table>
+        </Table>
       </div>
       <Button
         type="button"

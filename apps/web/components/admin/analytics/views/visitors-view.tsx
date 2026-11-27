@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Users, Repeat, Globe2, FileText, LogIn, Radio, Info, Flame, ShoppingBag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";
 import { TrafficHeatmap } from "@/components/admin/traffic-heatmap";
@@ -298,7 +299,7 @@ export default function VisitorAnalyticsPage() {
             {!recentSessions || recentSessions.sessions.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No sessions recorded yet.</p>
             ) : (
-              <table className="w-full min-w-[720px] text-sm">
+              <Table className="min-w-[720px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Started</th>
@@ -323,7 +324,7 @@ export default function VisitorAnalyticsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

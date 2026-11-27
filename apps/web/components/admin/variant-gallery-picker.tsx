@@ -41,7 +41,7 @@ export function VariantGalleryPicker({ images, value, onChange, label }: Variant
                   {position + 1}
                 </span>
               )}
-              {position === 0 && <span className="absolute inset-x-0 bottom-0 bg-ink-900/70 text-center text-[9px] text-cream-50">Main</span>}
+              {position === 0 && <span className="absolute inset-x-0 bottom-0 bg-ink-900/70 text-center text-caption leading-tight text-cream-50">Main</span>}
             </button>
           );
         })}

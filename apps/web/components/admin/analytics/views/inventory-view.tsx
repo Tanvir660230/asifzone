@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { CostAmount } from "@/components/ui/cost-amount";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import { SlowMovingTable } from "@/components/admin/slow-moving-table";
@@ -79,7 +80,7 @@ export default function InventoryIntelligencePage() {
             {!lowStock || lowStock.variants.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">Nothing low on stock right now.</p>
             ) : (
-              <table className="w-full min-w-[320px] text-sm">
+              <Table className="min-w-[320px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Product</th>
@@ -102,7 +103,7 @@ export default function InventoryIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -123,7 +124,7 @@ export default function InventoryIntelligencePage() {
             {!deadStock || deadStock.variants.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No dead stock — everything sold at least once in the last 90 days.</p>
             ) : (
-              <table className="w-full min-w-[380px] text-sm">
+              <Table className="min-w-[380px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Product</th>
@@ -146,7 +147,7 @@ export default function InventoryIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -172,7 +173,7 @@ export default function InventoryIntelligencePage() {
             {!discrepancies || discrepancies.discrepancies.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No discrepancies — the stock ledger matches actual stock everywhere.</p>
             ) : (
-              <table className="w-full min-w-[380px] text-sm">
+              <Table className="min-w-[380px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">SKU</th>
@@ -191,7 +192,7 @@ export default function InventoryIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

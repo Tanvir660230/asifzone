@@ -21,8 +21,7 @@ import { ModuleTabs } from "@/components/admin/module-tabs";
 import { toast } from "@/components/ui/toast";
 import * as smsSettingsApi from "@/lib/api/sms-settings";
 import { ApiError } from "@/lib/api-client";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
+import { useCapabilities } from "@/hooks/use-capability";
 
 const CUSTOMER_TOUCHPOINTS = [
   {
@@ -65,8 +64,8 @@ const CUSTOMER_TOUCHPOINTS = [
 export default function SmsNotificationsPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["sms-settings"], queryFn: smsSettingsApi.getSmsSettings });
-  const { data: currentAdmin } = useCurrentAdmin();
-  const canManageSettings = adminCan(currentAdmin?.admin, "settings.manage");
+  const { can, ready: adminReady } = useCapabilities();
+  const canManageSettings = can("settings.manage");
 
   const {
     register,
@@ -118,7 +117,7 @@ export default function SmsNotificationsPage() {
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
-  if (currentAdmin && !canManageSettings) {
+  if (adminReady && !canManageSettings) {
     return (
       <div>
         <PageHeader title="SMS notifications" />

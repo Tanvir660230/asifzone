@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Gift, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
@@ -91,7 +92,7 @@ export default function MarketingIntelligencePage() {
             {!coupons || coupons.coupons.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No coupon redemptions yet for this range.</p>
             ) : (
-              <table className="w-full min-w-[420px] text-sm">
+              <Table className="min-w-[420px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Code</th>
@@ -110,7 +111,7 @@ export default function MarketingIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -122,7 +123,7 @@ export default function MarketingIntelligencePage() {
             {!bundles || bundles.bundles.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No bundle redemptions yet for this range.</p>
             ) : (
-              <table className="w-full min-w-[420px] text-sm">
+              <Table className="min-w-[420px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Bundle</th>
@@ -141,7 +142,7 @@ export default function MarketingIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -156,7 +157,7 @@ export default function MarketingIntelligencePage() {
             {!flashSales || flashSales.sales.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No flash sales scheduled yet.</p>
             ) : (
-              <table className="w-full min-w-[560px] text-sm">
+              <Table className="min-w-[560px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Sale</th>
@@ -178,7 +179,7 @@ export default function MarketingIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -194,7 +195,7 @@ export default function MarketingIntelligencePage() {
             {!delivery || delivery.campaigns.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No campaigns sent yet.</p>
             ) : (
-              <table className="w-full min-w-[480px] text-sm">
+              <Table className="min-w-[480px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Campaign</th>
@@ -215,7 +216,7 @@ export default function MarketingIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

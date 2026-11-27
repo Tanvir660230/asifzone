@@ -20,11 +20,20 @@ import { ListPage } from "@/components/admin/patterns/list-page";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
+import { useUrlState } from "@/hooks/use-url-state";
+import { urlParam } from "@/lib/url-state";
 import { approvalStatusBadgeVariant, formatPrice, formatStoreDate, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 const PAGE_SIZE = 20;
 type StatusFilter = ReturnRequestStatus | "ALL";
+const STATUS_VALUES = ["PENDING", "APPROVED", "REJECTED", "ALL"] as const;
+const URL_SCHEMA = {
+  "f.status": urlParam.enum(STATUS_VALUES, "PENDING"),
+  page: urlParam.page(),
+  tab: urlParam.string(""),
+};
+const URL_ALIASES = { "f.status": "status" } as const;
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: "PENDING", label: "To review" },
   { value: "APPROVED", label: "Approved" },
@@ -53,8 +62,9 @@ function approvalEffects(r: ReturnRequest): string[] {
 export default function AdminReturnRequestsPage() {
   const queryClient = useQueryClient();
   const perms = useOrderPermissions();
-  const [status, setStatus] = useState<StatusFilter>("PENDING");
-  const [page, setPage] = useState(1);
+  const [url, setUrl] = useUrlState(URL_SCHEMA, { aliases: URL_ALIASES });
+  const status = url["f.status"];
+  const page = url.page;
   const [review, setReview] = useState<Review | null>(null);
   const [note, setNote] = useState("");
   /** Exchange downgrade / approved return: where the money owed back goes (server default when not chosen). */
@@ -64,13 +74,8 @@ export default function AdminReturnRequestsPage() {
   // Parcels on their way back are Orders › Coming back (Order Operations); the old ?tab=parcels link opens it.
   const router = useRouter();
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "parcels") router.replace("/admin/orders?queue=comingBack");
-  }, [router]);
-  // ?status=PENDING|APPROVED|REJECTED|ALL deep link (e.g. from an order's "Review" link).
-  useEffect(() => {
-    const s = new URLSearchParams(window.location.search).get("status");
-    if (s && STATUS_FILTERS.some((f) => f.value === s)) setStatus(s as StatusFilter);
-  }, []);
+    if (url.tab === "parcels") router.replace("/admin/orders?queue=comingBack");
+  }, [router, url.tab]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-return-requests", { status, page }],
@@ -157,10 +162,7 @@ export default function AdminReturnRequestsPage() {
         <SegmentedControl
           aria-label="Filter by review status"
           value={status}
-          onChange={(v) => {
-            setStatus(v);
-            setPage(1);
-          }}
+          onChange={(v) => setUrl({ "f.status": v, page: 1 })}
           options={STATUS_FILTERS}
         />
         {data && <span className="text-xs tabular-nums text-ink-400">{data.total} {data.total === 1 ? "request" : "requests"}</span>}
@@ -244,7 +246,7 @@ export default function AdminReturnRequestsPage() {
         ))}
       </div>
 
-      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+      <Pagination page={page} totalPages={totalPages} onChange={(p) => setUrl({ page: p })} />
 
       <Modal
         open={Boolean(review)}

@@ -601,7 +601,7 @@ export function SeoStep({ state, actions }: StepProps & { actions: WizardActions
           <p className="truncate text-xs text-ink-600">
             {host} › product › {slugText || "…"}
           </p>
-          <p className="mt-0.5 truncate text-lg leading-snug text-[#1a0dab]">{(seoTitleText || "Untitled product").slice(0, 70)}</p>
+          <p className="mt-0.5 truncate text-lg leading-snug text-info-700">{(seoTitleText || "Untitled product").slice(0, 70)}</p>
           <p className="mt-1 line-clamp-2 text-sm text-ink-600">{metaText || "No description — search engines will pick text from the page."}</p>
         </div>
 

@@ -120,7 +120,11 @@ const SKETCH: Record<HomepageSectionType, ReactNode> = {
     <span className="grid h-full grid-cols-3 gap-1.5 p-3">
       {[0, 1, 2].map((i) => (
         <span key={i} className="flex flex-col gap-1 rounded-[3px] border border-ink-200 p-1.5">
-          <span className="text-[7px] leading-none tracking-tighter text-warning-500">★★★★★</span>
+          <span className="flex gap-0.5">
+            {[0, 1, 2, 3, 4].map((s) => (
+              <span key={s} className="h-1 w-1 rounded-full bg-warning-500" />
+            ))}
+          </span>
           {bar("w-full", "bg-ink-200")}
           {bar("w-2/3", "bg-ink-200")}
         </span>

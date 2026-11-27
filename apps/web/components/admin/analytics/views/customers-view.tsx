@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, Receipt, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import { CohortRetentionGrid } from "@/components/admin/cohort-retention-grid";
@@ -123,7 +124,7 @@ export default function CustomerIntelligencePage() {
             {!rfm || rfm.customers.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No customers with orders yet.</p>
             ) : (
-              <table className="w-full min-w-[560px] text-sm">
+              <Table className="min-w-[560px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Customer</th>
@@ -156,7 +157,7 @@ export default function CustomerIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

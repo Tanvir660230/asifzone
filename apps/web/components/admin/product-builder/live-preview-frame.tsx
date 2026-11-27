@@ -113,7 +113,7 @@ function SocialMode({ product }: { product: Product }) {
         </div>
         <div className="space-y-0.5 bg-ink-50/60 px-3 py-2.5">
           <p className="text-xs text-ink-400">{parseUrl(seo.canonical)?.host ?? seo.canonical}</p>
-          <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-ink-900">{seo.og.title}</p>
+          <p className="line-clamp-2 text-sm font-semibold leading-snug text-ink-900">{seo.og.title}</p>
           {seo.og.description && <p className="line-clamp-1 text-sm text-ink-500">{seo.og.description}</p>}
         </div>
       </div>
@@ -127,10 +127,10 @@ function SerpMode({ product }: { product: Product }) {
   return (
     <div className="min-h-screen bg-white px-4 py-8 font-sans sm:px-10">
       <div className="max-w-[600px]" data-testid="serp-card">
-        <p className="text-sm text-[#202124]">{url?.host ?? seo.canonical}</p>
-        <p className="truncate text-xs text-[#4d5156]">{url?.href ?? seo.canonical}</p>
-        <p className="mt-1 line-clamp-1 text-xl text-[#1a0dab]">{seo.title}</p>
-        <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-[#4d5156]">{seo.description ?? "No description — search engines will pick text from the page."}</p>
+        <p className="text-sm text-ink-900">{url?.host ?? seo.canonical}</p>
+        <p className="truncate text-xs text-ink-600">{url?.href ?? seo.canonical}</p>
+        <p className="mt-1 line-clamp-1 text-xl text-info-700">{seo.title}</p>
+        <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-ink-600">{seo.description ?? "No description — search engines will pick text from the page."}</p>
       </div>
     </div>
   );

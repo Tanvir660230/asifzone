@@ -16,8 +16,7 @@ import { CouponForm } from "@/components/admin/coupon-form";
 import * as couponsApi from "@/lib/api/admin-coupons";
 import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
-import { adminCan } from "@/lib/auth";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { useCapability } from "@/hooks/use-capability";
 import { cn } from "@/lib/utils";
 
 function statusOf(c: Coupon): { label: string; variant: "neutral" | "success" | "info" | "warning" | "danger" | "accent" } {
@@ -61,8 +60,7 @@ type FormMode = "create" | "edit";
 
 export default function CouponsPage() {
   const queryClient = useQueryClient();
-  const { data: currentAdmin } = useCurrentAdmin();
-  const canPurge = adminCan(currentAdmin?.admin, "promotions.purge"); // PD-10.1: permanent delete is OWNER-only
+  const canPurge = useCapability("promotions.purge"); // PD-10.1: permanent delete is OWNER-only
   const [tab, setTab] = useState<"active" | "trash">("active");
   const { data, isLoading, error: loadError, refetch } = useQuery({
     queryKey: ["admin-coupons", tab],

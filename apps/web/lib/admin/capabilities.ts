@@ -88,6 +88,7 @@ export const CAPABILITIES = {
   "content.manage": { permission: "content.manage" },
   // growth
   "promotions.manage": { permission: "promotions.manage" },
+  "promotions.purge": { permission: "promotions.purge" },
   "campaigns.manage": { permission: "campaigns.manage" },
   "storefront.configure": { permission: "storefront.configure" },
   // insight

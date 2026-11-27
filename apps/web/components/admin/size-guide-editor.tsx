@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Table } from "@/components/ui/table";
 import { FormSection } from "@/components/admin/form-section";
 
 interface SizeGuideEditorProps {
@@ -104,7 +105,7 @@ export function SizeGuideEditor({ typeName, sizeGuide, watch, setValue }: SizeGu
               </div>
 
               <div className="overflow-x-auto rounded-lg border border-ink-200 bg-white p-2">
-                <table className="w-full border-collapse text-left text-sm">
+                <Table data-no-stack="" className="border-collapse">
                   <thead>
                     <tr>
                       {(sg.columns || []).map((col: string, ci: number) => (
@@ -171,7 +172,7 @@ export function SizeGuideEditor({ typeName, sizeGuide, watch, setValue }: SizeGu
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </Table>
               </div>
             </div>
           </div>

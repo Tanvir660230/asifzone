@@ -73,7 +73,7 @@ export function PreviewPane({ product, height }: { product: Product; height: num
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-line-subtle bg-surface-muted/70 p-3 sm:p-4" data-testid="preview-pane">
-      <p className="px-1 text-caption font-semibold uppercase text-fg-subtle">Live preview</p>
+      <p className="px-1 text-caption font-semibold text-fg-subtle">Live preview</p>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SegmentedControl
           aria-label="Preview surface"
@@ -102,7 +102,7 @@ export function PreviewPane({ product, height }: { product: Product; height: num
           />
         </div>
       </div>
-      <p className="px-1 text-[11px] text-fg-subtle">
+      <p className="px-1 text-caption text-fg-subtle">
         {deviceWidth}px wide{scale < 1 ? `, shown at ${Math.round(scale * 100)}%` : ""} · updates as you type, before anything is saved
       </p>
     </div>
