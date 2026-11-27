@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, CloudOff, Link2, Minus, PackageOpen, Plus, ScanLine, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronUp, CloudOff, History, Link2, Minus, PackageOpen, Plus, ScanLine, XCircle, Zap } from "lucide-react";
 import {
   PARCEL_MONEY_REASONS,
   PARCEL_MONEY_REASON_LABELS,
@@ -93,6 +93,9 @@ export function ReceiveStation() {
   });
   const [saving, setSaving] = useState(false);
   const [correcting, setCorrecting] = useState<string | null>(null);
+  const [expandedIssues, setExpandedIssues] = useState<Record<string, boolean>>({});
+  const [sessionReceipts, setSessionReceipts] = useState<Array<{ orderId: string; orderNumber: string; customerName: string; summary: string }>>([]);
+  const [sessionOpen, setSessionOpen] = useState(false);
 
   const { data: stats } = useQuery({ queryKey: orderKeys.stats, queryFn: getOrderStats, refetchInterval: 60_000 });
   const { data: exceptions } = useQuery({ queryKey: [...orderKeys.stats, "exceptions"], queryFn: ({ signal }) => getOrderExceptions({ signal }), refetchInterval: 60_000 });
@@ -127,6 +130,7 @@ export function ReceiveStation() {
     const parcel = await scansApi.getParcel(orderId);
     // Money that pays for an item: start on "kept some", so the person says which one instead of receiving it all back.
     setForm({ outcome: keptLikely(parcel) !== null ? "PARTIAL" : null, lines: Object.fromEntries(parcel.lines.map((l) => [l.orderItemId, { ...EMPTY }])), money: { actual: "", charge: "", reason: "", note: "" }, note: "" });
+    setExpandedIssues({});
     setView({ kind: "parcel", parcel, code: scanned, matchedBy });
     return parcel;
   }, []);
@@ -226,8 +230,9 @@ export function ReceiveStation() {
   const parcel = view.kind === "parcel" ? view.parcel : null;
   const plan = parcel ? validate(parcel, form) : null;
 
-  async function confirm() {
+  async function confirm(opts: { scanNext?: boolean } = {}) {
     if (!parcel || !plan?.ok) return;
+    if (opts.scanNext) sound.unlock();
     const input: ReceiveParcelInput = {
       orderId: parcel.orderId,
       version: parcel.version,
@@ -244,11 +249,20 @@ export function ReceiveStation() {
     setFeedback({ tone: "busy", text: `Saving ${parcel.orderNumber}…` });
     try {
       const res = await scansApi.receiveParcel(input);
+      const lineSummary = summarise(res.receipt.lines);
       invalidateOrderQueries(queryClient);
-      say("success", `${res.parcel.orderNumber} received${res.replayed ? " (already saved)" : ""} — ${summarise(res.receipt.lines)}. Scan the next parcel.`, "Receipt saved");
+      setSessionReceipts((prev) => [
+        { orderId: res.parcel.orderId, orderNumber: res.parcel.orderNumber, customerName: res.parcel.customerName, summary: lineSummary },
+        ...prev.filter((r) => r.orderId !== res.parcel.orderId),
+      ].slice(0, 20));
+      say("success", `${res.parcel.orderNumber} received${res.replayed ? " (already saved)" : ""} — ${lineSummary}. Scan the next parcel.`, "Receipt saved");
       toast.success(`${res.parcel.orderNumber} received`);
       setView({ kind: "idle" });
-      inputRef.current?.focus();
+      if (opts.scanNext) {
+        setCameraOpen(true);
+      } else {
+        inputRef.current?.focus();
+      }
     } catch (err) {
       const code = err instanceof ApiError ? (err.details as { code?: string } | undefined)?.code : undefined;
       say("failed", err instanceof ApiError && err.status > 0 ? getErrorMessage(err, "Not saved") : "Not saved — the connection dropped. Check it and press Confirm again; it will be saved once.", "Not saved");
@@ -324,14 +338,7 @@ export function ReceiveStation() {
         onVoice={voice.setEnabled}
       />
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        {queues.map((q) => (
-          <Link key={q.id} href={q.href} className="rounded-full bg-surface px-3 py-1.5 text-fg ring-1 ring-line-subtle hover:ring-line-strong">
-            {q.label} <span className="tabular-nums text-fg-subtle">{formatCount(q.n)}</span>
-          </Link>
-        ))}
-      </div>
-
+      {/* Primary scan card first so mobile operators reach the camera button immediately without scrolling. */}
       <div className="space-y-3 rounded-2xl border border-line-subtle bg-surface p-4 shadow sm:p-5">
         {/* Phones: primary thumb-friendly camera button first for fast daily Returns In scanning. */}
         <Button
@@ -345,7 +352,7 @@ export function ReceiveStation() {
           data-testid="receive-open-camera-mobile"
         >
           <Camera size={19} aria-hidden="true" />
-          Scan returned parcel
+          Scan returned parcel{sessionReceipts.length > 0 ? ` (${sessionReceipts.length} done)` : ""}
         </Button>
 
         <form
@@ -427,6 +434,53 @@ export function ReceiveStation() {
           </div>
         )}
       </div>
+
+      {sessionReceipts.length > 0 && (
+        <section className="rounded-2xl border border-line-subtle bg-surface px-3.5 py-2.5" aria-label="Received in this session" data-testid="session-receipts">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-fg">
+              <History size={14} className="text-success-600" aria-hidden="true" />
+              This session: {formatCount(sessionReceipts.length)} parcel{sessionReceipts.length === 1 ? "" : "s"} received
+            </span>
+            <button
+              type="button"
+              onClick={() => setSessionOpen((v) => !v)}
+              aria-expanded={sessionOpen}
+              className="flex items-center gap-1 text-xs font-medium text-fg-muted hover:text-fg"
+              data-testid="toggle-session-receipts"
+            >
+              {sessionOpen ? "Hide" : "Recent"}
+              {sessionOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+            </button>
+          </div>
+          {sessionOpen && (
+            <ul className="mt-2 max-h-48 divide-y divide-line-subtle overflow-y-auto border-t border-line-subtle pt-1">
+              {sessionReceipts.map((r) => (
+                <li key={r.orderId} className="flex items-center justify-between gap-2 py-1.5 text-xs">
+                  <div className="min-w-0">
+                    <span className="font-medium text-fg">{r.orderNumber}</span>
+                    <span className="text-fg-muted"> · {r.customerName}</span>
+                    <p className="truncate text-fg-subtle">{r.summary}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2.5 text-xs" onClick={() => void pick(r.orderId)}>
+                    Reopen
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {queues.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {queues.map((q) => (
+            <Link key={q.id} href={q.href} className="rounded-full bg-surface px-3 py-1.5 text-fg ring-1 ring-line-subtle hover:ring-line-strong">
+              {q.label} <span className="tabular-nums text-fg-subtle">{formatCount(q.n)}</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {view.kind === "loading" && <div className="h-48 rounded-2xl ui-skeleton" aria-hidden="true" />}
 
@@ -562,20 +616,37 @@ export function ReceiveStation() {
                         </span>
                       )}
                     </div>
-                    {parcel.receive.mode !== "NOTHING" && (
-                      <>
-                        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                          {showKept && <Stepper label="Kept by customer" hint="Stays sold" value={c.kept} max={l.ordered - l.received} onChange={(v) => setLine(l.orderItemId, { kept: v })} testId="kept" />}
-                          {FINDINGS.map((f) => (
-                            <Stepper key={f.key} label={f.label} hint={f.hint} value={c[f.key]} max={999} onChange={(v) => setLine(l.orderItemId, { [f.key]: v })} testId={f.key} />
-                          ))}
-                        </div>
-                        {(c.wrong > 0 || c.other > 0) && (
-                          <Input className="mt-2" placeholder={c.wrong ? "What came back instead?" : "What did you find?"} value={c.note} maxLength={300} onChange={(e) => setLine(l.orderItemId, { note: e.target.value })} aria-label={`Note for ${l.name}`} />
-                        )}
-                        {over && <p className="mt-1 text-xs text-danger-700">Only {cap} can come back — you entered {used}.</p>}
-                      </>
-                    )}
+                    {parcel.receive.mode !== "NOTHING" && (() => {
+                      const hasIssue = c.damaged > 0 || c.missing > 0 || c.wrong > 0 || c.other > 0;
+                      const showIssues = Boolean(expandedIssues[l.orderItemId]) || hasIssue;
+                      return (
+                        <>
+                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                            {showKept && <Stepper label="Kept by customer" hint="Stays sold" value={c.kept} max={l.ordered - l.received} onChange={(v) => setLine(l.orderItemId, { kept: v })} testId="kept" />}
+                            {FINDINGS.map((f) => (
+                              <div key={f.key} className={cn(f.key !== "good" && !showIssues && "hidden sm:block")}>
+                                <Stepper label={f.label} hint={f.hint} value={c[f.key]} max={999} onChange={(v) => setLine(l.orderItemId, { [f.key]: v })} testId={f.key} />
+                              </div>
+                            ))}
+                          </div>
+                          {!showIssues && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedIssues((prev) => ({ ...prev, [l.orderItemId]: true }))}
+                              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-fg-muted underline-offset-2 hover:text-fg hover:underline sm:hidden"
+                              data-testid="expand-line-issues"
+                            >
+                              <Plus size={13} aria-hidden="true" />
+                              Report issue (damaged / missing / wrong)
+                            </button>
+                          )}
+                          {(c.wrong > 0 || c.other > 0) && (
+                            <Input className="mt-2" placeholder={c.wrong ? "What came back instead?" : "What did you find?"} value={c.note} maxLength={300} onChange={(e) => setLine(l.orderItemId, { note: e.target.value })} aria-label={`Note for ${l.name}`} />
+                          )}
+                          {over && <p className="mt-1 text-xs text-danger-700">Only {cap} can come back — you entered {used}.</p>}
+                        </>
+                      );
+                    })()}
                   </li>
                 );
               })}
@@ -588,10 +659,16 @@ export function ReceiveStation() {
             <>
               <Textarea placeholder="Note for the timeline (optional)" value={form.note} maxLength={500} rows={2} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} aria-label="Receipt note" />
               {plan.problem && <p className="text-sm text-warning-800" data-testid="receive-problem">{plan.problem}</p>}
-              <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-line bg-surface/95 px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
-                <Button className="min-h-[48px] flex-1 sm:flex-none" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()} data-testid="confirm-receipt">
-                  <span className="sm:hidden">Confirm receipt</span>
-                  <span className="hidden sm:inline">Physically received — confirm (Ctrl+Enter)</span>
+              <div className="sticky bottom-0 -mx-4 flex flex-wrap gap-2 border-t border-line bg-surface/95 px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
+                <Button className="min-h-[48px] flex-1 gap-1.5 sm:hidden" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm({ scanNext: true })} data-testid="confirm-and-scan-next">
+                  <Camera size={16} aria-hidden="true" />
+                  Confirm &amp; scan next
+                </Button>
+                <Button className="min-h-[48px] shrink-0 sm:hidden" variant="outline" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()}>
+                  Save
+                </Button>
+                <Button className="hidden min-h-[48px] sm:inline-flex" disabled={!plan.ok || saving || !online} loading={saving} onClick={() => void confirm()} data-testid="confirm-receipt">
+                  Physically received — confirm (Ctrl+Enter)
                 </Button>
                 <Button className="min-h-[48px] shrink-0" variant="outline" onClick={() => { setView({ kind: "idle" }); setHeld(null); }}>
                   Cancel

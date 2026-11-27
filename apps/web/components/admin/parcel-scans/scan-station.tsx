@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronUp, CircleSlash, CloudOff, Loader2, PackageCheck, Plus, ScanLine, X, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronUp, CircleSlash, CloudOff, Loader2, PackageCheck, Plus, ScanLine, Search, X, XCircle } from "lucide-react";
 import {
   PARCEL_SCAN_RESULT_LABELS,
   SCAN_MATCH_LABELS,
@@ -358,6 +358,16 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
   const acceptedOrderIds = useMemo(() => new Set(events.filter((e) => e.result === "ACCEPTED" && e.orderId).map((e) => e.orderId!)), [events]);
   const unanswered = pending.filter((p) => p.state !== "failed").length;
   const canConfirm = Boolean(batch) && accepted > 0 && unanswered === 0 && online && !confirming;
+  const dispatchMetrics = useMemo(() => {
+    if (kind !== "DISPATCH" || !summary || summary.bookedToday <= 0) return null;
+    const remaining = summary.remaining ?? [];
+    const inBatchToday = remaining.filter((r) => acceptedOrderIds.has(r.orderId)).length;
+    const remainingCount = Math.max(0, (summary.remainingTotal ?? remaining.length) - inBatchToday);
+    const accounted = Math.min(summary.bookedToday, summary.handedOverToday + inBatchToday);
+    const allDone = remainingCount === 0;
+    const label = allDone ? `${accounted}/${summary.bookedToday} · All done` : `${accounted}/${summary.bookedToday} · ${remainingCount} left`;
+    return { accounted, remainingCount, allDone, label };
+  }, [kind, summary, acceptedOrderIds]);
 
   if (loadState === "loading") return <div className="mt-4 h-48 rounded-xl ui-skeleton" aria-hidden="true" />;
   if (loadState === "error")
@@ -383,30 +393,6 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         voiceSupported={voice.supported}
         onVoice={voice.setEnabled}
       />
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        {kind === "DISPATCH" && summary && (
-          <span className="rounded-full bg-surface px-3 py-1.5 text-fg-muted ring-1 ring-line-subtle" data-testid="dispatch-summary">
-            Today: {formatCount(summary.bookedToday)} booked · {formatCount(summary.handedOverToday)} handed over
-          </span>
-        )}
-        {copy.queues.map((q) => (
-          <Link key={q.id} href={`/admin/orders?f.queue=${q.id}`} className="rounded-full bg-surface px-3 py-1.5 text-fg ring-1 ring-line-subtle hover:ring-line-strong">
-            {q.label} <span className="tabular-nums text-fg-subtle">{formatCount(stats?.queueCounts?.[q.id as keyof NonNullable<typeof stats>["queueCounts"]] ?? 0)}</span>
-          </Link>
-        ))}
-      </div>
-
-      {kind === "DISPATCH" && summary && summary.bookedToday > 0 && (
-        <DispatchProgress summary={summary} acceptedOrderIds={acceptedOrderIds} onAdd={(orderNumber) => { sound.unlock(); submit(orderNumber); }} />
-      )}
-
-      {automation?.run && (
-        <p className="text-xs text-fg-muted" data-testid="courier-check">
-          Daily courier check {automation.run.day}: {automation.run.stuckInTransit} stuck in transit · {automation.run.returnOverdue} overdue return
-          {automation.run.returnOverdue === 1 ? "" : "s"} · {automation.run.payoutsChecked} payout{automation.run.payoutsChecked === 1 ? "" : "s"} checked
-          {automation.run.outcome !== "OK" && automation.run.message ? <span className="text-warning-800"> — {automation.run.message}</span> : null}
-        </p>
-      )}
 
       {finished && (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-800">
@@ -419,6 +405,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         </div>
       )}
 
+      {/* Primary scan card first so mobile operators reach the camera button immediately without scrolling. */}
       <div className="space-y-3 rounded-2xl border border-line-subtle bg-surface p-4 shadow sm:p-5">
         {/* Phones: a thumb-sized camera button first; a USB or Bluetooth scanner still types into the box below. */}
         <Button
@@ -432,7 +419,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           data-testid="open-camera-mobile"
         >
           <Camera size={19} aria-hidden="true" />
-          Open camera scanner{accepted > 0 ? ` (${accepted})` : ""}
+          Open camera scanner{dispatchMetrics ? ` (${dispatchMetrics.label})` : accepted > 0 ? ` (${accepted})` : ""}
         </Button>
 
         <form
@@ -505,6 +492,31 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
           </p>
         )}
       </div>
+
+      {kind === "DISPATCH" && summary && summary.bookedToday > 0 && (
+        <DispatchProgress summary={summary} acceptedOrderIds={acceptedOrderIds} onAdd={(orderNumber) => { sound.unlock(); submit(orderNumber); }} />
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {kind === "DISPATCH" && summary && (
+          <span className="rounded-full bg-surface px-3 py-1.5 text-fg-muted ring-1 ring-line-subtle" data-testid="dispatch-summary">
+            Today: {formatCount(summary.bookedToday)} booked · {formatCount(summary.handedOverToday)} handed over
+          </span>
+        )}
+        {copy.queues.map((q) => (
+          <Link key={q.id} href={`/admin/orders?f.queue=${q.id}`} className="rounded-full bg-surface px-3 py-1.5 text-fg ring-1 ring-line-subtle hover:ring-line-strong">
+            {q.label} <span className="tabular-nums text-fg-subtle">{formatCount(stats?.queueCounts?.[q.id as keyof NonNullable<typeof stats>["queueCounts"]] ?? 0)}</span>
+          </Link>
+        ))}
+      </div>
+
+      {automation?.run && (
+        <p className="text-xs text-fg-muted" data-testid="courier-check">
+          Daily courier check {automation.run.day}: {automation.run.stuckInTransit} stuck in transit · {automation.run.returnOverdue} overdue return
+          {automation.run.returnOverdue === 1 ? "" : "s"} · {automation.run.payoutsChecked} payout{automation.run.payoutsChecked === 1 ? "" : "s"} checked
+          {automation.run.outcome !== "OK" && automation.run.message ? <span className="text-warning-800"> — {automation.run.message}</span> : null}
+        </p>
+      )}
 
       {kind === "DISPATCH" && peek && <DispatchParcel parcel={peek} checking={checking} checked={checked} onCheck={(on) => { setChecking(on); setChecked(new Map()); }} />}
 
@@ -580,6 +592,8 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
         <CameraScanner
           title={kind === "DISPATCH" ? "Dispatch scanner" : "Returns in scanner"}
           scannedCount={accepted}
+          progressLabel={dispatchMetrics?.label}
+          progressComplete={dispatchMetrics?.allDone}
           feedback={last}
           onClose={() => setCameraOpen(false)}
           onCode={(value) => {
@@ -625,9 +639,20 @@ function DispatchProgress({
   onAdd: (orderNumber: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const remaining = summary.remaining ?? [];
   const inBatchToday = remaining.filter((r) => acceptedOrderIds.has(r.orderId)).length;
   const unscanned = remaining.filter((r) => !acceptedOrderIds.has(r.orderId));
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? unscanned.filter(
+        (r) =>
+          r.orderNumber.toLowerCase().includes(query) ||
+          r.customerName.toLowerCase().includes(query) ||
+          r.area.toLowerCase().includes(query) ||
+          (r.consignmentId ?? "").toLowerCase().includes(query),
+      )
+    : unscanned;
   const remainingCount = Math.max(0, (summary.remainingTotal ?? remaining.length) - inBatchToday);
   const accounted = Math.min(summary.bookedToday, summary.handedOverToday + inBatchToday);
   const pct = summary.bookedToday > 0 ? Math.min(100, Math.round((accounted / summary.bookedToday) * 100)) : 0;
@@ -669,34 +694,61 @@ function DispatchProgress({
       </div>
 
       {open && unscanned.length > 0 && (
-        <ul className="mt-3 max-h-64 divide-y divide-line-subtle overflow-y-auto rounded-xl border border-line-subtle" data-testid="remaining-parcels-list">
-          {unscanned.map((r) => (
-            <li key={r.orderId} className="flex items-center gap-2.5 px-3 py-2 text-sm">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-fg">
-                  <Link href={`/admin/orders?open=${r.orderId}`} className="font-medium hover:underline">
-                    {r.orderNumber}
-                  </Link>
-                  <span className="text-fg-muted"> · {r.customerName}</span>
-                </p>
-                <p className="truncate text-xs text-fg-subtle">
-                  {r.itemCount} item{r.itemCount === 1 ? "" : "s"}
-                  {r.area ? ` · ${r.area}` : ""}
-                  {r.consignmentId ? ` · #${r.consignmentId}` : ""}
-                </p>
-              </div>
-              <Button type="button" size="sm" variant="ghost" className="shrink-0 gap-1" onClick={() => onAdd(r.orderNumber)} data-testid={`add-remaining-${r.orderNumber}`}>
-                <Plus size={14} aria-hidden="true" />
-                Add
-              </Button>
-            </li>
-          ))}
-          {remainingCount > unscanned.length && (
-            <li className="px-3 py-2 text-center text-xs text-fg-muted">
-              Showing first {unscanned.length} of {formatCount(remainingCount)} remaining parcels.
-            </li>
-          )}
-        </ul>
+        <div className="mt-3 space-y-2">
+          <label className="relative block">
+            <span className="sr-only">Filter remaining parcels</span>
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search order #, name, area or consignment…"
+              className="h-10 pl-9 pr-9 text-sm"
+              data-testid="remaining-search"
+            />
+            {search && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-fg-muted hover:bg-ink-900/[0.05]"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </label>
+          <ul className="max-h-64 divide-y divide-line-subtle overflow-y-auto rounded-xl border border-line-subtle" data-testid="remaining-parcels-list">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-4 text-center text-xs text-fg-muted">No remaining parcel matches &ldquo;{search.trim()}&rdquo;.</li>
+            ) : (
+              filtered.map((r) => (
+                <li key={r.orderId} className="flex items-center gap-2.5 px-3 py-2 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-fg">
+                      <Link href={`/admin/orders?open=${r.orderId}`} className="font-medium hover:underline">
+                        {r.orderNumber}
+                      </Link>
+                      <span className="text-fg-muted"> · {r.customerName}</span>
+                    </p>
+                    <p className="truncate text-xs text-fg-subtle">
+                      {r.itemCount} item{r.itemCount === 1 ? "" : "s"}
+                      {r.area ? ` · ${r.area}` : ""}
+                      {r.consignmentId ? ` · #${r.consignmentId}` : ""}
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" variant="ghost" className="shrink-0 gap-1" onClick={() => onAdd(r.orderNumber)} data-testid={`add-remaining-${r.orderNumber}`}>
+                    <Plus size={14} aria-hidden="true" />
+                    Add
+                  </Button>
+                </li>
+              ))
+            )}
+            {!query && remainingCount > unscanned.length && (
+              <li className="px-3 py-2 text-center text-xs text-fg-muted">
+                Showing first {unscanned.length} of {formatCount(remainingCount)} remaining parcels.
+              </li>
+            )}
+          </ul>
+        </div>
       )}
     </section>
   );
