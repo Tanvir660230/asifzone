@@ -107,6 +107,7 @@ export interface DispatchRemainingParcel {
 export interface DispatchSummary {
   bookedToday: number;
   handedOverToday: number;
+  receivedBackToday: number;
   remainingTotal: number;
   remaining: DispatchRemainingParcel[];
 }

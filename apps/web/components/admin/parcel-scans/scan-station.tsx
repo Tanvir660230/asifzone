@@ -119,7 +119,7 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
   const storageKey = `parcel-scan-queue:${kind}`;
 
   const { data: stats } = useQuery({ queryKey: orderKeys.stats, queryFn: getOrderStats, refetchInterval: 60_000 });
-  const { data: summary } = useQuery({ queryKey: ["parcel-scan-summary"], queryFn: scansApi.dispatchSummary, enabled: kind === "DISPATCH", refetchInterval: 60_000 });
+  const { data: summary } = useQuery({ queryKey: ["parcel-scan-summary"], queryFn: scansApi.dispatchSummary, refetchInterval: 60_000 });
   const { data: automation } = useQuery({ queryKey: ["courier-automation"], queryFn: scansApi.latestAutomation, staleTime: 5 * 60_000 });
 
   // Resume this operator's open batch; restore scans still queued on this device (made offline before a refresh).
@@ -500,9 +500,11 @@ export function ScanStation({ kind }: { kind: ParcelScanKind }) {
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        {kind === "DISPATCH" && summary && (
+        {summary && (
           <span className="rounded-full bg-surface px-3 py-1.5 text-fg-muted ring-1 ring-line-subtle" data-testid="dispatch-summary">
-            Today: {formatCount(summary.bookedToday)} booked · {formatCount(summary.handedOverToday)} handed over
+            {kind === "DISPATCH"
+              ? `Today: ${formatCount(summary.bookedToday)} booked · ${formatCount(summary.handedOverToday)} handed over · ${formatCount(summary.receivedBackToday)} returned`
+              : `Today: ${formatCount(summary.receivedBackToday)} received back · ${formatCount(summary.handedOverToday)} handed over`}
           </span>
         )}
         {copy.queues.map((q) => (

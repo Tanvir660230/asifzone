@@ -293,7 +293,7 @@ export async function getBatch(batchId: string): Promise<ParcelScanBatchView> {
   };
 }
 
-/** Today's dispatch picture: booked today vs handed over today, plus the booked orders still waiting to be handed over. */
+/** Today's parcel movement picture: booked today, handed over today, received back today, plus the booked orders still waiting to be handed over. */
 export async function dispatchSummary(dayStart: Date) {
   const remainingWhere: Prisma.OrderWhereInput = {
     deletedAt: null,
@@ -302,9 +302,18 @@ export async function dispatchSummary(dayStart: Date) {
     handedOverAt: null,
     status: { notIn: ["PENDING", ...DISPATCH_CLOSED] },
   };
-  const [booked, handedOver, remainingTotal, remainingRows] = await Promise.all([
+  const [booked, handedOver, receivedBackToday, remainingTotal, remainingRows] = await Promise.all([
     prisma.order.count({ where: { deletedAt: null, courierBookedAt: { gte: dayStart }, courierConsignmentId: { not: null } } }),
     prisma.order.count({ where: { deletedAt: null, courierBookedAt: { gte: dayStart }, handedOverAt: { not: null } } }),
+    prisma.order.count({
+      where: {
+        deletedAt: null,
+        OR: [
+          { receivedBackAt: { gte: dayStart } },
+          { parcelReceipts: { some: { createdAt: { gte: dayStart }, kind: "RECEIPT" } } },
+        ],
+      },
+    }),
     prisma.order.count({ where: remainingWhere }),
     prisma.order.findMany({
       where: remainingWhere,
@@ -325,6 +334,7 @@ export async function dispatchSummary(dayStart: Date) {
   return {
     bookedToday: booked,
     handedOverToday: handedOver,
+    receivedBackToday,
     remainingTotal,
     remaining: remainingRows.map((o) => ({
       orderId: o.id,

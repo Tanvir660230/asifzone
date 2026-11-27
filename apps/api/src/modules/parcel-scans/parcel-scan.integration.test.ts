@@ -226,7 +226,17 @@ describe("HTTP", () => {
     expect((await agent.post(`/api/parcel-scans/batches/${created.body.id}/confirm`)).body.status).toBe("CONFIRMED");
     const afterSummary = await agent.get("/api/parcel-scans/summary");
     expect(afterSummary.body.handedOverToday).toBeGreaterThanOrEqual(1);
+    expect(typeof afterSummary.body.receivedBackToday).toBe("number");
     expect(afterSummary.body.remaining.some((r: { orderId: string }) => r.orderId === o.id)).toBe(false);
+
+    // Return scan increments receivedBackToday in the summary.
+    const beforeReturn = afterSummary.body.receivedBackToday as number;
+    const retBatch = await agent.post("/api/parcel-scans/batches", { kind: "RETURN" });
+    expect(retBatch.status).toBe(201);
+    expect((await agent.post(`/api/parcel-scans/batches/${retBatch.body.id}/scans`, { code: o.trackingNumber, clientScanId: scanId() })).status).toBe(201);
+    expect((await agent.post(`/api/parcel-scans/batches/${retBatch.body.id}/confirm`)).body.status).toBe("CONFIRMED");
+    const afterReturn = await agent.get("/api/parcel-scans/summary");
+    expect(afterReturn.body.receivedBackToday).toBe(beforeReturn + 1);
   });
 });
 

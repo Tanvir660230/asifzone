@@ -98,6 +98,7 @@ export function ReceiveStation() {
   const [sessionOpen, setSessionOpen] = useState(false);
 
   const { data: stats } = useQuery({ queryKey: orderKeys.stats, queryFn: getOrderStats, refetchInterval: 60_000 });
+  const { data: summary } = useQuery({ queryKey: ["parcel-scan-summary"], queryFn: scansApi.dispatchSummary, refetchInterval: 60_000 });
   const { data: exceptions } = useQuery({ queryKey: [...orderKeys.stats, "exceptions"], queryFn: ({ signal }) => getOrderExceptions({ signal }), refetchInterval: 60_000 });
 
   useEffect(() => {
@@ -251,6 +252,7 @@ export function ReceiveStation() {
       const res = await scansApi.receiveParcel(input);
       const lineSummary = summarise(res.receipt.lines);
       invalidateOrderQueries(queryClient);
+      void queryClient.invalidateQueries({ queryKey: ["parcel-scan-summary"] });
       setSessionReceipts((prev) => [
         { orderId: res.parcel.orderId, orderNumber: res.parcel.orderNumber, customerName: res.parcel.customerName, summary: lineSummary },
         ...prev.filter((r) => r.orderId !== res.parcel.orderId),
@@ -472,8 +474,13 @@ export function ReceiveStation() {
         </section>
       )}
 
-      {queues.length > 0 && (
+      {(summary || queues.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
+          {summary && (
+            <span className="rounded-full bg-surface px-3 py-1.5 text-fg-muted ring-1 ring-line-subtle" data-testid="receive-today-summary">
+              Today: {formatCount(summary.receivedBackToday)} received back · {formatCount(summary.handedOverToday)} handed over
+            </span>
+          )}
           {queues.map((q) => (
             <Link key={q.id} href={q.href} className="rounded-full bg-surface px-3 py-1.5 text-fg ring-1 ring-line-subtle hover:ring-line-strong">
               {q.label} <span className="tabular-nums text-fg-subtle">{formatCount(q.n)}</span>
