@@ -202,7 +202,8 @@ test.describe("parcel scanning", () => {
       await wedgeScan(page, slip);
       await expect(page.getByTestId("receive-feedback")).toHaveAttribute("data-tone", "warn");
       await expect(page.getByTestId("line-accounted").first()).toHaveText("1 / 1");
-      await page.getByTestId("confirm-receipt").click();
+      // A phone has its own Confirm in the sticky row; wider screens the full "Physically received — confirm".
+      await page.locator('[data-testid="confirm-receipt"]:visible, [data-testid="confirm-receipt-phone"]:visible').click();
       await expect(page.getByTestId("receive-feedback")).toContainText("received");
       await expect(page.getByTestId("receive-scan-input")).toBeFocused();
 

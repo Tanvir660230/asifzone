@@ -29,8 +29,7 @@ import * as aiApi from "@/lib/api/ai";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import { takePendingUploads } from "@/lib/wizard/pending-uploads";
 import { toast } from "@/components/ui/toast";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
+import { useCapability } from "@/hooks/use-capability";
 import { cn } from "@/lib/utils";
 import { checkFit, imageSpec, ratioLabel, shapeName, type ImageSpec } from "@/lib/image-specs";
 
@@ -85,8 +84,8 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
   );
 
   const { data: aiStatus } = useQuery({ queryKey: ["ai-status"], queryFn: aiApi.getAiStatus });
-  const { data: currentAdmin } = useCurrentAdmin();
-  const canUseAi = aiStatus?.configured && adminCan(currentAdmin?.admin, "ai.use");
+  const canAi = useCapability("ai.use");
+  const canUseAi = Boolean(aiStatus?.configured && canAi);
 
   // Live mode uploads one file per request, one at a time: a bad or failed file only fails itself (and can be
   // retried), and the server appends each image after the last, so going one by one keeps the order they were added.

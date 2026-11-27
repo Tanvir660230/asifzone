@@ -12,8 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
+import { useCapabilities } from "@/hooks/use-capability";
 import { formatDate } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import * as storageApi from "@/lib/api/storage";
@@ -45,8 +44,8 @@ function folderOf(filePath: string) {
 export default function StoragePage() {
   const queryClient = useQueryClient();
   const { confirm, dialog } = useConfirmDialog();
-  const { data: currentAdmin } = useCurrentAdmin();
-  const canManage = adminCan(currentAdmin?.admin, "settings.manage");
+  const { can, ready: adminReady } = useCapabilities();
+  const canManage = can("settings.manage");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const unusedQuery = useQuery({ queryKey: ["storage", "unused"], queryFn: storageApi.getUnusedUploads, enabled: canManage });
@@ -104,7 +103,7 @@ export default function StoragePage() {
 
   const allSelected = Boolean(report?.unused.length) && selected.size === report?.unused.length;
 
-  if (currentAdmin && !canManage) {
+  if (adminReady && !canManage) {
     return (
       <ListPage title="Storage">
         <p className="text-sm text-ink-500">Only store owners can clean up uploaded files.</p>

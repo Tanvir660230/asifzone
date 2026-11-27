@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Wallet, TrendingUp, Package, Clock, Receipt, Banknote, Undo2, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { MetricDrillDown, type DrillTarget } from "@/components/admin/analytics/metric-drill-down";
 import * as analyticsApi from "@/lib/api/admin-analytics";
@@ -122,7 +123,7 @@ export default function FinancialAnalyticsPage() {
             {recentTrend.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No orders recorded yet.</p>
             ) : (
-              <table className="w-full min-w-[420px] text-sm">
+              <Table className="min-w-[420px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Date</th>
@@ -141,7 +142,7 @@ export default function FinancialAnalyticsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
             <p className="mt-3 text-xs text-ink-400">
               Cost of goods and margin use the cost recorded on each order line when it was sold; margin excludes VAT. Lines with no recorded cost

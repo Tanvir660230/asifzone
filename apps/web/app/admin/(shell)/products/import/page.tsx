@@ -8,14 +8,14 @@ import { PRODUCT_IMPORT_LIMITS, type ProductImportReport, type ProductImportResu
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
+import { Table } from "@/components/ui/table";
 import { ListPage } from "@/components/admin/patterns/list-page";
 import { FormSection } from "@/components/admin/form-section";
 import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
 import * as catalogApi from "@/lib/api/catalog";
 import { ApiError, describeApiError } from "@/lib/api-client";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
+import { useCapability } from "@/hooks/use-capability";
 import { cn } from "@/lib/utils";
 
 const SHOW_ISSUES = 100;
@@ -29,8 +29,7 @@ const Tile = ({ label, value, tone = "default" }: { label: string; value: number
 
 export default function ProductImportPage() {
   const queryClient = useQueryClient();
-  const { data: currentAdmin } = useCurrentAdmin();
-  const mayImport = adminCan(currentAdmin?.admin, "products.import");
+  const mayImport = useCapability("products.import");
   const { data: typesData } = useQuery({ queryKey: ["catalog-types", "all"], queryFn: () => catalogApi.listTypes(true) });
   const types = typesData?.types ?? [];
 
@@ -209,7 +208,7 @@ export default function ProductImportPage() {
                 {report.errors.length} problem{report.errors.length === 1 ? "" : "s"} to fix
               </h3>
               <div className="overflow-x-auto rounded-lg border border-danger-200">
-                <table className="w-full text-left text-sm">
+                <Table>
                   <thead className="bg-danger-50 text-xs font-medium text-ink-500">
                     <tr>
                       <th className="px-3 py-2">Line</th>
@@ -228,7 +227,7 @@ export default function ProductImportPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </Table>
               </div>
               {report.errors.length > SHOW_ISSUES && <p className="mt-1 text-xs text-ink-500">…and {report.errors.length - SHOW_ISSUES} more.</p>}
             </section>

@@ -28,7 +28,30 @@ import { PasswordInput } from "@/components/account/password-input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { ListPage } from "@/components/admin/patterns/list-page";
-import * as authApi from "@/lib/auth";
+import {
+  createAdminInvite,
+  listAdminInvites,
+  listAdmins,
+  resetAdminTwoStep,
+  revokeAdminInvite,
+  revokeAllAdminSessions,
+  setAdminActive,
+  setAdminPassword,
+  updateAdmin,
+  type AdminAccount,
+} from "@/lib/auth";
+
+const authApi = {
+  createAdminInvite,
+  listAdminInvites,
+  listAdmins,
+  resetAdminTwoStep,
+  revokeAdminInvite,
+  revokeAllAdminSessions,
+  setAdminActive,
+  setAdminPassword,
+  updateAdmin,
+};
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { ApiError } from "@/lib/api-client";
 import { formatDateShort, timeAgo } from "@/lib/format";
@@ -90,7 +113,7 @@ function EditAdminForm({
   onSubmit,
   onCancel,
 }: {
-  admin: authApi.AdminAccount;
+  admin: AdminAccount;
   onSubmit: (values: UpdateAdminInput) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -177,7 +200,7 @@ function SetPasswordForm({
 
 /** One teammate's actions, behind a ⋯ button: edit, password, 2-step reset, sign out everywhere, deactivate. */
 function MemberMenu({ admin, isSelf, onEdit, onPassword, onResetTwoStep, onSignOut, onToggleActive }: {
-  admin: authApi.AdminAccount;
+  admin: AdminAccount;
   isSelf: boolean;
   onEdit: () => void;
   onPassword: () => void;
@@ -257,8 +280,8 @@ export default function AdminTeamPage() {
   });
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ email: string; emailSent: boolean; acceptUrl: string } | null>(null);
-  const [editingAdmin, setEditingAdmin] = useState<authApi.AdminAccount | null>(null);
-  const [passwordAdmin, setPasswordAdmin] = useState<authApi.AdminAccount | null>(null);
+  const [editingAdmin, setEditingAdmin] = useState<AdminAccount | null>(null);
+  const [passwordAdmin, setPasswordAdmin] = useState<AdminAccount | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   // Roles holding every permission (from the API's role catalog, not a role name compared here): without 2-step sign-in
@@ -330,7 +353,7 @@ export default function AdminTeamPage() {
     }
   }
 
-  async function handleToggleActive(admin: authApi.AdminAccount) {
+  async function handleToggleActive(admin: AdminAccount) {
     const verb = admin.isActive ? "Deactivate" : "Reactivate";
     if (!(await confirm(`${verb} ${admin.name}'s account?`))) return;
     try {
@@ -341,12 +364,12 @@ export default function AdminTeamPage() {
     }
   }
 
-  async function handleResetTwoStep(admin: authApi.AdminAccount) {
+  async function handleResetTwoStep(admin: AdminAccount) {
     if (!(await confirm(`Reset ${admin.name}'s 2-step sign-in? They'll be signed out, can sign in with just their password, and should set it up again.`))) return;
     resetTwoStepMutation.mutate(admin.id);
   }
 
-  async function handleSignOut(admin: authApi.AdminAccount) {
+  async function handleSignOut(admin: AdminAccount) {
     if (!(await confirm(`Sign ${admin.name} out of every device?`))) return;
     signOutMutation.mutate(admin.id);
   }

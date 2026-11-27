@@ -94,8 +94,26 @@ export function cancelBatch(batchId: string) {
   return apiFetch<ParcelScanBatchView>(`/api/parcel-scans/batches/${batchId}/cancel`, { method: "POST" });
 }
 
+export interface DispatchRemainingParcel {
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  area: string;
+  itemCount: number;
+  consignmentId: string | null;
+  bookedAt: string;
+}
+
+export interface DispatchSummary {
+  bookedToday: number;
+  handedOverToday: number;
+  receivedBackToday: number;
+  remainingTotal: number;
+  remaining: DispatchRemainingParcel[];
+}
+
 export function dispatchSummary() {
-  return apiFetch<{ bookedToday: number; handedOverToday: number }>("/api/parcel-scans/summary");
+  return apiFetch<DispatchSummary>("/api/parcel-scans/summary");
 }
 
 export interface CourierAutomationRun {

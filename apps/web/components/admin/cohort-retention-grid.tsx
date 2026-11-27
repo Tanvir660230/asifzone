@@ -1,4 +1,5 @@
 import type { CohortRetention } from "@/lib/api/admin-analytics";
+import { Table } from "@/components/ui/table";
 
 const MAX_OFFSET = 5;
 
@@ -17,7 +18,7 @@ export function CohortRetentionGrid({ cohorts }: { cohorts: CohortRetention[] })
 
   return (
     <div className="overflow-x-auto">
-      <table data-no-stack="" className="w-full min-w-[560px] text-sm">
+      <Table data-no-stack="" className="min-w-[560px]">
         <thead>
           <tr className="ui-card-table-head">
             <th className="pb-2 pr-4">Cohort</th>
@@ -59,7 +60,7 @@ export function CohortRetentionGrid({ cohorts }: { cohorts: CohortRetention[] })
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </div>
   );
 }

@@ -293,13 +293,59 @@ export async function getBatch(batchId: string): Promise<ParcelScanBatchView> {
   };
 }
 
-/** Today's dispatch picture: booked today vs handed over today (the pilot's "booked − handed over = 0"). */
+/** Today's parcel movement picture: booked today, handed over today, received back today, plus the booked orders still waiting to be handed over. */
 export async function dispatchSummary(dayStart: Date) {
-  const [booked, handedOver] = await Promise.all([
+  const remainingWhere: Prisma.OrderWhereInput = {
+    deletedAt: null,
+    courierBookedAt: { gte: dayStart },
+    courierConsignmentId: { not: null },
+    handedOverAt: null,
+    status: { notIn: ["PENDING", ...DISPATCH_CLOSED] },
+  };
+  const [booked, handedOver, receivedBackToday, remainingTotal, remainingRows] = await Promise.all([
     prisma.order.count({ where: { deletedAt: null, courierBookedAt: { gte: dayStart }, courierConsignmentId: { not: null } } }),
     prisma.order.count({ where: { deletedAt: null, courierBookedAt: { gte: dayStart }, handedOverAt: { not: null } } }),
+    prisma.order.count({
+      where: {
+        deletedAt: null,
+        OR: [
+          { receivedBackAt: { gte: dayStart } },
+          { parcelReceipts: { some: { createdAt: { gte: dayStart }, kind: "RECEIPT" } } },
+        ],
+      },
+    }),
+    prisma.order.count({ where: remainingWhere }),
+    prisma.order.findMany({
+      where: remainingWhere,
+      orderBy: { courierBookedAt: "asc" },
+      take: 100,
+      select: {
+        id: true,
+        orderNumber: true,
+        customerName: true,
+        shippingArea: true,
+        shippingDistrict: true,
+        courierConsignmentId: true,
+        courierBookedAt: true,
+        items: { select: { quantity: true } },
+      },
+    }),
   ]);
-  return { bookedToday: booked, handedOverToday: handedOver };
+  return {
+    bookedToday: booked,
+    handedOverToday: handedOver,
+    receivedBackToday,
+    remainingTotal,
+    remaining: remainingRows.map((o) => ({
+      orderId: o.id,
+      orderNumber: o.orderNumber,
+      customerName: o.customerName,
+      area: [o.shippingArea, o.shippingDistrict].filter(Boolean).join(", "),
+      itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
+      consignmentId: o.courierConsignmentId,
+      bookedAt: (o.courierBookedAt ?? new Date()).toISOString(),
+    })),
+  };
 }
 
 /**

@@ -10,8 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { SmsComposer } from "@/components/admin/sms-composer";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-client";
-import { adminCan } from "@/lib/auth";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { useCapability } from "@/hooks/use-capability";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatPrice, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -21,8 +20,7 @@ const DEFAULT_MESSAGE = "Hi {{first_name}}, you left something in your cart. Com
 /** Abandoned carts as a recovery list: who left what, and a reminder SMS to the ones who opted in to marketing SMS. */
 export function AbandonedCartsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: me } = useCurrentAdmin();
-  const canMessage = adminCan(me?.admin, "customers.message");
+  const canMessage = useCapability("customers.message");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [body, setBody] = useState(DEFAULT_MESSAGE);
 

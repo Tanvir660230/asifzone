@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Search, XCircle, ShoppingBag, LogOut, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
@@ -134,7 +135,7 @@ export default function SearchAnalyticsPage() {
             {!noResults || noResults.queries.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No zero-result searches for this range.</p>
             ) : (
-              <table className="w-full min-w-[640px] text-sm">
+              <Table className="min-w-[640px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Query</th>
@@ -168,7 +169,7 @@ export default function SearchAnalyticsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, ChevronRight, Megaphone } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
@@ -135,16 +136,45 @@ function PeriodBar({ period, onChange, bad, tooLong }: { period: ProfitPeriod; o
 function Hero({ totals, prior, compareWith, label }: { totals: ProfitTotals; prior: ProfitTotals | null; compareWith: string; label: string }) {
   const loss = totals.profit < 0;
   const diff = prior ? Math.round(totals.profit - prior.profit) : null;
+  const margin = totals.marginPct;
+  const health =
+    totals.sales <= 0
+      ? { variant: "neutral" as const, text: "No delivered sales yet" }
+      : loss
+        ? { variant: "danger" as const, text: "Operating at a loss" }
+        : margin !== null && margin >= 15
+          ? { variant: "success" as const, text: `Healthy margin · ${Math.round(margin)}%` }
+          : margin !== null && margin >= 8
+            ? { variant: "info" as const, text: `Moderate margin · ${Math.round(margin)}%` }
+            : { variant: "warning" as const, text: `Thin margin${margin !== null ? ` · ${Math.round(margin)}%` : ""}` };
+  const topCost =
+    totals.sales > 0
+      ? [...PARTS]
+          .map((p) => ({ label: p.label, amount: Math.max(0, totals[p.key]), pct: Math.round((Math.max(0, totals[p.key]) / totals.sales) * 100) }))
+          .filter((p) => p.amount > 0)
+          .sort((a, b) => b.amount - a.amount)[0] ?? null
+      : null;
+
   return (
     <div className="liquid-pass p-5 sm:p-7" data-testid="profit-hero">
-      <p className="text-sm text-fg-muted">{label}</p>
-      <p className={cn("mt-1 text-figure-md font-semibold leading-tight tracking-tight tabular-nums sm:text-figure-lg", loss ? "text-danger-600" : "text-fg")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-fg-muted">{label}</p>
+        <Badge variant={health.variant} dot data-testid="profit-health-badge">
+          {health.text}
+        </Badge>
+      </div>
+      <p className={cn("mt-1.5 text-figure-md font-semibold leading-tight tracking-tight tabular-nums sm:text-figure-lg", loss ? "text-danger-600" : "text-fg")}>
         {loss ? `${money(-totals.profit)} loss` : `${money(totals.profit)} profit`}
       </p>
       <p className="mt-1 text-base text-fg-muted">
         from <span className="font-medium tabular-nums text-fg">{money(totals.sales)}</span> in sales
-        {totals.marginPct !== null && totals.sales > 0 && <> · you keep <span className="font-medium tabular-nums text-fg">{money(Math.max(0, totals.marginPct))}</span> of every {formatPrice(100)}</>}
+        {margin !== null && totals.sales > 0 && <> · you keep <span className="font-medium tabular-nums text-fg">{money(Math.max(0, margin))}</span> of every {formatPrice(100)}</>}
       </p>
+      {topCost && (
+        <p className="mt-1.5 text-xs text-fg-muted">
+          Biggest cost: <span className="font-medium text-fg">{topCost.label}</span> ({topCost.pct}% of sales · {money(topCost.amount)})
+        </p>
+      )}
       {Math.round(totals.stockCorrections) !== 0 && (
         <p className="mt-2 text-sm text-fg-muted" data-testid="profit-corrections">
           Includes stock corrections of <span className="font-medium tabular-nums text-fg">{money(-totals.stockCorrections)}</span> (damaged or lost stock, count fixes, cost corrections) — from selling alone,{" "}
@@ -224,34 +254,66 @@ function ChartCard({ data, period, onChange, highlight }: { data: booksApi.Profi
 // ── where the money went ─────────────────────────────────────────────────────────────────────────────────────────────
 
 const PARTS: Array<{ key: "goods" | "packaging" | "delivery" | "paymentFees" | "ads" | "running"; label: string; hint: string; color: string; href: string }> = [
-  { key: "goods", label: "Goods", hint: "what the items sold cost you", color: "bg-ink-700", href: "/admin/finance/inventory-cutover" },
-  { key: "packaging", label: "Packaging", hint: "bags, boxes, labels", color: "bg-ink-600", href: "/admin/finance/packaging" },
-  { key: "delivery", label: "Delivery", hint: "courier charges", color: "bg-ink-500", href: "/admin/finance/courier" },
-  { key: "paymentFees", label: "Payment fees", hint: "bKash, Nagad and card fees", color: "bg-ink-400", href: "/admin/finance/settlements" },
-  { key: "ads", label: "Ads", hint: "Facebook & Instagram", color: "bg-ink-300", href: "/admin/finance/ads" },
-  { key: "running", label: "Running costs", hint: "rent, salaries, hosting, other", color: "bg-ink-200", href: "/admin/finance/expenses" },
+  { key: "goods", label: "Goods", hint: "what the items sold cost you", color: "bg-ink-800", href: "/admin/finance/inventory-cutover" },
+  { key: "packaging", label: "Packaging", hint: "bags, boxes, labels", color: "bg-ink-500", href: "/admin/finance/packaging" },
+  { key: "delivery", label: "Delivery", hint: "courier charges", color: "bg-info-500", href: "/admin/finance/courier" },
+  { key: "paymentFees", label: "Payment fees", hint: "bKash, Nagad and card fees", color: "bg-ink-300", href: "/admin/finance/settlements" },
+  { key: "ads", label: "Ads", hint: "Facebook, Instagram & TikTok", color: "bg-warning-500", href: "/admin/finance/ads" },
+  { key: "running", label: "Running costs", hint: "rent, salaries, hosting, other", color: "bg-accent", href: "/admin/finance/expenses" },
 ];
 
 function WhereItWent({ totals }: { totals: ProfitTotals }) {
   const base = totals.sales > 0 ? totals.sales : 0;
+  const totalCosts = PARTS.reduce((sum, p) => sum + Math.max(0, totals[p.key]), 0);
+  // When costs exceed sales (operating at a loss), scale bar widths against totalCosts so every segment stays visible.
+  const barBase = Math.max(base, totalCosts);
   const per100 = (v: number) => (base ? (Math.max(0, v) / base) * 100 : 0);
+  const barPct = (v: number) => (barBase ? (Math.max(0, v) / barBase) * 100 : 0);
   const loss = totals.profit < 0;
   return (
     <Card className="p-5 sm:p-6" data-testid="profit-breakdown">
-      <h2 className="text-lg font-semibold tracking-tight text-fg">Where every {formatPrice(100)} of sales went</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-tight text-fg">Where every {formatPrice(100)} of sales went</h2>
+        {base > 0 && (
+          <span className={cn("text-xs font-semibold tabular-nums", loss ? "text-danger-600" : "text-success-700")}>
+            {loss ? `−${Math.round((-totals.profit / base) * 100)}% net` : `${Math.round(per100(totals.profit))}% kept`}
+          </span>
+        )}
+      </div>
       {base > 0 ? (
         <>
-          <div className="mt-4 flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-ink-100" aria-hidden="true">
-            {PARTS.map((p) => per100(totals[p.key]) > 0 && <span key={p.key} className={p.color} style={{ width: `${per100(totals[p.key])}%` }} />)}
-            {!loss && totals.profit > 0 && <span className="bg-success-500" style={{ width: `${per100(totals.profit)}%` }} />}
+          <div className="mt-4 flex h-4 w-full gap-0.5 overflow-hidden rounded-full bg-ink-100" role="img" aria-label="Sales cost and profit breakdown bar">
+            {PARTS.map((p) => {
+              const pct = barPct(totals[p.key]);
+              return pct > 0 ? (
+                <span
+                  key={p.key}
+                  title={`${p.label}: ${Math.round(per100(totals[p.key]))}% of sales (${money(totals[p.key])})`}
+                  className={cn("h-full transition-all duration-300", p.color)}
+                  style={{ width: `${pct}%` }}
+                />
+              ) : null;
+            })}
+            {!loss && totals.profit > 0 && (
+              <span
+                title={`You keep: ${Math.round(per100(totals.profit))}% of sales (${money(totals.profit)})`}
+                className="h-full bg-success-500 transition-all duration-300"
+                style={{ width: `${barPct(totals.profit)}%` }}
+              />
+            )}
           </div>
+          {loss && (
+            <p className="mt-2.5 rounded-lg bg-danger-50 px-3 py-2 text-xs font-medium text-danger-700">
+              Costs exceeded sales by {money(-totals.profit)} in this period. Tap any cost line below to inspect it.
+            </p>
+          )}
           <ul className="mt-3 divide-y divide-line-subtle">
             {PARTS.map((p) => (
               <li key={p.key}>
                 <Link href={p.href} className="group flex items-center gap-3 py-2.5 text-sm">
                   <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", p.color)} aria-hidden="true" />
                   <span className="min-w-0 flex-1"><span className="block text-fg group-hover:text-accent">{p.label}</span><span className="hidden text-xs text-fg-muted sm:block">{p.hint}</span></span>
-                  <span className="w-12 text-right tabular-nums text-fg-muted">{formatPrice(Math.round(per100(totals[p.key])))}</span>
+                  <span className="w-12 text-right tabular-nums text-fg-muted">{Math.round(per100(totals[p.key]))}%</span>
                   <span className="w-24 text-right tabular-nums text-fg">{money(totals[p.key])}</span>
                 </Link>
               </li>
@@ -267,7 +329,7 @@ function WhereItWent({ totals }: { totals: ProfitTotals }) {
             <li className="flex items-center gap-3 py-2.5 text-sm font-medium">
               <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", loss ? "bg-danger-500" : "bg-success-500")} aria-hidden="true" />
               <span className="flex-1 text-fg">{loss ? "Lost" : "You keep"}</span>
-              <span className={cn("w-12 text-right tabular-nums", loss ? "text-danger-600" : "text-success-700")}>{loss ? `−${formatPrice(Math.round(-totals.profit / base * 100))}` : formatPrice(Math.round(per100(totals.profit)))}</span>
+              <span className={cn("w-12 text-right tabular-nums", loss ? "text-danger-600" : "text-success-700")}>{loss ? `−${Math.round((-totals.profit / base) * 100)}%` : `${Math.round(per100(totals.profit))}%`}</span>
               <span className={cn("w-24 text-right tabular-nums", loss ? "text-danger-600" : "text-success-700")}>{money(totals.profit)}</span>
             </li>
           </ul>

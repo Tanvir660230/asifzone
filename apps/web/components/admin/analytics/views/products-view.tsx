@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Info, ShoppingCart, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import { DemandForecastTable } from "@/components/admin/demand-forecast-table";
 import { SlowMovingTable } from "@/components/admin/slow-moving-table";
@@ -243,7 +244,7 @@ export default function ProductIntelligencePage() {
             {!risk || risk.products.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No orders recorded yet for this range.</p>
             ) : (
-              <table className="w-full min-w-[560px] text-sm">
+              <Table className="min-w-[560px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Product</th>
@@ -270,7 +271,7 @@ export default function ProductIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
             <p className="mt-3 text-xs text-ink-400">
               Refund rate is an order-level signal (of orders containing this product, how many ended up fully refunded) — not an exact
@@ -315,7 +316,7 @@ export default function ProductIntelligencePage() {
             {!variants || variants.variants.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No sales recorded yet for this range.</p>
             ) : (
-              <table className="w-full min-w-[560px] text-sm">
+              <Table className="min-w-[560px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">SKU</th>
@@ -338,7 +339,7 @@ export default function ProductIntelligencePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

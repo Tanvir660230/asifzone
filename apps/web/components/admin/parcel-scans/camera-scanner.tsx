@@ -31,6 +31,10 @@ export interface CameraScannerProps {
   title?: string;
   /** Live count of accepted parcels in this session/batch, shown as a pill inside the viewfinder. */
   scannedCount?: number;
+  /** Optional live progress label (e.g. "22 / 25 · 3 left") shown in the top bar instead of a plain scanned count. */
+  progressLabel?: string;
+  /** Highlights the progress pill green when all expected parcels are accounted for. */
+  progressComplete?: boolean;
   /** Live feedback from the parent station so operators see Added / Duplicate / Error without closing the camera. */
   feedback?: CameraFeedback | null;
 }
@@ -42,7 +46,7 @@ export interface CameraScannerProps {
  * - Supports Torch (flashlight), optical/digital Zoom (1× / 1.5× / 2×), and switching rear lenses (wide / macro).
  * - Renders live scan feedback and batch count directly inside the viewfinder so continuous Dispatch scanning never stalls.
  */
-export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedCount, feedback }: CameraScannerProps) {
+export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedCount, progressLabel, progressComplete, feedback }: CameraScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const [state, setState] = useState<"starting" | "scanning" | "denied" | "unsupported">("starting");
@@ -326,7 +330,7 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
         <div className="relative z-20 flex items-center justify-between gap-2 bg-gradient-to-b from-black/80 via-black/45 to-transparent px-4 pb-4 pt-[max(0.85rem,env(safe-area-inset-top))]">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-base font-semibold tracking-tight">{title}</span>
-            {typeof scannedCount === "number" && (
+            {!progressLabel && typeof scannedCount === "number" && (
               <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-semibold tabular-nums backdrop-blur-md">
                 {scannedCount} scanned
               </span>
@@ -378,6 +382,21 @@ export function CameraScanner({ onCode, onClose, title = "Scan parcel", scannedC
             </button>
           </div>
         </div>
+
+        {/* Live progress pill centered below the top bar so 375px screens never squish the title or controls */}
+        {progressLabel && (
+          <div className="pointer-events-none relative z-20 -mt-1 flex justify-center px-4 pb-2">
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-semibold tabular-nums shadow-sm backdrop-blur-md",
+                progressComplete ? "bg-success-600/90 text-white" : "bg-black/65 text-white ring-1 ring-white/20",
+              )}
+              data-testid="camera-progress"
+            >
+              {progressLabel}
+            </span>
+          </div>
+        )}
 
         {/* Full-bleed camera viewport */}
         <div className="relative flex-1 overflow-hidden">

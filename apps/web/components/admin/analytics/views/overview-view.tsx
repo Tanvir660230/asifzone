@@ -28,6 +28,7 @@ import {
   Bell,
   ListChecks,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";
@@ -133,17 +134,68 @@ export default function ExecutiveOverviewPage() {
 
   const topInsights = insights?.insights.slice(0, 3) ?? [];
   const recentActivity = activity?.items.slice(0, 6) ?? [];
+  const criticalCount = (insights?.insights ?? []).filter((i) => i.severity === "critical").length;
+  const warningCount = (insights?.insights ?? []).filter((i) => i.severity === "warning").length;
+  const lowStockCount = lowStock?.variants.length ?? 0;
+  const returnRate = overview?.returnRatePct ?? 0;
+  const healthStatus =
+    criticalCount > 0 || returnRate > 18
+      ? { variant: "danger" as const, label: "Action required" }
+      : warningCount > 0 || returnRate > 10 || lowStockCount > 0 || (revenueTrendPct !== null && revenueTrendPct < -10)
+        ? { variant: "warning" as const, label: "Needs attention" }
+        : { variant: "success" as const, label: "Looking healthy" };
 
   return (
     <div className="space-y-8">
-      {/* On a phone the page's own large title already says this. */}
-      <div className="max-sm:hidden">
-        <h2 className="text-lg font-semibold tracking-tight text-fg">At a glance</h2>
-        <p className="mt-1 text-sm text-ink-500">
-          The business at a glance across every BI domain — updated roughly every minute. Sections below respond to the date range above;
-          lifetime figures are labeled separately.
-        </p>
-      </div>
+      {/* Executive summary strip: 5-second plain-English verdict with jump link to real Books Profit. */}
+      <Card className="p-4 sm:p-5" data-testid="owner-smart-summary">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold tracking-tight text-fg">Business summary</h2>
+              {overview && <Badge variant={healthStatus.variant} dot>{healthStatus.label}</Badge>}
+            </div>
+            <p className="text-sm text-fg-muted">
+              {revenueSeries ? (
+                <>
+                  Last {rangeDays} day{rangeDays === 1 ? "" : "s"}:{" "}
+                  <span className="font-semibold tabular-nums text-fg">{formatPrice(periodRevenue)}</span> net sales across{" "}
+                  <span className="font-medium tabular-nums text-fg">{periodOrders.toLocaleString(DISPLAY_LOCALE)}</span> order{periodOrders === 1 ? "" : "s"}
+                  {revenueTrendPct !== null ? ` (${revenueTrendPct >= 0 ? "+" : ""}${revenueTrendPct.toFixed(1)}% vs prior)` : ""}.
+                  {overview && (
+                    <>
+                      {" "}Return rate is{" "}
+                      <span className={cn("font-medium tabular-nums", returnRate > 10 ? "text-warning-800" : "text-fg")}>{returnRate.toFixed(1)}%</span>
+                      {lowStockCount > 0 ? ` · ${lowStockCount} item${lowStockCount === 1 ? "" : "s"} low on stock.` : "."}
+                    </>
+                  )}
+                </>
+              ) : (
+                "Preparing your business summary…"
+              )}
+            </p>
+          </div>
+          <Link
+            href="/admin/finance/profit"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-muted px-3.5 py-2 text-xs font-semibold text-fg ring-1 ring-line-subtle transition-colors hover:ring-line-strong"
+          >
+            Open Profit report <ArrowUpRight size={13} aria-hidden="true" />
+          </Link>
+        </div>
+        {overview && (
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-line-subtle pt-3 text-xs">
+            <Link href="/admin/orders/returns-in" className="rounded-full bg-surface-muted px-2.5 py-1 text-fg-muted hover:text-fg">
+              Returns: <span className={cn("font-semibold tabular-nums", returnRate > 10 ? "text-warning-800" : "text-success-700")}>{returnRate.toFixed(1)}%</span>
+            </Link>
+            <Link href="/admin/inventory" className="rounded-full bg-surface-muted px-2.5 py-1 text-fg-muted hover:text-fg">
+              Low stock: <span className={cn("font-semibold tabular-nums", lowStockCount > 0 ? "text-warning-800" : "text-fg")}>{lowStockCount}</span>
+            </Link>
+            <Link href="/admin/analytics/overview?view=insights" className="rounded-full bg-surface-muted px-2.5 py-1 text-fg-muted hover:text-fg">
+              Alerts: <span className={cn("font-semibold tabular-nums", criticalCount > 0 ? "text-danger-700" : warningCount > 0 ? "text-warning-800" : "text-success-700")}>{criticalCount + warningCount}</span>
+            </Link>
+          </div>
+        )}
+      </Card>
 
       {/* Priority KPIs — revenue for the selected range (with a period-over-period comparison) plus
           the handful of lifetime numbers an owner checks daily. Deliberately 6 tiles, not the
@@ -157,7 +209,7 @@ export default function ExecutiveOverviewPage() {
         {revenueSeries ? (
           <HeroRevenueCard
             className="lg:col-span-2"
-            label={`Realised net sales — ${rangeDays} day${rangeDays === 1 ? "" : "s"} selected`}
+            label={`Net sales — last ${rangeDays} day${rangeDays === 1 ? "" : "s"}`}
             value={formatPrice(periodRevenue)}
             todayOrders={periodOrders}
             ordersSuffix="in this period"
@@ -179,7 +231,7 @@ export default function ExecutiveOverviewPage() {
           ) : (
             <>
               <StatTile
-                label="Gross margin · sales estimate (lifetime)"
+                label="Est. gross profit (all-time)"
                 value={formatPriceWhole(overview.grossProfitLifetime)}
                 icon={<TrendingUp size={20} />}
                 trendPct={overview.profitGrowthPct}
@@ -190,7 +242,7 @@ export default function ExecutiveOverviewPage() {
                 value={customerInsights ? customerInsights.totalCustomers.toLocaleString(DISPLAY_LOCALE) : "…"}
                 icon={<Users size={20} />}
               />
-              <StatTile label="Conversion rate (lifetime)" value={`${overview.conversionRatePct.toFixed(1)}%`} icon={<Target size={20} />} />
+              <StatTile label="Visitor conversion (all-time)" value={`${overview.conversionRatePct.toFixed(1)}%`} icon={<Target size={20} />} />
               <StatTile label="Avg order value" value={formatPriceWhole(Math.round(overview.aovLifetime))} icon={<Receipt size={20} />} />
               <StatTile
                 label="Return rate"
@@ -199,7 +251,7 @@ export default function ExecutiveOverviewPage() {
                 tone={overview.returnRatePct > 10 ? "warning" : "default"}
               />
               <StatTile
-                label="Realised net sales growth (30d)"
+                label="30-day sales growth"
                 value={`${overview.revenueGrowthPct >= 0 ? "+" : ""}${overview.revenueGrowthPct.toFixed(1)}%`}
                 icon={<Wallet size={20} />}
                 tone={overview.revenueGrowthPct >= 0 ? "accent" : "warning"}

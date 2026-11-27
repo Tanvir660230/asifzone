@@ -48,12 +48,17 @@
     --section-rhythm-base: var(--section-rhythm);
   }
 
-  body {
-    @apply bg-canvas text-fg antialiased;
+  html {
+    /* Reserves the scrollbar track on Windows PC/laptop so modals and route changes never jump 10px sideways. */
+    scrollbar-gutter: stable;
+    /* In-page links (a landing page's "order" button to #order, #reviews) glide rather than jump. */
+    scroll-behavior: smooth;
   }
 
-  html {
-    scroll-behavior: smooth;
+  body {
+    @apply bg-canvas text-fg antialiased;
+    /* Prevents sideways rubber-band wobble on mobile/tablet without breaking position: sticky. */
+    overflow-x: clip;
   }
 
   /* Sitewide keyboard-focus ring — visible, on-brand, never suppressed. Form controls replace it
@@ -194,8 +199,8 @@
      edge and shadow as .liquid. A storefront preview inside the admin keeps the store's own cards. */
   [data-surface="admin"] [data-card="default"]:not([data-surface="storefront"] *) {
     @apply rounded-2xl border-transparent;
-    background: var(--liquid-fill);
-    box-shadow: var(--liquid-shadow);
+    background: var(--liquid-fill, rgb(var(--color-surface)));
+    box-shadow: var(--liquid-shadow, none);
   }
   .liquid {
     background: var(--liquid-fill, rgb(var(--color-surface)));
@@ -622,19 +627,20 @@
     }
   }
 
-  [data-surface="admin"] .ui-control {
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) .ui-control {
     @apply h-control border-line bg-surface;
   }
-  [data-surface="admin"] .ui-control:focus,
-  [data-surface="admin"] .ui-control:focus-visible {
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) .ui-control:focus,
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) .ui-control:focus-visible {
     @apply border-accent ring-4 ring-accent/15;
   }
-  [data-surface="admin"] textarea.ui-control {
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) textarea.ui-control {
     @apply h-auto;
     /* Grows with its text (an SMS template, a note) instead of clipping it mid-line; capped so a long one scrolls. */
     field-sizing: content;
     min-height: 4.5rem;
     max-height: 50vh;
+    max-height: 50dvh;
   }
   /* While the on-screen keyboard is open (hooks/use-keyboard-flag.ts), sticky bars step aside for the field. */
   @media (max-width: 1023px) {
@@ -642,12 +648,14 @@
       display: none;
     }
   }
-  /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). A display-size field
-     (data-display, e.g. the money amount) is already bigger than 16px, so it keeps its own size. */
-  @media (max-width: 767px) {
-    [data-surface="admin"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-display]), select, textarea) {
+  /* Phones & touch tablets (iPad): form fields at 16px, or Safari zooms the page in on focus (Blueprint V2 §X).
+     A display-size field (data-display, e.g. the money amount) is already bigger than 16px, so it keeps its own size. */
+  @media (max-width: 767px), (hover: none) and (pointer: coarse) {
+    :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-display]), select, textarea) {
       font-size: 16px;
     }
+  }
+  @media (max-width: 767px) {
     /* The navigation bar's back button (components/admin/mobile-nav-bar.tsx) replaces the page's own "Back to …". */
     [data-shell][data-nav-back] [data-back-link] {
       display: none;
@@ -657,35 +665,37 @@
       margin-top: 0 !important;
     }
   }
-  /* Phones, in the console and the store: a Modal is an iOS sheet — up from the bottom edge, its body scrolling under a
-     fixed title and action row,
-     the actions full width above the home indicator. */
-  @media (max-width: 639px) {
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-overlay {
+  /* Phones & small tablets (<768px, aligned with .ui-sheet): a Modal is an iOS sheet — up from the bottom edge, its
+     body scrolling under a fixed title and action row, the actions full width above the home indicator. Modals portal
+     to <body>, so both surfaces match via body:has(...). */
+  @media (max-width: 767.98px) {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-overlay {
       @apply items-end overflow-hidden p-0;
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-panel {
       @apply flex max-w-none animate-slide-in-up flex-col rounded-b-none rounded-t-[var(--sheet-radius)] border-x-0 border-b-0;
       max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
     }
     /* The grabber. */
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel::before {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-panel::before {
       @apply mx-auto mt-2 block h-[5px] w-9 shrink-0 rounded-full bg-ink-900/[0.15];
       content: "";
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel > :first-child {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-panel > :first-child {
       @apply shrink-0;
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-body {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-body {
       @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-5;
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-footer {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-footer {
       @apply shrink-0 flex-col-reverse px-5;
       padding-bottom: max(1rem, env(safe-area-inset-bottom));
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-footer > * {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-footer > * {
       @apply w-full;
     }
+  }
+  @media (max-width: 639px) {
 
     /* Page titles (components/ui/page-header.tsx) as iOS large titles: no explanatory paragraph (a page keeps a live
        summary with `descriptionOnPhone`), the actions beside the title while they fit and on one swipeable row below
@@ -757,12 +767,13 @@
       margin-top: 1.5rem;
     }
     /* Panels written with a flat 24px (p-6 / px-6) pad 16px at the sides on a phone — 16px more line for content on
-       each card. An axis the element sets itself (py-12 on an empty state, px-3) keeps its own value. */
-    [data-surface="admin"] :is(.p-6:not([class*="px-"]), .px-6):not([data-surface="storefront"] *) {
+       each card. Exact base-class checks (~=) keep explicit phone overrides (px-3, py-12) without being fooled by
+       larger-screen classes like sm:px-8. */
+    [data-surface="admin"] :is(.p-6:not([class~="px-0"], [class~="px-1"], [class~="px-2"], [class~="px-3"], [class~="px-4"], [class~="px-5"], [class~="px-8"]), .px-6):not([data-surface="storefront"] *) {
       padding-left: 1rem;
       padding-right: 1rem;
     }
-    [data-surface="admin"] :is(.p-6:not([class*="py-"], [class*="pt-"], [class*="pb-"]), .py-6):not([data-surface="storefront"] *) {
+    [data-surface="admin"] :is(.p-6:not([class~="py-0"], [class~="py-1"], [class~="py-2"], [class~="py-3"], [class~="py-4"], [class~="py-5"], [class~="py-8"], [class~="py-10"], [class~="py-12"], [class~="pt-0"], [class~="pb-0"]), .py-6):not([data-surface="storefront"] *) {
       padding-top: 1.25rem;
       padding-bottom: 1.25rem;
     }
@@ -882,7 +893,7 @@
   [data-surface="admin"] .ui-menu-item {
     @apply rounded-md px-2.5 py-1.5 text-[13px] text-fg hover:bg-accent hover:text-accent-fg focus-visible:bg-accent focus-visible:text-accent-fg;
   }
-  [data-surface="admin"] .ui-overlay {
+  body:has([data-surface="admin"]) .ui-overlay {
     @apply bg-ink-950/20 backdrop-blur-[3px];
   }
   /* A page title names the page; it does not headline it (owner, 2026-11-12: "size efficiency"). From tablet width the
@@ -912,6 +923,82 @@
       padding-top: 0.5625rem;
       padding-bottom: 0.5625rem;
     }
+  }
+
+  /* ── Store Console Settings layout recipes ──────────────────────────────────────────────────
+     Shared layout and surface recipes for multi-category preference pages (Settings › Store & branding,
+     Contact, Orders & delivery, Checkout, Integrations). Uses design tokens only so every store inherits
+     consistent spacing across phone, tablet, laptop, and desktop. */
+  .ui-settings-shell {
+    @apply grid grid-cols-1 gap-5 lg:grid-cols-[15.5rem_minmax(0,1fr)] lg:items-start lg:gap-7;
+  }
+  .ui-settings-nav {
+    @apply hidden lg:sticky lg:flex lg:flex-col lg:gap-3;
+    top: calc(var(--density-chrome, 4rem) + 1rem);
+  }
+  .ui-settings-nav-list {
+    @apply flex flex-col gap-1;
+  }
+  .ui-settings-nav-item {
+    @apply flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left text-fg-muted transition-[background-color,color,box-shadow] duration-fast ease-smooth hover:bg-ink-900/[0.04] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40;
+  }
+  .ui-settings-nav-item[data-active="true"] {
+    @apply bg-surface text-fg shadow-sm ring-1 ring-line-subtle;
+  }
+  .ui-settings-nav-icon {
+    @apply mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-fg-muted transition-colors duration-fast ease-smooth;
+  }
+  .ui-settings-nav-item[data-active="true"] .ui-settings-nav-icon {
+    @apply bg-accent/10 text-accent;
+  }
+  /* Phone & tablet category pill strip: single swipeable row with generous touch targets. */
+  .ui-settings-pill-bar {
+    @apply flex items-center gap-1.5 overflow-x-auto pb-1 lg:hidden;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .ui-settings-pill-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .ui-settings-pill {
+    @apply inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border border-line-subtle bg-surface px-3.5 py-2 text-sm font-medium text-fg-muted transition-[background-color,border-color,color,box-shadow] duration-fast ease-smooth hover:border-line hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40;
+  }
+  .ui-settings-pill[data-active="true"] {
+    @apply border-accent/30 bg-accent/10 text-accent shadow-sm;
+  }
+  /* Card container for a group of related settings fields. */
+  .ui-settings-card {
+    @apply rounded-2xl border border-line-subtle bg-surface p-4 shadow-sm sm:p-6;
+    scroll-margin-top: calc(var(--density-chrome, 4rem) + 1rem);
+  }
+  .ui-settings-card-head {
+    @apply mb-4 flex items-start justify-between gap-3 border-b border-line-subtle pb-3.5;
+  }
+  .ui-settings-card-title {
+    @apply text-base font-semibold tracking-tight text-fg;
+  }
+  .ui-settings-card-desc {
+    @apply mt-0.5 text-xs text-fg-muted;
+  }
+  .ui-settings-footer {
+    @apply mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line-subtle pt-4;
+  }
+  /* Sub-option row (payment gateways, floating contact channels, tax switches). */
+  .ui-setting-row {
+    @apply rounded-xl border border-line-subtle bg-surface-muted/40 p-4 transition-[background-color,border-color,box-shadow] duration-fast ease-smooth;
+  }
+  .ui-setting-row[data-enabled="true"] {
+    @apply border-accent/25 bg-surface shadow-sm;
+  }
+  .ui-setting-row-head {
+    @apply flex items-start justify-between gap-3;
+  }
+  /* Shortcut row pointing to a sibling settings page (Delivery zones, Social links, etc.). */
+  .ui-setting-link-row {
+    @apply flex items-center justify-between gap-3 rounded-xl border border-line-subtle bg-surface-muted/50 px-3.5 py-2.5 text-sm text-fg transition-[background-color,border-color] duration-fast ease-smooth hover:border-line hover:bg-surface;
+  }
+  .ui-settings-dirty-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full bg-warning-500;
   }
 
   /* ── Scroll reveal (components/storefront/reveal.tsx) ────────────────────────────────────────
@@ -1007,18 +1094,20 @@
     font-size: var(--fine-print-size, 0.6875rem);
   }
   /* A bigger touch area without a bigger look: an invisible layer centred on a small control (a gallery dot, a footer link,
-     a text link), at least 44px each way. It changes no pixels, so every store has it. */
+     a text link), at least 44px each way. Touch-only so dense desktop rows never intercept clicks on adjacent buttons. */
   .ui-hit {
     position: relative;
   }
-  .ui-hit::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: max(100%, 2.75rem);
-    height: max(100%, 2.75rem);
-    transform: translate(-50%, -50%);
+  @media (pointer: coarse) {
+    .ui-hit::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
   }
 
   /* ── The storefront on a phone, like an app ─────────────────────────────────────────────────
@@ -1038,7 +1127,7 @@
       user-select: none;
       -webkit-touch-callout: none;
     }
-    body:has([data-storefront]) :is(a, button, [role="button"], summary):not(:disabled):not(.ui-press):active {
+    body:has([data-storefront], [data-surface="admin"]) :is(a, button, [role="button"], summary):not(:disabled):not(.ui-press):active {
       opacity: 0.6;
     }
     .ui-press {
@@ -1225,13 +1314,14 @@
 
 /* Store Console reading size (owner, 2026-10-31: "easy to read"): the two small steps the admin uses most go up one
    notch: 12→13px captions and 14→15px body. Tables keep their size so every column still fits; a storefront preview
-   inside the admin keeps the store's own scale. Attribute selectors on purpose: Tailwind
-   @apply copies any rule naming the .text-sm class into every recipe that applies text-sm (.ui-table did). */
-[data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
+   inside the admin keeps the store's own scale; elements with explicit responsive sizes (sm:text-base, lg:text-lg …)
+   keep their responsive scale. Attribute selectors on purpose: Tailwind @apply copies any rule naming .text-sm into
+   every recipe that applies text-sm (.ui-table did). */
+[data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *, [class~="sm:text-sm"], [class~="sm:text-base"], [class~="sm:text-lg"], [class~="md:text-sm"], [class~="md:text-base"], [class~="lg:text-sm"], [class~="lg:text-base"]) {
   font-size: 0.8125rem;
   line-height: 1.125rem;
 }
-[data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
+[data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *, [class~="sm:text-base"], [class~="sm:text-lg"], [class~="sm:text-xl"], [class~="md:text-base"], [class~="md:text-lg"], [class~="lg:text-base"], [class~="lg:text-lg"]) {
   font-size: 0.9375rem;
   line-height: 1.375rem;
 }

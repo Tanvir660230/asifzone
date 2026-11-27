@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
+import { Table } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -35,7 +36,7 @@ const NEW_DRAFT: Draft = { name: "", description: "", unit: "", notes: "", colum
 function ChartTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left text-sm">
+      <Table data-no-stack="" className="border-collapse">
         <thead>
           <tr className="text-xs font-medium text-ink-500">
             {columns.map((c, i) => (
@@ -56,7 +57,7 @@ function ChartTable({ columns, rows }: { columns: string[]; rows: string[][] }) 
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </div>
   );
 }
@@ -226,7 +227,7 @@ export default function SizeGuidesPage() {
               </div>
             </div>
             <div className="overflow-x-auto rounded-lg border border-ink-200 bg-white p-2">
-              <table className="w-full border-collapse text-sm">
+              <Table data-no-stack="" className="border-collapse">
                 <thead>
                   <tr>
                     {draft.columns.map((col, c) => (
@@ -262,7 +263,7 @@ export default function SizeGuidesPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             </div>
           </div>
 

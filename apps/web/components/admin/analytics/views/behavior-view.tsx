@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Heart, Star, MessageSquare } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
@@ -105,7 +106,7 @@ export default function UserBehaviorPage() {
             {!reviews || reviews.byStatus.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No reviews submitted yet for this range.</p>
             ) : (
-              <table className="w-full min-w-[320px] text-sm">
+              <Table className="min-w-[320px]">
                 <thead>
                   <tr className="ui-card-table-head">
                     <th className="pb-2 pr-4">Status</th>
@@ -122,7 +123,7 @@ export default function UserBehaviorPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
           </CardContent>
         </Card>

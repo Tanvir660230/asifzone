@@ -73,18 +73,18 @@ function PayslipDocument({ run, slip, storeName }: { run: PayRun; slip: Payslip;
         <div className="text-sm text-ink-500 sm:text-right">
           <p>{run.number}</p>
           <p>Pay date {run.payDate}</p>
-          {run.status !== "POSTED" && <p className="font-semibold uppercase tracking-wide text-warning-700">{run.status === "DRAFT" ? "Draft — not final" : "Reversed"}</p>}
+          {run.status !== "POSTED" && <p className="font-semibold text-warning-700">{run.status === "DRAFT" ? "Draft — not final" : "Reversed"}</p>}
         </div>
       </header>
 
       <dl className="mb-6 grid grid-cols-2 gap-4 text-sm">
         <div>
-          <dt className="text-xs uppercase tracking-wide text-ink-400">Employee</dt>
+          <dt className="text-xs font-medium text-ink-400">Employee</dt>
           <dd className="font-medium text-ink-900">{slip.employee.name}</dd>
           <dd className="text-ink-600">{slip.employee.number}{slip.employee.designation ? ` · ${slip.employee.designation}` : ""}</dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-wide text-ink-400">Days paid</dt>
+          <dt className="text-xs font-medium text-ink-400">Days paid</dt>
           <dd className="text-ink-900">{slip.daysPayable} of {slip.daysInPeriod}</dd>
           {slip.employee.payoutDetails && <dd className="text-ink-600">Paid to {slip.employee.payoutDetails}</dd>}
         </div>
@@ -103,7 +103,7 @@ function PayslipDocument({ run, slip, storeName }: { run: PayRun; slip: Payslip;
 
       {employer.length > 0 && (
         <div className="mt-6 text-xs text-ink-500">
-          <p className="mb-1 uppercase tracking-wide">Paid by the employer on top of your pay</p>
+          <p className="mb-1 font-medium">Paid by the employer on top of your pay</p>
           {employer.map((l) => <p key={l.componentId} className="flex justify-between gap-2"><span>{l.name}</span><span className="tabular-nums">{formatPrice(l.amount)}</span></p>)}
         </div>
       )}
@@ -114,7 +114,7 @@ function PayslipDocument({ run, slip, storeName }: { run: PayRun; slip: Payslip;
 function Section({ title, lines, total, totalLabel }: { title: string; lines: Payslip["lines"]; total: number; totalLabel: string }) {
   return (
     <section className="text-sm">
-      <h2 className="mb-2 text-xs uppercase tracking-wide text-ink-400">{title}</h2>
+      <h2 className="mb-2 text-xs font-medium text-ink-400">{title}</h2>
       {lines.length ? lines.map((l) => (
         <p key={l.componentId} className="flex justify-between gap-2 py-0.5"><span className="text-ink-700">{l.name}</span><span className="tabular-nums text-ink-900">{formatPrice(l.amount)}</span></p>
       )) : <p className="text-ink-500">None</p>}
