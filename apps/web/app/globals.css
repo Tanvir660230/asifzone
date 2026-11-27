@@ -51,6 +51,8 @@
   html {
     /* Reserves the scrollbar track on Windows PC/laptop so modals and route changes never jump 10px sideways. */
     scrollbar-gutter: stable;
+    /* In-page links (a landing page's "order" button to #order, #reviews) glide rather than jump. */
+    scroll-behavior: smooth;
   }
 
   body {
