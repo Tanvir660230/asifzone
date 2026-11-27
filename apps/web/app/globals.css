@@ -194,8 +194,8 @@
      edge and shadow as .liquid. A storefront preview inside the admin keeps the store's own cards. */
   [data-surface="admin"] [data-card="default"]:not([data-surface="storefront"] *) {
     @apply rounded-2xl border-transparent;
-    background: var(--liquid-fill);
-    box-shadow: var(--liquid-shadow);
+    background: var(--liquid-fill, rgb(var(--color-surface)));
+    box-shadow: var(--liquid-shadow, none);
   }
   .liquid {
     background: var(--liquid-fill, rgb(var(--color-surface)));
@@ -622,14 +622,14 @@
     }
   }
 
-  [data-surface="admin"] .ui-control {
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) .ui-control {
     @apply h-control border-line bg-surface;
   }
-  [data-surface="admin"] .ui-control:focus,
-  [data-surface="admin"] .ui-control:focus-visible {
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) .ui-control:focus,
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) .ui-control:focus-visible {
     @apply border-accent ring-4 ring-accent/15;
   }
-  [data-surface="admin"] textarea.ui-control {
+  :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) textarea.ui-control {
     @apply h-auto;
     /* Grows with its text (an SMS template, a note) instead of clipping it mid-line; capped so a long one scrolls. */
     field-sizing: content;
@@ -645,7 +645,7 @@
   /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). A display-size field
      (data-display, e.g. the money amount) is already bigger than 16px, so it keeps its own size. */
   @media (max-width: 767px) {
-    [data-surface="admin"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-display]), select, textarea) {
+    :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-display]), select, textarea) {
       font-size: 16px;
     }
     /* The navigation bar's back button (components/admin/mobile-nav-bar.tsx) replaces the page's own "Back to …". */
@@ -658,32 +658,32 @@
     }
   }
   /* Phones, in the console and the store: a Modal is an iOS sheet — up from the bottom edge, its body scrolling under a
-     fixed title and action row,
-     the actions full width above the home indicator. */
+     fixed title and action row, the actions full width above the home indicator. Modals portal to <body>, so both
+     surfaces match via body:has(...). */
   @media (max-width: 639px) {
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-overlay {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-overlay {
       @apply items-end overflow-hidden p-0;
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-panel {
       @apply flex max-w-none animate-slide-in-up flex-col rounded-b-none rounded-t-[var(--sheet-radius)] border-x-0 border-b-0;
       max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
     }
     /* The grabber. */
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel::before {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-panel::before {
       @apply mx-auto mt-2 block h-[5px] w-9 shrink-0 rounded-full bg-ink-900/[0.15];
       content: "";
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel > :first-child {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-panel > :first-child {
       @apply shrink-0;
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-body {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-body {
       @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-5;
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-footer {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-footer {
       @apply shrink-0 flex-col-reverse px-5;
       padding-bottom: max(1rem, env(safe-area-inset-bottom));
     }
-    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-footer > * {
+    body:has([data-surface="admin"], [data-storefront]) .ui-modal-footer > * {
       @apply w-full;
     }
 
@@ -757,12 +757,13 @@
       margin-top: 1.5rem;
     }
     /* Panels written with a flat 24px (p-6 / px-6) pad 16px at the sides on a phone — 16px more line for content on
-       each card. An axis the element sets itself (py-12 on an empty state, px-3) keeps its own value. */
-    [data-surface="admin"] :is(.p-6:not([class*="px-"]), .px-6):not([data-surface="storefront"] *) {
+       each card. Exact base-class checks (~=) keep explicit phone overrides (px-3, py-12) without being fooled by
+       larger-screen classes like sm:px-8. */
+    [data-surface="admin"] :is(.p-6:not([class~="px-0"], [class~="px-1"], [class~="px-2"], [class~="px-3"], [class~="px-4"], [class~="px-5"], [class~="px-8"]), .px-6):not([data-surface="storefront"] *) {
       padding-left: 1rem;
       padding-right: 1rem;
     }
-    [data-surface="admin"] :is(.p-6:not([class*="py-"], [class*="pt-"], [class*="pb-"]), .py-6):not([data-surface="storefront"] *) {
+    [data-surface="admin"] :is(.p-6:not([class~="py-0"], [class~="py-1"], [class~="py-2"], [class~="py-3"], [class~="py-4"], [class~="py-5"], [class~="py-8"], [class~="py-10"], [class~="py-12"], [class~="pt-0"], [class~="pb-0"]), .py-6):not([data-surface="storefront"] *) {
       padding-top: 1.25rem;
       padding-bottom: 1.25rem;
     }
@@ -882,7 +883,7 @@
   [data-surface="admin"] .ui-menu-item {
     @apply rounded-md px-2.5 py-1.5 text-[13px] text-fg hover:bg-accent hover:text-accent-fg focus-visible:bg-accent focus-visible:text-accent-fg;
   }
-  [data-surface="admin"] .ui-overlay {
+  body:has([data-surface="admin"]) .ui-overlay {
     @apply bg-ink-950/20 backdrop-blur-[3px];
   }
   /* A page title names the page; it does not headline it (owner, 2026-11-12: "size efficiency"). From tablet width the
@@ -1007,18 +1008,20 @@
     font-size: var(--fine-print-size, 0.6875rem);
   }
   /* A bigger touch area without a bigger look: an invisible layer centred on a small control (a gallery dot, a footer link,
-     a text link), at least 44px each way. It changes no pixels, so every store has it. */
+     a text link), at least 44px each way. Touch-only so dense desktop rows never intercept clicks on adjacent buttons. */
   .ui-hit {
     position: relative;
   }
-  .ui-hit::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: max(100%, 2.75rem);
-    height: max(100%, 2.75rem);
-    transform: translate(-50%, -50%);
+  @media (pointer: coarse) {
+    .ui-hit::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
   }
 
   /* ── The storefront on a phone, like an app ─────────────────────────────────────────────────
@@ -1225,13 +1228,14 @@
 
 /* Store Console reading size (owner, 2026-10-31: "easy to read"): the two small steps the admin uses most go up one
    notch: 12→13px captions and 14→15px body. Tables keep their size so every column still fits; a storefront preview
-   inside the admin keeps the store's own scale. Attribute selectors on purpose: Tailwind
-   @apply copies any rule naming the .text-sm class into every recipe that applies text-sm (.ui-table did). */
-[data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *) {
+   inside the admin keeps the store's own scale; elements with explicit responsive sizes (sm:text-base, lg:text-lg …)
+   keep their responsive scale. Attribute selectors on purpose: Tailwind @apply copies any rule naming .text-sm into
+   every recipe that applies text-sm (.ui-table did). */
+[data-surface="admin"] [class~="text-xs"]:not([data-surface="storefront"] *, table *, [class~="sm:text-sm"], [class~="sm:text-base"], [class~="sm:text-lg"], [class~="md:text-sm"], [class~="md:text-base"], [class~="lg:text-sm"], [class~="lg:text-base"]) {
   font-size: 0.8125rem;
   line-height: 1.125rem;
 }
-[data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *) {
+[data-surface="admin"] [class~="text-sm"]:not([data-surface="storefront"] *, table *, [class~="sm:text-base"], [class~="sm:text-lg"], [class~="sm:text-xl"], [class~="md:text-base"], [class~="md:text-lg"], [class~="lg:text-base"], [class~="lg:text-lg"]) {
   font-size: 0.9375rem;
   line-height: 1.375rem;
 }
