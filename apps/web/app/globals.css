@@ -48,12 +48,15 @@
     --section-rhythm-base: var(--section-rhythm);
   }
 
-  body {
-    @apply bg-canvas text-fg antialiased;
+  html {
+    /* Reserves the scrollbar track on Windows PC/laptop so modals and route changes never jump 10px sideways. */
+    scrollbar-gutter: stable;
   }
 
-  html {
-    scroll-behavior: smooth;
+  body {
+    @apply bg-canvas text-fg antialiased;
+    /* Prevents sideways rubber-band wobble on mobile/tablet without breaking position: sticky. */
+    overflow-x: clip;
   }
 
   /* Sitewide keyboard-focus ring — visible, on-brand, never suppressed. Form controls replace it
@@ -635,6 +638,7 @@
     field-sizing: content;
     min-height: 4.5rem;
     max-height: 50vh;
+    max-height: 50dvh;
   }
   /* While the on-screen keyboard is open (hooks/use-keyboard-flag.ts), sticky bars step aside for the field. */
   @media (max-width: 1023px) {
@@ -642,12 +646,14 @@
       display: none;
     }
   }
-  /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). A display-size field
-     (data-display, e.g. the money amount) is already bigger than 16px, so it keeps its own size. */
-  @media (max-width: 767px) {
+  /* Phones & touch tablets (iPad): form fields at 16px, or Safari zooms the page in on focus (Blueprint V2 §X).
+     A display-size field (data-display, e.g. the money amount) is already bigger than 16px, so it keeps its own size. */
+  @media (max-width: 767px), (hover: none) and (pointer: coarse) {
     :is([data-surface="admin"], body:has([data-surface="admin"]) .ui-modal-panel) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-display]), select, textarea) {
       font-size: 16px;
     }
+  }
+  @media (max-width: 767px) {
     /* The navigation bar's back button (components/admin/mobile-nav-bar.tsx) replaces the page's own "Back to …". */
     [data-shell][data-nav-back] [data-back-link] {
       display: none;
@@ -657,10 +663,10 @@
       margin-top: 0 !important;
     }
   }
-  /* Phones, in the console and the store: a Modal is an iOS sheet — up from the bottom edge, its body scrolling under a
-     fixed title and action row, the actions full width above the home indicator. Modals portal to <body>, so both
-     surfaces match via body:has(...). */
-  @media (max-width: 639px) {
+  /* Phones & small tablets (<768px, aligned with .ui-sheet): a Modal is an iOS sheet — up from the bottom edge, its
+     body scrolling under a fixed title and action row, the actions full width above the home indicator. Modals portal
+     to <body>, so both surfaces match via body:has(...). */
+  @media (max-width: 767.98px) {
     body:has([data-surface="admin"], [data-storefront]) .ui-modal-overlay {
       @apply items-end overflow-hidden p-0;
     }
@@ -686,6 +692,8 @@
     body:has([data-surface="admin"], [data-storefront]) .ui-modal-footer > * {
       @apply w-full;
     }
+  }
+  @media (max-width: 639px) {
 
     /* Page titles (components/ui/page-header.tsx) as iOS large titles: no explanatory paragraph (a page keeps a live
        summary with `descriptionOnPhone`), the actions beside the title while they fit and on one swipeable row below
@@ -1041,7 +1049,7 @@
       user-select: none;
       -webkit-touch-callout: none;
     }
-    body:has([data-storefront]) :is(a, button, [role="button"], summary):not(:disabled):not(.ui-press):active {
+    body:has([data-storefront], [data-surface="admin"]) :is(a, button, [role="button"], summary):not(:disabled):not(.ui-press):active {
       opacity: 0.6;
     }
     .ui-press {
