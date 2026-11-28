@@ -204,7 +204,9 @@ GET /api/orders/ → orders.read
 GET /api/orders/:id → orders.read
 GET /api/orders/:id/confirmation → orders.read
 GET /api/orders/:id/courier-note → orders.read
+GET /api/orders/:id/exchanges → orders.read
 GET /api/orders/:id/fill-status → orders.read
+GET /api/orders/:id/issues → orders.read
 GET /api/orders/:id/modifications → orders.read
 GET /api/orders/:id/payment → orders.read
 GET /api/orders/:id/payment-links → orders.read
@@ -554,8 +556,11 @@ POST /api/orders/:id/courier/link → courier.manage
 POST /api/orders/:id/courier/refresh → courier.manage
 POST /api/orders/:id/courier/unlink → courier.manage
 POST /api/orders/:id/door-shortfall → orders.adjust_price
+POST /api/orders/:id/exchanges → orders.manage
 POST /api/orders/:id/hold → orders.manage
 POST /api/orders/:id/hold/clear → orders.manage
+POST /api/orders/:id/issues → orders.manage
+POST /api/orders/:id/issues/:issueId/resolve → orders.manage
 POST /api/orders/:id/modifications → orders.manage
 POST /api/orders/:id/modifications/preview → orders.manage
 POST /api/orders/:id/order-hold → orders.manage

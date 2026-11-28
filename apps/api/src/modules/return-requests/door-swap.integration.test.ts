@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "../../config/prisma";
-import { cleanupFixtures, createStockedProduct, ownerId, placeOrder, stockOf, trackOrder } from "../../test-fixtures";
+import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, stockOf, trackOrder } from "../../test-fixtures";
 import { updateOrderStatus } from "../orders/order.service";
 import { createDoorSwap, listOrderExchanges, swapCourierFacts } from "./door-swap.service";
 
@@ -107,5 +107,23 @@ describe("door-swap exchange", () => {
     expect(facts.note).toMatch(/^এক্সচেঞ্জ: পুরনো .+ হাতে নিয়ে শুধু ৳60 নিন। পুরনোটা না দিলে ৳1,450 নিন, নইলে নতুনটা ফেরত আনুন।$/);
     const list = await listOrderExchanges(order.id);
     expect(list.map((x) => [x.swap, x.swapStatus, x.total, x.protectedCod])).toEqual([[true, "AWAITING_SWAP", 60, 1450]]);
+  });
+
+  it("over HTTP: a reported problem, then a free exchange answering it", async () => {
+    const { order, item, b } = await delivered();
+    const owner = await asOwner();
+    const bad = await owner.post(`/api/orders/${order.id}/issues`, { kind: "TORN", note: "" });
+    expect(bad.status).toBe(400);
+    const made = await owner.post(`/api/orders/${order.id}/issues`, { orderItemId: item.id, kind: "TORN", channel: "WHATSAPP", note: "Left sleeve torn (photo on WhatsApp)" });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body.issue).toMatchObject({ kind: "TORN", kindLabel: "Torn", channel: "WHATSAPP", resolvedAt: null });
+    const ex = await owner.post(`/api/orders/${order.id}/exchanges`, { orderItemId: item.id, requestedVariantId: b, reason: "DEFECT", issueId: made.body.issue.id });
+    expect(ex.status, JSON.stringify(ex.body)).toBe(201);
+    track(ex.body);
+    expect([ex.body.fee, ex.body.total, ex.body.protectedCod]).toEqual([0, 0, 1390]);
+    const listed = await owner.get(`/api/orders/${order.id}/exchanges`);
+    expect(listed.body.exchanges).toHaveLength(1);
+    const issues = await owner.get(`/api/orders/${order.id}/issues`);
+    expect(issues.body.issues.map((i: { note: string }) => i.note)).toEqual(["Left sleeve torn (photo on WhatsApp)"]);
   });
 });
