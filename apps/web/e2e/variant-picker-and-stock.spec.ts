@@ -177,9 +177,18 @@ test("Buy Now orders Cash on Delivery from the product page: name, phone, addres
   await sheet.getByLabel("Mobile number", { exact: true }).fill("01712345683");
   await sheet.getByLabel("Full address", { exact: true }).fill("House 5, Mirpur 10, Dhaka (automated test order)");
   await expect(sheet.getByTestId("quick-order-total")).toHaveText(/\d/);
+  // Count every order the page sends: one tap → exactly one order.
+  const orderPosts: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && /\/api\/orders\/?$/.test(new URL(r.url()).pathname)) orderPosts.push(r.url());
+  });
   await sheet.getByTestId("quick-order-submit").click();
   await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
   await expect(page.getByText(name).first()).toBeVisible();
+  // The sheet must not stay open over the confirmation page (2026-11-28: it did, and every tap placed another order).
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByTestId("quick-order-submit")).toHaveCount(0);
+  expect(orderPosts).toHaveLength(1);
   expect(errors).toEqual([]);
 });
 
