@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { checkoutDistrict, zoneChoiceNeeded, type CheckoutInput, type QuoteDto, type QuoteRequestInput } from "@clothing-brand/shared";
@@ -58,6 +58,8 @@ export function useCodOrder({ item, district, addressLine: addressTyped, scope, 
   const [zoneKey, setZoneKeyState] = useState("");
   const [zoneError, setZoneError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Set once an order went through: the confirmation page is loading, and nothing on this form may place another. */
+  const placedRef = useRef<string | null>(null);
 
   const addressLine = useDebouncedValue(addressTyped ?? "", 400);
   const place = checkoutDistrict({ shippingDistrict: district, shippingAddressLine: addressLine });
@@ -80,6 +82,7 @@ export function useCodOrder({ item, district, addressLine: addressTyped, scope, 
   async function submit(values: CodOrderValues, extra: Partial<CheckoutInput> = {}) {
     setSubmitError(null);
     if (!item) return;
+    if (placedRef.current) return placedRef.current;
     const at = checkoutDistrict(values);
     if (at.unknown && zoneNeeded && !zoneKey) {
       setZoneError(copy.pickZone);
@@ -130,6 +133,7 @@ export function useCodOrder({ item, district, addressLine: addressTyped, scope, 
     try {
       const { order } = await createOrder(payload, idempotencyKeyFor(scope, payload));
       settleIdempotencyKey(scope);
+      placedRef.current = order!.orderNumber;
       sessionSet("lastOrderPhone", values.customerPhone);
       saveDelivery({ name: values.customerName, phone: values.customerPhone, district: values.shippingDistrict || null, area: values.shippingArea || null, addressLine: values.shippingAddressLine });
       pixelIdentify({ phone: values.customerPhone, fullName: values.customerName, city: at.district || undefined, state: at.division || undefined });
