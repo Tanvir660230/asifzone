@@ -16,6 +16,7 @@ import {
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { listOrderIssues } from "../return-requests/order-issue.service";
+import { markOldItemsReceived } from "../return-requests/door-swap-outcome.service";
 import { AppError } from "../../lib/app-error";
 import { captureError } from "../../lib/observability/error-capture";
 import type { AdminIdentity } from "../../domain/auth/authorization";
@@ -499,6 +500,9 @@ export async function receiveParcel(input: ReceiveParcelInput, viewer: Viewer, i
   if (!outcome.recordedMoney) await settleCourierCollected(input.orderId).catch((err) => captureError(err, { msg: `[scanner] courier collection for ${input.orderId}:` }));
   await syncOrderShipmentsSafely(input.orderId);
   await closeReportedIssues(input).catch((err) => captureError(err, { msg: `[scanner] reported issues for ${input.orderId}:` }));
+  await markOldItemsReceived(input.orderId, input.lines.filter((l) => (l.good ?? 0) + (l.damaged ?? 0) > 0).map((l) => l.orderItemId)).catch((err) =>
+    captureError(err, { msg: `[scanner] door swap for ${input.orderId}:` }),
+  );
   const receipt = await prisma.parcelReceipt.findUniqueOrThrow({ where: { id: outcome.receiptId }, include: { admin: { select: { name: true } } } });
   return { receipt: receiptView(receipt), parcel: await getParcelView(input.orderId, viewer), replayed: false };
 }

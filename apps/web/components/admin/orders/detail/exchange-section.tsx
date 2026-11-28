@@ -388,7 +388,7 @@ function ExchangeDialog({ order, issueId, issues, onClose }: { order: Order; iss
                   Customer pays {p.total > 0 ? formatPrice(p.total) : "nothing"} when the old item is handed over · {formatPrice(p.protectedCod)} if they keep both
                 </p>
                 <p className="mt-1 text-xs text-ink-500">
-                  The courier is booked for {formatPrice(p.protectedCod)}; the rider note tells them to take only {formatPrice(p.total)} with the old item.
+                  The courier is booked for {formatPrice(p.protectedCod)}; the rider note tells them to take {p.total > 0 ? `only ${formatPrice(p.total)}` : "nothing"} with the old item.
                   {p.owedBack > 0 && ` The new item is ${formatPrice(p.owedBack)} cheaper — give that back as Store Balance if agreed.`}
                 </p>
               </>

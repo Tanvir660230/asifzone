@@ -11,6 +11,7 @@ import {
   type ScanMatchKind,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { swapRedirect } from "../return-requests/door-swap-outcome.service";
 import { AppError } from "../../lib/app-error";
 
 /**
@@ -110,7 +111,12 @@ export async function resolveParcelCode(raw: string, mode: ParcelScanKind): Prom
   if (!code) return { ...base, kind: "UNKNOWN", matchedBy: null, message: "Nothing was scanned" };
 
   const exact = await resolveOrderCode(code, { id: true, orderNumber: true, trackingNumber: true, courierConsignmentId: true });
-  if (exact) return { ...base, kind: "ORDER", matchedBy: exact.matchedBy, orderId: exact.order.id, message: exact.order.orderNumber };
+  if (exact) {
+    // A door-swap replacement scanned back after the swap: the old item inside belongs to the original order.
+    const swap = mode === "RETURN" ? await swapRedirect(exact.order.id) : null;
+    if (swap) return { ...base, kind: "ORDER", matchedBy: exact.matchedBy, orderId: swap.orderId, message: `${swap.orderNumber} — the old item from exchange parcel ${exact.order.orderNumber}` };
+    return { ...base, kind: "ORDER", matchedBy: exact.matchedBy, orderId: exact.order.id, message: exact.order.orderNumber };
+  }
 
   const phone = scannedPhone(code);
   if (phone) {

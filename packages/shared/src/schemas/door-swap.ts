@@ -16,7 +16,7 @@ export const EXCHANGE_REASON_LABEL: Record<ExchangeReasonValue, string> = {
   DEFECT: "Damaged / faulty item",
 };
 
-export const SWAP_STATUSES = ["AWAITING_SWAP", "SWAPPED", "KEPT_BOTH", "REFUSED", "OLD_RECEIVED", "OLD_MISSING"] as const;
+export const SWAP_STATUSES = ["AWAITING_SWAP", "SWAPPED", "KEPT_BOTH", "REFUSED", "OLD_RECEIVED", "OLD_MISSING", "CANCELLED"] as const;
 export type SwapStatusValue = (typeof SWAP_STATUSES)[number];
 
 export const createDoorSwapSchema = z

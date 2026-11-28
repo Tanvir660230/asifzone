@@ -143,6 +143,8 @@ enum SwapStatus {
   REFUSED
   OLD_RECEIVED
   OLD_MISSING
+  /// Called off before the replacement left the shop.
+  CANCELLED
 }
 
 /// A problem the customer reported with a delivered item (call, WhatsApp…) — shown again when the parcel is scanned back.
@@ -1837,6 +1839,11 @@ model ReturnRequest {
   issueId                String?
   /// Why staff went past the exchange window (3 days customer / 7 days our fault).
   overrideReason         String?
+  /// When the swap outcome was set, and what the courier / a person said (door-swap-outcome.service.ts).
+  swapSettledAt          DateTime?
+  swapNote               String?
+  /// KEPT_BOTH: the replacement became an ordinary sale and is no longer linked as exchangeOrderId — kept here.
+  keptOrderId            String?
   adminNote              String?
   reviewedAt             DateTime?
   reviewedByAdminId      String?

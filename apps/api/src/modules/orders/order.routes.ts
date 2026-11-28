@@ -167,6 +167,7 @@ orderRouter.post("/:id/payments/:paymentId/void", requireAdmin, requirePermissio
 // Door-swap exchanges and customer-reported item problems (docs/superpowers/plans/2026-11-28-door-swap-exchange.md).
 orderRouter.get("/:id/exchanges", requireAdmin, requirePermission("orders.read"), doorSwap.listExchanges);
 orderRouter.post("/:id/exchanges", requireAdmin, requirePermission("orders.manage"), validate(createDoorSwapSchema), doorSwap.createExchange);
+orderRouter.post("/:id/exchanges/:requestId/outcome", requireAdmin, requirePermission("orders.manage"), validate(doorSwap.swapOutcomeSchema), doorSwap.setOutcome);
 orderRouter.get("/:id/issues", requireAdmin, requirePermission("orders.read"), doorSwap.listIssues);
 orderRouter.post("/:id/issues", requireAdmin, requirePermission("orders.manage"), validate(createOrderIssueSchema), doorSwap.createIssue);
 orderRouter.post("/:id/issues/:issueId/resolve", requireAdmin, requirePermission("orders.manage"), validate(doorSwap.resolveIssueSchema), doorSwap.resolveIssue);
