@@ -107,5 +107,16 @@ test("a reported tear, then a free replacement protected with the full price", a
   const link = list.getByTestId("exchange-order-link");
   await expect(link).toContainText("Replacement order");
   made.push((await call<{ exchanges: Array<{ exchangeOrder: { id: string } }> }>(page, `/api/orders/${orderId}/exchanges`)).body.exchanges[0]!.exchangeOrder.id);
+
+  // The rider says the customer swapped: the old item is now expected back.
+  await list.getByTestId("swap-outcome-SWAPPED").click();
+  await page.getByTestId("confirm-swap-outcome").click();
+  await expect(list).toContainText("Swapped — old item on its way back");
+  await expect(list.getByTestId("swap-outcome-REFUSED")).toHaveCount(0);
+
+  // The Exchanges board lists it among those needing attention.
+  await page.goto("/admin/orders/exchanges");
+  await expect(page.getByTestId("exchange-board")).toContainText(placed.body.order.orderNumber);
+  await expect(page.getByTestId("exchange-board")).toContainText("Old item on its way back");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no horizontal page scroll").toBe(true);
 });

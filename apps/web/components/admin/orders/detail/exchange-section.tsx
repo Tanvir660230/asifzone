@@ -47,6 +47,27 @@ const SWAP: Record<SwapStatusValue, { label: string; variant: "success" | "warni
   REFUSED: { label: "Customer refused", variant: "danger" },
   OLD_RECEIVED: { label: "Old item received", variant: "success" },
   OLD_MISSING: { label: "Old item not back", variant: "danger" },
+  CANCELLED: { label: "Called off", variant: "neutral" },
+};
+
+/** What a person may say next, per status (the API enforces the same table). */
+interface OutcomeOption {
+  outcome: api.SwapOutcomeInput;
+  label: string;
+  confirm: string;
+}
+const OUTCOMES: Partial<Record<SwapStatusValue, OutcomeOption[]>> = {
+  AWAITING_SWAP: [
+    { outcome: "SWAPPED", label: "Swapped at the door", confirm: "The rider took the old item and the exchange amount. The old item is then expected back." },
+    { outcome: "KEPT_BOTH", label: "Kept both", confirm: "The customer kept the old item and paid for the new one too. The new item becomes a full-price sale." },
+    { outcome: "REFUSED", label: "Refused", confirm: "The customer didn't take the new item. It comes back on its parcel; the old item stays sold." },
+    { outcome: "CANCELLED", label: "Call off", confirm: "Cancel the exchange before it leaves the shop. The new item goes back into stock." },
+  ],
+  SWAPPED: [
+    { outcome: "OLD_MISSING", label: "Old item not back", confirm: "Flag that the old item hasn't come back, to chase the courier." },
+    { outcome: "KEPT_BOTH", label: "Actually kept both", confirm: "The customer kept the old item after all: the new one becomes a full-price sale and the difference is due." },
+  ],
+  OLD_MISSING: [{ outcome: "KEPT_BOTH", label: "Customer kept both", confirm: "The old item isn't coming back: the new one becomes a full-price sale and the difference is due." }],
 };
 const CHANNEL_LABEL: Record<IssueChannelValue, string> = { CALL: "Phone call", WHATSAPP: "WhatsApp", MESSENGER: "Messenger", OTHER: "Other" };
 const EXCHANGEABLE = ["DELIVERED", "PARTIALLY_DELIVERED"];
@@ -153,6 +174,12 @@ export function ExchangeSection({ order, perms }: { order: Order; perms: OrderPe
                     </Link>
                   )}
                   {r.overrideReason && <p className="text-xs text-ink-500">Past the exchange window: {r.overrideReason}</p>}
+                  {r.swapNote && (
+                    <p className={cn("mt-1 text-xs", r.swapStatus === "AWAITING_SWAP" ? "font-medium text-warning-700" : "text-ink-500")} data-testid="swap-note">
+                      {r.swapNote}
+                    </p>
+                  )}
+                  {perms.manage && r.swapStatus && OUTCOMES[r.swapStatus] && <OutcomeActions orderId={order.id} row={r} />}
                 </li>
               ))}
             </ol>
@@ -163,6 +190,52 @@ export function ExchangeSection({ order, perms }: { order: Order; perms: OrderPe
       <ReportProblemDialog order={order} open={dialog === "issue"} onClose={() => setDialog(null)} />
       {dialog === "exchange" && <ExchangeDialog order={order} issueId={answering} issues={problems} onClose={() => setDialog(null)} />}
     </DetailSection>
+  );
+}
+
+function OutcomeActions({ orderId, row }: { orderId: string; row: api.OrderExchangeRow }) {
+  const qc = useQueryClient();
+  const [asking, setAsking] = useState<OutcomeOption | null>(null);
+  const [note, setNote] = useState("");
+  const save = useMutation({
+    mutationFn: () => api.setSwapOutcome(orderId, row.id, asking!.outcome, note.trim() || null),
+    onSuccess: (r) => {
+      qc.setQueryData(keys.exchanges(orderId), r);
+      qc.invalidateQueries({ queryKey: orderKeys.detail(orderId) });
+      toast.success("Exchange updated");
+      setAsking(null);
+      setNote("");
+    },
+  });
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {(OUTCOMES[row.swapStatus!] ?? []).map((o) => (
+        <Button key={o.outcome} size="sm" variant="outline" onClick={() => setAsking(o)} data-testid={`swap-outcome-${o.outcome}`}>
+          {o.label}
+        </Button>
+      ))}
+      <Modal
+        open={asking !== null}
+        onClose={() => setAsking(null)}
+        title={asking?.label ?? ""}
+        description={asking?.confirm}
+        widthClassName="max-w-md"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setAsking(null)}>
+              Back
+            </Button>
+            <Button onClick={() => save.mutate()} loading={save.isPending} data-testid="confirm-swap-outcome">
+              Confirm
+            </Button>
+          </>
+        }
+      >
+        <Field htmlFor={`swap-note-${row.id}`} label="Note (optional)" hint="E.g. what the rider or the customer said." error={save.error ? errorText(save.error) : undefined}>
+          <Input id={`swap-note-${row.id}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
+        </Field>
+      </Modal>
+    </div>
   );
 }
 

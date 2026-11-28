@@ -188,6 +188,7 @@ GET /api/customers/admin → customers.read
 GET /api/customers/admin/:id → customers.read
 GET /api/customers/admin/:id/store-credit → customers.read
 GET /api/customers/admin/stats → customers.read
+GET /api/door-swaps/ → orders.read
 GET /api/flash-sales/ → promotions.manage
 GET /api/flash-sales/:id → promotions.manage
 GET /api/homepage-sections/ → content.manage
@@ -557,6 +558,7 @@ POST /api/orders/:id/courier/refresh → courier.manage
 POST /api/orders/:id/courier/unlink → courier.manage
 POST /api/orders/:id/door-shortfall → orders.adjust_price
 POST /api/orders/:id/exchanges → orders.manage
+POST /api/orders/:id/exchanges/:requestId/outcome → orders.manage
 POST /api/orders/:id/hold → orders.manage
 POST /api/orders/:id/hold/clear → orders.manage
 POST /api/orders/:id/issues → orders.manage

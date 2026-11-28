@@ -32,6 +32,9 @@ export interface OrderExchangeRow {
   protectedCod: number | null;
   evidenceNote: string | null;
   overrideReason: string | null;
+  /** What the courier / a person said when the outcome was set, or the "check this" note. */
+  swapNote: string | null;
+  swapSettledAt: string | null;
   exchangeOrder: { id: string; orderNumber: string; status: string } | null;
   original: { productName: string; size: string | null; color: string | null };
   requested: { size: string | null; color: string | null };
@@ -63,6 +66,34 @@ export function createDoorSwap(orderId: string, input: Omit<CreateDoorSwapInput,
 
 export function listOrderExchanges(orderId: string) {
   return apiFetch<{ exchanges: OrderExchangeRow[] }>(`/api/orders/${orderId}/exchanges`);
+}
+
+export type SwapOutcomeInput = "SWAPPED" | "KEPT_BOTH" | "REFUSED" | "CANCELLED" | "OLD_MISSING";
+
+export function setSwapOutcome(orderId: string, requestId: string, outcome: SwapOutcomeInput, note?: string | null) {
+  return apiFetch<{ exchanges: OrderExchangeRow[] }>(`/api/orders/${orderId}/exchanges/${requestId}/outcome`, { method: "POST", body: { outcome, note: note ?? null } });
+}
+
+export interface DoorSwapBoardRow {
+  id: string;
+  reason: string | null;
+  reasonLabel: string;
+  swapStatus: SwapStatusValue | null;
+  swapNote: string | null;
+  needsCheck: boolean;
+  swapSettledAt: string | null;
+  protectedCod: number | null;
+  total: number | null;
+  order: { id: string; orderNumber: string; customerName: string; customerPhone: string };
+  exchangeOrder: { id: string; orderNumber: string; status: string; courierStatus: string | null } | null;
+  item: string;
+  from: string;
+  to: string;
+  createdAt: string;
+}
+
+export function listDoorSwaps(filter: "open" | "all", init?: { signal?: AbortSignal }) {
+  return apiFetch<{ items: DoorSwapBoardRow[] }>(`/api/door-swaps?filter=${filter}`, init);
 }
 
 export function reportOrderIssue(orderId: string, input: CreateOrderIssueInput) {

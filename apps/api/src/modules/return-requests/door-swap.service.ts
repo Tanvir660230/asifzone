@@ -454,3 +454,34 @@ export function swapRiderNote(
   const take = total > 0 ? `শুধু ${t(total)} নিন` : "কোনো টাকা নেবেন না";
   return `এক্সচেঞ্জ: পুরনো ${oldItem} হাতে নিয়ে ${take}। পুরনোটা না দিলে ${t(protectedCod)} নিন, নইলে নতুনটা ফেরত আনুন।`;
 }
+
+/** Every door swap still needing attention (or all of them), newest first — the Exchanges board. "needsCheck": delivered
+ * at the full protected price, waiting for a person to say kept both or the rider forgot to lower the COD. */
+export async function listDoorSwaps(filter: "open" | "all" = "open") {
+  const rows = await prisma.returnRequest.findMany({
+    where: { swap: true, ...(filter === "open" ? { swapStatus: { in: ["AWAITING_SWAP", "SWAPPED", "OLD_MISSING"] } } : {}) },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+    include: {
+      order: { select: { id: true, orderNumber: true, customerName: true, customerPhone: true, items: { select: { id: true, productNameSnapshot: true } } } },
+      exchangeOrder: { select: { id: true, orderNumber: true, status: true, total: true, courierStatus: true } },
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    reason: r.exchangeReason,
+    reasonLabel: r.reason,
+    swapStatus: r.swapStatus,
+    swapNote: r.swapNote,
+    needsCheck: r.swapStatus === "AWAITING_SWAP" && Boolean(r.swapNote),
+    swapSettledAt: r.swapSettledAt?.toISOString() ?? null,
+    protectedCod: r.protectedCod === null ? null : Number(r.protectedCod),
+    total: r.exchangeOrder ? Number(r.exchangeOrder.total) : null,
+    order: { id: r.order.id, orderNumber: r.order.orderNumber, customerName: r.order.customerName, customerPhone: r.order.customerPhone },
+    exchangeOrder: r.exchangeOrder ? { id: r.exchangeOrder.id, orderNumber: r.exchangeOrder.orderNumber, status: r.exchangeOrder.status, courierStatus: r.exchangeOrder.courierStatus } : null,
+    item: r.order.items.find((i) => i.id === r.orderItemId)?.productNameSnapshot ?? "",
+    from: [r.originalSizeSnapshot, r.originalColorSnapshot].filter(Boolean).join(" / "),
+    to: [r.requestedSizeSnapshot, r.requestedColorSnapshot].filter(Boolean).join(" / "),
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
