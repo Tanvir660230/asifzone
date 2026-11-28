@@ -44,6 +44,12 @@ export async function bulkReceiveParcels(input: BulkReceiveParcelsInput, viewer:
       rows.push({ ...base, action: "SKIP", units: 0, collected: null, reason: "Nothing is still out for this parcel" });
       continue;
     }
+    // The customer said something was wrong with an item (torn, stain…): a person checks it — never "all good" in bulk.
+    if (input.condition === "GOOD" && view.reportedIssues.length > 0) {
+      const what = view.reportedIssues.map((i) => i.kindLabel.toLowerCase()).join(", ");
+      rows.push({ ...base, action: "SKIP", units, collected: null, reason: `The customer reported a problem (${what}) — check it on its own.` });
+      continue;
+    }
     const paidOut = await courierPaidOutFor(prisma, orderId);
     const collectedDec = paidOut ?? order.courierCollectedAmount;
     const collected = collectedDec === null ? null : Number(collectedDec);

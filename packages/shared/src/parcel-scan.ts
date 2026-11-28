@@ -245,9 +245,25 @@ export interface ParcelView {
     canRecordCharge: boolean;
   } | null;
   receipts: ParcelReceiptView[];
+  /** Problems the customer reported (torn, stain…) still open on this order — or, for a door-swap replacement's parcel,
+   * on the original order whose item comes back in it. The receiver checks these units and keeps damaged ones off the shelf. */
+  reportedIssues: ParcelReportedIssue[];
   scans: Array<{ id: string; kind: ParcelScanKind; result: ParcelScanResult; code: string; at: string; by: string | null }>;
   /** Echoed back on receive: the receipt is refused (409 PARCEL_CHANGED) if the parcel changed since this view. */
   version: string;
+}
+
+export interface ParcelReportedIssue {
+  id: string;
+  kindLabel: string;
+  note: string;
+  /** "Haven Sleeveless Jacket — L / Black"; null = the whole parcel. */
+  itemLabel: string | null;
+  channel: string;
+  reportedByName: string | null;
+  at: string;
+  /** The order it was reported on (the original order, for a door-swap parcel). */
+  orderNumber: string;
 }
 
 export const PARCEL_MONEY_REASONS = ["PARTIAL_DELIVERY", "CUSTOMER_REFUSED", "COURIER_CHARGE_ONLY", "COD_ADJUSTMENT", "OTHER"] as const;

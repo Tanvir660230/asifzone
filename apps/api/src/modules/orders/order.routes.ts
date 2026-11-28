@@ -36,6 +36,8 @@ import {
   linkCourierConsignmentSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
+import { createDoorSwapSchema, createOrderIssueSchema } from "@clothing-brand/shared";
+import * as doorSwap from "../return-requests/door-swap.controller";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { orderCreateRateLimit, orderTrackRateLimit, retryPaymentRateLimit } from "../../middlewares/rate-limit";
@@ -162,6 +164,14 @@ orderRouter.post("/:id/payments", requireAdmin, requirePermission("payments.reco
 // §5a: re-mark a payment as a refused parcel's return charge (or back). It decides whether money is owed back → refunds.manage.
 orderRouter.patch("/:id/payments/:paymentId", requireAdmin, requirePermission("refunds.manage"), validate(reclassifyPaymentSchema), orderController.reclassifyPayment);
 orderRouter.post("/:id/payments/:paymentId/void", requireAdmin, requirePermission("refunds.manage"), validate(voidPaymentSchema), orderController.voidPayment);
+// Door-swap exchanges and customer-reported item problems (docs/superpowers/plans/2026-11-28-door-swap-exchange.md).
+orderRouter.get("/:id/exchanges", requireAdmin, requirePermission("orders.read"), doorSwap.listExchanges);
+orderRouter.post("/:id/exchanges", requireAdmin, requirePermission("orders.manage"), validate(createDoorSwapSchema), doorSwap.createExchange);
+orderRouter.post("/:id/exchanges/:requestId/outcome", requireAdmin, requirePermission("orders.manage"), validate(doorSwap.swapOutcomeSchema), doorSwap.setOutcome);
+orderRouter.get("/:id/issues", requireAdmin, requirePermission("orders.read"), doorSwap.listIssues);
+orderRouter.post("/:id/issues", requireAdmin, requirePermission("orders.manage"), validate(createOrderIssueSchema), doorSwap.createIssue);
+orderRouter.post("/:id/issues/:issueId/resolve", requireAdmin, requirePermission("orders.manage"), validate(doorSwap.resolveIssueSchema), doorSwap.resolveIssue);
+
 // Order adjustments (docs/ORDER_ADJUSTMENTS.md): modifications, item returns, store credit, payment links.
 orderRouter.post("/:id/modifications/preview", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminPreviewModification);
 orderRouter.post("/:id/modifications", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminApplyModification);

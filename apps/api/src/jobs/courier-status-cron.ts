@@ -5,6 +5,7 @@ import { logger } from "../lib/observability/logger";
 import { fillMissingReferences, syncRecentShipments } from "../domain/shipments/shipment-sync";
 import { fillMissingCourierCharges } from "../domain/shipments/courier-charge";
 import { fillMissingCodFacts } from "../modules/courier/cod-fact.service";
+import { reviewDoorSwaps } from "../modules/return-requests/door-swap-outcome.service";
 
 const QUEUE_NAME = "courier-status-sync";
 
@@ -29,6 +30,8 @@ export async function startCourierStatusCron() {
       // Delivery charges Steadfast pushed before they were kept on the leg (or while the leg did not exist yet).
       await fillMissingCourierCharges();
       await fillMissingCodFacts();
+      // Door swaps (door-swap-outcome.service.ts): delivered with the COD lowered → swapped; returned → refused; late old items.
+      await reviewDoorSwaps();
     },
     { connection: queueConnection },
   );

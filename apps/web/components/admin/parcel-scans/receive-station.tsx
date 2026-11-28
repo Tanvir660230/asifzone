@@ -188,6 +188,7 @@ export function ReceiveStation() {
         if (result.kind === "ORDER" && result.orderId) {
           const parcel = await openParcel(result.orderId, value, result.matchedBy);
           if (parcel.receive.mode === "NOTHING") say("duplicate", `${parcel.orderNumber}: ${parcel.receive.message}`, "Already received");
+          else if ((parcel.reportedIssues ?? []).length > 0) say("scan", `${parcel.orderNumber}: customer reported ${parcel.reportedIssues.map((i) => i.kindLabel.toLowerCase()).join(", ")}`, "Warning, customer reported a problem. Check the item");
           else if (keptLikely(parcel) !== null) say("scan", `${parcel.orderNumber} · ${parcel.customerName}`, "Warning, customer likely kept an item");
           else say("scan", `${parcel.orderNumber} · ${parcel.customerName}`, "Parcel opened");
         } else if (result.kind === "CANDIDATES") {
