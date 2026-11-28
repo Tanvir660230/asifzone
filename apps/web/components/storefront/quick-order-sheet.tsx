@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -72,6 +73,17 @@ export function QuickOrderSheet({ codEnabled, shippingFeeDhaka, shippingFeeOutsi
     setAvailable(codEnabled);
     return () => setAvailable(false);
   }, [codEnabled, setAvailable]);
+
+  // Any navigation (the confirmation page, Back, a link) closes the sheet, so it is never left over another page.
+  const pathname = usePathname();
+  const openedOn = useRef(pathname);
+  useEffect(() => {
+    if (open) openedOn.current = pathname;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    if (open && pathname !== openedOn.current) close();
+  }, [pathname, open, close]);
 
   if (!mounted || !open || !item) return null;
   return createPortal(
@@ -150,7 +162,12 @@ function SheetPanel({ item, onClose, fees, currency }: { item: CartItem; onClose
     setSaved(null);
   }
 
-  const onSubmit = handleSubmit((values) => submit(values));
+  // An order that went through closes the sheet: it lives in the storefront shell, which stays mounted when the page
+  // moves on to the confirmation, so left open it offered "Place order" again over it (2026-11-28: 40 orders in 80 s).
+  const onSubmit = handleSubmit(async (values) => {
+    const placed = await submit(values);
+    if (placed) onClose();
+  });
   const subtotal = quote ? Number(quote.subtotal) : item.price * qty;
   const totalKnown = Boolean(quote && shipping?.resolved && !zoneOpen);
   const variantLine = [item.size && item.size !== NO_SIZE_VALUE ? item.size : null, item.color || null].filter(Boolean).join(" · ");

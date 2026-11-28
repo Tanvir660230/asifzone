@@ -188,6 +188,27 @@ describe("canonical quote API", () => {
     trackOrder(res.body.order.id);
     expect([Number(res.body.order.subtotal), Number(res.body.order.total), Number(res.body.order.items[0].priceSnapshot)]).toEqual([800, 860, 800]);
   });
+
+  it("repeat taps from one browser — each with a fresh Idempotency-Key — place one order, not one per tap", async () => {
+    const { variants } = await createStockedProduct({ stocks: [10], basePrice: 800 });
+    const body = { ...checkout([{ variantId: variants[0]!.id, quantity: 1 }]), sessionId: `dup-taps-${RUN}` };
+    // One after another, as the taps came in (the Redis lock covers truly simultaneous ones; tests run without Redis).
+    const taps = [];
+    for (const n of [1, 2, 3]) taps.push(await request(app).post("/api/orders").set("Idempotency-Key", `dup-tap-${RUN}-${n}`).send(body));
+    const later = await request(app).post("/api/orders").set("Idempotency-Key", `dup-tap-${RUN}-4`).send(body);
+    for (const res of [...taps, later]) expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const ids = new Set([...taps, later].map((r) => r.body.order.id as string));
+    for (const id of ids) trackOrder(id);
+    expect(ids.size).toBe(1);
+    // A different phone on the same browser is a different order.
+    const other = await request(app)
+      .post("/api/orders")
+      .set("Idempotency-Key", `dup-tap-${RUN}-5`)
+      .send({ ...body, customerPhone: "01799999990" });
+    expect(other.status).toBe(201);
+    trackOrder(other.body.order.id);
+    expect(other.body.order.id).not.toBe([...ids][0]);
+  });
 });
 
 describe("one price everywhere: PDP = quote = order", () => {

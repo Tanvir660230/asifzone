@@ -178,6 +178,27 @@ export function toItemSnapshots(quote: Quote): OrderItemSnapshot[] {
   });
 }
 
+/** Orders from one phone within this window that make a burst worth a bell alert (2026-11-28: 40 in 80 s went unnoticed
+ * among the per-order "New order" notifications until a shopper complained). */
+export const ORDER_BURST_WINDOW_MS = 10 * 60 * 1000;
+export const ORDER_BURST_COUNT = 3;
+
+/** Fire-and-forget: the third order from the same phone inside the window raises one alert (not one per order after). */
+function warnOnOrderBurst(phone: string, orderId: string): void {
+  prisma.order
+    .count({ where: { customerPhone: phone, deletedAt: null, createdAt: { gte: new Date(Date.now() - ORDER_BURST_WINDOW_MS) } } })
+    .then((n) => {
+      if (n !== ORDER_BURST_COUNT) return;
+      notify({
+        type: "system.notice",
+        title: `${n} orders from ${phone} in 10 minutes`,
+        body: "Possible duplicate orders — check before confirming or booking. Many at once can mean a checkout problem.",
+        link: `/admin/orders/${orderId}`,
+      });
+    })
+    .catch((err) => captureError(err, { msg: "[orders] burst check failed:" }));
+}
+
 /** District and thana are optional on the storefront: fill the district (and its division) from the address text when
  * none was picked, so the order, its delivery charge and the courier address carry it. An empty thana is filled from the
  * address too, but only when the reader is sure (one district's thana — a name several districts share is left for the
@@ -536,6 +557,7 @@ export async function insertOrderRecord(
     body: `${order.customerName} · ${new Set(snapshots.map((s) => s.variantId)).size} item(s)`,
     link: `/admin/orders/${order.id}`,
   });
+  warnOnOrderBurst(order.customerPhone, order.id);
 
   if (oversoldItems.length > 0) {
     notify({
@@ -616,22 +638,38 @@ export async function createOrder(
   const derived = await deriveOrderPricing(input, customerId);
   const pricing = opts.staffPricing ? applyStaffPricing(derived, opts.staffPricing, await getCurrency()) : derived;
 
-  const lockKey = key ? namespace.lock(`order-idem:${key}`) : input.sessionId ? namespace.lock(`order-create:${input.sessionId}`) : null;
-  const findDuplicate = () =>
-    key
-      ? prisma.order.findUnique({ where: { idempotencyKey: key }, include })
-      : prisma.order.findFirst({
-          where: {
-            deletedAt: null,
-            status: "PENDING",
-            paymentStatus: "UNPAID",
-            sessionId: input.sessionId,
-            total: pricing.total,
-            createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
-          },
-          orderBy: { createdAt: "desc" },
-          include,
-        });
+  // A shopper's repeat taps each carry a fresh Idempotency-Key once the previous order went through (2026-11-28: a sheet
+  // left open over the confirmation page took 40 orders from one shopper in 80 seconds). So on the storefront a key never
+  // waves through a second order from the same browser session and phone for the same total within two minutes — the
+  // first order is answered instead. Staff-entered orders (changedByAdminId) keep key-only semantics.
+  const storefrontSession = !opts.changedByAdminId && input.sessionId ? input.sessionId : null;
+  const lockKey = storefrontSession
+    ? namespace.lock(`order-create:${storefrontSession}`)
+    : key
+      ? namespace.lock(`order-idem:${key}`)
+      : null;
+  const recentSameOrder = (requirePhone: boolean) =>
+    prisma.order.findFirst({
+      where: {
+        deletedAt: null,
+        status: requirePhone ? { in: ["PENDING", "CONFIRMED"] } : "PENDING",
+        paymentStatus: "UNPAID",
+        sessionId: input.sessionId,
+        ...(requirePhone ? { customerPhone: input.customerPhone } : {}),
+        total: pricing.total,
+        createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
+      },
+      orderBy: { createdAt: "desc" },
+      include,
+    });
+  const findDuplicate = async () => {
+    if (key) {
+      const byKey = await prisma.order.findUnique({ where: { idempotencyKey: key }, include });
+      if (byKey || !storefrontSession) return byKey;
+      return recentSameOrder(true);
+    }
+    return input.sessionId ? recentSameOrder(false) : null;
+  };
 
   if (lockKey) {
     // Closes the gap between checking for a duplicate and committing the new order. Best-effort like every other use of
