@@ -8,6 +8,7 @@ import { applyOrderTransition, changeOrderStatus, getOrderById, runTransitionSid
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import type { Prisma } from "@prisma/client";
 import { codToCollectFor, settleCourierCollected } from "../../domain/payments/payment-ledger.service";
+import { swapCourierFacts } from "../return-requests/door-swap.service";
 import { buildCourierNotes, effectiveCourierNote } from "./courier-note";
 import { parseSteadfastWebhook } from "./steadfast-webhook";
 import { codChangeOf } from "./cod-fact";
@@ -379,6 +380,17 @@ async function planAutoFillSafely(orderIds: string[]): Promise<AutoFillPlan> {
 }
 
 /** A new consignment starts with the cash it was booked for; a change Steadfast reported on an earlier one is not its. */
+/** A door-swap replacement (door-swap.service.ts) books its PROTECTED COD — fee + full new price — with the Bangla rider
+ * note in front of the parcel note: the rider takes only the exchange total when the old item is handed over. */
+async function applySwapFacts(orderIds: string[], cod: Map<string, number>, notes: Map<string, string | null>) {
+  const facts = await swapCourierFacts(orderIds);
+  for (const [id, f] of facts) {
+    cod.set(id, f.protectedCod);
+    const rest = notes.get(id);
+    notes.set(id, rest ? `${f.note} | ${rest}` : f.note);
+  }
+}
+
 const bookedCodFact = (codAmount: number) => ({ courierCodBooked: codAmount, courierCodNow: null, courierCodSource: null, courierCodAt: null });
 
 export async function bookOrderWithSteadfast(orderId: string) {
@@ -394,11 +406,14 @@ export async function bookOrderWithSteadfast(orderId: string) {
   }
 
   // The payment ledger's cash-to-collect (PL-6): the balance due of an open COD order — 0 when it was prepaid.
-  const codAmount = order.payment.codToCollect;
+  const cods = new Map([[orderId, order.payment.codToCollect]]);
 
   // The parcel note (store rules + customer note, or staff's own wording) — built before the claim so a failure here
   // can't leave the order stuck behind a booking lease.
-  const courierNote = effectiveCourierNote(order.courierNote, (await buildCourierNotes([orderId])).get(orderId));
+  const notes = new Map<string, string | null>([[orderId, effectiveCourierNote(order.courierNote, (await buildCourierNotes([orderId])).get(orderId))]]);
+  await applySwapFacts([orderId], cods, notes);
+  const codAmount = cods.get(orderId)!;
+  const courierNote = notes.get(orderId) ?? null;
   if (!(await claimCourierBooking(orderId))) {
     throw AppError.conflict("This order is already booked with a courier, or a booking for it is in progress");
   }
@@ -488,7 +503,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   }
 
   const builtNotes = await buildCourierNotes(eligible.map((order) => order.id));
-  const courierNotes = new Map(eligible.map((order) => [order.id, effectiveCourierNote(order.courierNote, builtNotes.get(order.id))]));
+  const courierNotes = new Map<string, string | null>(eligible.map((order) => [order.id, effectiveCourierNote(order.courierNote, builtNotes.get(order.id))]));
 
   // Claim each order first (Phase 9 D-4): one another booking already holds is skipped, never sent twice.
   const claimed: typeof eligible = [];
@@ -504,6 +519,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   }
   if (!claimed.length) return { booked: [], failed };
   const codAmounts = await codToCollectFor(claimed.map((order) => order.id));
+  await applySwapFacts(claimed.map((order) => order.id), codAmounts, courierNotes);
   const fillPlan = await planAutoFillSafely(claimed.map((order) => order.id));
 
   let results;
