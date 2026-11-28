@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { PARCEL_STATE_LABELS, PARCEL_MONEY_REASON_LABELS, type ParcelMoneyReason, type ParcelState, type ParcelView } from "@clothing-brand/shared";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
@@ -28,6 +29,32 @@ export function ParcelStateBadge({ state }: { state: ParcelState }) {
   );
 }
 
+/** What the customer reported about an item in this parcel (torn, stain…): checked before anything goes back on the shelf. */
+export function ReportedIssues({ parcel }: { parcel: ParcelView }) {
+  const issues = parcel.reportedIssues ?? [];
+  if (issues.length === 0) return null;
+  return (
+    <div role="alert" className="rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm" data-testid="parcel-reported-issues">
+      <p className="flex items-center gap-2 font-semibold text-warning-700">
+        <AlertTriangle size={16} aria-hidden="true" /> Customer reported a problem — check it before it goes back on the shelf
+      </p>
+      <ul className="mt-1.5 space-y-1">
+        {issues.map((i) => (
+          <li key={i.id} className="text-fg">
+            <span className="font-medium">{i.kindLabel}</span>
+            {i.itemLabel && <span className="text-fg-muted"> · {i.itemLabel}</span>}: &ldquo;{i.note}&rdquo;
+            <span className="block text-xs text-fg-muted">
+              {i.orderNumber !== parcel.orderNumber ? `Reported on ${i.orderNumber} · ` : ""}
+              {formatStoreDateTime(i.at)}
+              {i.reportedByName ? ` · ${i.reportedByName}` : ""} · Damaged units go under “Damaged”.
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ParcelHeader({ parcel, compact = false }: { parcel: ParcelView; compact?: boolean }) {
   const c = parcel.courier;
   return (
@@ -44,6 +71,7 @@ export function ParcelHeader({ parcel, compact = false }: { parcel: ParcelView; 
         <span className="text-fg-muted"> · {parcel.customerPhone}</span>
       </p>
       {!compact && <p className="text-sm text-fg-muted">{parcel.address}</p>}
+      <ReportedIssues parcel={parcel} />
       <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
         {c.consignmentId && (
           <div>
@@ -82,7 +110,7 @@ export function ParcelHeader({ parcel, compact = false }: { parcel: ParcelView; 
 
 function Count({ label, value, tone }: { label: string; value: number; tone?: "warn" | "muted" }) {
   return (
-    <span className={cn("whitespace-nowrap", tone === "warn" && value > 0 ? "font-medium text-warning-800" : tone === "muted" || value === 0 ? "text-fg-subtle" : "text-fg-muted")}>
+    <span className={cn("whitespace-nowrap", tone === "warn" && value > 0 ? "font-medium text-warning-700" : tone === "muted" || value === 0 ? "text-fg-subtle" : "text-fg-muted")}>
       {label} <span className="tabular-nums">{value}</span>
     </span>
   );

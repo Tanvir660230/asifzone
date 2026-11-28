@@ -51,6 +51,7 @@ export const ORDER_ISSUE_LABEL: Record<OrderIssueKindValue, string> = {
   OTHER: "Other problem",
 };
 export const ISSUE_CHANNELS = ["CALL", "WHATSAPP", "MESSENGER", "OTHER"] as const;
+export type IssueChannelValue = (typeof ISSUE_CHANNELS)[number];
 
 export const createOrderIssueSchema = z.object({
   orderItemId: z.string().cuid().nullable().optional(),

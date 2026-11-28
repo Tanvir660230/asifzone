@@ -19,6 +19,7 @@ import { CallPanel } from "@/components/admin/orders/detail/call-panel";
 import { ActivityTimeline } from "@/components/admin/orders/detail/activity-timeline";
 import { AttentionPanel, NotesSection, ReturnsSection } from "@/components/admin/orders/detail/notes-returns";
 import { ChangesSection } from "@/components/admin/orders/detail/changes-section";
+import { ExchangeSection } from "@/components/admin/orders/detail/exchange-section";
 import { AccountingSection } from "@/components/admin/orders/detail/accounting-section";
 import { CourierCostsSection } from "@/components/admin/orders/detail/courier-costs-section";
 import { ModifyOrderDialog } from "@/components/admin/orders/detail/modify-order-dialog";
@@ -90,6 +91,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
     notes: <NotesSection order={order} detail={detail} perms={perms} />,
     returns: <ReturnsSection order={order} perms={perms} />,
     changes: <ChangesSection order={order} perms={perms} onModify={() => setDialog("modify")} onReturn={() => setDialog("return")} />,
+    exchanges: <ExchangeSection order={order} perms={perms} />,
     accounting: <AccountingSection order={order} />,
     courierCosts: <CourierCostsSection order={order} />,
   };
@@ -104,6 +106,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
           <div className="min-w-0 space-y-5">
             {sections.items}
             {sections.changes}
+            {sections.exchanges}
             {sections.payments}
             {sections.delivery}
             {sections.courierCosts}
@@ -123,6 +126,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
           {sections.followUp}
           {sections.items}
           {sections.changes}
+          {sections.exchanges}
           {sections.payments}
           {sections.delivery}
           {sections.courierCosts}
