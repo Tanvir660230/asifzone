@@ -6,6 +6,7 @@ import {
   type CorrectParcelReceiptInput,
   type ParcelLineView,
   type ParcelReceiptView,
+  type ParcelReportedIssue,
   type ParcelReceiveMode,
   type ParcelScanKind,
   type ParcelScanResult,
@@ -14,6 +15,7 @@ import {
   type ReceiveParcelInput,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { listOrderIssues } from "../return-requests/order-issue.service";
 import { AppError } from "../../lib/app-error";
 import { captureError } from "../../lib/observability/error-capture";
 import type { AdminIdentity } from "../../domain/auth/authorization";
@@ -181,13 +183,47 @@ async function expectedCodOf(db: Tx | typeof prisma, order: Pick<ViewOrder, "id"
 }
 
 /** The scanner's parcel card (GET /api/parcel-scans/parcels/:orderId). Money only for payments.read. */
+/** Open customer-reported problems for this parcel: its own order's, plus the original order's when this is a door-swap
+ * replacement (the old item travels back in the replacement's parcel). */
+export async function reportedIssuesForParcel(orderId: string): Promise<ParcelReportedIssue[]> {
+  const swap = await prisma.returnRequest.findFirst({ where: { exchangeOrderId: orderId, swap: true }, select: { orderId: true } });
+  const ids = swap ? [orderId, swap.orderId] : [orderId];
+  const [issues, numbers] = await Promise.all([
+    listOrderIssues(ids),
+    prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderNumber: true } }),
+  ]);
+  const numberOf = new Map(numbers.map((o) => [o.id, o.orderNumber]));
+  return ids.flatMap((id) =>
+    (issues.get(id) ?? [])
+      .filter((i) => !i.resolvedAt)
+      .map((i) => ({ id: i.id, kindLabel: i.kindLabel, note: i.note, itemLabel: i.itemLabel, channel: i.channel, reportedByName: i.reportedByName, at: i.createdAt, orderNumber: numberOf.get(id) ?? "" })),
+  );
+}
+
+/** A customer-reported problem on this order's item is answered once that item is scanned back: closed with what the
+ * receiver found (good / damaged units). Door-swap parcels (the old item comes back on the replacement) close theirs in
+ * the swap outcome step. */
+async function closeReportedIssues(input: ReceiveParcelInput) {
+  const found = new Map(input.lines.map((l) => [l.orderItemId, l]));
+  const open = await prisma.orderIssue.findMany({ where: { orderId: input.orderId, resolvedAt: null }, select: { id: true, orderItemId: true } });
+  for (const issue of open) {
+    const lines = issue.orderItemId ? [found.get(issue.orderItemId)].filter(Boolean) : [...found.values()];
+    const good = lines.reduce((n, l) => n + (l?.good ?? 0), 0);
+    const damaged = lines.reduce((n, l) => n + (l?.damaged ?? 0), 0);
+    if (good + damaged === 0) continue;
+    const resolution = damaged > 0 ? `Scanned back: ${damaged} damaged${good ? `, ${good} good` : ""}` : `Scanned back: ${good} good — the problem wasn't found`;
+    await prisma.orderIssue.update({ where: { id: issue.id }, data: { resolvedAt: new Date(), resolution } });
+  }
+}
+
 export async function getParcelView(orderId: string, viewer: Viewer): Promise<ParcelView> {
   const o = await prisma.order.findUnique({ where: { id: orderId }, select: ORDER_VIEW });
   if (!o) throw AppError.notFound("Order not found");
-  const [receipts, money, scans] = await Promise.all([
+  const [receipts, money, scans, reportedIssues] = await Promise.all([
     prisma.parcelReceipt.findMany({ where: { orderId }, include: { admin: { select: { name: true } } }, orderBy: { createdAt: "desc" } }),
     prisma.payment.findMany({ where: COURIER_MONEY_WHERE(orderId), orderBy: { settledAt: "asc" }, select: { id: true, amount: true, purpose: true, provider: true, settledAt: true } }),
     prisma.parcelScanEvent.findMany({ where: { orderId, voidedAt: null }, orderBy: { createdAt: "desc" }, take: 20, include: { admin: { select: { name: true } } } }),
+    reportedIssuesForParcel(orderId),
   ]);
   const plan = receivePlan(o);
   const outcomeKnown = !["SHIPPED"].includes(o.status) && !(o.status === "PARTIALLY_DELIVERED" && !o.partialDeliveryReconciledAt) && !PRE_SHIP.includes(o.status) && o.status !== "CANCELLED";
@@ -238,6 +274,7 @@ export async function getParcelView(orderId: string, viewer: Viewer): Promise<Pa
         }
       : null,
     receipts: receipts.map(receiptView),
+    reportedIssues,
     scans: scans.map((e) => ({ id: e.id, kind: e.kind as ParcelScanKind, result: e.result as ParcelScanResult, code: e.code, at: e.createdAt.toISOString(), by: e.admin?.name ?? null })),
     version: versionOf(o, receipts.length, money.length),
   };
@@ -461,6 +498,7 @@ export async function receiveParcel(input: ReceiveParcelInput, viewer: Viewer, i
   // money was recorded here or by hand (never counted twice).
   if (!outcome.recordedMoney) await settleCourierCollected(input.orderId).catch((err) => captureError(err, { msg: `[scanner] courier collection for ${input.orderId}:` }));
   await syncOrderShipmentsSafely(input.orderId);
+  await closeReportedIssues(input).catch((err) => captureError(err, { msg: `[scanner] reported issues for ${input.orderId}:` }));
   const receipt = await prisma.parcelReceipt.findUniqueOrThrow({ where: { id: outcome.receiptId }, include: { admin: { select: { name: true } } } });
   return { receipt: receiptView(receipt), parcel: await getParcelView(input.orderId, viewer), replayed: false };
 }
