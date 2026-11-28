@@ -5,6 +5,12 @@ import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fuzzyFilter } from "@/lib/fuzzy-search";
 
+/** Tallest the list gets (the old max-h-60), the least it shrinks to, its gap from the field, and what fixed bars cover. */
+const LIST_MAX = 240;
+const MIN_LIST = 120;
+const GAP = 6;
+const PHONE_BOTTOM_BARS = 144;
+
 interface SearchableSelectProps {
   id?: string;
   value: string;
@@ -39,7 +45,10 @@ export function SearchableSelect({
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const optionRefs = useRef<Array<HTMLLIElement | null>>([]);
+  /** Where the open list goes: below the field unless there's no room there (end of a sheet, phone keyboard, tab bar). */
+  const [placement, setPlacement] = useState<{ up: boolean; maxHeight: number }>({ up: false, maxHeight: LIST_MAX });
 
   const filtered = open ? fuzzyFilter(query, options, (option) => option) : options;
 
@@ -58,9 +67,56 @@ export function SearchableSelect({
     setHighlighted(0);
   }, [query, open]);
 
+  // Keep the highlighted option visible by scrolling the list only — scrollIntoView would also move the page or sheet.
   useEffect(() => {
-    optionRefs.current[highlighted]?.scrollIntoView({ block: "nearest" });
-  }, [highlighted]);
+    const list = listRef.current;
+    const item = optionRefs.current[highlighted];
+    if (!list || !item) return;
+    if (item.offsetTop < list.scrollTop) list.scrollTop = item.offsetTop;
+    else if (item.offsetTop + item.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
+  }, [highlighted, open]);
+
+  // An open list must be on screen. On a phone the field is often near the bottom — under the tab bar, a sticky action
+  // bar or the keyboard — so the list used to open out of sight ("the thana list doesn't show"). Bring the field up, then
+  // open the list on whichever side has room inside every scrolling box around it, and follow scrolls and the keyboard.
+  useEffect(() => {
+    if (!open) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const narrow = window.matchMedia("(max-width: 767px)").matches;
+    if (narrow) el.scrollIntoView({ block: "start", behavior: "smooth" });
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      const vv = window.visualViewport;
+      let top = vv ? vv.offsetTop : 0;
+      let bottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+      // Fixed bars along the bottom of a phone screen (tab bar, sticky "Call & confirm") cover roughly the last 9rem.
+      if (narrow) bottom -= PHONE_BOTTOM_BARS;
+      for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
+          const box = node.getBoundingClientRect();
+          top = Math.max(top, box.top);
+          bottom = Math.min(bottom, box.bottom);
+        }
+      }
+      const below = bottom - r.bottom - GAP;
+      const above = r.top - top - GAP;
+      const up = below < Math.min(LIST_MAX, 160) && above > below;
+      setPlacement({ up, maxHeight: Math.max(MIN_LIST, Math.min(LIST_MAX, up ? above : below)) });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+    };
+  }, [open]);
 
   function selectOption(option: string) {
     onChange(option);
@@ -96,7 +152,7 @@ export function SearchableSelect({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative scroll-mt-24">
       <div className="relative">
         <input
           id={id}
@@ -134,9 +190,11 @@ export function SearchableSelect({
       </div>
       {open && (
         <ul
+          ref={listRef}
           id={id ? `${id}-listbox` : undefined}
           role="listbox"
-          className="ui-floating absolute z-overlay mt-1.5 max-h-60 w-full overflow-auto p-1 animate-pop-in"
+          style={{ maxHeight: placement.maxHeight }}
+          className={cn("ui-floating absolute z-overlay w-full overflow-auto overscroll-contain p-1 animate-pop-in", placement.up ? "bottom-full mb-1.5" : "mt-1.5")}
         >
           {filtered.length === 0 && <li className="px-3 py-2 text-sm text-ink-400">{emptyText}</li>}
           {filtered.map((option, index) => (
