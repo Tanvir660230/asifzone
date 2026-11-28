@@ -127,6 +127,41 @@ enum ReturnRequestType {
   EXCHANGE
 }
 
+/// Why a staff-led door-swap exchange happens: the customer's choice (pays the delivery fee) or our fault (free).
+enum ExchangeReason {
+  CUSTOMER_SIZE
+  CUSTOMER_COLOR
+  WRONG_ITEM_SENT
+  DEFECT
+}
+
+/// Where a door swap stands: shipped and waiting for the swap at the door, then what the courier / the parcel scan showed.
+enum SwapStatus {
+  AWAITING_SWAP
+  SWAPPED
+  KEPT_BOTH
+  REFUSED
+  OLD_RECEIVED
+  OLD_MISSING
+}
+
+/// A problem the customer reported with a delivered item (call, WhatsApp…) — shown again when the parcel is scanned back.
+enum OrderIssueKind {
+  TORN
+  STAIN
+  BROKEN_PART
+  COLOR_DIFFERENT
+  WRONG_ITEM
+  OTHER
+}
+
+enum IssueChannel {
+  CALL
+  WHATSAPP
+  MESSENGER
+  OTHER
+}
+
 enum PaymentMethod {
   COD
   SSLCOMMERZ
@@ -1295,6 +1330,7 @@ model Order {
   autoFillFailures       StockAutoFillFailure[]
   statusHistory          OrderStatusHistory[]
   returnRequests         ReturnRequest[]
+  issues                 OrderIssue[]
   /// Reverse side of ReturnRequest.exchangeOrderId — an approved EXCHANGE request creates a new,
   /// separate Order (the replacement shipment) and links back here; at most one element in
   /// practice (one exchange request produces one exchange order), kept as an array only because
@@ -1788,6 +1824,19 @@ model ReturnRequest {
   compensationAmount     Decimal?            @db.Decimal(10, 2)
   /// Idempotency-Key of the staff request that recorded an item-level return — a repeat returns this row.
   idempotencyKey         String?             @unique
+  /// Door swap (staff-led exchange, docs/superpowers/plans/2026-11-28-door-swap-exchange.md): the replacement ships with
+  /// protectedCod (fee + full new price) as the courier COD; the customer pays only exchangeOrder.total when the old item
+  /// is handed over. The old item is restocked only when its parcel is scanned back.
+  swap                   Boolean             @default(false)
+  exchangeReason         ExchangeReason?
+  exchangeFee            Decimal?            @db.Decimal(10, 2)
+  protectedCod           Decimal?            @db.Decimal(10, 2)
+  swapStatus             SwapStatus?
+  /// What proves an our-fault exchange (e.g. "WhatsApp photo: torn sleeve"); the reported issue it answers, if any.
+  evidenceNote           String?
+  issueId                String?
+  /// Why staff went past the exchange window (3 days customer / 7 days our fault).
+  overrideReason         String?
   adminNote              String?
   reviewedAt             DateTime?
   reviewedByAdminId      String?
@@ -1799,6 +1848,28 @@ model ReturnRequest {
   @@index([customerId])
   @@index([status])
   @@index([updatedAt])
+  @@index([orderItemId, swapStatus])
+}
+
+/// A problem the customer reported with a delivered item. Staff record it on the call; the parcel scanner shows it when
+/// that item comes back, so a torn / damaged unit is checked and kept off the shelf.
+model OrderIssue {
+  id                String         @id @default(cuid())
+  orderId           String
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// The line it concerns; null = the whole parcel.
+  orderItemId       String?
+  kind              OrderIssueKind
+  channel           IssueChannel   @default(CALL)
+  note              String
+  reportedByAdminId String?
+  reportedByName    String?
+  createdAt         DateTime       @default(now())
+  /// Set when the item was scanned back (with what the receiver found) or staff closed it.
+  resolvedAt        DateTime?
+  resolution        String?
+
+  @@index([orderId])
 }
 
 /// One row per payment attempt. An order can have several over time (a failed/cancelled/expired

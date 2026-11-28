@@ -37,6 +37,7 @@ export * from "./reply-window";
 export * from "./schemas/saved-answer";
 export * from "./schemas/shipping-zone";
 export * from "./schemas/order-adjustments";
+export * from "./schemas/door-swap";
 export * from "./schemas/metrics";
 export * from "./schemas/analytics";
 export * from "./schemas/ai";
