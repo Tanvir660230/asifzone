@@ -11,7 +11,7 @@ import {
   subtract,
   toMajor,
   zero, sellsPastShelf } from "@clothing-brand/shared";
-import type { CreateReturnRequestInput, ReturnCompensation, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
+import type { CreateReturnRequestInput, Money, ReturnCompensation, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
@@ -222,7 +222,7 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
  * approving is exactly what approval does. Refuses (like approval) when the item was already returned/exchanged or the
  * requested variant can't be sold any more. `stockAvailable` says whether the replacement units are in stock right now
  * (approval re-checks under the stock lock). */
-async function priceExchange(db: Prisma.TransactionClient | typeof prisma, request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>) {
+export async function priceExchange(db: Prisma.TransactionClient | typeof prisma, request: Pick<NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>, "orderId" | "orderItemId" | "requestedVariantId">) {
   const originalOrder = await db.order.findUnique({ where: { id: request.orderId }, include: { items: true } });
   if (!originalOrder) throw AppError.notFound("Original order not found");
 
@@ -309,17 +309,28 @@ export async function previewExchange(id: string) {
   };
 }
 
-async function createExchangeOrder(
+/** A staff-led door swap (door-swap.service.ts): the replacement also charges the delivery fee, and its parcel books a
+ * protected COD (fee + full new price) — see ReturnRequest.protectedCod. */
+export interface DoorSwapExtras {
+  fee: Money;
+  reasonLabel: string;
+}
+
+export async function createExchangeOrder(
   tx: Prisma.TransactionClient,
   request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>,
   adminId: string,
   compensation?: ReturnCompensation,
+  door?: DoorSwapExtras,
 ) {
-  const { originalOrder, originalItem, requestedVariant, quote, line, cur, newValue, amountDue, refundDue, credit, tax } = await priceExchange(tx, request);
+  const { originalOrder, originalItem, requestedVariant, quote, line, cur, newValue, amountDue: priceDue, refundDue, credit, tax } = await priceExchange(tx, request);
+  // What the replacement collects: the price difference, plus the delivery fee of a door swap.
+  const amountDue = door ? add(priceDue, door.fee) : priceDue;
 
   const label = `${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)}`;
-  const exchangeNote =
-    amountDue.amount > 0
+  const exchangeNote = door
+    ? `Door-swap exchange for order ${originalOrder.orderNumber} (${label}) — ${door.reasonLabel}; ${cur} ${toMajor(amountDue)} when the old item is handed over`
+    : amountDue.amount > 0
       ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(amountDue)} due COD on delivery for the price difference`
       : refundDue.amount > 0
         ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (${compensation === "REFUND" || !originalOrder.customerId ? "refund requested" : "store credit"})`
@@ -350,7 +361,7 @@ async function createExchangeOrder(
       discount: toMajor(credit),
       couponDiscount: 0,
       flashDiscount: toMajor(quote.flashDiscount),
-      shippingFee: 0,
+      shippingFee: door ? toMajor(door.fee) : 0,
       shippingWaived: false,
       total: toMajor(amountDue),
       pricingVersion: quote.pricingVersion,
@@ -381,7 +392,9 @@ async function createExchangeOrder(
       statusHistory: {
         create: {
           status: "CONFIRMED",
-          note: `Exchange for order ${originalOrder.orderNumber} — original item restocked`,
+          note: door
+            ? `Door-swap exchange for order ${originalOrder.orderNumber} — the old item comes back with this parcel`
+            : `Exchange for order ${originalOrder.orderNumber} — original item restocked`,
           changedByAdminId: adminId,
         },
       },
@@ -453,5 +466,5 @@ async function createExchangeOrder(
   });
 
   // For notifyStockMoved after commit: the replacement (and its materials) left, the original came back.
-  return { exchangeOrder, moved: fillMoved(fill) };
+  return { exchangeOrder, moved: fillMoved(fill), amountDue, newValue, cur, originalItem, requestedVariant };
 }
