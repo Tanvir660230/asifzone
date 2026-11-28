@@ -27,7 +27,7 @@ export function AddressEditor({ value, onChange, idPrefix }: { value: DraftAddre
         <Field htmlFor={`${idPrefix}-district`} label="District">
           <SearchableSelect id={`${idPrefix}-district`} value={value.shippingDistrict} onChange={(v) => set({ shippingDistrict: v, shippingArea: "" })} options={BD_ALL_DISTRICTS} placeholder="Search district…" />
         </Field>
-        <Field htmlFor={`${idPrefix}-area`} label="Area / Thana">
+        <Field htmlFor={`${idPrefix}-area`} label="Area / Thana" hint="Optional">
           <SearchableSelect
             id={`${idPrefix}-area`}
             value={value.shippingArea}

@@ -133,9 +133,11 @@ export const adminCreateOrderSchema = z.object({
   customerEmail: nullableEmail(),
   customerPhone: bdPhoneSchema(),
   shippingDivision: z.enum(BD_DIVISIONS),
-  shippingDistrict: z.string().min(1).max(120),
-  shippingArea: z.string().min(1).max(120),
-  shippingAddressLine: z.string().min(1).max(500),
+  shippingDistrict: z.string().min(1, "Pick the district").max(120),
+  // Thana is optional (2026-11-28, as on checkout since 2026-11-24): a phone order, or an incomplete order turned into
+  // one on the confirmation call, must not be blocked when the customer doesn't know it. The attention list asks for it.
+  shippingArea: z.string().trim().max(120),
+  shippingAddressLine: z.string().min(1, "Write the delivery address").max(500),
   paymentMethod: z.literal("COD"),
   markPaid: z.boolean().optional(),
   /** Owner decision D24: a phone order is confirmed on the call that placed it — create it CONFIRMED (same transaction).

@@ -627,6 +627,20 @@ describe("every order path uses the same pricing", () => {
     expect(Number(res.body.order.total)).toBe(q.total);
   });
 
+  it("admin manual order goes through without a thana (customer on the call doesn't know it)", async () => {
+    const { variants } = await createStockedProduct({ stocks: [5], basePrice: 900 });
+    const res = await (
+      await asOwner()
+    ).post("/api/orders/admin", {
+      ...checkout([{ variantId: variants[0]!.id, quantity: 1 }]),
+      shippingArea: "",
+      paymentMethod: "COD",
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    trackOrder(res.body.order.id);
+    expect(res.body.order.shippingArea).toBe("");
+  });
+
   it("online payment: the paid order is written from the quoted snapshot (attribution and tax included)", async () => {
     const { product, variants } = await createStockedProduct({
       stocks: [5],

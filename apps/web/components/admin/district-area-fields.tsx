@@ -31,7 +31,7 @@ export function DistrictAreaFields({
           placeholder="Search district…"
         />
       </Field>
-      <Field htmlFor={`${idPrefix}-area`} label="Area / Thana" error={errors?.area}>
+      <Field htmlFor={`${idPrefix}-area`} label="Area / Thana" hint="Optional" error={errors?.area}>
         <SearchableSelect
           id={`${idPrefix}-area`}
           value={value.area}
